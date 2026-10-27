@@ -53,6 +53,7 @@ import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
+import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -144,6 +145,7 @@ export default function testsuite() {
   FingerprintIconsTest()
   FilePreviewPolicyTest()
   FileLocationUtilTest()
+  WebAccessCodeTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()

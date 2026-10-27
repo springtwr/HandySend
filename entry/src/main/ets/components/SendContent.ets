@@ -120,11 +120,7 @@ export struct SendContent {
 
   /** 方式区动作分发：按注册表方式键执行发送页动作。 */
   onMethodAction(key: string): void {
-    if (key === 'web-send') {
-      this.onShareByLink();
-    } else if (key === 'web-receive') {
-      this.onStartWebReceive();
-    } else if (key === 'by-ip') {
+    if (key === 'by-ip') {
       this.onSendByIp();
     } else if (key === 'favorites') {
       this.onOpenFavorites();
@@ -482,29 +478,21 @@ export struct SendContent {
     this.viewModel.startMtaSend(params);
   }
 
-  // 点击「网页发送」菜单项：开关关闭时只进入面板（由面板出示已关闭提示与开启入口）；
-  // 开关开启且有暂存文件时挂载并进入，无暂存文件时直接进入
-  onShareByLink(): void {
-    let navParam: Record<string, Object> = { 'mode': 'send' };
+  // 点击网页图标：进入统一的「网页传输」面板。
+  // 总开关开启且有暂存文件时先挂载并进入；否则直接进入（面板内出示状态与开启入口）。
+  onOpenWebPanel(): void {
     if (!this.viewModel.webSendAllowed || this.viewModel.stagedFiles.length === 0) {
-      this.onNavigateTo('ShareLinkPage', navParam);
+      this.onNavigateTo('ShareLinkPage', undefined);
       return;
     }
     // 挂载分享同样经大文件二次确认门禁（总量达阈值时先弹确认）
     this.runAfterLargeFileConfirm(() => {
       this.viewModel.shareByLink().then((shareUrl: string) => {
         if (shareUrl.length > 0) {
-          this.onNavigateTo('ShareLinkPage', navParam);
+          this.onNavigateTo('ShareLinkPage', undefined);
         }
       });
     });
-  }
-
-  // 点击「网页接收」菜单项：开关状态永不拦路，直接进入接收面板
-  //（面板内按状态展示，开关关闭时给出打开按钮）
-  onStartWebReceive(): void {
-    let navParam: Record<string, Object> = { 'mode': 'receive' };
-    this.onNavigateTo('ShareLinkPage', navParam);
   }
 
   // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
@@ -951,6 +939,9 @@ export struct SendContent {
             },
             onRefresh: () => {
               this.refreshDevices();
+            },
+            onOpenWeb: () => {
+              this.onOpenWebPanel();
             }
           })
         }

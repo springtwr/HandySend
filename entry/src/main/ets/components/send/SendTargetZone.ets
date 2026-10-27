@@ -13,7 +13,6 @@ import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
 import { DiscoveredDevice } from '../../model/Types';
 import { filterSeenSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
-import { getStringSync } from '../../utils/ResourceUtil';
 import { DeviceItemViewModel } from '../../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../../views/DeviceListItem';
 import { SendMethodZone } from './SendMethodZone';
@@ -26,6 +25,9 @@ export struct SendTargetZone {
   @Event onInfo: (device: DiscoveredDevice) => void = (_device: DiscoveredDevice) => {
   }
   @Event onRefresh: () => void = () => {
+  }
+  // 点击网页图标：直接进入统一的「网页传输」面板
+  @Event onOpenWeb: () => void = () => {
   }
   // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态，
   // 父级若按「键」存选中，则在可见来源集合增长/重排后同一下标指向不同来源
@@ -127,12 +129,6 @@ export struct SendTargetZone {
   private currentSubtitle(): ResourceStr {
     let descriptor = this.currentSource();
     return descriptor !== undefined ? descriptor.subtitle : $r('app.string.nearby_devices_subtitle');
-  }
-
-  /** 中文界面收紧网页菜单宽度（中文文案 4 字，其他语言保留系统默认宽度避免折行）。 */
-  private isWebMenuCompact(): boolean {
-    let label: string = getStringSync(this.getUIContext(), $r('app.string.send_method_web_receive'));
-    return label.length > 0 && label.length <= 4;
   }
 
   /** 空态文案：来源描述符提供，缺失时回退默认空态。 */
@@ -261,13 +257,12 @@ export struct SendTargetZone {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
-        // 方式区（注册表驱动；网页 / 其它方式两个入口）
-        // 网页菜单勾选表达方向开关意向（运行时服务状态由图标绿点表达）
+        // 方式区：网页图标直接进入网页传输面板；其它方式保留菜单
         SendMethodZone({
           isWebActive: this.viewModel.webServiceActive,
-          webSendActive: this.viewModel.webSendAllowed,
-          webReceiveActive: this.viewModel.webReceiveAllowed,
-          webMenuCompact: this.isWebMenuCompact()
+          onOpenWeb: () => {
+            this.onOpenWeb();
+          }
         })
 
         if (this.viewModel.isScanning) {

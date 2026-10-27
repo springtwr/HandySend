@@ -26,7 +26,6 @@ import {
   getWebSendAllowed,
   getWebReceiveAllowed,
   getWebHttpsEnabled,
-  getWebPin,
   isWebUploadEnabled,
   getWebInterfaceNames,
   getWebInterfaceBlacklistNames,
@@ -64,7 +63,6 @@ export struct LocalDeviceSection {
   @Local private webSendText: string = ''
   @Local private webReceiveText: string = ''
   @Local private webHttpsText: string = ''
-  @Local private webPinText: string = ''
   @Local private webPortText: string = ''
   @Local private mtaBrand: string = ''
   @Local private mtaBroadcast: string = ''
@@ -118,8 +116,6 @@ export struct LocalDeviceSection {
     this.webSendText = this.runStateText(getWebSendAllowed() && webRunning);
     this.webReceiveText = this.runStateText(getWebReceiveAllowed() && webRunning && isWebUploadEnabled());
     this.webHttpsText = this.onOffText(getWebHttpsEnabled());
-    this.webPinText = getStringSync(this.getUIContext(),
-      getWebPin().length > 0 ? $r('app.string.web_pin_status_set') : $r('app.string.web_pin_status_unset'));
     let actualPort: number = getWebActualPort();
     if (actualPort > 0 && isWebPortFallback()) {
       this.webPortText = getStringSync(this.getUIContext(), $r('app.string.web_port_fallback_value'))
@@ -437,8 +433,6 @@ export struct LocalDeviceSection {
           this.infoRow($r('app.string.web_port_label'), this.webPortText)
           this.rowDivider()
           this.infoRow($r('app.string.web_https_label'), this.webHttpsText)
-          this.rowDivider()
-          this.infoRow($r('app.string.web_pin_label'), this.webPinText)
           this.rowDivider()
           this.interfaceEntryRow(InterfacePageSource.web)
         }

@@ -3,10 +3,7 @@ import {
   getWebHttpsEnabled,
   stopShareLink,
   ensureWebUpload,
-  unmountShare,
   disableWebUpload,
-  setWebDownloadAutoAccept,
-  isWebDownloadAutoAccept,
   setWebUploadAutoAccept,
   isWebUploadAutoAccept,
   getSharedFileCount,
@@ -23,7 +20,8 @@ import {
   selectWebDisplayAddress,
   getWebPort,
   getWebActualPort,
-  isWebPortFallback
+  isWebPortFallback,
+  getWebAccessCode
 } from '../service/AppService';
 import { WebAddress } from '../model/WebAddress';
 import { copyText } from '../utils/ClipboardUtil';
@@ -48,12 +46,11 @@ export class ShareLinkViewModel {
   @Trace public shareUrl: string = '';
   // 加密传输开启时网页分享使用自签名证书的 HTTPS 连接，页面据此在顶部显示浏览器拦截提示
   @Trace public showHttpsHint: boolean = false;
-  // 网页方向允许开关镜像：关闭时对应方向面板不可用，页面据此改渲染中性禁用提示
+  // 网页传输总开关镜像：关闭时服务停止，页面据此显示开启入口
   @Trace public sendDisabled: boolean = false
-  @Trace public receiveDisabled: boolean = false;
-  // 本次挂载是否允许浏览器直接下载（一次外发授权，不跨分享保留）
-  @Trace public autoAcceptDownload: boolean = false;
-  // 本次挂载是否允许浏览器上传免确认（与下载免确认对称）
+  // 允许对方上传（子开关）与服务上传入口状态
+  @Trace public uploadAllowed: boolean = false;
+  // 本次挂载是否允许浏览器上传免确认
   @Trace public autoAcceptUpload: boolean = false;
   // 当前挂载的分享文件数：为 0 时顶部给出无文件警告（地址与二维码仍展示）
   @Trace public sharedFileCount: number = 0;
@@ -63,6 +60,8 @@ export class ShareLinkViewModel {
   @Trace public webAddresses: Array<WebAddress> = [];
   // 当前展示的地址 IP（空串时取排序后的第一个）
   @Trace public selectedAddressIp: string = '';
+  // 本次分享的访问码：服务启动后生成，停止/重启即失效
+  @Trace public accessCode: string = '';
   // 端口回退状态：实际端口与设置端口不一致时顶部提示
   @Trace public webPortFallback: boolean = false;
   @Trace public webPreferredPort: number = 0;
@@ -71,23 +70,22 @@ export class ShareLinkViewModel {
   // 上传服务启动进行中标志：启动中重复进入不重复重启
   private startingReceive: boolean = false;
 
-  /** 浏览器上传页地址：与下载地址同一单页（按 caps 条件渲染两段）。 */
-  get uploadUrl(): string {
-    return this.shareUrl;
-  }
-
   /** 是否挂了可下载的文件（决定顶部是否给出无文件警告）。 */
   get hasDownload(): boolean {
     return this.sharedFileCount > 0;
   }
 
-  /**
-   * 进入网页接收：确保浏览器上传入口开放。
-   * 服务已在运行时不会重建服务器，避免打断进行中的传输。
-   */
-  async startWebReceive(): Promise<void> {
-    // 开启接收即写允许开关：与设置页双向同步
-    setWebReceiveAllowed(true);
+  /** 允许对方上传：仅当网页传输总开关开启时生效。 */
+  async setUploadAllowed(enabled: boolean): Promise<void> {
+    if (enabled && this.sendDisabled) {
+      return;
+    }
+    setWebReceiveAllowed(enabled);
+    if (!enabled) {
+      await disableWebUpload();
+      this.loadShareInfo();
+      return;
+    }
     if (this.startingReceive) {
       return;
     }
@@ -103,28 +101,13 @@ export class ShareLinkViewModel {
   }
 
   /**
-   * 页面进入时确保发送方向服务已启动（不修改允许开关，仅消费开关状态）。
-   * 开关已开而服务未起（如启动恢复尚未完成）时补一次启动；开关关闭时不动作。
+   * 页面进入时确保网页服务已启动（不修改总开关，仅消费开关状态）。
    */
-  ensureSendService(): void {
+  ensureWebService(): void {
     if (this.sendDisabled) {
       return;
     }
     applyWebSendAllowed(true);
-  }
-
-  /**
-   * 页面进入时确保接收方向服务已启动（不修改允许开关，仅消费开关状态）。
-   */
-  async ensureReceiveService(): Promise<void> {
-    if (this.receiveDisabled) {
-      return;
-    }
-    try {
-      await ensureWebUpload();
-    } catch (_e) {
-      // 启动失败：地址保持不可用，交由页面降级展示
-    }
   }
 
   /**
@@ -162,15 +145,10 @@ export class ShareLinkViewModel {
     // 网页方向允许开关经既有 changeBus 同步（开关 setter 已 notifyChange）
     let sendDisabled: boolean = !getWebSendAllowed();
     if (sendDisabled !== this.sendDisabled) {
-      logger.info('网页发送允许开关变化，发送面板禁用态=' + sendDisabled);
+      logger.info('网页传输总开关变化，面板禁用态=' + sendDisabled);
     }
     this.sendDisabled = sendDisabled;
-    let receiveDisabled: boolean = !getWebReceiveAllowed();
-    if (receiveDisabled !== this.receiveDisabled) {
-      logger.info('网页接收允许开关变化，接收面板禁用态=' + receiveDisabled);
-    }
-    this.receiveDisabled = receiveDisabled;
-    this.autoAcceptDownload = isWebDownloadAutoAccept();
+    this.uploadAllowed = getWebReceiveAllowed();
     this.autoAcceptUpload = isWebUploadAutoAccept();
     this.sharedFileCount = getSharedFileCount();
     this.uploadEnabled = isWebUploadEnabled();
@@ -182,19 +160,12 @@ export class ShareLinkViewModel {
     this.webActualPort = getWebActualPort();
     this.webPortFallback = isWebPortFallback();
     this.shareUrl = getShareLink();
+    this.accessCode = getWebAccessCode();
   }
 
   /** 切换面板展示的地址；服务不重启，仅更新二维码/地址。 */
   selectWebAddress(ip: string): void {
     selectWebDisplayAddress(ip);
-  }
-
-  /**
-   * 切换本次挂载的直接下载授权。仅影响当前分享，停止分享后失效。
-   */
-  setAutoAcceptDownload(enabled: boolean): void {
-    setWebDownloadAutoAccept(enabled);
-    this.autoAcceptDownload = enabled;
   }
 
   /**
@@ -222,37 +193,19 @@ export class ShareLinkViewModel {
   }
 
   /**
-   * 打开发送方向允许开关并确保最小服务已运行（与设置页双向同步）。
-   * 挂载仍需经发送页选文件后进入。
+   * 开启网页传输总开关并启动服务（与设置页双向同步）。
    */
-  enableSendDirection(): void {
+  enableWebTransfer(): void {
     setWebSendAllowed(true);
     applyWebSendAllowed(true);
   }
 
   /**
-   * 关闭网页发送：撤下已挂载的文件，并写发送允许开关（与设置页双向同步）。
-   * 网页接收仍开启时服务继续运行（上传入口保留），否则随之完全停止。
+   * 停止网页传输：关闭总开关并停止服务。
+   * 有活跃网页会话时由 Page 先确认，再取消会话并调用本方法。
    */
-  async stopSharingFiles(): Promise<void> {
+  async stopWebTransfer(): Promise<void> {
     setWebSendAllowed(false);
-    if (getWebReceiveAllowed()) {
-      await unmountShare();
-    } else {
-      await stopShareLink();
-    }
-  }
-
-  /**
-   * 关闭网页接收：关闭浏览器上传入口，并写接收允许开关（与设置页双向同步）。
-   * 网页发送仍开启时服务继续运行（地址与二维码保留），否则随之完全停止。
-   */
-  async stopReceivingFiles(): Promise<void> {
-    setWebReceiveAllowed(false);
-    if (getWebSendAllowed()) {
-      await disableWebUpload();
-    } else {
-      await stopShareLink();
-    }
+    await stopShareLink();
   }
 }

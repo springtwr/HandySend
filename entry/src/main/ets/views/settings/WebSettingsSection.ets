@@ -16,7 +16,7 @@ import { getStringSync } from '../../utils/ResourceUtil';
 
 /**
  * WebSettingsSection.ets — 网页传输设置分组：发送 / 接收两个允许开关，
- * 以及网页独立的加密传输、访问密码、网络接口与端口。
+ * 以及网页独立的加密传输、网络接口与端口；访问码在分享面板展示。
  *
  * 两方向开关与面板内启停按钮、发送页菜单勾选双向同步；
  * 加密/密码/端口变更需要重启网页服务，有活跃网页会话时先二次确认；
@@ -34,70 +34,8 @@ export struct WebSettingsSection {
   @Local private localBlacklist: Array<string> = []
   // 高级设置展开状态（加密传输 / 端口 / 网络接口）
   @Local private isAdvancedExpanded: boolean = false
-  @Local private pendingPin: string = ''
   @Local private pendingPort: string = ''
   private activeDialogId: number = -1
-
-  // ── 访问密码弹窗 ──
-
-  private openPinDialog(): void {
-    this.pendingPin = this.viewModel.webPin;
-    let options: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.pinDialog();
-      }
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(options)
-      .then((id: number) => {
-        this.activeDialogId = id;
-      })
-      .catch(() => {
-      });
-  }
-
-  @Builder
-  pinDialog() {
-    CustomContentDialogV2({
-      primaryTitle: $r('app.string.web_pin_label'),
-      contentBuilder: () => {
-        this.pinContent();
-      },
-      buttons: [
-        new AdvancedDialogV2Button({
-          content: $r('app.string.dialog_cancel'),
-          action: () => {
-            this.closeActiveDialog();
-          }
-        }),
-        new AdvancedDialogV2Button({
-          content: $r('app.string.dialog_confirm'),
-          action: () => {
-            let pin: string = this.pendingPin;
-            this.closeActiveDialog();
-            this.viewModel.setWebPinValue(pin);
-          }
-        })
-      ]
-    })
-      .constraintSize({ maxWidth: 480 })
-  }
-
-  @Builder
-  pinContent() {
-    Column({ space: DesignTokens.space.sm }) {
-      TextInput({ text: this.pendingPin })
-        .type(InputType.Password)
-        .maxLength(64)
-        .borderRadius(DesignTokens.radius.max)
-        .id('settings_web_pin_input')
-        .onChange((value: string) => {
-          this.pendingPin = value;
-        })
-    }
-    .width('100%')
-  }
 
   // ── 端口弹窗 ──
 
@@ -395,7 +333,7 @@ export struct WebSettingsSection {
     Column() {
       // 卡片（标题由设置分组统一渲染）
       Column() {
-        // 网页发送允许开关：关闭时撤下已挂载的分享文件（进行中下载先确认）
+        // 网页传输总开关：关闭时停止服务并撤下已挂载的分享文件（进行中会话先确认）
         Row() {
           Text($r('app.string.web_send_label'))
             .fontSize(DesignTokens.font.bodyM)
@@ -419,14 +357,15 @@ export struct WebSettingsSection {
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.tiny })
 
-        // 网页接收允许开关：关闭时关闭浏览器上传入口（进行中上传先确认）
+        // 允许对方上传：仅在网页传输总开关开启时可用
         Row() {
           Text($r('app.string.web_receive_label'))
             .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
+            .fontColor(this.viewModel.webSendAllowed ? $r('app.color.text_primary') : $r('app.color.text_tertiary'))
             .layoutWeight(1)
 
           Toggle({ type: ToggleType.Switch, isOn: this.viewModel.webReceiveAllowed })
+            .enabled(this.viewModel.webSendAllowed)
             .onChange((isOn: boolean) => {
               this.viewModel.setWebReceiveAllowedValue(isOn);
             })
@@ -438,38 +377,6 @@ export struct WebSettingsSection {
         .alignItems(VerticalAlign.Center)
 
         Text($r('app.string.web_receive_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-
-        // 访问密码：留空表示不启用
-        Row() {
-          Text($r('app.string.web_pin_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Row({ space: DesignTokens.space.xxs }) {
-            Text(this.viewModel.webPin.length > 0 ? '****' : $r('app.string.pin_set_label'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_tertiary'))
-            SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.subtitleL)
-              .fontColor([$r('app.color.text_secondary')])
-          }
-          .justifyContent(FlexAlign.End)
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
-          this.openPinDialog();
-        })
-        .id('settings_web_pin_entry')
-
-        Text($r('app.string.web_pin_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)

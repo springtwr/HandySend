@@ -37,7 +37,6 @@ import {
   getWebSendAllowed,
   getWebReceiveAllowed,
   getWebHttpsEnabled,
-  getWebPin,
   getWebPort,
   getWebLastPort,
   setWebLastPort,
@@ -57,6 +56,7 @@ import {
 import { ensureRecvDownloadDir, ensureRecvTextDir, uniquePath } from './ReceiveTargets';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { readTextOfLocation } from '../../utils/FileTextUtil';
+import { generateWebAccessCode } from '../../utils/WebAccessCode';
 import {
   WEB_DOWNLOAD_KEY,
   beginWebDownloadBurst,
@@ -92,31 +92,15 @@ let sharePort: number = 0;
 // 本次服务实例的二维码/URL 能力令牌：随服务启动生成，浏览器扫码后换取 HttpOnly Cookie。
 // 服务重启即失效，旧二维码/链接随之作废。
 let webCapabilityToken: string = '';
+// 本次服务实例的访问码：每次启动生成，仅用于裸地址手动输入；停止/重启即失效。
+let webAccessCode: string = '';
 // 实际端口与设置端口不一致（首选端口被占用后回退）；面板据此提示
 let webPortFallback: boolean = false;
 
 // 当前服务启动时使用的网页配置：文件挂载可原地换表的前提
 let webServiceAlias: string = '';
 let webServiceHttps: boolean = false;
-let webServicePin: string = '';
 let webServiceConfiguredPort: number = 0;
-
-// 本次挂载是否允许浏览器直接下载：由分享面板在挂载期间切换，停止分享即复位。
-// 它是一次外发授权而非长期偏好，故不进入设置持久化。
-let webDownloadAutoAccept: boolean = false;
-
-/** 设置本次挂载的直接下载授权（仅当前分享有效）。 */
-export function setWebDownloadAutoAccept(enabled: boolean): void {
-  webDownloadAutoAccept = enabled;
-  logger.info('本次挂载的直接下载授权=' + enabled);
-  notifyChange();
-}
-
-/** 本次挂载是否允许浏览器直接下载。 */
-export function isWebDownloadAutoAccept(): boolean {
-  return webDownloadAutoAccept;
-}
-
 // 本次挂载是否允许浏览器上传免确认：与下载免确认对称，停止分享即复位。
 let webUploadAutoAccept: boolean = false;
 
@@ -132,16 +116,21 @@ export function isWebUploadAutoAccept(): boolean {
   return webUploadAutoAccept;
 }
 
-/**
- * 当前运行中的网页服务是否配置了访问密码。
- * 密码正确即视为已完成外发授权：下载建会话时服务端直接放行，
- * 应用侧只弹「网页已访问」提示（未免确认时）。
- */
-export function isWebAccessPasswordEnabled(): boolean {
-  return webServicePin.length > 0;
+/** 本次分享的访问码（服务未启动为空串）。 */
+export function getWebAccessCode(): string {
+  return webAccessCode;
 }
 
-/** 网页访问提示（密码授权后、未免确认时由主页弹出，不阻塞浏览器取列表）。 */
+/**
+ * 当前运行中的网页服务是否带本次访问码。
+ * 页面门禁通过（扫码或访问码）即视为已完成外发授权：下载建会话时服务端直接放行，
+ * 应用侧只弹「网页访问」提示。
+ */
+export function isWebAccessCodeEnabled(): boolean {
+  return webAccessCode.length > 0;
+}
+
+/** 网页访问提示（门禁通过后由主页弹出，不阻塞浏览器取列表）。 */
 export interface WebAccessNotice {
   sessionId: string
   ip: string
@@ -149,7 +138,7 @@ export interface WebAccessNotice {
 }
 
 let pendingWebAccessNotice: WebAccessNotice | undefined = undefined;
-// 快速刷新/多标签同 IP 的去重窗口：避免短时间内重复弹「网页已访问」
+// 快速刷新/多标签同 IP 的去重窗口：避免短时间内重复弹「网页访问」
 const WEB_ACCESS_NOTICE_DEBOUNCE_MS: number = 15000;
 let lastWebAccessNoticeAt: number = 0;
 let lastWebAccessNoticeIp: string = '';
@@ -327,6 +316,7 @@ interface WebServiceFileJson {
 
 interface WebServiceConfigJson {
   alias: string
+  // 本次分享的 6 位访问码（裸地址手动输入时使用）
   pin?: string
   capability?: string
   uploadEnabled: boolean
@@ -369,7 +359,6 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
       sha256: profile.sha256
     });
   }
-  let pin: string = getWebPin();
   webCapabilityToken = generateWebCapabilityToken();
   let config: WebServiceConfigJson = {
     alias: getDeviceAlias(),
@@ -379,8 +368,8 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
     uploadDir: webUploadStageDir(),
     files: files
   };
-  if (pin.length > 0) {
-    config.pin = pin;
+  if (webAccessCode.length > 0) {
+    config.pin = webAccessCode;
   }
   if (webCapabilityToken.length > 0) {
     config.capability = webCapabilityToken;
@@ -399,6 +388,8 @@ function markWebServiceUnavailable(): void {
 
 /** 以当前挂载与上传开关启动服务（调用方已备好文件句柄与档案）。 */
 async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
+  // 每次启动生成新的本次访问码：服务重启后旧访问码与旧二维码一起失效。
+  webAccessCode = generateWebAccessCode();
   // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
   // 自行刷新以取到本机 IP（LocalSend 关闭时本模块仍需给出可用地址）
   updateLocalInterfaces();
@@ -424,7 +415,6 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   webPortFallback = isPortFallback(getWebPort(), port);
   webServiceAlias = getDeviceAlias();
   webServiceHttps = getWebHttpsEnabled();
-  webServicePin = getWebPin();
   webServiceConfiguredPort = getWebPort();
   refreshWebAddress();
   if (shareLinkInfo.length > 0) {
@@ -517,12 +507,11 @@ export async function restartWebService(): Promise<void> {
 
 /**
  * 当前服务配置是否仍与设置一致。
- * 别名/加密/密码/配置端口变化必须重建服务；文件列表变化可原地换表。
+ * 别名/加密/配置端口变化必须重建服务；文件列表变化可原地换表。
  */
 function webServiceConfigMatches(): boolean {
   return getDeviceAlias() === webServiceAlias &&
     getWebHttpsEnabled() === webServiceHttps &&
-    getWebPin() === webServicePin &&
     getWebPort() === webServiceConfiguredPort;
 }
 
@@ -534,6 +523,10 @@ function webServiceConfigMatches(): boolean {
  * 重建流程：先打开新句柄 → 启动成功后再关闭旧句柄并移交，失败时旧分享保持可用。
  */
 export async function createShareLink(files: Array<SendFileItem>, restartService: boolean = false): Promise<void> {
+  if (!getWebSendAllowed()) {
+    logger.warn('网页传输总开关未开启，忽略分享挂载');
+    return;
+  }
   let appContext = getAppContext();
   if (appContext === undefined) {
     logger.error('AppService 未初始化');
@@ -585,8 +578,7 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
       registerShareFileProfiles(files, openedHandles);
       closeShareFileHandles();
       shareFileHandles = openedHandles;
-      // 新一次分享从「需确认」开始：下载/上传免确认只在本次挂载内由面板显式打开
-      webDownloadAutoAccept = false;
+      // 新一次分享从「需确认」开始：上传免确认只在本次挂载内由面板显式打开
       webUploadAutoAccept = false;
       refreshWebAddress();
       logger.info('分享文件已就地挂载，当前可下载 ' + files.length + ' 个');
@@ -627,8 +619,7 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
     }
   }
   shareFileHandles = openedHandles;
-  // 新一次分享从「需确认」开始：下载/上传免确认只在本次挂载内由面板显式打开
-  webDownloadAutoAccept = false;
+  // 新一次分享从「需确认」开始：上传免确认只在本次挂载内由面板显式打开
   webUploadAutoAccept = false;
 }
 
@@ -646,13 +637,12 @@ export async function stopShareLink(): Promise<void> {
   webPortFallback = false;
   webServiceAlias = '';
   webServiceHttps = false;
-  webServicePin = '';
+  webAccessCode = '';
   webServiceConfiguredPort = 0;
   clearShareFileProfiles();
   pendingWebAccessNotice = undefined;
   lastWebAccessNoticeAt = 0;
   lastWebAccessNoticeIp = '';
-  webDownloadAutoAccept = false;
   webUploadAutoAccept = false;
   webUploadEnabled = false;
   logger.info('网页分享服务已停止');
@@ -664,6 +654,9 @@ export async function stopShareLink(): Promise<void> {
  * 已挂载的分享文件随服务一起提供（单服务双段），不单独重建。
  */
 export async function startWebUpload(): Promise<void> {
+  if (!getWebSendAllowed()) {
+    return;
+  }
   if (shareLinkInfo.length > 0 && webUploadEnabled) {
     return;
   }
@@ -704,11 +697,9 @@ export async function unmountShare(): Promise<void> {
     closeShareFileHandles();
     clearShareFileProfiles();
     pendingWebAccessNotice = undefined;
-    webDownloadAutoAccept = false;
     webUploadAutoAccept = false;
-    // 两个方向都关闭时才停服务；仅撤下文件时保留地址/二维码与上传入口，
-    // 避免网页发送开关仍开启却显示“浏览器传输未启动”。
-    if (!getWebReceiveAllowed() && !getWebSendAllowed()) {
+    // 总开关关闭时停服务；仅撤下文件时保留地址/二维码与上传入口。
+    if (!getWebSendAllowed()) {
       await stopShareLink();
       return;
     }
@@ -721,7 +712,7 @@ export async function unmountShare(): Promise<void> {
 
 /**
  * 关闭浏览器上传入口，已挂载的分享文件保留。
- * 入站方向（网页接收）已关闭时服务按出站方向是否需要保留。
+ * 总开关关闭时服务随之停止。
  */
 export async function disableWebUpload(): Promise<void> {
   if (shareLinkInfo.length === 0) {
@@ -872,12 +863,11 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
   // 文件清单以服务端建会话快照为准；旧事件缺少清单时回退当前档案
   let descriptors: Array<SessionFileDescriptor> = event.files.length > 0 ?
     descriptorsFromPrepareEvent(event.files) : shareFileDescriptors();
-  // 密码正确即视为已完成外发授权：服务端已直接放行，这里只登记任务；
-  // 未免确认时额外记一条提示，由主页在应用前台弹出，不阻塞浏览器取列表。
-  let passwordAuthorized: boolean = isWebAccessPasswordEnabled();
-  if (passwordAuthorized || webDownloadAutoAccept) {
-    logger.debug('Web 下载已授权直接放行（password=' + passwordAuthorized +
-      ' autoAccept=' + webDownloadAutoAccept + '）');
+  // 页面门禁通过（扫码或本次访问码）即视为已完成外发授权：服务端已直接放行，
+  // 这里只登记任务，并记一条「网页访问」提示（前后台由通知层去重）。
+  let accessCodeEnabled: boolean = isWebAccessCodeEnabled();
+  if (accessCodeEnabled) {
+    logger.debug('Web 下载已授权直接放行（accessCode=' + accessCodeEnabled + '）');
     try {
       nativeAcceptWebSession(token);
     } catch (e) {
@@ -887,22 +877,20 @@ export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEv
     let sessionId: string = beginWebDownloadBurst(token, false, descriptors, ip);
     markWebDownloadAccepted(token);
     // 后台关注通知层：已放行的网页访问同样需要在后台被用户看到
-    // （前台由「网页已访问」提示/任务页承担，通知层自身按前台状态忽略）。
+    // （前台由「网页访问」提示/任务页承担，通知层自身按前台状态忽略）。
     notifyWebAccessAttention(sessionId, ip, descriptors.length);
-    if (passwordAuthorized && !webDownloadAutoAccept) {
-      let now: number = Date.now();
-      if (ip !== lastWebAccessNoticeIp || now - lastWebAccessNoticeAt >= WEB_ACCESS_NOTICE_DEBOUNCE_MS) {
-        pendingWebAccessNotice = {
-          sessionId: sessionId,
-          ip: ip,
-          fileCount: descriptors.length
-        };
-        lastWebAccessNoticeAt = now;
-        lastWebAccessNoticeIp = ip;
-      }
+    let now: number = Date.now();
+    if (ip !== lastWebAccessNoticeIp || now - lastWebAccessNoticeAt >= WEB_ACCESS_NOTICE_DEBOUNCE_MS) {
+      pendingWebAccessNotice = {
+        sessionId: sessionId,
+        ip: ip,
+        fileCount: descriptors.length
+      };
+      lastWebAccessNoticeAt = now;
+      lastWebAccessNoticeIp = ip;
     }
   } else {
-    logger.debug('Web 下载进入待确认（未设置访问密码且未免确认）');
+    logger.debug('Web 下载进入待确认（服务未生成访问码）');
     beginWebDownloadBurst(token, true, descriptors, ip);
   }
   notifyChange();
@@ -1042,67 +1030,60 @@ export function expireWebDownload(token: string): void {
 }
 
 /**
- * 应用网页发送允许开关：关闭时撤下已挂载的分享文件（接收开放时上传入口保留）；
- * 开启时若服务尚未运行则拉起最小服务（不挂载文件，仅给出地址与二维码）。
+ * 应用网页传输总开关：开启时拉起服务，上传入口跟随“允许对方上传”；
+ * 关闭时停止服务并撤下已挂载文件。
  */
 export function applyWebSendAllowed(enabled: boolean): void {
   if (!enabled) {
-    if (hasSharedFiles()) {
-      unmountShare().catch((e: Error) => {
-        logger.error('网页发送关闭后撤下分享失败: ' + String(e));
-      });
-    } else if (!getWebReceiveAllowed()) {
-      // 两方向皆关闭：即使服务只以空文件表运行（仅出示地址）也要停止
-      stopShareLink().catch((e: Error) => {
-        logger.error('网页发送关闭后停止服务失败: ' + String(e));
-      });
-    }
+    stopShareLink().catch((e: Error) => {
+      logger.error('网页传输关闭后停止服务失败: ' + String(e));
+    });
     return;
   }
   if (shareLinkInfo.length === 0) {
-    // 启动时的上传能力跟随接收开关，避免开关已开而服务以无上传状态拉起
     startWebServiceLocked(getWebReceiveAllowed()).catch((e: Error) => {
-      logger.error('网页发送开启后拉起服务失败: ' + String(e));
+      logger.error('网页传输开启后拉起服务失败: ' + String(e));
+    });
+  } else if (getWebReceiveAllowed() && !webUploadEnabled) {
+    startWebUpload().catch((e: Error) => {
+      logger.error('网页传输开启后补开上传入口失败: ' + String(e));
     });
   }
 }
 
 /**
- * 应用网页接收允许开关：开启时确保上传入口开放，关闭时关闭上传入口
- * （发送开放时已挂载的分享文件与服务保留；两方向皆关闭时服务完全停止）。
+ * 应用“允许对方上传”开关：总开关开启时控制上传入口；
+ * 总开关关闭时子开关不生效（服务已停止）。
  */
 export function applyWebReceiveAllowed(enabled: boolean): void {
+  if (!getWebSendAllowed()) {
+    return;
+  }
   if (enabled) {
     ensureWebUpload().catch((e: Error) => {
-      logger.error('网页接收开启后确保上传入口失败: ' + String(e));
-    });
-  } else if (getWebSendAllowed()) {
-    disableWebUpload().catch((e: Error) => {
-      logger.error('网页接收关闭后关闭上传入口失败: ' + String(e));
+      logger.error('允许上传开启后确保上传入口失败: ' + String(e));
     });
   } else {
-    stopShareLink().catch((e: Error) => {
-      logger.error('网页接收关闭后停止服务失败: ' + String(e));
+    disableWebUpload().catch((e: Error) => {
+      logger.error('允许上传关闭后关闭上传入口失败: ' + String(e));
     });
   }
 }
 
 /**
- * 冷启动恢复网页服务：按两个方向允许开关拉起服务（两方向皆关闭时保持停止）。
+ * 冷启动恢复网页服务：总开关开启时拉起服务，上传入口跟随“允许对方上传”。
  * 网页服务独立于 LocalSend 服务器，必须由自身开关在启动流程中恢复。
  */
 export async function restoreWebService(): Promise<void> {
-  let sendAllowed: boolean = getWebSendAllowed();
-  let receiveAllowed: boolean = getWebReceiveAllowed();
-  if (!sendAllowed && !receiveAllowed) {
+  if (!getWebSendAllowed()) {
     return;
   }
   if (shareLinkInfo.length === 0) {
-    await startWebServiceLocked(receiveAllowed);
+    await startWebServiceLocked(getWebReceiveAllowed());
     return;
   }
   // 服务已在运行：仅补齐可能缺失的上传入口
-  if (receiveAllowed && !webUploadEnabled) {
+  if (getWebReceiveAllowed() && !webUploadEnabled) {
     await startWebUpload();
   }
 }

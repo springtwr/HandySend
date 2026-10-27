@@ -61,8 +61,6 @@ import {
   applyWebReceiveAllowed,
   getWebHttpsEnabled,
   setWebHttpsEnabled,
-  getWebPin,
-  setWebPin,
   getWebPort,
   setWebPort,
   getWebInterfaceNames,
@@ -128,7 +126,6 @@ import {
   DEFAULT_WEB_SEND_ENABLED,
   DEFAULT_WEB_RECEIVE_ENABLED,
   DEFAULT_WEB_HTTPS_ENABLED,
-  DEFAULT_WEB_PIN,
   DEFAULT_WEB_PORT,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
@@ -162,9 +159,9 @@ const LOCALSEND_SESSION_KEYS: Array<string> = [LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY
 // MTA 总开关关闭时中断的会话协议键范围：MTA 发送/接收
 const MTA_SESSION_KEYS: Array<string> = [MTA_SEND_KEY, MTA_RECEIVE_KEY];
 
-// 网页发送开关关闭时中断的会话协议键范围：网页下载
-const WEB_SEND_SESSION_KEYS: Array<string> = [WEB_DOWNLOAD_KEY];
-// 网页接收开关关闭时中断的会话协议键范围：网页上传
+// 网页传输总开关关闭时中断的会话协议键范围：网页下载 + 上传
+const WEB_SEND_SESSION_KEYS: Array<string> = [WEB_DOWNLOAD_KEY, WEB_UPLOAD_KEY];
+// 允许对方上传开关关闭时中断的会话协议键范围：网页上传
 const WEB_RECEIVE_SESSION_KEYS: Array<string> = [WEB_UPLOAD_KEY];
 
 // 设置业务命令 + 身份状态，从 SettingsContent 抽出。
@@ -186,7 +183,6 @@ export class SettingsViewModel {
   @Trace public webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED
   @Trace public webReceiveAllowed: boolean = DEFAULT_WEB_RECEIVE_ENABLED
   @Trace public webHttpsEnabled: boolean = DEFAULT_WEB_HTTPS_ENABLED
-  @Trace public webPin: string = DEFAULT_WEB_PIN
   @Trace public webPort: number = DEFAULT_WEB_PORT
   @Trace public webInterfaceNames: Array<string> = []
   @Trace public webInterfaceBlacklistNames: Array<string> = []
@@ -247,7 +243,6 @@ export class SettingsViewModel {
     this.webSendAllowed = getWebSendAllowed();
     this.webReceiveAllowed = getWebReceiveAllowed();
     this.webHttpsEnabled = getWebHttpsEnabled();
-    this.webPin = getWebPin();
     this.webPort = getWebPort();
     this.webInterfaceNames = getWebInterfaceNames();
     this.webInterfaceBlacklistNames = getWebInterfaceBlacklistNames();
@@ -288,8 +283,7 @@ export class SettingsViewModel {
       this.webSendAllowed = getWebSendAllowed();
       this.webReceiveAllowed = getWebReceiveAllowed();
       this.webHttpsEnabled = getWebHttpsEnabled();
-      this.webPin = getWebPin();
-      this.webPort = getWebPort();
+        this.webPort = getWebPort();
       this.webInterfaceNames = getWebInterfaceNames();
       this.webInterfaceBlacklistNames = getWebInterfaceBlacklistNames();
       this.webActualPort = getWebActualPort();
@@ -381,8 +375,8 @@ export class SettingsViewModel {
     }
   }
 
-  // 网页发送开关：开启或无活跃下载时立即持久化并生效（关闭=撤下分享文件）；
-  // 关闭且有活跃下载（含待确认）时先二次确认，确认后写入、生效并逐会话中断
+  // 网页传输总开关：开启即启动服务；关闭时停止服务并撤下分享文件。
+  // 关闭且有活跃网页会话时先二次确认，确认后写入、生效并逐会话中断
   setWebSendAllowedValue(on: boolean): void {
     this.setProtocolToggleValue(on, WEB_SEND_SESSION_KEYS, $r('app.string.web_send_label'),
       (enabled: boolean) => {
@@ -394,9 +388,13 @@ export class SettingsViewModel {
       });
   }
 
-  // 网页接收开关：开启或无活跃上传时立即持久化并生效（关闭=关闭上传入口）；
+  // 允许对方上传：仅在网页传输总开关开启时生效；关闭时关闭上传入口。
   // 关闭且有活跃上传（含待确认）时先二次确认，确认后写入、生效并逐会话中断
   setWebReceiveAllowedValue(on: boolean): void {
+    if (on && !this.webSendAllowed) {
+      logger.warn('网页传输总开关未开启，忽略允许上传');
+      return;
+    }
     this.setProtocolToggleValue(on, WEB_RECEIVE_SESSION_KEYS, $r('app.string.web_receive_label'),
       (enabled: boolean) => {
         this.webReceiveAllowed = enabled;
@@ -417,17 +415,6 @@ export class SettingsViewModel {
       setWebHttpsEnabled(on);
     }, () => {
       this.webHttpsEnabled = old;
-    });
-  }
-
-  /** 访问密码：留空表示不启用；变更后重启网页服务。 */
-  setWebPinValue(pin: string): void {
-    let old: string = this.webPin;
-    this.applyWebServiceSetting($r('app.string.web_pin_label'), () => {
-      this.webPin = pin;
-      setWebPin(pin);
-    }, () => {
-      this.webPin = old;
     });
   }
 
@@ -782,8 +769,6 @@ export class SettingsViewModel {
     // 网页独立安全项复位（服务已在上方按开关关闭，无需再重启）
     this.webHttpsEnabled = DEFAULT_WEB_HTTPS_ENABLED;
     setWebHttpsEnabled(DEFAULT_WEB_HTTPS_ENABLED);
-    this.webPin = DEFAULT_WEB_PIN;
-    setWebPin(DEFAULT_WEB_PIN);
     this.webPort = DEFAULT_WEB_PORT;
     setWebPort(DEFAULT_WEB_PORT);
     this.webInterfaceNames = [];

@@ -93,24 +93,12 @@
       "value": "网页接收"
     },
     {
-      "name": "share_link_address_label",
-      "value": "局域网地址"
-    },
-    {
       "name": "share_link_qr_hint",
-      "value": "扫描二维码或在浏览器中打开链接"
+      "value": "扫描二维码进入"
     },
     {
       "name": "share_link_disabled_hint",
       "value": "网页服务已关闭"
-    },
-    {
-      "name": "stop_share",
-      "value": "关闭发送"
-    },
-    {
-      "name": "stop_receive",
-      "value": "关闭接收"
     },
     {
       "name": "device_type_mobile",
@@ -1061,14 +1049,6 @@
       "value": "未发现设备，请确保目标设备已安装并打开 LocalSend"
     },
     {
-      "name": "web_access_auto_accept_label",
-      "value": "下载免确认"
-    },
-    {
-      "name": "web_access_auto_accept_desc",
-      "value": "未设置访问密码时下载直接放行；设置访问密码后，开启则不再弹出「网页已访问」提示"
-    },
-    {
       "name": "web_access_auto_accept_upload_label",
       "value": "上传免确认"
     },
@@ -1737,14 +1717,6 @@
       "value": "其它方式"
     },
     {
-      "name": "send_method_web_send",
-      "value": "网页发送"
-    },
-    {
-      "name": "send_method_web_receive",
-      "value": "网页接收"
-    },
-    {
       "name": "send_method_ip",
       "value": "指定 IP 发送"
     },
@@ -2054,11 +2026,11 @@
     },
     {
       "name": "web_access_notice_title",
-      "value": "网页已访问"
+      "value": "网页访问"
     },
     {
       "name": "web_access_notice_message",
-      "value": "%s 已通过访问密码访问网页，可下载 %d 个文件。"
+      "value": "%s 已通过扫码或访问码访问网页，可下载 %d 个文件。"
     },
     {
       "name": "favorites_online",
@@ -2141,10 +2113,6 @@
       "value": "浏览器上传未开启。"
     },
     {
-      "name": "web_access_start_receive",
-      "value": "开启接收"
-    },
-    {
       "name": "web_settings",
       "value": "网页传输"
     },
@@ -2154,19 +2122,11 @@
     },
     {
       "name": "web_send_label",
-      "value": "网页发送"
+      "value": "网页传输"
     },
     {
       "name": "web_receive_label",
-      "value": "网页接收"
-    },
-    {
-      "name": "web_access_title_send",
-      "value": "网页发送"
-    },
-    {
-      "name": "web_access_title_receive",
-      "value": "网页接收"
+      "value": "允许对方上传"
     },
     {
       "name": "web_access_no_file_warning",
@@ -2174,7 +2134,7 @@
     },
     {
       "name": "web_send_desc",
-      "value": "对方可以通过网页下载你选择的文件"
+      "value": "开启后可通过网页分享文件；关闭即停止服务"
     },
     {
       "name": "web_receive_desc",
@@ -2182,7 +2142,7 @@
     },
     {
       "name": "web_access_start_send",
-      "value": "开启发送"
+      "value": "开启网页传输"
     },
     {
       "name": "local_device_group_web",
@@ -2205,20 +2165,12 @@
       "value": "使用 HTTPS 加密传输文件"
     },
     {
-      "name": "web_pin_label",
-      "value": "访问密码"
+      "name": "web_access_code_label",
+      "value": "访问码"
     },
     {
-      "name": "web_pin_desc",
-      "value": "对方访问网页时需要输入密码，留空则不设置"
-    },
-    {
-      "name": "web_pin_status_set",
-      "value": "已设置"
-    },
-    {
-      "name": "web_pin_status_unset",
-      "value": "未设置"
+      "name": "web_access_code_hint",
+      "value": "无法扫码时，手动输入以下地址并使用访问码"
     },
     {
       "name": "web_interface_label",
@@ -2286,11 +2238,15 @@
     },
     {
       "name": "bg_transfer_title_web_keepalive",
-      "value": "网页分享保持中"
+      "value": "网页服务运行中"
     },
     {
       "name": "bg_transfer_content_web_keepalive",
-      "value": "可从网页访问本机，后台保活最长 5 分钟"
+      "value": "后台临时保活，5 分钟后自动关闭"
+    },
+    {
+      "name": "web_access_stop",
+      "value": "停止网页传输"
     }
   ]
 }

@@ -27,7 +27,6 @@ import {
   KEY_WEB_SEND_ENABLED,
   KEY_WEB_RECEIVE_ENABLED,
   KEY_WEB_HTTPS_ENABLED,
-  KEY_WEB_PIN,
   KEY_WEB_PORT,
   KEY_WEB_INTERFACES,
   KEY_WEB_INTERFACE_BLACKLIST,
@@ -63,7 +62,6 @@ import {
   DEFAULT_WEB_SEND_ENABLED,
   DEFAULT_WEB_RECEIVE_ENABLED,
   DEFAULT_WEB_HTTPS_ENABLED,
-  DEFAULT_WEB_PIN,
   DEFAULT_WEB_PORT,
   DEFAULT_WEB_LAST_PORT,
   DEFAULT_WEB_INTERFACES,
@@ -103,7 +101,6 @@ let mtaEnabled: boolean = DEFAULT_MTA_ENABLED;
 let webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED;
 let webReceiveAllowed: boolean = DEFAULT_WEB_RECEIVE_ENABLED;
 let webHttpsEnabled: boolean = DEFAULT_WEB_HTTPS_ENABLED;
-let webPin: string = DEFAULT_WEB_PIN;
 let webPort: number = DEFAULT_WEB_PORT;
 let webLastPort: number = DEFAULT_WEB_LAST_PORT;
 let webInterfaces: string = DEFAULT_WEB_INTERFACES;
@@ -159,7 +156,6 @@ export function loadFromPreferences(): void {
     webHttpsEnabled = httpsEnabled;
     preferencesRepo.setBoolean(KEY_WEB_HTTPS_ENABLED, webHttpsEnabled);
   }
-  webPin = preferencesRepo.getString(KEY_WEB_PIN, DEFAULT_WEB_PIN);
   webPort = preferencesRepo.getNumber(KEY_WEB_PORT, DEFAULT_WEB_PORT);
   if (webPort < WEB_PORT_MIN || webPort > WEB_PORT_MAX) {
     webPort = DEFAULT_WEB_PORT;
@@ -297,16 +293,6 @@ export function setWebHttpsEnabled(enabled: boolean): void {
 
 export function getWebHttpsEnabled(): boolean {
   return webHttpsEnabled;
-}
-
-export function setWebPin(pin: string): void {
-  webPin = pin;
-  preferencesRepo.setString(KEY_WEB_PIN, pin);
-  notifyChange();
-}
-
-export function getWebPin(): string {
-  return webPin;
 }
 
 /** 写入网页端口；端口变化时清空进程内的“上次实际端口”，使新端口优先尝试。 */

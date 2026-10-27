@@ -609,7 +609,7 @@ async fn test_decline_and_expire_paths() {
 #[tokio::test]
 async fn test_pin_gate() {
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
-    *state.expected_pin.lock().unwrap() = Some("1234".to_string());
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
     // 单页首帧即锁定，不展示文件内容。
     let (page_status, _, page) = http_get(addr, "/").await;
     assert_eq!(page_status, 200);
@@ -624,7 +624,7 @@ async fn test_pin_gate() {
         let (wrong_status, _, _) = http_post_bytes(
             addr,
             "/web/auth",
-            b"{\"password\":\"0000\"}",
+            b"{\"password\":\"000000\"}",
             &[("Content-Type", "application/json")],
         )
         .await;
@@ -633,7 +633,7 @@ async fn test_pin_gate() {
     let (locked_status, _, _) = http_post_bytes(
         addr,
         "/web/auth",
-        b"{\"password\":\"1234\"}",
+        b"{\"password\":\"123456\"}",
         &[("Content-Type", "application/json")],
     )
     .await;
@@ -641,11 +641,11 @@ async fn test_pin_gate() {
     handle.abort();
     // 新服务重新计数：正确密码换取 Cookie 后放行。
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
-    *state.expected_pin.lock().unwrap() = Some("1234".to_string());
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
     let (login_status, login_headers, _) = http_post_bytes(
         addr,
         "/web/auth",
-        b"{\"password\":\"1234\"}",
+        b"{\"password\":\"123456\"}",
         &[("Content-Type", "application/json")],
     )
     .await;
@@ -710,20 +710,21 @@ async fn test_pin_gate() {
     handle.abort();
 }
 
-/// 能力令牌门禁：无令牌/错误令牌拒绝，正确令牌换 HttpOnly Cookie，
-/// Cookie 绑定 User-Agent；访问密码作为第二道门禁与能力令牌并存。
+/// 能力令牌门禁：二维码与访问密码是并列入口。
+/// 裸地址设了密码时给密码页（书签可登录），扫码免密进入；
+/// Cookie 绑定 User-Agent，扫码即授权下载。
 #[tokio::test]
 async fn test_capability_token_exchange_and_binding() {
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
     *state.capability.lock().unwrap() = Some("cap-123".to_string());
-    *state.expected_pin.lock().unwrap() = Some("1234".to_string());
-    // 无令牌打开页面：给出扫码提示，不展示内容。
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
+    // 裸地址无令牌：设了密码 → 密码页（书签/手动输入入口）。
     let (no_token_status, no_token_headers, no_token_body) = http_get(addr, "/").await;
-    assert_eq!(no_token_status, 403);
+    assert_eq!(no_token_status, 200);
     assert!(header(&no_token_headers, "content-type")
         .unwrap_or("")
         .contains("text/html"));
-    assert!(no_token_body.contains("请扫描发送方出示的二维码"));
+    assert!(no_token_body.contains("data-auth=\"locked\""));
     // 错误令牌：提示链接失效。
     let (bad_status, _, bad_body) = http_get(addr, "/?t=wrong").await;
     assert_eq!(bad_status, 403);
@@ -740,7 +741,7 @@ async fn test_capability_token_exchange_and_binding() {
         .expect("Cookie 格式非法")
         .to_string();
     assert!(cap_cookie.starts_with("handysend_web_cap="));
-    // 持 Cookie + 相同 UA：通过能力门禁；密码未登录 → 密码页。
+    // 持 Cookie + 相同 UA：扫码免密码，直接进入内容页。
     let (page_status, _, page) = http_request_with_headers(
         addr,
         "GET",
@@ -749,7 +750,7 @@ async fn test_capability_token_exchange_and_binding() {
     )
     .await;
     assert_eq!(page_status, 200);
-    assert!(page.contains("data-auth=\"locked\""));
+    assert!(page.contains("data-auth=\"open\""));
     // UA 变化视为另一个客户端：Cookie 失效。
     let (ua_status, _, _) = http_request_with_headers(
         addr,
@@ -759,26 +760,13 @@ async fn test_capability_token_exchange_and_binding() {
     )
     .await;
     assert_eq!(ua_status, 401);
-    // 未持能力 Cookie 时不允许提交密码，避免绕过二维码爆破。
-    let (no_cap_login, _, _) = http_post_bytes(
-        addr,
-        "/web/auth",
-        b"{\"password\":\"1234\"}",
-        &[
-            ("Content-Type", "application/json"),
-            ("User-Agent", "BrowserA"),
-        ],
-    )
-    .await;
-    assert_eq!(no_cap_login, 401);
-    // 能力 + 密码并存：带能力 Cookie 登录成功，再带两枚 Cookie 进入内容页。
+    // 裸地址直接提交密码：不要求先持能力 Cookie（书签场景）。
     let (login_status, login_headers, _) = http_post_bytes(
         addr,
         "/web/auth",
-        b"{\"password\":\"1234\"}",
+        b"{\"password\":\"123456\"}",
         &[
             ("Content-Type", "application/json"),
-            ("Cookie", cap_cookie.as_str()),
             ("User-Agent", "BrowserA"),
         ],
     )
@@ -790,24 +778,64 @@ async fn test_capability_token_exchange_and_binding() {
         .next()
         .expect("Cookie 格式非法")
         .to_string();
-    let cookies = format!("{cap_cookie}; {auth_cookie}");
-    let (open_status, _, open_page) = http_request_with_headers(
+    // 仅密码 Cookie 也可进入内容页。
+    let (pin_page_status, _, pin_page) = http_request_with_headers(
         addr,
         "GET",
         "/",
-        &[("Cookie", cookies.as_str()), ("User-Agent", "BrowserA")],
+        &[("Cookie", auth_cookie.as_str()), ("User-Agent", "BrowserA")],
     )
     .await;
-    assert_eq!(open_status, 200);
-    assert!(open_page.contains("data-auth=\"open\""));
-    let (caps_status, _, _) = http_request_with_headers(
+    assert_eq!(pin_page_status, 200);
+    assert!(pin_page.contains("data-auth=\"open\""));
+    // 仅密码 Cookie 也通过页面门禁（书签登录后可访问接口）。
+    let (pin_caps_status, _, _) = http_request_with_headers(
         addr,
         "GET",
         "/caps",
-        &[("Cookie", cookies.as_str()), ("User-Agent", "BrowserA")],
+        &[("Cookie", auth_cookie.as_str()), ("User-Agent", "BrowserA")],
     )
     .await;
-    assert_eq!(caps_status, 200);
+    assert_eq!(pin_caps_status, 200);
+    // 扫码即授权：能力 Cookie 建下载会话直接回文件表，不再等待应用确认。
+    let (prepare_status, _, prepare_body) = http_request_with_headers(
+        addr,
+        "POST",
+        "/web/prepare-download",
+        &[("Cookie", cap_cookie.as_str()), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(prepare_status, 200);
+    assert!(prepare_body.contains("\"token\""));
+    handle.abort();
+}
+
+/// 未设访问密码时：裸地址仍要求扫码，扫码后直接进入内容页。
+#[tokio::test]
+async fn test_capability_required_without_password() {
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-123".to_string());
+    let (status, _, body) = http_get(addr, "/").await;
+    assert_eq!(status, 403);
+    assert!(body.contains("请扫描发送方出示的二维码"));
+    let (exchange_status, exchange_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-123", &[("User-Agent", "BrowserA")]).await;
+    assert_eq!(exchange_status, 302);
+    let cookie = header(&exchange_headers, "set-cookie")
+        .expect("换令牌应下发 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let (page_status, _, page) = http_request_with_headers(
+        addr,
+        "GET",
+        "/",
+        &[("Cookie", cookie.as_str()), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"open\""));
     handle.abort();
 }
 

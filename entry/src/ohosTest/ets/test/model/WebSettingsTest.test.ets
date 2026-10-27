@@ -1,11 +1,9 @@
-// WebSettingsTest：网页独立设置项（加密/密码/端口/接口白黑名单）的默认值、读写与一次性迁移
+// WebSettingsTest：网页独立设置项（加密/端口/接口白黑名单）的默认值、读写与一次性迁移
 // 用例采用「记录-恢复」模式：结束后还原宿主应用的持久化设置，避免污染。
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
   getWebHttpsEnabled,
   setWebHttpsEnabled,
-  getWebPin,
-  setWebPin,
   getWebPort,
   setWebPort,
   getWebLastPort,
@@ -18,7 +16,6 @@ import {
 import {
   DEFAULT_WEB_HTTPS_ENABLED,
   DEFAULT_WEB_LAST_PORT,
-  DEFAULT_WEB_PIN,
   DEFAULT_WEB_PORT
 } from '../../../../main/ets/model/SettingsDefaults'
 import {
@@ -26,8 +23,7 @@ import {
   preferencesUtil,
   KEY_ENCRYPTED_TRANSFER,
   KEY_RECEIVE_PIN,
-  KEY_WEB_HTTPS_ENABLED,
-  KEY_WEB_PIN
+  KEY_WEB_HTTPS_ENABLED
 } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 
@@ -41,27 +37,23 @@ export default function WebSettingsTest() {
       }
     })
 
-    it('defaults_are_off_empty_and_53310', 0, () => {
+    it('defaults_are_off_and_53310', 0, () => {
       expect(DEFAULT_WEB_HTTPS_ENABLED).assertFalse()
-      expect(DEFAULT_WEB_PIN).assertEqual('')
       expect(DEFAULT_WEB_PORT).assertEqual(53310)
     })
 
     it('web_settings_write_read_and_reload', 0, () => {
       let origHttps: boolean = getWebHttpsEnabled()
-      let origPin: string = getWebPin()
       let origPort: number = getWebPort()
       let origLastPort: number = getWebLastPort()
       let origInterfaces: Array<string> = getWebInterfaceNames()
       let origBlacklist: Array<string> = getWebInterfaceBlacklistNames()
       try {
         setWebHttpsEnabled(true)
-        setWebPin('1234')
         setWebPort(53316)
         setWebInterfaces(['wlan0'], ['eth0'])
         loadFromPreferences()
         expect(getWebHttpsEnabled()).assertTrue()
-        expect(getWebPin()).assertEqual('1234')
         expect(getWebPort()).assertEqual(53316)
         expect(getWebInterfaceNames().length).assertEqual(1)
         expect(getWebInterfaceNames()[0]).assertEqual('wlan0')
@@ -69,7 +61,6 @@ export default function WebSettingsTest() {
         expect(getWebInterfaceBlacklistNames()[0]).assertEqual('eth0')
       } finally {
         setWebHttpsEnabled(origHttps)
-        setWebPin(origPin)
         setWebPort(origPort)
         setWebInterfaces(origInterfaces, origBlacklist)
         loadFromPreferences()
@@ -91,33 +82,27 @@ export default function WebSettingsTest() {
       }
     })
 
-    it('migrates_from_localsend_once_when_keys_absent', 0, () => {
+    it('migrates_https_from_localsend_once_when_keys_absent', 0, () => {
       let origHttps: boolean = getWebHttpsEnabled()
-      let origPin: string = getWebPin()
       let origLocalHttps: boolean = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, false)
       let origLocalPin: string = preferencesUtil.getString(KEY_RECEIVE_PIN, '')
       try {
-        // 模拟升级前：网页键不存在，LocalSend 已有加密与 PIN
+        // 模拟升级前：网页加密键不存在，LocalSend 已有加密与 PIN
         preferencesUtil.delete(KEY_WEB_HTTPS_ENABLED)
-        preferencesUtil.delete(KEY_WEB_PIN)
         preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, true)
         preferencesUtil.setString(KEY_RECEIVE_PIN, '9999')
         loadFromPreferences()
         expect(getWebHttpsEnabled()).assertTrue()
-        expect(getWebPin()).assertEqual('9999')
 
         // 之后修改 LocalSend 值不应再影响网页
         preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, false)
         preferencesUtil.setString(KEY_RECEIVE_PIN, '1111')
         loadFromPreferences()
         expect(getWebHttpsEnabled()).assertTrue()
-        expect(getWebPin()).assertEqual('9999')
       } finally {
-        // 恢复原始 LocalSend 与网页值（显式写入网页值，避免再次触发迁移）
         preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, origLocalHttps)
         preferencesUtil.setString(KEY_RECEIVE_PIN, origLocalPin)
         setWebHttpsEnabled(origHttps)
-        setWebPin(origPin)
         loadFromPreferences()
       }
     })

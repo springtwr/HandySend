@@ -31,7 +31,7 @@ pub struct WebServiceConfig {
     /// 本机别名（文件表响应携带，供浏览器页展示）。
     #[serde(default)]
     pub alias: String,
-    /// 浏览器需携带的 PIN（`None` 表示免 PIN）。
+    /// 本次分享的 6 位访问码（裸地址手动输入时使用；`None`/空串表示旧调用的免访问码模式）。
     #[serde(default)]
     pub pin: Option<String>,
     /// 二维码/URL 能力令牌（`None`/空串表示不启用能力门禁）。
@@ -147,10 +147,25 @@ fn build_tls_acceptor() -> anyhow::Result<TlsAcceptor> {
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
+/// 访问码规则（与 ArkTS 侧 `WebAccessCode` 对齐）：6 位数字。
+/// 空串表示兼容旧调用/测试的免访问码模式，服务端不在此强制。
+fn validate_pin(pin: &str) -> anyhow::Result<()> {
+    if pin.is_empty() {
+        return Ok(());
+    }
+    if pin.len() != 6 || !pin.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(anyhow::anyhow!("访问码必须为 6 位数字"));
+    }
+    Ok(())
+}
+
 /// 启动自研 web 服务，返回实际绑定端口。
 pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     let config: WebServiceConfig = serde_json::from_str(config_json)
         .map_err(|e| anyhow::anyhow!("服务配置 JSON 解析失败: {e}"))?;
+    if let Some(pin) = config.pin.as_deref() {
+        validate_pin(pin)?;
+    }
     let mut files: HashMap<String, SharedFile> = HashMap::new();
     for entry in config.files.iter() {
         if entry.file_id.is_empty() {
@@ -548,6 +563,17 @@ mod tests {
     fn config_port_defaults_to_zero() {
         let config: WebServiceConfig = serde_json::from_str("{}").expect("空配置解析失败");
         assert_eq!(config.port, 0);
+    }
+
+    #[test]
+    fn validate_pin_enforces_six_digits() {
+        assert!(super::validate_pin("").is_ok());
+        assert!(super::validate_pin("123456").is_ok());
+        assert!(super::validate_pin("000123").is_ok());
+        assert!(super::validate_pin("12345").is_err());
+        assert!(super::validate_pin("1234567").is_err());
+        assert!(super::validate_pin("12345a").is_err());
+        assert!(super::validate_pin("123 56").is_err());
     }
 
     #[tokio::test]

@@ -93,24 +93,12 @@
       "value": "網頁接收"
     },
     {
-      "name": "share_link_address_label",
-      "value": "區域網路位址"
-    },
-    {
       "name": "share_link_qr_hint",
-      "value": "掃描 QR Code 或在瀏覽器中開啟連結"
+      "value": "掃描 QR Code 進入"
     },
     {
       "name": "share_link_disabled_hint",
       "value": "網頁服務已關閉"
-    },
-    {
-      "name": "stop_share",
-      "value": "關閉傳送"
-    },
-    {
-      "name": "stop_receive",
-      "value": "關閉接收"
     },
     {
       "name": "device_type_mobile",
@@ -1061,14 +1049,6 @@
       "value": "未發現裝置，請確認目標裝置已安裝並開啟 LocalSend"
     },
     {
-      "name": "web_access_auto_accept_label",
-      "value": "下載免確認"
-    },
-    {
-      "name": "web_access_auto_accept_desc",
-      "value": "未設定存取密碼時下載直接放行；設定存取密碼後，開啟則不再顯示「網頁已存取」提示"
-    },
-    {
       "name": "web_access_auto_accept_upload_label",
       "value": "上傳免確認"
     },
@@ -1737,14 +1717,6 @@
       "value": "其它方式"
     },
     {
-      "name": "send_method_web_send",
-      "value": "網頁傳送"
-    },
-    {
-      "name": "send_method_web_receive",
-      "value": "網頁接收"
-    },
-    {
       "name": "send_method_ip",
       "value": "指定 IP 傳送"
     },
@@ -2054,11 +2026,11 @@
     },
     {
       "name": "web_access_notice_title",
-      "value": "網頁已存取"
+      "value": "網頁存取"
     },
     {
       "name": "web_access_notice_message",
-      "value": "%s 已透過存取密碼存取網頁，可下載 %d 個檔案。"
+      "value": "%s 已透過掃碼或存取碼存取網頁，可下載 %d 個檔案。"
     },
     {
       "name": "favorites_online",
@@ -2141,10 +2113,6 @@
       "value": "瀏覽器上傳未開啟。"
     },
     {
-      "name": "web_access_start_receive",
-      "value": "開啟接收"
-    },
-    {
       "name": "web_settings",
       "value": "網頁傳輸"
     },
@@ -2154,19 +2122,11 @@
     },
     {
       "name": "web_send_label",
-      "value": "網頁傳送"
+      "value": "網頁傳輸"
     },
     {
       "name": "web_receive_label",
-      "value": "網頁接收"
-    },
-    {
-      "name": "web_access_title_send",
-      "value": "網頁傳送"
-    },
-    {
-      "name": "web_access_title_receive",
-      "value": "網頁接收"
+      "value": "允許對方上傳"
     },
     {
       "name": "web_access_no_file_warning",
@@ -2174,15 +2134,15 @@
     },
     {
       "name": "web_send_desc",
-      "value": "對方可透過網頁下載你選擇的檔案"
+      "value": "開啟後可透過網頁分享檔案；關閉即停止服務"
     },
     {
       "name": "web_receive_desc",
-      "value": "對方可透過網頁向你傳送檔案"
+      "value": "對方可以透過網頁向你傳送檔案"
     },
     {
       "name": "web_access_start_send",
-      "value": "開啟傳送"
+      "value": "開啟網頁傳輸"
     },
     {
       "name": "local_device_group_web",
@@ -2205,20 +2165,12 @@
       "value": "使用 HTTPS 加密傳輸檔案"
     },
     {
-      "name": "web_pin_label",
-      "value": "存取密碼"
+      "name": "web_access_code_label",
+      "value": "存取碼"
     },
     {
-      "name": "web_pin_desc",
-      "value": "對方存取網頁時需要輸入密碼，留空則不設定"
-    },
-    {
-      "name": "web_pin_status_set",
-      "value": "已設定"
-    },
-    {
-      "name": "web_pin_status_unset",
-      "value": "未設定"
+      "name": "web_access_code_hint",
+      "value": "無法掃碼時，手動輸入以下位址並使用存取碼"
     },
     {
       "name": "web_interface_label",
@@ -2286,11 +2238,15 @@
     },
     {
       "name": "bg_transfer_title_web_keepalive",
-      "value": "網頁分享保持中"
+      "value": "網頁服務執行中"
     },
     {
       "name": "bg_transfer_content_web_keepalive",
-      "value": "可從網頁存取本機，背景保活最長 5 分鐘"
+      "value": "背景臨時保活，5 分鐘後自動關閉"
+    },
+    {
+      "name": "web_access_stop",
+      "value": "停止網頁傳輸"
     }
   ]
 }

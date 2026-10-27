@@ -117,36 +117,6 @@ export function registerDefaultSources(): void {
 
 /** 注册协议默认的传输方式描述符（「网页」组与「其它方式」组）。 */
 export function registerDefaultMethods(): void {
-  // 网页发送与网页接收是两个动作：前者要求先有内容，后者即开即用，
-  // 故各自独立入口；两者共用一个服务与一个端口。
-  let webSend: TransferMethodDescriptor = {
-    key: 'web-send',
-    label: $r('app.string.send_method_web_send'),
-    icon: $r('app.media.ic_tab_send'),
-    group: TransferMethodGroup.web,
-    order: 10,
-    // 网页发送常开：开关状态只决定服务是否运行，不阻止进入面板（面板内按状态展示）
-    available: (): boolean => true,
-    action: (): void => {
-      dispatch('web-send');
-    }
-  };
-  registerMethod(webSend);
-
-  let webReceive: TransferMethodDescriptor = {
-    key: 'web-receive',
-    label: $r('app.string.send_method_web_receive'),
-    icon: $r('app.media.ic_tab_receive'),
-    group: TransferMethodGroup.web,
-    order: 20,
-    // 网页接收常开：开关状态只决定上传入口是否开放，不阻止进入面板
-    available: (): boolean => true,
-    action: (): void => {
-      dispatch('web-receive');
-    }
-  };
-  registerMethod(webReceive);
-
   let byIp: TransferMethodDescriptor = {
     key: 'by-ip',
     label: $r('app.string.send_method_ip'),

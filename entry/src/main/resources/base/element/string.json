@@ -93,24 +93,12 @@
       "value": "Web Receive"
     },
     {
-      "name": "share_link_address_label",
-      "value": "Local network address"
-    },
-    {
       "name": "share_link_qr_hint",
-      "value": "Scan QR code or open link in browser"
+      "value": "Scan the QR code to enter."
     },
     {
       "name": "share_link_disabled_hint",
       "value": "Web service is off."
-    },
-    {
-      "name": "stop_share",
-      "value": "Turn off sending"
-    },
-    {
-      "name": "stop_receive",
-      "value": "Turn off receiving"
     },
     {
       "name": "device_type_mobile",
@@ -1061,14 +1049,6 @@
       "value": "No devices found. Make sure the target device has LocalSend installed and open."
     },
     {
-      "name": "web_access_auto_accept_label",
-      "value": "Skip download confirmation"
-    },
-    {
-      "name": "web_access_auto_accept_desc",
-      "value": "Without an access password, downloads start without confirmation; with a password, turns off the 'Web page accessed' notice."
-    },
-    {
       "name": "web_access_auto_accept_upload_label",
       "value": "Skip upload confirmation"
     },
@@ -1737,14 +1717,6 @@
       "value": "Other ways"
     },
     {
-      "name": "send_method_web_send",
-      "value": "Web send"
-    },
-    {
-      "name": "send_method_web_receive",
-      "value": "Web receive"
-    },
-    {
       "name": "send_method_ip",
       "value": "Send by IP"
     },
@@ -2054,11 +2026,11 @@
     },
     {
       "name": "web_access_notice_title",
-      "value": "Web page accessed"
+      "value": "Web access"
     },
     {
       "name": "web_access_notice_message",
-      "value": "%s accessed the web page with the password and can download %d files."
+      "value": "%s accessed the web page via QR code or access code and can download %d files."
     },
     {
       "name": "favorites_online",
@@ -2141,10 +2113,6 @@
       "value": "Browser upload is off."
     },
     {
-      "name": "web_access_start_receive",
-      "value": "Turn on receiving"
-    },
-    {
       "name": "web_settings",
       "value": "Web Transfer"
     },
@@ -2154,19 +2122,11 @@
     },
     {
       "name": "web_send_label",
-      "value": "Web Send"
+      "value": "Web transfer"
     },
     {
       "name": "web_receive_label",
-      "value": "Web Receive"
-    },
-    {
-      "name": "web_access_title_send",
-      "value": "Web Send"
-    },
-    {
-      "name": "web_access_title_receive",
-      "value": "Web Receive"
+      "value": "Allow uploads"
     },
     {
       "name": "web_access_no_file_warning",
@@ -2174,15 +2134,15 @@
     },
     {
       "name": "web_send_desc",
-      "value": "Others can download files you share from a web page."
+      "value": "Share files over the web; turning it off stops the service."
     },
     {
       "name": "web_receive_desc",
-      "value": "Others can send files to this device from a web page."
+      "value": "Others can send files to this device from the web page."
     },
     {
       "name": "web_access_start_send",
-      "value": "Turn on sending"
+      "value": "Turn on web transfer"
     },
     {
       "name": "local_device_group_web",
@@ -2205,20 +2165,12 @@
       "value": "Use HTTPS to encrypt file transfers"
     },
     {
-      "name": "web_pin_label",
-      "value": "Access password"
+      "name": "web_access_code_label",
+      "value": "Access code"
     },
     {
-      "name": "web_pin_desc",
-      "value": "The other party must enter the password to access the web page. Leave empty to disable."
-    },
-    {
-      "name": "web_pin_status_set",
-      "value": "Set"
-    },
-    {
-      "name": "web_pin_status_unset",
-      "value": "Not set"
+      "name": "web_access_code_hint",
+      "value": "If you cannot scan, type this address and use the code."
     },
     {
       "name": "web_interface_label",
@@ -2286,11 +2238,15 @@
     },
     {
       "name": "bg_transfer_title_web_keepalive",
-      "value": "Web sharing active"
+      "value": "Web service running"
     },
     {
       "name": "bg_transfer_content_web_keepalive",
-      "value": "Reachable from the web page; background keep-alive lasts up to 5 minutes."
+      "value": "Kept alive in the background; closes automatically after 5 minutes."
+    },
+    {
+      "name": "web_access_stop",
+      "value": "Stop web transfer"
     }
   ]
 }

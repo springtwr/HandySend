@@ -71,7 +71,6 @@ export const DEFAULT_WEB_RECEIVE_ENABLED: boolean = false;
 // 网页独立安全项：新装默认关闭/空；升级时由 SettingsRepository 一次性迁移
 export const DEFAULT_WEB_HTTPS_ENABLED: boolean = false;
 
-export const DEFAULT_WEB_PIN: string = '';
 
 // 网页端口：53310-53316 预留给 HandySend 网页/扩展服务，避开 53317（LocalSend）
 // 与 53318（localsnd CLI 的默认 HTTP 端口）

@@ -60,7 +60,6 @@ export const KEY_WEB_RECEIVE_ENABLED: string = 'webReceiveEnabled';
 
 export const KEY_WEB_HTTPS_ENABLED: string = 'webHttpsEnabled';
 
-export const KEY_WEB_PIN: string = 'webPin';
 
 export const KEY_WEB_PORT: string = 'webPort';
 

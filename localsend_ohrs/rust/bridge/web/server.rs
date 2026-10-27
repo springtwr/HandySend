@@ -47,15 +47,15 @@ type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
 /// 单页 HTML（与服务同仓，改文案改 JS 只动主仓）。
 const SINGLE_HTML: &str = include_str!("assets/single.html");
 
-/// 访问密码错误上限（窗口内超过后 429）。
+/// 访问码错误上限（窗口内超过后 429）。
 const MAX_PIN_ATTEMPTS: u32 = 3;
-/// 访问密码错误计数窗口：窗口结束后重新计数，避免永久锁死。
+/// 访问码错误计数窗口：窗口结束后重新计数，避免永久锁死。
 const PIN_ATTEMPT_WINDOW: Duration = Duration::from_secs(60);
-/// 浏览器通过访问密码后获得的 Cookie 名。
+/// 浏览器通过访问码后获得的 Cookie 名。
 const AUTH_COOKIE: &str = "handysend_web_auth";
 /// 浏览器用二维码/URL 能力令牌换取的 Cookie 名。
 const CAPABILITY_COOKIE: &str = "handysend_web_cap";
-/// 访问密码授权有效期（服务重启或密码变更后全部失效）。
+/// 访问码授权有效期（服务重启或访问码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// 被删文件保留宽限（供已建会话按快照下完）。
 const RETAIN_GRACE: Duration = Duration::from_secs(30);
@@ -127,7 +127,7 @@ pub enum ProgressEvent {
     Finished { token: String },
 }
 
-/// 访问密码错误计数条目（窗口内累计）。
+/// 访问码错误计数条目（窗口内累计）。
 #[derive(Clone, Copy, Debug)]
 pub struct PinAttempt {
     /// 窗口内错误次数。
@@ -136,10 +136,10 @@ pub struct PinAttempt {
     pub first_at: Instant,
 }
 
-/// 客户端绑定（能力令牌/访问密码 Cookie 共用）：IP + User-Agent 摘要 + 过期时刻。
+/// 客户端绑定（能力令牌/访问码 Cookie 共用）：IP + User-Agent 摘要 + 过期时刻。
 ///
 /// Cookie 被复制到其他客户端时，IP 或 UA 不一致即视为无效，
-/// 需要在原浏览器重新扫码/输入密码。
+/// 需要在原浏览器重新扫码/输入访问码。
 #[derive(Clone, Copy, Debug)]
 pub struct ClientBinding {
     /// 绑定的对端 IP。
@@ -167,11 +167,11 @@ pub struct WebServiceState {
     pub alias: Arc<Mutex<String>>,
     /// 当前分享标识（一分享多任务的外键）。
     pub share_id: Arc<Mutex<String>>,
-    /// 网页访问密码（`None`/空串表示免密码）。
+    /// 本次访问码（`None`/空串表示免访问码）。
     pub expected_pin: Arc<Mutex<Option<String>>>,
     /// 二维码/URL 能力令牌（`None` 表示不启用能力门禁，兼容旧调用与测试）。
     pub capability: Arc<Mutex<Option<String>>>,
-    /// 已授权的浏览器 Cookie token → 客户端绑定（访问密码）。
+    /// 已授权的浏览器 Cookie token → 客户端绑定（访问码）。
     pub auth_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
     /// 能力令牌换取的浏览器 Cookie token → 客户端绑定（IP/UA 绑定）。
     pub cap_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
@@ -185,7 +185,7 @@ pub struct WebServiceState {
     pub uploads: Arc<Mutex<UploadStore>>,
     /// 上传落盘目录（测试用临时目录；生产接线时 ArkTS 指定接收目录）。
     pub upload_dir: Arc<Mutex<std::path::PathBuf>>,
-    /// 访问密码错误计数（IP → 窗口内次数与起点）。
+    /// 访问码错误计数（IP → 窗口内次数与起点）。
     pub pin_attempts: Arc<Mutex<HashMap<IpAddr, PinAttempt>>>,
     /// 进度事件出口（`None` 时不发射，纯传输）。
     pub progress_tx: Option<mpsc::Sender<ProgressEvent>>,
@@ -248,14 +248,14 @@ impl WebServiceState {
         }
     }
 
-    /// 当前访问密码（空串按未设置处理）。
+    /// 当前访问码（空串按未设置处理）。
     fn password(&self) -> Option<String> {
         lock(&self.expected_pin)
             .clone()
             .filter(|pin| !pin.is_empty())
     }
 
-    /// 是否需要访问密码。
+    /// 是否需要访问码。
     pub fn auth_required(&self) -> bool {
         self.password().is_some()
     }
@@ -298,7 +298,7 @@ impl WebServiceState {
         self.cookie_session_valid(&self.cap_sessions, CAPABILITY_COOKIE, headers, peer)
     }
 
-    /// 请求是否已通过访问密码门禁（未设置密码时恒为真）。
+    /// 请求是否已通过访问码门禁（未设置访问码时恒为真）。
     pub fn is_password_authorized(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> bool {
         if !self.auth_required() {
             return true;
@@ -306,9 +306,13 @@ impl WebServiceState {
         self.cookie_session_valid(&self.auth_sessions, AUTH_COOKIE, headers, peer)
     }
 
-    /// 请求是否同时通过能力令牌与访问密码门禁。
+    /// 请求是否通过页面门禁：能力令牌与访问码并列，任一通过即可。
+    /// 未启用能力令牌（旧调用/测试）时仍只认访问码。
     pub fn is_authorized(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> bool {
-        self.has_capability(headers, peer) && self.is_password_authorized(headers, peer)
+        if !self.capability_required() {
+            return self.is_password_authorized(headers, peer);
+        }
+        self.has_capability(headers, peer) || self.is_password_authorized(headers, peer)
     }
 
     /// 校验二维码/URL 能力令牌并发放绑定当前 IP/UA 的 Cookie token。
@@ -338,7 +342,7 @@ impl WebServiceState {
         Some(token)
     }
 
-    /// 校验访问密码并发放新的浏览器授权 token（绑定当前 IP/UA）。
+    /// 校验访问码并发放新的浏览器授权 token（绑定当前 IP/UA）。
     /// 窗口内连续错误达到上限回 429；成功清零。
     fn login(
         &self,
@@ -464,7 +468,7 @@ fn cookie_value<'a>(headers: &'a hyper::HeaderMap, name: &str) -> Option<&'a str
     None
 }
 
-/// 常量时间比较，避免密码逐字节时序泄漏。
+/// 常量时间比较，避免访问码逐字节时序泄漏。
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     let mut diff: usize = left.len() ^ right.len();
     let length = left.len().min(right.len());
@@ -551,8 +555,8 @@ async fn handle(
     let method = req.method().clone();
     let path = req.uri().path().to_string();
     let query = parse_query(req.uri().query().unwrap_or(""));
-    // 公开路由：单页壳（含能力令牌换取）、文案与密码登录本身。其余路由统一走
-    // 能力令牌 + 访问密码门禁，未授权时返回 401。
+    // 公开路由：单页壳（含能力令牌换取）、文案与访问码登录本身。其余路由统一走
+    // 页面门禁（能力令牌或访问码，任一通过），未授权时返回 401。
     match (method.as_str(), path.as_str()) {
         ("GET", "/") => return Ok(page_response(&state, &req, &query, peer, "/")),
         ("GET", "/upload") => return Ok(page_response(&state, &req, &query, peer, "/upload")),
@@ -562,7 +566,7 @@ async fn handle(
     }
     if !state.is_authorized(req.headers(), peer) {
         // 浏览器直接打开下载链接时给可刷新的友好错误页；
-        // 页面内接口仍用文本，由前端按状态码分流（未授权回密码页）。
+        // 页面内接口仍用文本，由前端按状态码分流（未授权回访问码页）。
         if method.as_str() == "GET" && path.as_str() == "/web/download" {
             return Ok(download_error_response(
                 &req,
@@ -570,7 +574,7 @@ async fn handle(
                 &web_page_i18n(accept_language(&req)).access_ended_reload,
             ));
         }
-        return Ok(text_response(StatusCode::UNAUTHORIZED, "需要访问密码"));
+        return Ok(text_response(StatusCode::UNAUTHORIZED, "需要访问码"));
     }
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
@@ -600,8 +604,8 @@ async fn handle(
     }
 }
 
-/// `POST /web/auth`：校验访问密码并下发 HttpOnly Cookie。
-/// 密码正确后单页直接进入；错误 401、窗口内错误过多 429。
+/// `POST /web/auth`：校验访问码并下发 HttpOnly Cookie。
+/// 访问码正确后单页直接进入；错误 401、窗口内错误过多 429。
 async fn login_response(
     req: Request<Incoming>,
     state: &WebServiceState,
@@ -612,10 +616,8 @@ async fn login_response(
         #[serde(default)]
         password: String,
     }
-    // 密码页只有在能力令牌门禁通过后才允许提交，避免绕过二维码直接爆破密码。
-    if !state.has_capability(req.headers(), peer) {
-        return text_response(StatusCode::UNAUTHORIZED, "需要有效访问链接");
-    }
+    // 访问码是独立入口：裸地址（书签/手动输入）可直接提交访问码，
+    // 不必先持能力 Cookie；错误次数仍按 IP 限速。
     let headers = req.headers().clone();
     let raw = match read_body_capped(req.into_body(), 16 * 1024).await {
         Ok(raw) => raw,
@@ -639,7 +641,7 @@ async fn login_response(
         Err(StatusCode::TOO_MANY_REQUESTS) => {
             text_response(StatusCode::TOO_MANY_REQUESTS, "尝试次数过多")
         }
-        Err(_) => text_response(StatusCode::UNAUTHORIZED, "密码错误"),
+        Err(_) => text_response(StatusCode::UNAUTHORIZED, "访问码错误"),
     }
 }
 
@@ -689,8 +691,9 @@ async fn heartbeat_response(
     json_response(StatusCode::OK, "{\"ok\":true}")
 }
 
-/// 单页/上传页：先用二维码或 URL 中的能力令牌换取 HttpOnly Cookie，
-/// 或校验既有 Cookie；未带有效令牌且未持 Cookie 时给出提示页。
+/// 单页/上传页：二维码能力令牌与访问码是并列入口。
+/// 带令牌时换取 HttpOnly Cookie；裸地址在设置了访问码时渲染访问码页，
+/// 未设置访问码时给出「请扫码」提示页。
 fn page_response(
     state: &WebServiceState,
     req: &Request<Incoming>,
@@ -716,7 +719,7 @@ fn page_response(
                 }
             }
         }
-        if !state.has_capability(req.headers(), peer) {
+        if !state.has_capability(req.headers(), peer) && !state.auth_required() {
             let i18n = web_page_i18n(accept_language(req));
             return friendly_error_page(
                 req,
@@ -746,14 +749,18 @@ fn redirect_with_cookie(path: &'static str, cookie: &str) -> Response<BoxBody> {
     response
 }
 
-/// 单页 HTML：按当前请求是否已通过密码门禁注入 `data-auth`，
-/// 首帧即决定展示密码页还是内容页，避免内容界面闪现。
+/// 单页 HTML：按当前请求是否已通过页面门禁注入 `data-auth`。
+/// 持能力 Cookie 即视为已通过（扫码免访问码）；否则设置了访问码时展示访问码页。
 fn html_response(
     state: &WebServiceState,
     req: &Request<Incoming>,
     peer: SocketAddr,
 ) -> Response<BoxBody> {
-    let locked = state.auth_required() && !state.is_password_authorized(req.headers(), peer);
+    let capability_passed =
+        state.capability_required() && state.has_capability(req.headers(), peer);
+    let locked = state.auth_required()
+        && !state.is_password_authorized(req.headers(), peer)
+        && !capability_passed;
     let body = SINGLE_HTML.replace("{{AUTH_STATE}}", if locked { "locked" } else { "open" });
     html_full_response(StatusCode::OK, &body)
 }
@@ -791,8 +798,8 @@ struct FileListResponse {
 /// `POST /web/prepare-download?token=`：
 /// - token 有效（已接受、同 IP）→ 刷新文件表后直接回表（免重复确认）；
 /// - 同 IP 有待确认会话 → 409 + `X-Handysend-Token`（可重试，不堆决策）；
-/// - 否则建会话：设置了访问密码（请求已过 Cookie 门禁）时直接置为已接受并回表；
-///   未设置密码时等待应用确认：接受回表 / 拒绝回 403 / 决策通道丢弃回 408。
+/// - 否则建会话：设置了访问码（请求已过页面门禁，扫码或访问码均可）时直接置为
+///   已接受并回表；未设置访问码时等待应用确认：接受回表 / 拒绝回 403 / 决策通道丢弃回 408。
 ///
 /// 分享停止或无可下载文件时回 404（不建会话）。
 async fn prepare_download(
@@ -857,7 +864,7 @@ async fn prepare_download(
             return token_conflict(&token);
         }
     }
-    // 密码模式下，页面响应丢失后重试或同一浏览器新标签页到达时，复用
+    // 访问码模式下，页面响应丢失后重试或同一浏览器新标签页到达时，复用
     // 刚被接受且尚未开始下载的会话：不重复建任务、不重复提示，直接回当前表。
     if state.auth_required() {
         let adopt: Option<String> = {
@@ -937,9 +944,9 @@ async fn prepare_download(
             })
             .await;
     }
-    // 访问密码就是外发授权：请求已通过 Cookie 门禁时不再等待应用确认，
+    // 页面门禁通过（扫码或访问码）即外发授权：设置访问码时不再等待应用确认，
     // 立即置为已接受并下发文件表；应用侧仅收到「网页已访问」提示。
-    // 未设置密码时保留原来的待确认流程（确认是唯一的安全边界）。
+    // 未设置访问码时保留原来的待确认流程（确认是唯一的安全边界）。
     if state.auth_required() {
         let _ = lock(&state.sessions).accept(&token, Instant::now());
         return file_list_response(&state, &token);

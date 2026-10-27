@@ -2,8 +2,8 @@
  * BackgroundAttentionNotifier.ets — 后台关注通知层
  *
  * 应用在后台时，把需要用户关注的事件收敛为**一条**系统通知：
- * - 待确认请求：LocalSend / MTA 接收、Web 上传、未设访问密码的 Web 下载；
- * - 网页访问：已由访问密码或本次免确认直接放行的 Web 下载。
+ * - 待确认请求：LocalSend / MTA 接收、Web 上传；
+ * - 网页访问：已由扫码或本次访问码直接放行、或本次免确认放行的 Web 下载。
  *
  * 待确认请求优先展示；没有待确认时展示最近一次仍存活的网页访问。
  * 通知使用独立 id（与后台传输实况通知区分），点击回到任务中心。
@@ -193,7 +193,7 @@ export function refreshBackgroundAttention(): void {
 }
 
 /**
- * 记录一次已放行的网页访问（访问密码或本次免确认）。
+ * 记录一次已放行的网页访问（扫码/访问码或本次免确认）。
  * 前台不发布通知（应用内提示已覆盖）；后台立即进入关注通知层。
  */
 export function notifyWebAccessAttention(sessionId: string, ip: string, fileCount: number): void {

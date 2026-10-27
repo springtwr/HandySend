@@ -1,5 +1,5 @@
 // ShareLinkViewModelTest：网页面板页视图模型的开关同步测试
-// 覆盖网页发送/接收允许开关变化时面板禁用态的实时同步（经既有 changeBus）。
+// 覆盖网页传输总开关与允许上传开关变化时的实时同步（经既有 changeBus）。
 // 用例采用「记录-恢复」模式：结束后还原宿主应用的持久化设置，避免污染。
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import { ShareLinkViewModel } from '../../../../main/ets/viewmodel/ShareLinkViewModel'
@@ -45,16 +45,16 @@ export default function ShareLinkViewModelTest() {
       }
     })
 
-    it('receiveDisabled_reflectsToggle', 0, () => {
+    it('uploadAllowed_reflectsToggle', 0, () => {
       let origReceive: boolean = getWebReceiveAllowed()
       let vm = new ShareLinkViewModel()
       try {
         setWebReceiveAllowed(true)
         vm.loadShareInfo()
-        expect(vm.receiveDisabled).assertFalse()
+        expect(vm.uploadAllowed).assertTrue()
 
         setWebReceiveAllowed(false)
-        expect(vm.receiveDisabled).assertTrue()
+        expect(vm.uploadAllowed).assertFalse()
       } finally {
         vm.unsubscribeFromRepository()
         setWebReceiveAllowed(origReceive)
