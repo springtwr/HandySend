@@ -27,6 +27,7 @@ import {
   getWebHttpsEnabled,
   getWebAddresses,
   isServerRunning,
+  getAllInterfacesDisabled,
   getWebInterfaceNames,
   getWebInterfaceBlacklistNames,
   getWebPort,
@@ -101,7 +102,9 @@ export struct LocalDeviceSection {
     this.fingerprint = getServerFingerprint();
     // 端口与加密传输分两行：前者是端点，后者决定对端是否以 HTTPS 连接
     this.listenPort = String(getPort());
-    this.localSendStatusText = this.runStateText(isServerRunning());
+    this.localSendStatusText = getAllInterfacesDisabled() ?
+      getStringSync(this.getUIContext(), $r('app.string.service_status_no_interface')) :
+      this.runStateText(isServerRunning());
     this.encryptedText = getStringSync(this.getUIContext(),
       getHttpsEnabled() ? $r('app.string.local_device_encrypted_on') : $r('app.string.local_device_encrypted_off'));
 
