@@ -1138,15 +1138,22 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
       totalBytes: f.size
     });
   }
+  let previewText: string = '';
+  if (event.files.length === 1) {
+    let f = event.files[0];
+    if (f.fileType === 'text/plain' && f.fileName === 'message.txt' && f.preview !== undefined) {
+      previewText = f.preview;
+    }
+  }
   if (webUploadAutoAccept) {
     // 本次挂载已开启上传免确认：先登记为进行中，再按正常接受流程预置落盘目标。
     // 目标目录准备失败时 acceptWebUpload 内部会转为拒绝，不会静默落盘。
     logger.info('Web 上传按本次挂载授权自动接受 token=' + token);
-    beginWebUploadBurst(token, false, descriptors, ip);
+    beginWebUploadBurst(token, false, descriptors, ip, previewText);
     acceptWebUpload(token);
   } else {
     logger.debug('Web 上传进入待确认 token=' + token);
-    beginWebUploadBurst(token, true, descriptors, ip);
+    beginWebUploadBurst(token, true, descriptors, ip, previewText);
   }
   notifyChange();
 }

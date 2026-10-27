@@ -41,6 +41,10 @@ import {
   setMtaReceiveInvokers
 } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import {
+  WEB_UPLOAD_KEY,
+  beginWebUploadBurst
+} from '../../../../main/ets/service/transfer/adapters/WebUploadAdapter'
+import {
   WEB_DOWNLOAD_KEY,
   beginWebDownloadBurst,
   handleWebFileDownload,
@@ -1416,6 +1420,24 @@ export default function AdaptersTest() {
       expect(after !== undefined).assertTrue()
       if (after !== undefined) {
         expect(after.peer.previewImagePath).assertEqual('/cache/thumb-slow.jpg')
+      }
+      resetRegistry()
+    })
+
+    it('web_upload_textPreview_availableBeforeDone', 0, () => {
+      resetRegistry()
+      let id = beginWebUploadBurst('web-text-1', false, [{
+        fileId: 'f0',
+        fileName: 'message.txt',
+        fileType: 'text/plain',
+        totalBytes: 5
+      }], '10.0.0.12', 'hello')
+      let adapter = getAdapter(WEB_UPLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(id)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('hello')
       }
       resetRegistry()
     })

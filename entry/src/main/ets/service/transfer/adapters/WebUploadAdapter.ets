@@ -208,7 +208,7 @@ function resolveTextPreview(session: TransferSession): string {
  * @returns 统一会话标识
  */
 export function beginWebUploadBurst(token: string, needsConfirm: boolean,
-  offeredFiles: Array<SessionFileDescriptor> = [], peerIp?: string): string {
+  offeredFiles: Array<SessionFileDescriptor> = [], peerIp?: string, previewText: string = ''): string {
   let displayIp: string = (peerIp !== undefined && peerIp.length > 0) ? peerIp : token;
   let existing = bursts.get(token);
   if (existing !== undefined) {
@@ -245,6 +245,10 @@ export function beginWebUploadBurst(token: string, needsConfirm: boolean,
     idleTimer: -1
   };
   bursts.set(token, ctx);
+  if (previewText.length > 0) {
+    // 文本消息在落盘前即可用浏览器声明的正文预览，避免先显示 message.txt
+    textPreviewCache.set(session.id, previewText);
+  }
   // 待确认与已接受阶段均安排无活动超时
   scheduleIdleTimeout(ctx);
   return session.id;
