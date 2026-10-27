@@ -1830,7 +1830,7 @@
     },
     {
       "name": "local_device_port",
-      "value": "监听端口"
+      "value": "端口"
     },
     {
       "name": "local_device_broadcast_name",
@@ -2247,6 +2247,18 @@
     {
       "name": "web_access_stop",
       "value": "停止网页传输"
+    },
+    {
+      "name": "service_status_label",
+      "value": "服务状态"
+    },
+    {
+      "name": "service_status_no_interface",
+      "value": "异常（无可用网络接口）"
+    },
+    {
+      "name": "network_interface_status_not_enabled",
+      "value": "未启用"
     }
   ]
 }

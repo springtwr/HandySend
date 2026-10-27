@@ -1830,7 +1830,7 @@
     },
     {
       "name": "local_device_port",
-      "value": "監聽埠"
+      "value": "連接埠"
     },
     {
       "name": "local_device_broadcast_name",
@@ -2247,6 +2247,18 @@
     {
       "name": "web_access_stop",
       "value": "停止網頁傳輸"
+    },
+    {
+      "name": "service_status_label",
+      "value": "服務狀態"
+    },
+    {
+      "name": "service_status_no_interface",
+      "value": "異常（無可用網路介面）"
+    },
+    {
+      "name": "network_interface_status_not_enabled",
+      "value": "未啟用"
     }
   ]
 }

@@ -24,9 +24,9 @@ import {
   getNetworkWhitelist,
   getNetworkBlacklist,
   getWebSendAllowed,
-  getWebReceiveAllowed,
   getWebHttpsEnabled,
-  isWebUploadEnabled,
+  getWebAddresses,
+  isServerRunning,
   getWebInterfaceNames,
   getWebInterfaceBlacklistNames,
   getWebPort,
@@ -60,8 +60,8 @@ export struct LocalDeviceSection {
   @Local private listenPort: string = ''
   @Local private encryptedText: string = ''
   @Local private interfaces: Array<NetworkInterface> = []
-  @Local private webSendText: string = ''
-  @Local private webReceiveText: string = ''
+  @Local private localSendStatusText: string = ''
+  @Local private webStatusText: string = ''
   @Local private webHttpsText: string = ''
   @Local private webPortText: string = ''
   @Local private mtaBrand: string = ''
@@ -101,6 +101,7 @@ export struct LocalDeviceSection {
     this.fingerprint = getServerFingerprint();
     // 端口与加密传输分两行：前者是端点，后者决定对端是否以 HTTPS 连接
     this.listenPort = String(getPort());
+    this.localSendStatusText = this.runStateText(isServerRunning());
     this.encryptedText = getStringSync(this.getUIContext(),
       getHttpsEnabled() ? $r('app.string.local_device_encrypted_on') : $r('app.string.local_device_encrypted_off'));
 
@@ -113,8 +114,10 @@ export struct LocalDeviceSection {
 
     // 网页独立服务：按实际运行状态展示（开关开启但服务启动失败时显示未运行）
     let webRunning: boolean = getWebActualPort() > 0;
-    this.webSendText = this.runStateText(getWebSendAllowed() && webRunning);
-    this.webReceiveText = this.runStateText(getWebReceiveAllowed() && webRunning && isWebUploadEnabled());
+    // 无任何可展示的网络接口时，网页传输不可用；否则按总开关与实际运行状态展示
+    this.webStatusText = getWebAddresses().length === 0 ?
+      getStringSync(this.getUIContext(), $r('app.string.service_status_no_interface')) :
+      this.runStateText(getWebSendAllowed() && webRunning);
     this.webHttpsText = this.onOffText(getWebHttpsEnabled());
     let actualPort: number = getWebActualPort();
     if (actualPort > 0 && isWebPortFallback()) {
@@ -272,7 +275,9 @@ export struct LocalDeviceSection {
   @Builder
   statusBadge(item: NetworkInterface) {
     Text(this.isInterfaceEnabledForPage(item) ? $r('app.string.network_interface_status_enabled') :
-      $r('app.string.network_interface_status_disabled'))
+      (this.interfaceSource === InterfacePageSource.web ?
+        $r('app.string.network_interface_status_not_enabled') :
+        $r('app.string.network_interface_status_disabled')))
       .fontSize(DesignTokens.font.bodyS)
       .fontColor(this.isInterfaceEnabledForPage(item) ? $r('app.color.success_green') :
         $r('app.color.text_tertiary'))
@@ -411,30 +416,13 @@ export struct LocalDeviceSection {
             this.longValueRow($r('app.string.local_device_fingerprint'), this.fingerprint)
             this.rowDivider()
           }
+          this.infoRow($r('app.string.service_status_label'), this.localSendStatusText)
+          this.rowDivider()
           this.infoRow($r('app.string.local_device_port'), this.listenPort)
           this.rowDivider()
           this.infoRow($r('app.string.encrypted_transfer'), this.encryptedText)
           this.rowDivider()
           this.interfaceEntryRow(InterfacePageSource.localSend)
-        }
-        .width('100%')
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.card_background'))
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-        .margin({ top: DesignTokens.space.sm })
-
-        // ── 网页：浏览器通过地址/二维码看到的本机服务 ──
-        this.groupTitle($r('app.string.local_device_group_web'), DesignTokens.space.lg)
-        Column() {
-          this.infoRow($r('app.string.web_send_label'), this.webSendText)
-          this.rowDivider()
-          this.infoRow($r('app.string.web_receive_label'), this.webReceiveText)
-          this.rowDivider()
-          this.infoRow($r('app.string.web_port_label'), this.webPortText)
-          this.rowDivider()
-          this.infoRow($r('app.string.web_https_label'), this.webHttpsText)
-          this.rowDivider()
-          this.interfaceEntryRow(InterfacePageSource.web)
         }
         .width('100%')
         .borderRadius(DesignTokens.radius.lg)
@@ -456,6 +444,23 @@ export struct LocalDeviceSection {
             this.rowDivider()
             this.longValueRow($r('app.string.local_device_mta_device_id'), this.mtaDeviceId)
           }
+        }
+        .width('100%')
+        .borderRadius(DesignTokens.radius.lg)
+        .backgroundColor($r('app.color.card_background'))
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .margin({ top: DesignTokens.space.sm })
+
+        // ── 网页：浏览器通过地址/二维码看到的本机服务 ──
+        this.groupTitle($r('app.string.local_device_group_web'), DesignTokens.space.lg)
+        Column() {
+          this.infoRow($r('app.string.service_status_label'), this.webStatusText)
+          this.rowDivider()
+          this.infoRow($r('app.string.web_port_label'), this.webPortText)
+          this.rowDivider()
+          this.infoRow($r('app.string.web_https_label'), this.webHttpsText)
+          this.rowDivider()
+          this.interfaceEntryRow(InterfacePageSource.web)
         }
         .width('100%')
         .borderRadius(DesignTokens.radius.lg)
