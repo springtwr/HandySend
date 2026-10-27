@@ -378,7 +378,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "LocalSend協定總開關，關閉後將無法與LocalSend傳輸檔案"
+      "value": "關閉後將無法與 LocalSend 互傳檔案"
     },
     {
       "name": "server_status_running",
@@ -602,7 +602,7 @@
     },
     {
       "name": "network_type_ethernet",
-      "value": "乙太網路"
+      "value": "有線網路"
     },
     {
       "name": "network_type_vpn",
@@ -1054,7 +1054,7 @@
     },
     {
       "name": "web_access_auto_accept_upload_desc",
-      "value": "對方透過網頁上傳檔案時不再經過你的確認"
+      "value": "其他人透過網頁上傳檔案時不再經過你的確認"
     },
     {
       "name": "web_access_unavailable",
@@ -1198,7 +1198,7 @@
     },
     {
       "name": "permission_notification_desc",
-      "value": "在通知列顯示後台傳輸的進度與結果"
+      "value": "用於背景傳輸和臨時保活"
     },
     {
       "name": "permission_bluetooth_label",
@@ -1230,7 +1230,7 @@
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "應用程式在前台時，以互傳聯盟身分接收附近裝置傳送的內容"
+      "value": "允許附近的互傳聯盟成員裝置向你傳送檔案"
     },
     {
       "name": "mta_enabled_label",
@@ -1238,7 +1238,7 @@
     },
     {
       "name": "mta_enabled_desc",
-      "value": "互傳聯盟協定總開關，關閉後將停止互傳接收與裝置探索"
+      "value": "關閉後將無法與附近的互傳聯盟成員裝置互傳檔案"
     },
     {
       "name": "mta_receive_disabled_desc",
@@ -1254,7 +1254,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現，僅對部分廠商生效"
+      "value": "偽裝成指定品牌的裝置傳輸檔案，僅對部分廠商生效"
     },
     {
       "name": "mta_connection_warnings_label",
@@ -1766,7 +1766,7 @@
     },
     {
       "name": "discovery_source_web",
-      "value": "網頁分享"
+      "value": "網頁傳輸"
     },
     {
       "name": "discovery_empty_hint_localsend",
@@ -2030,7 +2030,7 @@
     },
     {
       "name": "web_access_notice_message",
-      "value": "%s 已透過掃碼或存取碼存取網頁，可下載 %d 個檔案。"
+      "value": "%s 存取了網頁，可下載你已選取的 %d 個檔案。"
     },
     {
       "name": "favorites_online",
@@ -2126,7 +2126,7 @@
     },
     {
       "name": "web_receive_label",
-      "value": "允許對方上傳"
+      "value": "允許上傳"
     },
     {
       "name": "web_access_no_file_warning",
@@ -2134,11 +2134,11 @@
     },
     {
       "name": "web_send_desc",
-      "value": "開啟後可透過網頁分享檔案；關閉即停止服務"
+      "value": "關閉後將無法透過網頁傳輸檔案"
     },
     {
       "name": "web_receive_desc",
-      "value": "對方可以透過網頁向你傳送檔案"
+      "value": "其他人可以透過網頁向你傳送檔案"
     },
     {
       "name": "web_access_start_send",
@@ -2178,7 +2178,7 @@
     },
     {
       "name": "web_interface_desc",
-      "value": "選擇用於顯示網頁位址的網路介面（服務仍監聽全部網卡，不會限制存取）"
+      "value": "選擇用於顯示網址的網路介面"
     },
     {
       "name": "web_interface_none",

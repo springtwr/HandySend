@@ -378,7 +378,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "LocalSend协议总开关，关闭后将无法与LocalSend传输文件"
+      "value": "关闭后将无法与 LocalSend 互传文件"
     },
     {
       "name": "server_status_running",
@@ -602,7 +602,7 @@
     },
     {
       "name": "network_type_ethernet",
-      "value": "以太网"
+      "value": "有线网络"
     },
     {
       "name": "network_type_vpn",
@@ -1054,7 +1054,7 @@
     },
     {
       "name": "web_access_auto_accept_upload_desc",
-      "value": "对方通过网页上传文件时不再经过你的确认"
+      "value": "其他人通过网页上传文件时不再经过你的确认"
     },
     {
       "name": "web_access_unavailable",
@@ -1198,7 +1198,7 @@
     },
     {
       "name": "permission_notification_desc",
-      "value": "在通知栏显示后台传输的进度与结果"
+      "value": "用于后台传输和临时保活"
     },
     {
       "name": "permission_bluetooth_label",
@@ -1230,7 +1230,7 @@
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "应用在前台时，以互传联盟身份接收附近设备发送的内容"
+      "value": "允许附近的互传联盟成员设备向你发送文件"
     },
     {
       "name": "mta_enabled_label",
@@ -1238,7 +1238,7 @@
     },
     {
       "name": "mta_enabled_desc",
-      "value": "互传联盟协议总开关，关闭后将停止互传接收与设备发现"
+      "value": "关闭后将无法与附近的互传联盟成员设备互传文件"
     },
     {
       "name": "mta_receive_disabled_desc",
@@ -1254,7 +1254,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "与互传联盟设备传输文件时，以所选品牌对外呈现，仅对部分厂商生效"
+      "value": "伪装成指定品牌的设备传输文件，仅对部分厂商生效"
     },
     {
       "name": "mta_connection_warnings_label",
@@ -1766,7 +1766,7 @@
     },
     {
       "name": "discovery_source_web",
-      "value": "网页分享"
+      "value": "网页传输"
     },
     {
       "name": "discovery_empty_hint_localsend",
@@ -2030,7 +2030,7 @@
     },
     {
       "name": "web_access_notice_message",
-      "value": "%s 已通过扫码或访问码访问网页，可下载 %d 个文件。"
+      "value": "%s 访问了网页，可下载你已选中的 %d 个文件。"
     },
     {
       "name": "favorites_online",
@@ -2126,7 +2126,7 @@
     },
     {
       "name": "web_receive_label",
-      "value": "允许对方上传"
+      "value": "允许上传"
     },
     {
       "name": "web_access_no_file_warning",
@@ -2134,11 +2134,11 @@
     },
     {
       "name": "web_send_desc",
-      "value": "开启后可通过网页分享文件；关闭即停止服务"
+      "value": "关闭后将无法通过网页传输文件"
     },
     {
       "name": "web_receive_desc",
-      "value": "对方可以通过网页向你发送文件"
+      "value": "其他人可以通过网页向你发送文件"
     },
     {
       "name": "web_access_start_send",
@@ -2178,7 +2178,7 @@
     },
     {
       "name": "web_interface_desc",
-      "value": "选择用于展示网页地址的网络接口（服务仍监听全部网卡，不会限制访问）"
+      "value": "选择用于展示网页地址的网络接口"
     },
     {
       "name": "web_interface_none",

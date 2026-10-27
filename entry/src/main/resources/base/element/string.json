@@ -378,7 +378,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "Master switch for the LocalSend protocol. Turning it off disables file transfer with LocalSend devices."
+      "value": "Turning it off disables file transfer with LocalSend."
     },
     {
       "name": "server_status_running",
@@ -602,7 +602,7 @@
     },
     {
       "name": "network_type_ethernet",
-      "value": "Ethernet"
+      "value": "Wired network"
     },
     {
       "name": "network_type_vpn",
@@ -1198,7 +1198,7 @@
     },
     {
       "name": "permission_notification_desc",
-      "value": "Show background transfer progress and results in the notification panel"
+      "value": "Used for background transfers and temporary keep-alive."
     },
     {
       "name": "permission_bluetooth_label",
@@ -1230,7 +1230,7 @@
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "Receive content from nearby devices over MTA while the app is in the foreground"
+      "value": "Allow nearby MTA devices to send files to you."
     },
     {
       "name": "mta_enabled_label",
@@ -1238,7 +1238,7 @@
     },
     {
       "name": "mta_enabled_desc",
-      "value": "Master switch for the MTA protocol. Turning it off stops MTA receiving and device discovery"
+      "value": "Turning it off disables file transfer with nearby MTA devices."
     },
     {
       "name": "mta_receive_disabled_desc",
@@ -1254,7 +1254,7 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "Present as the selected brand when transferring files with MTA devices. Only effective for some vendors"
+      "value": "Pretend to be the selected brand when transferring files; only effective for some vendors."
     },
     {
       "name": "mta_connection_warnings_label",
@@ -1766,7 +1766,7 @@
     },
     {
       "name": "discovery_source_web",
-      "value": "Web share"
+      "value": "Web transfer"
     },
     {
       "name": "discovery_empty_hint_localsend",
@@ -2030,7 +2030,7 @@
     },
     {
       "name": "web_access_notice_message",
-      "value": "%s accessed the web page via QR code or access code and can download %d files."
+      "value": "%s accessed the web page. You can download the %d files you selected."
     },
     {
       "name": "favorites_online",
@@ -2134,7 +2134,7 @@
     },
     {
       "name": "web_send_desc",
-      "value": "Share files over the web; turning it off stops the service."
+      "value": "Turning it off disables file transfer over the web."
     },
     {
       "name": "web_receive_desc",
@@ -2178,7 +2178,7 @@
     },
     {
       "name": "web_interface_desc",
-      "value": "Choose the network interfaces used to display web addresses (the service still listens on all interfaces)."
+      "value": "Choose the network interfaces used to display web addresses."
     },
     {
       "name": "web_interface_none",
