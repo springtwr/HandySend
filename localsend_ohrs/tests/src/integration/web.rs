@@ -475,6 +475,7 @@ async fn test_i18n_by_language() {
     assert!(body_tw.contains("下載"), "繁体中文缺失");
     assert!(body.contains("shareUpdatedRetry"), "缺 410 分流文案键");
     assert!(body.contains("httpsHint"), "缺 HTTPS 提示文案键");
+    assert!(body.contains("refreshPage"), "缺错误页刷新按钮文案键");
     let (status, _, body_default) = http_get(addr, "/i18n.json").await;
     assert_eq!(status, 200);
     assert!(body_default.contains("全部下载"), "缺省应为简体中文");
@@ -551,13 +552,24 @@ async fn test_prepare_accept_download_finish_flow() {
         }
     }
     assert!(saw_done, "应收到文件终值事件");
-    // 完成回执：会话移除，再下回 403。
+    // 完成回执：会话移除，再下回友好错误页（不是纯文本）。
     let (finish_status, _, _) = http_post(addr, &format!("/web/finish?token={token}")).await;
     assert_eq!(finish_status, 200);
     assert!(!state.sessions.lock().unwrap().contains(&token));
-    let (gone_status, _, _) =
+    let (gone_status, gone_headers, gone_body) =
         http_get(addr, &format!("/web/download?token={token}&fileId=f1")).await;
     assert_eq!(gone_status, 403);
+    assert!(
+        header(&gone_headers, "content-type")
+            .unwrap_or("")
+            .contains("text/html"),
+        "直链失效应回 HTML 错误页"
+    );
+    assert!(
+        gone_body.contains("本次网页访问已结束"),
+        "应给出可读的结束提示：{gone_body}"
+    );
+    assert!(gone_body.contains("href=\"/\""), "应给出刷新入口");
     handle.abort();
 }
 
@@ -812,11 +824,21 @@ async fn test_revision_isolation_with_retained_files() {
     let (b_old_status, _, _) =
         http_get(addr, &format!("/web/download?token={token_b}&fileId=a")).await;
     assert_eq!(b_old_status, 403);
-    // 保留过期后，A 下 a 回 410。
+    // 保留过期后，A 下 a 回 410 友好错误页。
     state.retained.lock().unwrap().clear();
-    let (gone_status, _, _) =
+    let (gone_status, gone_headers, gone_body) =
         http_get(addr, &format!("/web/download?token={token_a}&fileId=a")).await;
     assert_eq!(gone_status, 410);
+    assert!(
+        header(&gone_headers, "content-type")
+            .unwrap_or("")
+            .contains("text/html"),
+        "内容失效的直链应为 HTML 错误页"
+    );
+    assert!(
+        gone_body.contains("分享内容已更新"),
+        "应提示分享内容已更新：{gone_body}"
+    );
     let _ = std::fs::remove_file(&path_c);
     handle.abort();
 }
@@ -932,13 +954,40 @@ async fn test_heartbeat_extends_accepted_session() {
     }
     let (unknown_status, _, _) = http_post(addr, "/web/heartbeat?token=nope").await;
     assert_eq!(unknown_status, 404);
-    // 应用侧结束任务：移除会话后下载链接与心跳立即失效
+    // 应用侧结束任务：移除会话后下载链接与心跳立即失效，
+    // 直链回可读的结束页（不再让用户停在纯文本 403）。
     state.sessions.lock().unwrap().expire(&token);
-    let (cancelled_status, _, _) =
+    let (cancelled_status, cancelled_headers, cancelled_body) =
         http_get(addr, &format!("/web/download?token={token}&fileId=f1")).await;
     assert_eq!(cancelled_status, 403);
+    assert!(
+        header(&cancelled_headers, "content-type")
+            .unwrap_or("")
+            .contains("text/html"),
+        "结束后的直链应为 HTML 错误页"
+    );
+    assert!(
+        cancelled_body.contains("刷新页面"),
+        "应提示刷新页面重新访问"
+    );
     let (cancelled_beat, _, _) = http_post(addr, &format!("/web/heartbeat?token={token}")).await;
     assert_eq!(cancelled_beat, 404);
+    // 刷新页面重新访问：建新会话（旧 token 不复用），应用侧重新确认。
+    let refresh = tokio::spawn(http_post(addr, "/web/prepare-download"));
+    let fresh_token = wait_pending_token(&state).await;
+    assert_ne!(fresh_token, token, "刷新后应建立新的访问会话");
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .accept(&fresh_token, Instant::now())
+        .unwrap();
+    let (refresh_status, _, refresh_body) = tokio::time::timeout(Duration::from_secs(5), refresh)
+        .await
+        .expect("刷新后建会话超时")
+        .unwrap();
+    assert_eq!(refresh_status, 200);
+    assert!(refresh_body.contains(&fresh_token));
     handle.abort();
 }
 
@@ -1023,8 +1072,28 @@ async fn test_retained_fd_survives_handle_close() {
 #[tokio::test]
 async fn test_invalid_token_and_stopped_share() {
     let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
-    let (unknown_status, _, _) = http_get(addr, "/web/download?token=nope&fileId=f1").await;
+    let (unknown_status, unknown_headers, unknown_body) =
+        http_get(addr, "/web/download?token=nope&fileId=f1").await;
     assert_eq!(unknown_status, 403);
+    assert!(
+        header(&unknown_headers, "content-type")
+            .unwrap_or("")
+            .contains("text/html"),
+        "未知 token 的直链应回 HTML 错误页"
+    );
+    assert!(unknown_body.contains("刷新页面"), "应给出刷新入口");
+    // 错误页文案跟随 Accept-Language。
+    let (_, _, english_body) = http_request_with_headers(
+        addr,
+        "GET",
+        "/web/download?token=nope&fileId=f1",
+        &[("Accept-Language", "en-US,en;q=0.9")],
+    )
+    .await;
+    assert!(
+        english_body.contains("Refresh the page"),
+        "英文请求应回英文结束提示：{english_body}"
+    );
     // 建有效会话后下未知文件。
     let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
     let token = wait_pending_token(&state).await;

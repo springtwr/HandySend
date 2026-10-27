@@ -450,6 +450,15 @@ async fn handle(
         _ => {}
     }
     if !state.is_authorized(req.headers()) {
+        // 浏览器直接打开下载链接时给可刷新的友好错误页；
+        // 页面内接口仍用文本，由前端按状态码分流（未授权回密码页）。
+        if method.as_str() == "GET" && path.as_str() == "/web/download" {
+            return Ok(download_error_response(
+                &req,
+                StatusCode::UNAUTHORIZED,
+                &web_page_i18n(accept_language(&req)).access_ended_reload,
+            ));
+        }
         return Ok(text_response(StatusCode::UNAUTHORIZED, "需要访问密码"));
     }
     match (method.as_str(), path.as_str()) {
@@ -853,11 +862,14 @@ async fn start_download(
 ) -> Response<BoxBody> {
     let now = Instant::now();
     state.sweep_all(now).await;
+    let i18n = web_page_i18n(accept_language(req));
+    let ended_message: &str = &i18n.access_ended_reload;
+    let updated_message: &str = &i18n.share_updated_retry;
     let Some(token) = query.get("token") else {
-        return text_response(StatusCode::FORBIDDEN, "无效 token");
+        return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
     };
     let Some(file_id) = query.get("fileId") else {
-        return text_response(StatusCode::BAD_REQUEST, "缺少 fileId");
+        return download_error_response(req, StatusCode::BAD_REQUEST, ended_message);
     };
     // 文本预览只是页面内联读取，不计入下载任务/进度，避免预览把任务写成失败。
     let preview: bool = query
@@ -868,16 +880,16 @@ async fn start_download(
     let (meta_file, total, source) = {
         let mut sessions = lock(&state.sessions);
         let Some(session) = sessions.sessions.get_mut(token) else {
-            return text_response(StatusCode::FORBIDDEN, "无效 token");
+            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         };
         if session.peer_ip != peer.ip().to_string() {
-            return text_response(StatusCode::FORBIDDEN, "无效 token");
+            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         }
         if !matches!(session.state, SessionState::Accepted) {
-            return text_response(StatusCode::FORBIDDEN, "会话未接受");
+            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         }
         let Some(offered) = session.offered_files.get(file_id) else {
-            return text_response(StatusCode::FORBIDDEN, "无效 fileId");
+            return download_error_response(req, StatusCode::FORBIDDEN, updated_message);
         };
         let meta = offered.file.clone();
         let total = meta.size;
@@ -889,7 +901,7 @@ async fn start_download(
         // `locate_source` 返回独立副本（fd 已 dup），即使随后换表也不受影响。
         match state.locate_source(file_id, now) {
             Some(found) => (meta, total, found),
-            None => return text_response(StatusCode::GONE, "分享已更新，请刷新"),
+            None => return download_error_response(req, StatusCode::GONE, updated_message),
         }
     };
     // Range：起点越界回 416，其余按分片下发（200/206）。
@@ -1796,6 +1808,74 @@ fn percent_encode_attr(name: &str) -> String {
         }
     }
     out
+}
+
+/// 请求首选语言（取 `Accept-Language` 首项，缺失回落简体中文）。
+fn accept_language(req: &Request<Incoming>) -> &str {
+    req.headers()
+        .get(hyper::header::ACCEPT_LANGUAGE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .unwrap_or("")
+}
+
+/// 浏览器直接打开下载链接失败时的友好错误页。
+///
+/// 任务结束后心跳窗口内的直链、分享换表后的失效链接等都以浏览器导航方式到达，
+/// 纯文本响应会让用户停在无法操作的错误文本页；这里统一给出「刷新页面」入口，
+/// 刷新后重新走单页建会话流程（应用侧据此重新确认）。
+fn download_error_response(
+    req: &Request<Incoming>,
+    status: StatusCode,
+    message: &str,
+) -> Response<BoxBody> {
+    let i18n = web_page_i18n(accept_language(req));
+    let body: String = format!(
+        r#"<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{app} · {title}</title>
+<style>
+  :root {{ color-scheme: light dark; }}
+  body {{
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 24px; box-sizing: border-box; font-family: system-ui, -apple-system, "HarmonyOS Sans", sans-serif;
+    background: #f2f3f5; color: #1a1a1a;
+  }}
+  .card {{
+    width: 100%; max-width: 360px; padding: 28px 24px; border-radius: 20px;
+    background: #ffffff; text-align: center; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  }}
+  .brand {{ font-size: 14px; opacity: 0.55; margin-bottom: 12px; }}
+  .message {{ font-size: 16px; line-height: 1.6; margin: 0 0 24px; }}
+  .action {{
+    display: inline-block; padding: 12px 28px; border-radius: 999px;
+    background: #0a59f7; color: #ffffff; font-size: 15px; text-decoration: none;
+  }}
+  @media (prefers-color-scheme: dark) {{
+    body {{ background: #121212; color: #f5f5f5; }}
+    .card {{ background: #1e1e1e; box-shadow: none; }}
+    .action {{ background: #317af7; }}
+  }}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="brand">{app}</div>
+<p class="message">{message}</p>
+<a class="action" href="/">{refresh}</a>
+</div>
+</body>
+</html>"#,
+        app = i18n.app_name,
+        title = i18n.access_ended_reload,
+        message = message,
+        refresh = i18n.refresh_page,
+    );
+    html_full_response(status, &body)
 }
 
 fn text_response(status: StatusCode, text: &str) -> Response<BoxBody> {
