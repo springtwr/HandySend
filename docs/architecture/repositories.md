@@ -59,7 +59,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL.md` 附录 A（本项目实现映射）；接收阶段经
 > `MtaReceiveAdapter` 翻译为统一会话操作，确认/拒绝/取消入口由中心经适配器回调本仓库。
 >
-> **注 5**：`WebDownloadAdapter` 以访问会话模型维护任务：页面心跳续期、文件表变化同步，页面关闭按完成度收口；密码授权时直接放行，确认/拒绝/取消经适配器回调
+> **注 5**：`WebDownloadAdapter` 以访问会话模型维护任务：页面心跳续期、文件表变化同步，页面关闭按完成度收口；访问码授权时直接放行，确认/拒绝/取消经适配器回调
 > 本仓库。
 >
 > **注 6**：接收历史、收藏等服务因隔离性直接使用 `PreferencesUtil`，并按用途使用各自独立
@@ -91,7 +91,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `TransferSessionRegistry.ets` | 会话注册表（SSOT）：会话与文件的全生命周期管理、可见窗口与回收、看门狗、聚合快照、清除历史与诊断（见注 7） |
 | `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（独立存储文件；分段 JSON、FIFO 有界、按会话标识幂等归档）（见注 8） |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
-| `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |
+| `TransferMethodRegistry.ets` | 传输方式注册表（网页传输/指定 IP，按「网页」与「其它方式」分组） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |
 | `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，空发现数据源使其不成为发送页来源标签） |
 | `adapters/SessionAdapter.ets` | 适配器契约（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、资源释放）与适配器注册表；可选成员见注 9 |
@@ -166,12 +166,12 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 
 LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接收端据此把该条目识别为「文本消息」而非普通 `.txt` 文件。
 
-- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页发送）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
+- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页传输）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
 - 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true`
   的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
 - 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由上述纯函数用例锁定），存在任一
   未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不再自行构建布尔数组或内联累算。
-- 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页发送路径 `shareByLink`）
+- 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页传输路径 `shareByLink`）
   均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
 - 文本临时文件缺失/不可读时 preview 留空，条目仍按普通文件发送，不影响发送流程完成。
