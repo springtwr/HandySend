@@ -22,9 +22,10 @@ import {
   TransferSession,
   isTerminalStage
 } from '../../../model/transfer/TransferSession';
+import { MediaFileInfo } from '../../../model/Types';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
-import { getMimeForFileName, isTextFile } from '../../../utils/MimeUtils';
+import { getMimeForFileName, isImage, isMediaMime, isTextFile } from '../../../utils/MimeUtils';
 import { readTextOfLocation } from '../../../utils/FileTextUtil';
 import {
   appendFiles,
@@ -116,6 +117,36 @@ function allFilesDone(ctx: BurstContext): boolean {
     }
   });
   return known > 0 && done === known;
+}
+
+/**
+ * 声明清单内的文件是否全部落盘完成。
+ * 浏览器在建会话时一次性声明本批全部文件，服务端也会拒绝未声明的 fileId，
+ * 故清单即完整集合，无需靠静默窗口猜测是否还有后续文件。
+ */
+function allDeclaredFilesDone(ctx: BurstContext): boolean {
+  let session = getSession(ctx.unifiedId);
+  if (session === undefined || session.files.length === 0) {
+    return false;
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    let record = ctx.knownFiles.get(session.files[i].fileId);
+    // 路径由完成事件回填：没有最终路径说明落盘事件尚未到齐，不能提前收口
+    if (record === undefined || !record.done || session.files[i].path.length === 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 声明清单全部落盘即成功终结（文件状态与路径均已定型，无需再等静默窗口）。 */
+function finishIfAllDone(ctx: BurstContext): void {
+  if (!allDeclaredFilesDone(ctx)) {
+    return;
+  }
+  clearTimers(ctx);
+  bursts.delete(ctx.token);
+  finish(ctx.unifiedId, SessionStage.succeeded);
 }
 
 /** 安排静默窗口判定：窗口结束且文件全部完成则成功终态（归档由仓库承接）。 */
@@ -342,6 +373,7 @@ export function handleWebUploadDone(token: string, fileId: string, path: string)
   }
   scheduleIdleTimeout(ctx);
   scheduleQuietCheck(ctx);
+  finishIfAllDone(ctx);
 }
 
 /** 确认接受：经注册表推进为进行中（浏览器随即开始上传，无需等待文案）。 */
@@ -367,6 +399,20 @@ export function markWebUploadDeclined(token: string): void {
   clearTimers(ctx);
   finish(ctx.unifiedId, SessionStage.declined);
   bursts.delete(token);
+}
+
+/**
+ * 服务端终结通知：声明清单已全部落盘即按成功收尾。
+ * 完成回执与惰性打扫都可能先于最后一次落盘事件到达，此时文件其实已经全部就绪。
+ * @returns 是否已按成功终结
+ */
+export function finishWebUploadIfAllDone(token: string): boolean {
+  let ctx = resolveCtx(token);
+  if (ctx === undefined || !allDeclaredFilesDone(ctx)) {
+    return false;
+  }
+  finishIfAllDone(ctx);
+  return true;
 }
 
 const adapter: SessionAdapter = {
@@ -424,6 +470,31 @@ const adapter: SessionAdapter = {
     textPreviewCache.delete(sessionId);
   },
   retry: (): void => {
+  },
+  getGalleryMediaFiles: (sessionId: string): Array<MediaFileInfo> => {
+    let session = getSession(sessionId);
+    if (session === undefined) {
+      return [];
+    }
+    let mediaFiles: Array<MediaFileInfo> = [];
+    for (let i = 0; i < session.files.length; i++) {
+      let file = session.files[i];
+      // 落盘路径由完成事件回填：没有路径的条目尚未交付，不参与相册保存
+      if (file.path.length === 0) {
+        continue;
+      }
+      let mime: string = file.fileType.length > 0 ? file.fileType : getMimeForFileName(file.fileName);
+      if (!isMediaMime(mime)) {
+        continue;
+      }
+      mediaFiles.push({
+        filePath: file.path,
+        fileName: file.fileName,
+        fileType: mime,
+        isImage: isImage(mime)
+      });
+    }
+    return mediaFiles;
   },
   dispose: (sessionId: string): void => {
     // 会话回收：释放其文本预览缓存

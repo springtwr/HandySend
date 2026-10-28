@@ -42,7 +42,9 @@ import {
 } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import {
   WEB_UPLOAD_KEY,
-  beginWebUploadBurst
+  beginWebUploadBurst,
+  handleWebUploadDone,
+  handleWebUploadProgress
 } from '../../../../main/ets/service/transfer/adapters/WebUploadAdapter'
 import {
   WEB_DOWNLOAD_KEY,
@@ -1438,6 +1440,70 @@ export default function AdaptersTest() {
         let display = adapter.getDisplayDescriptor(id)
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('hello')
+      }
+      resetRegistry()
+    })
+
+    it('web_upload_galleryMedia_afterDone', 0, () => {
+      resetRegistry()
+      let id = beginWebUploadBurst('web-photo-1', false, [{
+        fileId: 'f0',
+        fileName: 'photo.jpg',
+        fileType: 'image/jpeg',
+        totalBytes: 10
+      }], '10.0.0.12')
+      handleWebUploadProgress('web-photo-1', 'f0', 10, 10)
+      handleWebUploadDone('web-photo-1', 'f0', '/storage/Download/photo.jpg')
+      let adapter = getAdapter(WEB_UPLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let gallery = adapter.getGalleryMediaFiles
+        expect(gallery !== undefined).assertTrue()
+        if (gallery !== undefined) {
+          let media: Array<MediaFileInfo> = gallery(id)
+          expect(media.length).assertEqual(1)
+          expect(media[0].filePath).assertEqual('/storage/Download/photo.jpg')
+          expect(media[0].isImage).assertTrue()
+        }
+      }
+      // 声明清单全部落盘即成功，不再等待静默窗口
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.stage).assertEqual(SessionStage.succeeded)
+      }
+      resetRegistry()
+    })
+
+    it('web_upload_finishesWhenAllDeclaredFilesDone', 0, () => {
+      resetRegistry()
+      let id = beginWebUploadBurst('web-batch-1', false, [
+        {
+          fileId: 'f0',
+          fileName: 'a.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 4
+        },
+        {
+          fileId: 'f1',
+          fileName: 'b.txt',
+          fileType: 'text/plain',
+          totalBytes: 2
+        }
+      ], '10.0.0.12')
+      handleWebUploadProgress('web-batch-1', 'f0', 4, 4)
+      handleWebUploadDone('web-batch-1', 'f0', '/storage/Download/a.jpg')
+      let mid = getSession(id)
+      expect(mid !== undefined).assertTrue()
+      if (mid !== undefined) {
+        expect(mid.stage).assertEqual(SessionStage.active)
+      }
+      handleWebUploadProgress('web-batch-1', 'f1', 2, 2)
+      handleWebUploadDone('web-batch-1', 'f1', '/storage/Download/b.txt')
+      let done = getSession(id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.succeeded)
       }
       resetRegistry()
     })

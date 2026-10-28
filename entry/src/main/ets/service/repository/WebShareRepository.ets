@@ -70,6 +70,7 @@ import {
 import {
   WEB_UPLOAD_KEY,
   beginWebUploadBurst,
+  finishWebUploadIfAllDone,
   handleWebUploadDone,
   handleWebUploadProgress,
   markWebUploadAccepted,
@@ -1205,6 +1206,10 @@ function finishWebUploadSession(token: string, stage: SessionStage, reason?: str
 /** 服务端终结通知：待确认阶段直接取消；进行中交由适配器静默判定收口。 */
 export function handleWebUploadFinished(token: string): void {
   if (token.length === 0) {
+    return;
+  }
+  // 声明清单已全部落盘（完成回执先于状态刷新到达）：直接按成功收尾
+  if (finishWebUploadIfAllDone(token)) {
     return;
   }
   let all: Array<TransferSession> = querySessions();

@@ -694,9 +694,14 @@ struct MainTabFloating {
     };
     params.onSaveComplete = (result: GallerySaveResult): void => {
       this.showGallerySaveResultToast(result);
-      // 保存至少一个媒体即回写接收历史的「已保存到相册」标记（按协议会话标识匹配历史条目）
-      if (result.successCount > 0 && protocolSessionId.length > 0) {
-        updateGallerySavedStatus(protocolSessionId, true);
+      // 保存至少一个媒体即回写接收历史的「已保存到相册」标记。接收历史主键随协议而异：
+      // LocalSend 按协议会话标识，网页上传按统一会话标识（同浏览器 token 会跨会话复用）；
+      // 两处都是前缀匹配，互不命中时为空操作
+      if (result.successCount > 0) {
+        if (protocolSessionId.length > 0) {
+          updateGallerySavedStatus(protocolSessionId, true);
+        }
+        updateGallerySavedStatus(sessionId, true);
       }
     };
     // 用户跳过或点击遮罩关闭：仅复位节点引用（关闭按钮路径经 closeGallerySaveDialog 关闭并复位）
