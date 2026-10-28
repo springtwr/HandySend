@@ -7,7 +7,6 @@ import {
   declineSession,
   getSession,
   resetRegistry,
-  cancel,
   findByProtocol
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
@@ -15,10 +14,6 @@ import {
   finishLocalReceiveSession,
   setLocalReceiveInvokers
 } from '../../../../main/ets/service/transfer/adapters/LocalSendReceiveAdapter'
-import {
-  beginWebDownloadBurst,
-  markWebDownloadDeclined
-} from '../../../../main/ets/service/transfer/adapters/WebDownloadAdapter'
 import { handleMtaReceiveState } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import { ReceiverStage, ReceiverState, ReceiveRequest } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
@@ -108,55 +103,6 @@ export default function PendingConfirmTest() {
       let cancelled = getSession(id)
       if (cancelled !== undefined) {
         expect(cancelled.stage).assertEqual(SessionStage.cancelled)
-      }
-      resetRegistry()
-    })
-
-    it('web_pendingThenDecline', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('10.0.0.9', true)
-      let pending = getSession(id)
-      expect(pending !== undefined).assertTrue()
-      if (pending !== undefined) {
-        expect(pending.stage).assertEqual(SessionStage.awaitingConfirmation)
-      }
-      markWebDownloadDeclined('10.0.0.9')
-      let declined = getSession(id)
-      if (declined !== undefined) {
-        expect(declined.stage).assertEqual(SessionStage.declined)
-      }
-      resetRegistry()
-    })
-
-    it('web_pendingCancel_isIdempotent', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('10.0.0.10', true)
-      // Web 下载任务支持结束：待确认时取消即进入取消终态，并移除服务端会话
-      cancel(id)
-      let cancelled = getSession(id)
-      if (cancelled !== undefined) {
-        expect(cancelled.stage).assertEqual(SessionStage.cancelled)
-      }
-      // 重复取消幂等：终态不被改写
-      cancel(id)
-      let still = getSession(id)
-      if (still !== undefined) {
-        expect(still.stage).assertEqual(SessionStage.cancelled)
-      }
-      resetRegistry()
-    })
-
-    it('web_accessSession_waitsForDownload', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('10.0.0.11', false)
-      let session = getSession(id)
-      expect(session !== undefined).assertTrue()
-      if (session !== undefined) {
-        // 已授权但尚未下载：保持 active 阶段，用等待文案而不是“传输中”
-        expect(session.stage).assertEqual(SessionStage.active)
-        expect(session.stageText !== '').assertTrue()
-        // 网页访问会话的结束动作文案为“结束会话”
-        expect(session.capabilities.cancelLabel !== undefined).assertTrue()
       }
       resetRegistry()
     })

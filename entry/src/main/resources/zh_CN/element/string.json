@@ -2271,6 +2271,10 @@
     {
       "name": "session_end_web_access",
       "value": "结束会话"
+    },
+    {
+      "name": "session_end_web_download",
+      "value": "结束下载"
     }
   ]
 }

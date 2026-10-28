@@ -17,3 +17,4 @@ pub mod runtime;
 pub mod server;
 pub mod session;
 pub mod upload;
+pub mod zip_plan;

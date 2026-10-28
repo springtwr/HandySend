@@ -71,6 +71,14 @@ pub fn expire_web_session(token: String) -> Result<()> {
     Ok(())
 }
 
+/// 取消指定下载批次（应用任务取消）。
+#[napi]
+pub fn cancel_web_download(batch_id: String) -> Result<()> {
+    runtime::cancel_download(&batch_id)
+        .map_err(|e| Error::from_reason(format!("Cancel web download failed: {e:#}")))?;
+    Ok(())
+}
+
 /// 设置浏览器上传的落盘目标（确认前调用；返回实际生效条目数）。
 #[napi]
 pub fn set_web_upload_targets(token: String, targets_json: String) -> Result<u32> {

@@ -59,8 +59,8 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL.md` 附录 A（本项目实现映射）；接收阶段经
 > `MtaReceiveAdapter` 翻译为统一会话操作，确认/拒绝/取消入口由中心经适配器回调本仓库。
 >
-> **注 5**：`WebDownloadAdapter` 以访问会话模型维护任务：页面心跳续期、文件表变化同步，页面关闭按完成度收口；访问码授权时直接放行，确认/拒绝/取消经适配器回调
-> 本仓库。
+> **注 5**：`WebDownloadAdapter` 以下载批次维护任务：一个批次一个任务（单文件或 zip），
+> 服务端批次事件驱动进度与终态；网页访问只记日志，不建任务；取消按 `batchId` 停止响应。
 >
 > **注 6**：接收历史、收藏等服务因隔离性直接使用 `PreferencesUtil`，并按用途使用各自独立
 > 存储文件（设置 `handysend_settings`、任务历史 `handysend_session_history`、接收历史
@@ -99,7 +99,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/cancelReceived/prepareUploadAborted → 终态；待确认超时终结与资源清理 |
 | `adapters/MtaSendAdapter.ets` | MTA 发送：承接 `MtaSendService` 生命周期、收发互斥与取消/重试，并把阶段文案/进度/终态翻译为注册表操作 |
 | `adapters/MtaReceiveAdapter.ets` | MTA 接收：REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态；文本消息与文件会话细节见注 10 |
-| `adapters/WebDownloadAdapter.ets` | Web 下载访问会话：心跳续期、文件表同步、页面关闭收口，支持取消；匿名对端描述符兜底 |
+| `adapters/WebDownloadAdapter.ets` | Web 下载批次：一个批次一个任务（单文件/zip），服务端批次事件驱动进度与终态，支持按 batchId 取消；匿名对端描述符兜底 |
 | `adapters/StubAdapter.ets` | 最小桩协议：验证「仅注册适配器与描述符即可被中心/详情页渲染并可取消」的扩展点；仅测试期由用例显式调用 `registerStubProtocol()`，不进入生产注册流程 |
 
 > **注 7**：`TransferSessionRegistry` 提供创建/追加文件/进度/状态/终结/取消/重试/查询、
@@ -131,9 +131,11 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 | `sessionEnd` / `cancelReceived` | 会话结束/取消通知 |
 | `uploadProgress` | 传输进度实时推送（direction: recv/send） |
 | `prepareUploadAborted` | 发送方在确认前丢弃 prepare-upload 请求 |
-| `webSendPrepareDownload` | 浏览器请求下载文件（需 accept/decline，载荷含 token 与文件清单） |
-| `webSendProgress` | 浏览器下载字节进度（`sessionId` 即 token） |
-| `webSendSessionEnd` | 浏览器会话终结（下载/上传共用，待确认阶段直接取消） |
+| `webAccess` | 网页访问（IP/UA/文件数）；只记日志与续期保活，不建任务 |
+| `webDownloadStarted` | 下载批次开始（`batchId` + 文件清单），应用建一个任务 |
+| `webDownloadProgress` / `webDownloadFileDone` | 批次内单文件进度/完成 |
+| `webDownloadEnded` | 下载批次终态（succeeded/failed/cancelled） |
+| `webSendSessionEnd` | 上传会话终结（仅上传） |
 | `webUploadPrepare` | 浏览器请求上传文件（需 accept/decline，载荷含 token 与声明清单） |
 | `webUploadProgress` | 浏览器上传字节进度 |
 | `webUploadDone` | 浏览器上传文件落盘完毕（载荷含最终路径） |

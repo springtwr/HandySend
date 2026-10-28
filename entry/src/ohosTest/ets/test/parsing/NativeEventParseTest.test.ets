@@ -20,7 +20,11 @@ import {
   NativeFileUploadEvent,
   NativeDeviceFoundEvent,
   NativeDeviceLostEvent,
-  NativeWebSendPrepareDownloadEvent,
+  NativeWebAccessEvent,
+  NativeWebDownloadStartedEvent,
+  NativeWebDownloadProgressEvent,
+  NativeWebDownloadFileDoneEvent,
+  NativeWebDownloadEndedEvent,
   NativeWebSendSessionEndEvent,
   NativeMtaReceiveProgressEvent,
   NativeErrorEvent
@@ -331,39 +335,80 @@ export default function NativeEventParseTest() {
       expect(e.fingerprint === 'fp_003').assertTrue()
     })
 
-    // ── webSendPrepareDownload 事件 ──
+    // ── webAccess / webDownload* 事件 ──
 
-    it('parse_web_send_prepare_download_event', 0, () => {
+    it('parse_web_access_event', 0, () => {
       let json =
-        '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_001","ip":"192.168.1.200","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
+        '{"type":"webAccess","payload":{"ip":"192.168.1.200","userAgent":"Mozilla/5.0","fileCount":2}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
         return
       }
-      let e: NativeWebSendPrepareDownloadEvent = event as NativeWebSendPrepareDownloadEvent
-      expect(e.type === 'webSendPrepareDownload').assertTrue()
-      expect(e.sessionId === 'web_session_001').assertTrue()
+      let e: NativeWebAccessEvent = event as NativeWebAccessEvent
+      expect(e.type === 'webAccess').assertTrue()
       expect(e.ip === '192.168.1.200').assertTrue()
       expect(e.userAgent === 'Mozilla/5.0').assertTrue()
+      expect(e.fileCount === 2).assertTrue()
+    })
+
+    it('parse_web_download_started_event', 0, () => {
+      let json =
+        '{"type":"webDownloadStarted","payload":{"batchId":"b1","ip":"192.168.1.200","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadStartedEvent = event as NativeWebDownloadStartedEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.ip === '192.168.1.200').assertTrue()
       expect(e.files.length === 1).assertTrue()
       expect(e.files[0].fileName === 'a.txt').assertTrue()
     })
 
-    it('parse_web_send_prepare_download_without_user_agent', 0, () => {
-      let json = '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_002","ip":"192.168.1.200","files":[]}}'
+    it('parse_web_download_progress_event', 0, () => {
+      let json =
+        '{"type":"webDownloadProgress","payload":{"batchId":"b1","fileId":"f1","sentBytes":5,"totalBytes":10}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
         return
       }
-      let e: NativeWebSendPrepareDownloadEvent = event as NativeWebSendPrepareDownloadEvent
-      expect(e.sessionId === 'web_session_002').assertTrue()
-      // userAgent 缺失时应为 undefined
-      expect(e.userAgent === undefined).assertTrue()
+      let e: NativeWebDownloadProgressEvent = event as NativeWebDownloadProgressEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.fileId === 'f1').assertTrue()
+      expect(e.sentBytes === 5).assertTrue()
+      expect(e.totalBytes === 10).assertTrue()
     })
 
-    // ── webSendFileDownload 事件 ──
+    it('parse_web_download_file_done_event', 0, () => {
+      let json =
+        '{"type":"webDownloadFileDone","payload":{"batchId":"b1","fileId":"f1","totalBytes":10}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadFileDoneEvent = event as NativeWebDownloadFileDoneEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.fileId === 'f1').assertTrue()
+      expect(e.totalBytes === 10).assertTrue()
+    })
+
+    it('parse_web_download_ended_event', 0, () => {
+      let json =
+        '{"type":"webDownloadEnded","payload":{"batchId":"b1","outcome":"failed","error":"network"}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadEndedEvent = event as NativeWebDownloadEndedEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.outcome === 'failed').assertTrue()
+      expect(e.error === 'network').assertTrue()
+    })
 
     // ── webSendSessionEnd 事件 ──
 

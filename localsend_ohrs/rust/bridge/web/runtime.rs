@@ -20,7 +20,7 @@ use crate::bridge::lock;
 use crate::bridge::server::clone_event_tx;
 use crate::bridge::state::bridge;
 use crate::bridge::web::caps::ShareState;
-use crate::bridge::web::server::{ProgressEvent, WebServiceState};
+use crate::bridge::web::server::{FileTableChange, ProgressEvent, WebServiceState};
 use crate::bridge::web::session::{FileSource, SharedFile, SharedFileTable};
 use crate::bridge::web::upload::UploadStore;
 
@@ -82,6 +82,9 @@ pub struct WebServiceFile {
     /// 校验和（展示用）。
     #[serde(default)]
     pub sha256: Option<String>,
+    /// 源文件修改时间（Unix 毫秒；供 ZIP 条目时间还原）。
+    #[serde(default)]
+    pub last_modified: Option<u64>,
 }
 
 fn default_fd() -> i32 {
@@ -191,13 +194,14 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
                     metadata: None,
                 },
                 source,
+                last_modified_ms: entry.last_modified,
             },
         );
     }
     let mut table = SharedFileTable::empty();
     table.replace(files);
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
-    let (file_events, _) = tokio::sync::broadcast::channel::<u64>(16);
+    let (file_events, _) = tokio::sync::broadcast::channel::<FileTableChange>(16);
     let (session_events, _) = tokio::sync::broadcast::channel::<String>(16);
     let (caps_events, _) = tokio::sync::broadcast::channel::<()>(16);
     let state = Arc::new(WebServiceState {
@@ -233,6 +237,8 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
         session_events: Some(session_events),
+        pending_batches: Arc::new(Mutex::new(HashMap::new())),
+        active_batches: Arc::new(Mutex::new(HashMap::new())),
         closing: Arc::new(Mutex::new(HashMap::new())),
         caps_events: Some(caps_events),
     });
@@ -342,6 +348,8 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
         preview: Option<String>,
         #[serde(default)]
         sha256: Option<String>,
+        #[serde(default)]
+        last_modified: Option<u64>,
     }
     let entries: Vec<FileEntry> =
         serde_json::from_str(files_json).map_err(|e| anyhow::anyhow!("文件 JSON 解析失败: {e}"))?;
@@ -370,6 +378,7 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
                     metadata: None,
                 },
                 source,
+                last_modified_ms: entry.last_modified,
             },
         );
     }
@@ -389,47 +398,37 @@ pub fn set_upload_enabled(enabled: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 接受待确认会话（下载/上传两侧都试）。
+/// 接受待确认上传会话（下载已无待确认状态）。
 pub fn accept(token: &str) -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
     let now = std::time::Instant::now();
-    if lock(&state.sessions).accept(token, now).is_ok() {
-        return Ok(());
-    }
     lock(&state.uploads)
         .accept(token, now)
-        .map_err(|_| anyhow::anyhow!("会话不存在或已过期: {token}"))?;
+        .map_err(|_| anyhow::anyhow!("上传会话不存在或已过期: {token}"))?;
     Ok(())
 }
 
-/// 拒绝待确认会话（下载/上传两侧都试）。
+/// 拒绝待确认上传会话（下载已无待确认状态）。
 pub fn decline(token: &str) -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
-    if lock(&state.sessions).decline(token) {
-        return Ok(());
-    }
     let removed = lock(&state.uploads).decline(token);
     match removed {
         Some(session) => {
             crate::bridge::web::server::remove_tmp_files(&session);
             Ok(())
         }
-        None => Err(anyhow::anyhow!("会话不存在或已过期: {token}")),
+        None => Err(anyhow::anyhow!("上传会话不存在或已过期: {token}")),
     }
 }
 
-/// 令待确认会话过期（下载/上传两侧都试；浏览器收 408）。
+/// 令待确认上传会话过期（浏览器收 408）。
 pub fn expire(token: &str) -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
-    if lock(&state.sessions).expire(token) {
-        state.broadcast_session_end(token);
-        return Ok(());
-    }
     if lock(&state.uploads).expire(token) {
         state.broadcast_session_end(token);
         return Ok(());
     }
-    Err(anyhow::anyhow!("会话不存在或已过期: {token}"))
+    Err(anyhow::anyhow!("上传会话不存在或已过期: {token}"))
 }
 
 /// 设置浏览器上传的落盘目标（确认前调用；返回实际生效条目数）。
@@ -449,6 +448,17 @@ pub fn set_upload_targets(token: &str, targets_json: &str) -> anyhow::Result<u32
     Ok(applied as u32)
 }
 
+/// 取消指定下载批次：设置取消标志，写循环在下个读块停止。
+pub fn cancel_download(batch_id: &str) -> anyhow::Result<()> {
+    let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
+    let flag = lock(&state.active_batches)
+        .get(batch_id)
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("下载批次不存在或已结束: {batch_id}"))?;
+    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(())
+}
+
 /// 触发全量惰性打扫（供 ArkTS 侧超时驱动调用）。
 pub async fn sweep() -> anyhow::Result<()> {
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
@@ -456,22 +466,59 @@ pub async fn sweep() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 进度事件 → 桥接事件转发（下载复用既有 `WebSend*` 变体，
-/// `sessionId` 即 token；上传用新增 `WebUpload*` 变体）。
+/// 进度事件 → 桥接事件转发（下载用批次事件，上传沿用既有 `WebUpload*`）。
 async fn forward_events(mut progress_rx: mpsc::Receiver<ProgressEvent>) {
     let event_tx = clone_event_tx(bridge());
     while let Some(event) = progress_rx.recv().await {
         let bridge_event = match event {
-            ProgressEvent::PrepareDownloadRequested {
-                token,
+            ProgressEvent::WebAccess {
+                ip,
+                user_agent,
+                file_count,
+            } => BridgeEvent::WebAccess {
+                ip,
+                user_agent,
+                file_count,
+            },
+            ProgressEvent::DownloadStarted {
+                batch_id,
                 ip,
                 user_agent,
                 files,
-            } => BridgeEvent::WebSendPrepareDownload {
-                session_id: token,
+            } => BridgeEvent::WebDownloadStarted {
+                batch_id,
                 ip,
                 user_agent,
                 files,
+            },
+            ProgressEvent::DownloadProgress {
+                batch_id,
+                file_id,
+                sent_bytes,
+                total_bytes,
+            } => BridgeEvent::WebDownloadProgress {
+                batch_id,
+                file_id,
+                sent_bytes,
+                total_bytes,
+            },
+            ProgressEvent::DownloadFileDone {
+                batch_id,
+                file_id,
+                total_bytes,
+            } => BridgeEvent::WebDownloadFileDone {
+                batch_id,
+                file_id,
+                total_bytes,
+            },
+            ProgressEvent::DownloadEnded {
+                batch_id,
+                outcome,
+                error,
+            } => BridgeEvent::WebDownloadEnded {
+                batch_id,
+                outcome: outcome.as_str().to_string(),
+                error,
             },
             ProgressEvent::PrepareUploadRequested {
                 token,
@@ -482,34 +529,6 @@ async fn forward_events(mut progress_rx: mpsc::Receiver<ProgressEvent>) {
                 token,
                 ip,
                 user_agent,
-                files,
-            },
-            ProgressEvent::Progress {
-                token,
-                file_id,
-                sent_bytes,
-                total_bytes,
-            } => BridgeEvent::WebSendProgress {
-                session_id: token,
-                file_id,
-                sent_bytes,
-                total_bytes,
-            },
-            ProgressEvent::Done {
-                token,
-                file_id,
-                total_bytes,
-            } => BridgeEvent::WebSendProgress {
-                session_id: token,
-                file_id,
-                sent_bytes: total_bytes,
-                total_bytes,
-            },
-            ProgressEvent::Heartbeat { token } => {
-                BridgeEvent::WebSendHeartbeat { session_id: token }
-            }
-            ProgressEvent::FilesUpdated { token, files } => BridgeEvent::WebSendFilesUpdated {
-                session_id: token,
                 files,
             },
             ProgressEvent::UploadProgress {

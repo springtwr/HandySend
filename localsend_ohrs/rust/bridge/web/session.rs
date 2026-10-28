@@ -14,39 +14,8 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use localsend::model::transfer::FileDto;
-use tokio::sync::oneshot;
 
-/// 会话状态：待确认（持有决策发送端）/ 已接受。
-pub enum SessionState {
-    /// 待确认：持有决策通道发送端；发送端被丢弃即 408。
-    Pending {
-        decision_tx: Option<oneshot::Sender<bool>>,
-    },
-    /// 已接受：可按快照下载。
-    Accepted,
-}
-
-impl std::fmt::Debug for SessionState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Pending { .. } => write!(f, "Pending"),
-            Self::Accepted => write!(f, "Accepted"),
-        }
-    }
-}
-
-/// 建会话时冻结的单文件快照（含当时元数据与内容源）。
-#[derive(Clone, Debug)]
-pub struct OfferedFile {
-    /// 对外文件标识（换表时按路径复用，见 ArkTS 侧同名逻辑）。
-    pub file_id: String,
-    /// 建会话时冻结的文件表版本。
-    pub file_revision: u64,
-    /// 冻结时的文件元数据（文件名/大小/类型，后续换表不影响）。
-    pub file: FileDto,
-}
-
-/// Token 会话。
+/// 下载 token 会话：只作为授权与文件快照缓存，不参与应用任务生命周期。
 #[derive(Debug)]
 pub struct TokenSession {
     /// 浏览器 UUID（首访服务端下发，`sessionStorage` 复用）。
@@ -59,19 +28,30 @@ pub struct TokenSession {
     pub user_agent: Option<String>,
     /// 建会话时刻。
     pub created_at: Instant,
-    /// 最近文件活动时刻（首包/字节进度/完成回执刷新）。
-    pub last_activity: Instant,
-    /// 当前状态。
-    pub state: SessionState,
-    /// 是否已开始下载（首个文件请求到达后为真）。
-    pub download_started: bool,
+    /// 最近使用时刻（仅用于 LRU 淘汰）。
+    pub last_used: Instant,
     /// 建会话时出示的文件快照。
     pub offered_files: HashMap<String, OfferedFile>,
     /// 建会话时冻结的文件表版本。
     pub file_revision: u64,
 }
 
-/// 可配置的超时（线上默认，测试注入短值）。
+/// 建会话时冻结的单文件快照（含当时元数据与内容源）。
+#[derive(Clone, Debug)]
+pub struct OfferedFile {
+    /// 对外文件标识（换表时按路径复用，见 ArkTS 侧同名逻辑）。
+    pub file_id: String,
+    /// 建会话时冻结的文件表版本。
+    pub file_revision: u64,
+    /// 冻结时的文件元数据（文件名/大小/类型，后续换表不影响）。
+    pub file: FileDto,
+    /// 源文件修改时间（Unix 毫秒；供 ZIP 条目时间还原）。
+    pub last_modified_ms: Option<u64>,
+}
+
+/// 可配置的上传超时（线上默认，测试注入短值）。
+///
+/// 下载会话已改为绝对 TTL，不再使用这套活动超时；类型保留给上传复用。
 #[derive(Clone, Copy, Debug)]
 pub struct SessionTimeouts {
     /// 待确认超时（默认 60s，先结束原生决策通道，浏览器收 408）。
@@ -145,6 +125,8 @@ pub struct SharedFile {
     pub file: FileDto,
     /// 内容源。
     pub source: FileSource,
+    /// 源文件修改时间（Unix 毫秒；缺省时写入当前本地时间）。
+    pub last_modified_ms: Option<u64>,
 }
 
 /// 共享文件表（`revision` 单调增；换表返回被删条目供保留）。
@@ -211,123 +193,87 @@ pub enum SessionEndReason {
     PeerIdle,
 }
 
-/// 会话存储（token → 会话；调用方持锁，见服务状态）。
-#[derive(Debug, Default)]
+/// 下载会话存储：token → 快照缓存。
+///
+/// 下载不再有“待确认/已接受”状态，也没有活动超时；会话只有绝对 TTL，
+/// 页面在每次下载前重新 prepare，TTL 到期后自然换新 token。
+#[derive(Debug)]
 pub struct SessionStore {
     /// 活跃会话表。
     pub sessions: HashMap<String, TokenSession>,
-    /// 超时配置。
-    pub timeouts: SessionTimeouts,
+    /// 绝对 TTL（不随活动滑动）。
+    pub ttl: Duration,
+    /// 最大会话数，超出按 `last_used` 淘汰。
+    pub max_sessions: usize,
+}
+
+impl Default for SessionStore {
+    fn default() -> Self {
+        Self {
+            sessions: HashMap::new(),
+            ttl: Duration::from_secs(2 * 60 * 60),
+            max_sessions: 32,
+        }
+    }
 }
 
 impl SessionStore {
-    /// 登记待确认会话（token 由调用方经 UUID 生成）。
-    pub fn insert_pending(&mut self, session: TokenSession) {
+    /// 插入/替换会话；超出上限时淘汰最久未用会话。
+    pub fn insert(&mut self, session: TokenSession) {
         self.sessions.insert(session.token.clone(), session);
+        while self.sessions.len() > self.max_sessions {
+            let Some(oldest) = self
+                .sessions
+                .values()
+                .min_by_key(|item| item.last_used)
+                .map(|item| item.token.clone())
+            else {
+                break;
+            };
+            self.sessions.remove(&oldest);
+        }
     }
 
-    /// 按 token 取会话（是否存在）。
+    /// 按 token 取会话。
+    pub fn get(&self, token: &str) -> Option<&TokenSession> {
+        self.sessions.get(token)
+    }
+
+    /// 按 token 取可变会话。
+    pub fn get_mut(&mut self, token: &str) -> Option<&mut TokenSession> {
+        self.sessions.get_mut(token)
+    }
+
+    /// 是否存在会话。
     pub fn contains(&self, token: &str) -> bool {
         self.sessions.contains_key(token)
     }
 
-    /// 接受：待确认会话转已接受并刷新活动时刻；
-    /// 已接受会话重复接受视为幂等成功（只刷新时刻）。
-    pub fn accept(&mut self, token: &str, now: Instant) -> Result<(), SessionEndReason> {
-        let Some(session) = self.sessions.get_mut(token) else {
-            return Err(SessionEndReason::PendingTimeout);
-        };
-        match &mut session.state {
-            SessionState::Pending { decision_tx } => {
-                if let Some(tx) = decision_tx.take() {
-                    let _ = tx.send(true);
-                }
-                session.state = SessionState::Accepted;
-                session.last_activity = now;
-                Ok(())
-            }
-            SessionState::Accepted => {
-                session.last_activity = now;
-                Ok(())
-            }
-        }
+    /// 移除会话。
+    pub fn remove(&mut self, token: &str) -> Option<TokenSession> {
+        self.sessions.remove(token)
     }
 
-    /// 拒绝：发送拒绝并移除会话。
-    pub fn decline(&mut self, token: &str) -> bool {
-        let Some(mut session) = self.sessions.remove(token) else {
-            return false;
-        };
-        if let SessionState::Pending { decision_tx } = &mut session.state {
-            if let Some(tx) = decision_tx.take() {
-                let _ = tx.send(false);
-            }
-        }
-        true
-    }
-
-    /// 过期：移除会话并丢弃决策发送端（等待方收 408）。
-    pub fn expire(&mut self, token: &str) -> bool {
-        self.sessions.remove(token).is_some()
-    }
-
-    /// 刷新活动时刻（首包/字节进度/完成回执到达时调用）。
+    /// 刷新最近使用时刻（仅用于 LRU）。
     pub fn touch(&mut self, token: &str, now: Instant) {
         if let Some(session) = self.sessions.get_mut(token) {
-            session.last_activity = now;
+            session.last_used = now;
         }
     }
 
-    /// 标记已开始下载（首个文件请求到达时调用；传输中空闲仍由
-    /// 字节进度侧判定，此处只区分“从未开始”与“已开始”）。
-    pub fn mark_download_started(&mut self, token: &str) {
-        if let Some(session) = self.sessions.get_mut(token) {
-            session.download_started = true;
-        }
-    }
-
-    /// 终结超时会话并返回（token，原因）：
-    /// 待确认超 `pending`，已接受且从未开始下载超 `wait_first_file`。
-    /// 传输中空闲（已开始后又超时）由字节进度侧判定，此处不收。
-    /// 移除即丢弃待确认决策发送端，等待方收 408。
-    pub fn sweep(&mut self, now: Instant) -> Vec<(String, SessionEndReason)> {
-        let mut ended: Vec<(String, SessionEndReason)> = Vec::new();
-        let timeouts = self.timeouts;
-        let expired: Vec<(String, SessionEndReason)> = self
+    /// 清理过期会话；返回被移除的 token（仅诊断/日志，不发应用事件）。
+    pub fn cleanup(&mut self, now: Instant) -> Vec<String> {
+        let ttl = self.ttl;
+        let expired: Vec<String> = self
             .sessions
             .iter()
-            .filter_map(|(token, session)| {
-                let reason = match &session.state {
-                    SessionState::Pending { .. }
-                        if now.duration_since(session.created_at) >= timeouts.pending =>
-                    {
-                        Some(SessionEndReason::PendingTimeout)
-                    }
-                    SessionState::Accepted
-                        if !session.download_started
-                            && now.duration_since(session.last_activity)
-                                >= timeouts.wait_first_file =>
-                    {
-                        Some(SessionEndReason::PeerNoDownload)
-                    }
-                    // 已开始下载后长时间没有请求/字节活动：清理服务端会话。
-                    // 页面打开期间由 heartbeat 续期，下载过程中由字节进度续期。
-                    SessionState::Accepted
-                        if session.download_started
-                            && now.duration_since(session.last_activity) >= timeouts.idle =>
-                    {
-                        Some(SessionEndReason::PeerIdle)
-                    }
-                    _ => None,
-                };
-                reason.map(|reason| (token.clone(), reason))
-            })
+            .filter(|(_, session)| now.duration_since(session.created_at) >= ttl)
+            .map(|(token, _)| token.clone())
             .collect();
-        for (token, reason) in expired {
-            self.sessions.remove(&token);
-            ended.push((token, reason));
+        for token in &expired {
+            self.sessions.remove(token);
         }
-        ended
+        expired
     }
 }
 
@@ -347,114 +293,48 @@ mod tests {
         }
     }
 
-    fn pending_session(token: &str) -> (TokenSession, oneshot::Receiver<bool>) {
-        let (tx, rx) = oneshot::channel();
-        let now = Instant::now();
-        let session = TokenSession {
+    fn session(token: &str, now: Instant) -> TokenSession {
+        TokenSession {
             token: token.to_string(),
             share_id: "share-1".to_string(),
             peer_ip: "192.168.1.2".to_string(),
             user_agent: None,
             created_at: now,
-            last_activity: now,
-            state: SessionState::Pending {
-                decision_tx: Some(tx),
-            },
-            download_started: false,
+            last_used: now,
             offered_files: HashMap::new(),
             file_revision: 1,
-        };
-        (session, rx)
+        }
     }
 
     #[test]
-    fn test_accept_pending_session_notifies_true() {
-        let mut store = SessionStore::default();
-        let (session, mut rx) = pending_session("tok-1");
-        store.insert_pending(session);
-        store.accept("tok-1", Instant::now()).unwrap();
-        assert_eq!(rx.try_recv().unwrap(), true);
-        assert!(matches!(
-            store.sessions["tok-1"].state,
-            SessionState::Accepted
-        ));
-    }
-
-    #[test]
-    fn test_decline_pending_session_notifies_false_and_removes() {
-        let mut store = SessionStore::default();
-        let (session, mut rx) = pending_session("tok-2");
-        store.insert_pending(session);
-        assert!(store.decline("tok-2"));
-        assert_eq!(rx.try_recv().unwrap(), false);
-        assert!(!store.contains("tok-2"));
-    }
-
-    #[test]
-    fn test_expire_drops_decision_sender() {
-        let mut store = SessionStore::default();
-        let (session, mut rx) = pending_session("tok-3");
-        store.insert_pending(session);
-        assert!(store.expire("tok-3"));
-        assert!(rx.try_recv().is_err());
-    }
-
-    #[test]
-    fn test_sweep_pending_timeout() {
+    fn test_session_ttl_cleanup() {
+        let now = Instant::now();
         let mut store = SessionStore {
-            timeouts: SessionTimeouts {
-                pending: Duration::from_millis(10),
-                ..Default::default()
-            },
+            ttl: Duration::from_millis(10),
             ..Default::default()
         };
-        let (session, _rx) = pending_session("tok-4");
-        store.insert_pending(session);
+        store.insert(session("tok-1", now));
+        assert!(store.contains("tok-1"));
         std::thread::sleep(Duration::from_millis(20));
-        let ended = store.sweep(Instant::now());
-        assert_eq!(
-            ended,
-            vec![("tok-4".to_string(), SessionEndReason::PendingTimeout)]
-        );
-        assert!(!store.contains("tok-4"));
+        let removed = store.cleanup(Instant::now());
+        assert_eq!(removed, vec!["tok-1".to_string()]);
+        assert!(!store.contains("tok-1"));
     }
 
     #[test]
-    fn test_sweep_peer_no_download_only_without_activity() {
+    fn test_session_lru_eviction() {
+        let now = Instant::now();
         let mut store = SessionStore {
-            timeouts: SessionTimeouts {
-                wait_first_file: Duration::from_millis(10),
-                ..Default::default()
-            },
+            max_sessions: 2,
             ..Default::default()
         };
-        let (mut session, _rx) = pending_session("tok-5");
-        session.state = SessionState::Accepted;
-        session.last_activity = Instant::now();
-        session.download_started = true;
-        store.insert_pending(session);
-        // 有持续活动（heartbeat/字节进度）的不收
-        let ended = store.sweep(Instant::now());
-        assert!(ended.is_empty());
-        // 已开始下载但长时间无活动：按传输空闲收尾
-        store.sessions.get_mut("tok-5").unwrap().last_activity =
-            Instant::now() - Duration::from_secs(3600);
-        let ended = store.sweep(Instant::now());
-        assert_eq!(
-            ended,
-            vec![("tok-5".to_string(), SessionEndReason::PeerIdle)]
-        );
-        // 从未开始下载且长时间无活动：按对方未下载收尾
-        let (mut session, _rx) = pending_session("tok-6");
-        session.state = SessionState::Accepted;
-        session.last_activity = Instant::now() - Duration::from_secs(3600);
-        session.download_started = false;
-        store.insert_pending(session);
-        let ended = store.sweep(Instant::now());
-        assert_eq!(
-            ended,
-            vec![("tok-6".to_string(), SessionEndReason::PeerNoDownload)]
-        );
+        store.insert(session("old", now));
+        store.insert(session("new", now + Duration::from_secs(1)));
+        store.touch("old", now + Duration::from_secs(2));
+        store.insert(session("newest", now + Duration::from_secs(3)));
+        assert!(store.contains("old"));
+        assert!(!store.contains("new"));
+        assert!(store.contains("newest"));
     }
 
     #[test]
@@ -466,6 +346,7 @@ mod tests {
             SharedFile {
                 file: file_dto("a"),
                 source: FileSource::Path("/tmp/a".to_string()),
+                last_modified_ms: None,
             },
         );
         first.insert(
@@ -473,6 +354,7 @@ mod tests {
             SharedFile {
                 file: file_dto("b"),
                 source: FileSource::Path("/tmp/b".to_string()),
+                last_modified_ms: None,
             },
         );
         assert!(table.replace(first).is_empty());
@@ -483,6 +365,7 @@ mod tests {
             SharedFile {
                 file: file_dto("b"),
                 source: FileSource::Path("/tmp/b".to_string()),
+                last_modified_ms: None,
             },
         );
         let removed = table.replace(second);

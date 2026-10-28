@@ -41,6 +41,7 @@ import {
   acceptWebSession,
   declineWebSession,
   expireWebSession,
+  cancelWebDownload,
   sweepWebSessions,
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
@@ -301,17 +302,22 @@ export function nativeSetWebUploadTargets(token: string, targetsJson: string): n
   return setWebUploadTargets(token, targetsJson);
 }
 
-/** 接受待确认的浏览器会话（下载/上传两侧都试）。 */
+/** 取消指定网页下载批次。 */
+export function nativeCancelWebDownload(batchId: string): void {
+  cancelWebDownload(batchId);
+}
+
+/** 接受待确认的浏览器上传会话。 */
 export function nativeAcceptWebSession(token: string): void {
   acceptWebSession(token);
 }
 
-/** 拒绝待确认的浏览器会话（下载/上传两侧都试）。 */
+/** 拒绝待确认的浏览器上传会话。 */
 export function nativeDeclineWebSession(token: string): void {
   declineWebSession(token);
 }
 
-/** 令待确认的浏览器会话过期（浏览器收 408；下载/上传两侧都试）。 */
+/** 令待确认的浏览器上传会话过期（浏览器收 408）。 */
 export function nativeExpireWebSession(token: string): void {
   expireWebSession(token);
 }

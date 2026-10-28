@@ -63,10 +63,9 @@ export default function BackgroundAggregateTest() {
 
     // ── 后台关注类别：待确认请求优先于网页访问 ──
     it('attentionKind_pendingFirst', 0, () => {
-      expect(resolveAttentionKind(0, false)).assertEqual(AttentionKind.none)
-      expect(resolveAttentionKind(0, true)).assertEqual(AttentionKind.webAccess)
-      expect(resolveAttentionKind(2, false)).assertEqual(AttentionKind.pendingRequest)
-      expect(resolveAttentionKind(1, true)).assertEqual(AttentionKind.pendingRequest)
+      expect(resolveAttentionKind(0)).assertEqual(AttentionKind.none)
+      expect(resolveAttentionKind(2)).assertEqual(AttentionKind.pendingRequest)
+      expect(resolveAttentionKind(1)).assertEqual(AttentionKind.pendingRequest)
     })
 
     // ── 协议无关聚合（来自注册表） ──

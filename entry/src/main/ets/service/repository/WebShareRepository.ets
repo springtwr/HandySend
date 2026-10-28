@@ -12,11 +12,11 @@ import {
 } from '../../model/transfer/TransferSession';
 import {
   NativeTransferFileInfo,
-  NativeWebSendPrepareDownloadEvent,
-  NativeWebSendProgressEvent,
-  NativeWebSendSessionEndEvent,
-  NativeWebSendHeartbeatEvent,
-  NativeWebSendFilesUpdatedEvent,
+  NativeWebAccessEvent,
+  NativeWebDownloadStartedEvent,
+  NativeWebDownloadProgressEvent,
+  NativeWebDownloadFileDoneEvent,
+  NativeWebDownloadEndedEvent,
   NativeWebUploadDoneEvent,
   NativeWebUploadPrepareEvent,
   NativeWebUploadProgressEvent
@@ -59,13 +59,10 @@ import { readTextOfLocation } from '../../utils/FileTextUtil';
 import { generateWebAccessCode } from '../../utils/WebAccessCode';
 import {
   WEB_DOWNLOAD_KEY,
-  beginWebDownloadBurst,
-  handleWebDownloadFilesUpdated,
-  handleWebDownloadHeartbeat,
-  handleWebDownloadProgress,
-  markWebDownloadAccepted,
-  markWebDownloadDeclined,
-  setWebDownloadInvokers
+  beginWebDownloadBatch,
+  handleWebDownloadEnded,
+  handleWebDownloadFileDone,
+  handleWebDownloadProgress
 } from '../transfer/adapters/WebDownloadAdapter';
 import {
   WEB_UPLOAD_KEY,
@@ -82,7 +79,6 @@ import {
   querySessions,
   subscribeSessions
 } from '../transfer/TransferSessionRegistry';
-import { notifyWebAccessAttention } from '../BackgroundAttentionNotifier';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
 
@@ -122,35 +118,6 @@ export function getWebAccessCode(): string {
   return webAccessCode;
 }
 
-/**
- * 当前运行中的网页服务是否带本次访问码。
- * 页面门禁通过（扫码或访问码）即视为已完成外发授权：下载建会话时服务端直接放行，
- * 应用侧只弹「网页访问」提示。
- */
-export function isWebAccessCodeEnabled(): boolean {
-  return webAccessCode.length > 0;
-}
-
-/** 网页访问提示（门禁通过后由主页弹出，不阻塞浏览器取列表）。 */
-export interface WebAccessNotice {
-  sessionId: string
-  ip: string
-  fileCount: number
-}
-
-let pendingWebAccessNotice: WebAccessNotice | undefined = undefined;
-// 快速刷新/多标签同 IP 的去重窗口：避免短时间内重复弹「网页访问」
-const WEB_ACCESS_NOTICE_DEBOUNCE_MS: number = 15000;
-let lastWebAccessNoticeAt: number = 0;
-let lastWebAccessNoticeIp: string = '';
-
-/** 取走待展示的网页访问提示（主页前台时消费）。 */
-export function takeWebAccessNotice(): WebAccessNotice | undefined {
-  let notice = pendingWebAccessNotice;
-  pendingWebAccessNotice = undefined;
-  return notice;
-}
-
 // 分享文件表是否正在替换（避免暂存区连续变化时并发换表）
 let webUpdating: boolean = false;
 
@@ -188,6 +155,8 @@ interface ShareFileProfile {
   fd: number
   preview: string
   sha256: string
+  // 源文件修改时间（Unix 毫秒，可缺省）：供网页 zip 条目还原时间
+  lastModified?: number
 }
 
 let shareFileProfiles: Record<string, ShareFileProfile> = {};
@@ -202,6 +171,7 @@ interface WebFileJson {
   fd: number
   preview: string
   sha256: string
+  lastModified?: number
 }
 
 /** 登记本次分享的源文件档案（分享创建成功后调用）。 */
@@ -216,7 +186,8 @@ function registerShareFileProfiles(files: Array<SendFileItem>, handles: Array<fs
       size: f.size,
       fd: i < handles.length ? handles[i].fd : -1,
       preview: f.preview !== undefined ? f.preview : '',
-      sha256: f.hash !== undefined ? f.hash : ''
+      sha256: f.hash !== undefined ? f.hash : '',
+      lastModified: f.lastModified
     };
   }
   shareFileProfiles = next;
@@ -236,36 +207,16 @@ function buildWebFilesJson(): string {
       filePath: profile.path,
       fd: profile.fd,
       preview: profile.preview,
-      sha256: profile.sha256
+      sha256: profile.sha256,
+      lastModified: profile.lastModified
     });
   }
   return JSON.stringify(entries);
 }
 
 /**
- * 本次挂载的可下载文件清单（会话文件描述符）。
- *
- * 浏览器下载会话创建时即登记，使待确认弹窗与详情页在下载开始前
- * 就有完整的文件数量与清单，而不是等第一个文件事件才逐条出现。
+ * 清空分享源文件档案（停止分享时调用）。
  */
-function shareFileDescriptors(): Array<SessionFileDescriptor> {
-  let result: Array<SessionFileDescriptor> = [];
-  let ids: Array<string> = Object.keys(shareFileProfiles);
-  for (let i = 0; i < ids.length; i++) {
-    let profile = shareFileProfiles[ids[i]];
-    let descriptor: SessionFileDescriptor = {
-      fileId: ids[i],
-      fileName: profile.fileName,
-      fileType: profile.fileType,
-      totalBytes: profile.size,
-      path: profile.path
-    };
-    result.push(descriptor);
-  }
-  return result;
-}
-
-/** 清空分享源文件档案（停止分享时调用）。 */
 function clearShareFileProfiles(): void {
   shareFileProfiles = {};
 }
@@ -313,6 +264,7 @@ interface WebServiceFileJson {
   fd: number
   preview: string
   sha256: string
+  lastModified?: number
 }
 
 interface WebServiceConfigJson {
@@ -357,7 +309,8 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
       size: profile.size,
       fd: profile.fd,
       preview: profile.preview,
-      sha256: profile.sha256
+      sha256: profile.sha256,
+      lastModified: profile.lastModified
     });
   }
   webCapabilityToken = generateWebCapabilityToken();
@@ -641,9 +594,6 @@ export async function stopShareLink(): Promise<void> {
   webAccessCode = '';
   webServiceConfiguredPort = 0;
   clearShareFileProfiles();
-  pendingWebAccessNotice = undefined;
-  lastWebAccessNoticeAt = 0;
-  lastWebAccessNoticeIp = '';
   webUploadAutoAccept = false;
   webUploadEnabled = false;
   logger.info('网页分享服务已停止');
@@ -697,7 +647,6 @@ export async function unmountShare(): Promise<void> {
     let count: number = nativeUpdateWebServiceFiles('[]');
     closeShareFileHandles();
     clearShareFileProfiles();
-    pendingWebAccessNotice = undefined;
     webUploadAutoAccept = false;
     // 总开关关闭时停服务；仅撤下文件时保留地址/二维码与上传入口。
     if (!getWebSendAllowed()) {
@@ -826,13 +775,13 @@ function buildWebFilesJsonFor(files: Array<SendFileItem>, handles: Array<fs.File
   return JSON.stringify(entries);
 }
 
-// ── Web 下载事件（由 handleNativeEvent 路由；sessionId 即浏览器 token） ──
+// ── Web 下载事件（批次模型；页面访问只记日志，不建任务） ──
 
 /**
- * 由服务端建会话事件的文件清单构造会话描述符。
+ * 由服务端批次事件的文件清单构造会话描述符。
  * 文件清单以服务端快照为准；本地路径仅用于详情页文本预览，按 fileId 从当前档案补齐。
  */
-function descriptorsFromPrepareEvent(files: Array<NativeTransferFileInfo>): Array<SessionFileDescriptor> {
+function descriptorsFromDownloadEvent(files: Array<NativeTransferFileInfo>): Array<SessionFileDescriptor> {
   let result: Array<SessionFileDescriptor> = [];
   for (let i = 0; i < files.length; i++) {
     let f: NativeTransferFileInfo = files[i];
@@ -851,191 +800,56 @@ function descriptorsFromPrepareEvent(files: Array<NativeTransferFileInfo>): Arra
   return result;
 }
 
-export function handlePrepareDownloadTyped(event: NativeWebSendPrepareDownloadEvent): void {
-  let token: string = event.sessionId;
-  if (token.length === 0) {
-    logger.warn('WebPrepareDownload 事件 token 为空，已忽略');
+/** 网页访问：只写诊断日志；保活由 AppService 统一处理，不建任务。 */
+export function handleWebAccessTyped(event: NativeWebAccessEvent): void {
+  if (event.ip.length === 0) {
     return;
   }
-  let ip: string = event.ip;
-  logger.debug('token=' + token + ' ip=' + ip, { direction: 'share' });
-  logger.info('收到 Web 下载请求 ip=' + ip + '（token=' + token + '）');
+  logger.info('网页访问 ip=' + event.ip + ' 文件数=' + event.fileCount +
+    ' ua=' + (event.userAgent ?? ''));
+}
 
-  // 文件清单以服务端建会话快照为准；旧事件缺少清单时回退当前档案
-  let descriptors: Array<SessionFileDescriptor> = event.files.length > 0 ?
-    descriptorsFromPrepareEvent(event.files) : shareFileDescriptors();
-  // 页面门禁通过（扫码或本次访问码）即视为已完成外发授权：服务端已直接放行，
-  // 这里只登记任务，并记一条「网页访问」提示（前后台由通知层去重）。
-  let accessCodeEnabled: boolean = isWebAccessCodeEnabled();
-  if (accessCodeEnabled) {
-    logger.debug('Web 下载已授权直接放行（accessCode=' + accessCodeEnabled + '）');
-    try {
-      nativeAcceptWebSession(token);
-    } catch (e) {
-      logger.warn('Web 下载自动放行失败 token=' + token + '：' + String(e));
-      return;
-    }
-    let sessionId: string = beginWebDownloadBurst(token, false, descriptors, ip);
-    markWebDownloadAccepted(token);
-    // 文本消息正文随文件表预览已交付：按已完成计入进度，避免其他文件下完后停在 99%
-    for (let i = 0; i < event.files.length; i++) {
-      let f: NativeTransferFileInfo = event.files[i];
-      if (f.fileName === 'message.txt' && f.fileType === 'text/plain' &&
-        f.preview !== undefined && f.preview.length > 0) {
-        handleWebDownloadProgress(token, f.fileId, f.size, f.size);
-      }
-    }
-    // 后台关注通知层：已放行的网页访问同样需要在后台被用户看到
-    // （前台由「网页访问」提示/任务页承担，通知层自身按前台状态忽略）。
-    notifyWebAccessAttention(sessionId, ip, descriptors.length);
-    let now: number = Date.now();
-    if (ip !== lastWebAccessNoticeIp || now - lastWebAccessNoticeAt >= WEB_ACCESS_NOTICE_DEBOUNCE_MS) {
-      pendingWebAccessNotice = {
-        sessionId: sessionId,
-        ip: ip,
-        fileCount: descriptors.length
-      };
-      lastWebAccessNoticeAt = now;
-      lastWebAccessNoticeIp = ip;
-    }
-  } else {
-    logger.debug('Web 下载进入待确认（服务未生成访问码）');
-    beginWebDownloadBurst(token, true, descriptors, ip);
+/** 下载批次开始：一个批次一个任务。 */
+export function handleWebDownloadStartedTyped(event: NativeWebDownloadStartedEvent): void {
+  if (event.batchId.length === 0) {
+    return;
   }
+  let descriptors: Array<SessionFileDescriptor> = descriptorsFromDownloadEvent(event.files);
+  if (descriptors.length === 0) {
+    return;
+  }
+  beginWebDownloadBatch(event.batchId, event.ip, descriptors);
+  logger.info('网页下载开始 batch=' + event.batchId + ' ip=' + event.ip +
+    ' 文件数=' + descriptors.length);
   notifyChange();
 }
 
-// Web 下载字节级进度：同步到统一会话，终态由访问会话收口
-export function handleWebSendProgressTyped(event: NativeWebSendProgressEvent): void {
-  let token: string = event.sessionId;
-  let fileId: string = event.fileId;
-  if (token.length === 0 || fileId.length === 0) {
+/** 单文件字节进度（zip 内逐条目）。 */
+export function handleWebDownloadProgressTyped(event: NativeWebDownloadProgressEvent): void {
+  if (event.batchId.length === 0 || event.fileId.length === 0) {
     return;
   }
-  handleWebDownloadProgress(token, fileId, event.sentBytes, event.totalBytes);
+  handleWebDownloadProgress(event.batchId, event.fileId, event.sentBytes, event.totalBytes);
   notifyChange();
 }
 
-/** 页面心跳：访问会话仍存活，续期应用侧任务。 */
-export function handleWebSendHeartbeatTyped(event: NativeWebSendHeartbeatEvent): void {
-  if (event.sessionId.length === 0) {
+/** 单文件完成。 */
+export function handleWebDownloadFileDoneTyped(event: NativeWebDownloadFileDoneEvent): void {
+  if (event.batchId.length === 0 || event.fileId.length === 0) {
     return;
   }
-  handleWebDownloadHeartbeat(event.sessionId);
-}
-
-/** 分享文件表 revision 变化：同步任务文件清单，不重建会话、不重复提示。 */
-export function handleWebSendFilesUpdatedTyped(event: NativeWebSendFilesUpdatedEvent): void {
-  if (event.sessionId.length === 0) {
-    return;
-  }
-  let descriptors: Array<SessionFileDescriptor> = descriptorsFromPrepareEvent(event.files);
-  handleWebDownloadFilesUpdated(event.sessionId, descriptors);
+  handleWebDownloadFileDone(event.batchId, event.fileId, event.totalBytes);
   notifyChange();
 }
 
-/** 按 token 终结指定的网页下载会话（终态收口；不存在或已终态时静默返回）。 */
-function finishWebDownloadSession(token: string, stage: SessionStage, reason?: string,
-  code?: string): void {
-  let targets: Array<TransferSession> = querySessions();
-  for (let i = 0; i < targets.length; i++) {
-    let target = targets[i];
-    if (target.protocolKey === WEB_DOWNLOAD_KEY && target.protocolSessionId === token &&
-      !isTerminalStage(target.stage)) {
-      finish(target.id, stage, reason, code);
-      return;
-    }
-  }
-}
-
-/** 服务端终结通知：待确认阶段直接取消；进行中交由适配器静默判定收口。 */
-export function handleWebDownloadFinished(token: string): void {
-  if (token.length === 0) {
+/** 下载批次终态。 */
+export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent): void {
+  if (event.batchId.length === 0) {
     return;
   }
-  let all: Array<TransferSession> = querySessions();
-  for (let i = 0; i < all.length; i++) {
-    let session = all[i];
-    if (session.protocolKey === WEB_DOWNLOAD_KEY && session.protocolSessionId === token &&
-      !isTerminalStage(session.stage)) {
-      if (session.stage === SessionStage.awaitingConfirmation) {
-        // 服务端已遗忘该待确认会话：本地按超时取消，不再等待用户
-        finishWebDownloadSession(token, SessionStage.cancelled, '等待确认超时', 'pending_timeout');
-        return;
-      }
-      // 访问会话结束（页面关闭/服务端回收）：按文件完成度收口
-      let total: number = session.files.length;
-      let completed: number = 0;
-      for (let k = 0; k < session.files.length; k++) {
-        let file = session.files[k];
-        let done: boolean = file.stage === SessionFileStage.completed ||
-          (file.totalBytes > 0 && file.bytesSent >= file.totalBytes);
-        if (done) {
-          completed++;
-        }
-      }
-      if (total > 0 && completed === total) {
-        finishWebDownloadSession(token, SessionStage.succeeded);
-      } else if (completed > 0) {
-        finishWebDownloadSession(token, SessionStage.cancelled,
-          '网页已关闭，已下载 ' + completed + '/' + total, 'page_closed');
-      } else {
-        finishWebDownloadSession(token, SessionStage.cancelled,
-          '对方未下载任何文件', 'peer_no_download');
-      }
-      return;
-    }
-  }
-}
-
-// ── Web 下载确认操作（入参为浏览器 token） ──
-
-export function acceptWebDownload(token: string): void {
-  if (token.length === 0) {
-    return;
-  }
-  try {
-    nativeAcceptWebSession(token);
-  } catch (e) {
-    // 会话已被惰性打扫或另一次操作终结：按过期收口，避免 UI 卡在待确认
-    logger.warn('接受 Web 下载失败 token=' + token + '：' + String(e));
-    finishWebDownloadSession(token, SessionStage.cancelled, '等待确认超时', 'pending_timeout');
-    notifyChange();
-    return;
-  }
-  markWebDownloadAccepted(token);
-  logger.info('Web 下载已接受 token=' + token);
+  handleWebDownloadEnded(event.batchId, event.outcome, event.error);
+  logger.info('网页下载结束 batch=' + event.batchId + ' 结果=' + event.outcome);
   notifyChange();
-}
-
-export function declineWebDownload(token: string): void {
-  if (token.length === 0) {
-    return;
-  }
-  try {
-    nativeDeclineWebSession(token);
-  } catch (e) {
-    logger.warn('拒绝 Web 下载失败 token=' + token + '：' + String(e));
-  }
-  markWebDownloadDeclined(token);
-  logger.info('Web 下载已拒绝 token=' + token);
-  notifyChange();
-}
-
-/**
- * 结束原生侧网页下载会话：待确认超时（浏览器收 408）或用户结束任务
- * （进行中的响应在下一个读块停止）。本地终态由注册表/适配器收口。
- */
-export function expireWebDownload(token: string): void {
-  if (token.length === 0) {
-    return;
-  }
-  try {
-    nativeExpireWebSession(token);
-    logger.info('Web 下载会话已终结 token=' + token);
-  } catch (_e) {
-    // 决策已被处理或会话已过期：属正常竞态，不改变本地终态
-  }
 }
 
 /**
@@ -1111,19 +925,6 @@ export function hasActiveWebDownloads(): boolean {
   }
   return false;
 }
-
-// 注册 Web 下载确认/拒绝/超时入口：任务的待确认操作经适配器回调本仓库
-setWebDownloadInvokers(
-  (token: string): void => {
-    acceptWebDownload(token);
-  },
-  (token: string): void => {
-    declineWebDownload(token);
-  },
-  (token: string): void => {
-    expireWebDownload(token);
-  }
-);
 
 // ── Web 上传事件（由 handleNativeEvent 路由；token 即浏览器会话标识） ──
 
@@ -1219,9 +1020,17 @@ export function handleWebUploadFinished(token: string): void {
       !isTerminalStage(session.stage)) {
       if (session.stage === SessionStage.awaitingConfirmation) {
         finishWebUploadSession(token, SessionStage.cancelled, '等待确认超时', 'pending_timeout');
-      } else if (session.stage === SessionStage.active &&
-        !session.files.some((file) => file.bytesSent > 0)) {
-        finishWebUploadSession(token, SessionStage.cancelled, '对方未上传任何文件', 'peer_no_upload');
+      } else if (session.stage === SessionStage.active) {
+        let completed: number = session.files.filter((file) =>
+          file.stage === SessionFileStage.completed ||
+          (file.totalBytes > 0 && file.bytesSent >= file.totalBytes)).length;
+        if (completed > 0) {
+          finishWebUploadSession(token, SessionStage.partiallyFailed, '网页已关闭，部分文件已上传',
+            'upload_session_ended');
+        } else {
+          finishWebUploadSession(token, SessionStage.cancelled, '网页已关闭，上传已中断',
+            'upload_session_ended');
+        }
       }
       return;
     }

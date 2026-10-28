@@ -20,6 +20,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::{IpAddr, SocketAddr};
 use std::os::fd::FromRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -41,10 +42,11 @@ use crate::bridge::throttle::ProgressThrottle;
 use crate::bridge::web::caps::{CapsSnapshot, ShareState};
 use crate::bridge::web::i18n::web_page_i18n;
 use crate::bridge::web::session::{
-    FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionState, SessionStore,
-    SharedFile, SharedFileTable, TokenSession,
+    FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionStore, SharedFile,
+    SharedFileTable, TokenSession,
 };
 use crate::bridge::web::upload::{part_path, UploadFile, UploadSession, UploadState, UploadStore};
+use crate::bridge::web::zip_plan;
 
 /// 响应体类型（统一装箱，便于在同一路由返回空体与流式体）。
 type BoxBody = http_body_util::combinators::BoxBody<Bytes, std::io::Error>;
@@ -81,41 +83,64 @@ pub struct WebServiceConfig {
     pub use_https: bool,
 }
 
+/// 下载批次终态。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DownloadOutcome {
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl DownloadOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
 /// 进度与终结事件（生产由 ArkTS 侧接入统一注册表；测试直接断言）。
 #[derive(Clone, Debug)]
 pub enum ProgressEvent {
-    /// 下载待确认（浏览器建会话，等待用户决策；NAPI 侧转确认弹窗）。
-    PrepareDownloadRequested {
-        token: String,
+    /// 网页访问（仅新建 token 时发；只用于日志与后台保活，不建任务）。
+    WebAccess {
+        ip: String,
+        user_agent: Option<String>,
+        file_count: usize,
+    },
+    /// 下载批次开始（第一个 body chunk 成功入队后发）。
+    DownloadStarted {
+        batch_id: String,
         ip: String,
         user_agent: Option<String>,
         files: Vec<AdapterFileDto>,
+    },
+    /// 单文件下载进度（zip 内逐条目，单文件即该文件）。
+    DownloadProgress {
+        batch_id: String,
+        file_id: String,
+        sent_bytes: u64,
+        total_bytes: u64,
+    },
+    /// 单文件下载完成。
+    DownloadFileDone {
+        batch_id: String,
+        file_id: String,
+        total_bytes: u64,
+    },
+    /// 下载批次结束（成功/失败/取消，只发一次）。
+    DownloadEnded {
+        batch_id: String,
+        outcome: DownloadOutcome,
+        error: Option<String>,
     },
     /// 上传待确认（浏览器建会话，等待用户决策；NAPI 侧转确认弹窗）。
     PrepareUploadRequested {
         token: String,
         ip: String,
         user_agent: Option<String>,
-        files: Vec<AdapterFileDto>,
-    },
-    /// 下载字节进度（节流，可丢弃语义由消费方定）。
-    Progress {
-        token: String,
-        file_id: String,
-        sent_bytes: u64,
-        total_bytes: u64,
-    },
-    /// 下载文件下发完毕（终值，关键事件）。
-    Done {
-        token: String,
-        file_id: String,
-        total_bytes: u64,
-    },
-    /// 页面心跳（访问会话仍存活，应用侧据此续期任务）。
-    Heartbeat { token: String },
-    /// 当前访问会话的文件表已随分享版本更新（应用侧同步任务文件清单）。
-    FilesUpdated {
-        token: String,
         files: Vec<AdapterFileDto>,
     },
     /// 上传字节进度（节流）。
@@ -131,8 +156,29 @@ pub enum ProgressEvent {
         file_id: String,
         path: String,
     },
-    /// 会话结束（完成回执/终结，调用方按终态收口）。
+    /// 上传会话结束（完成回执/终结，调用方按终态收口）。
     Finished { token: String },
+}
+
+/// 文件表变化摘要（SSE 推给浏览器；不再只推 revision 数字）。
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileTableChange {
+    pub revision: u64,
+    pub added: Vec<AdapterFileDto>,
+    pub removed: Vec<String>,
+    pub changed: Vec<String>,
+}
+
+fn adapter_file_dto(file: &localsend::model::transfer::FileDto) -> AdapterFileDto {
+    AdapterFileDto {
+        id: file.id.clone(),
+        file_name: file.file_name.clone(),
+        size: file.size,
+        file_type: file.file_type.clone(),
+        preview: file.preview.clone(),
+        sha256: file.sha256.clone(),
+    }
 }
 
 /// 访问码错误计数条目（窗口内累计）。
@@ -163,6 +209,17 @@ impl ClientBinding {
     fn matches(&self, peer_ip: IpAddr, ua_hash: u64) -> bool {
         self.peer_ip == peer_ip && self.ua_hash == ua_hash
     }
+}
+
+/// 多选下载的待开始批次（POST 登记，GET 消费；不建应用任务）。
+#[derive(Clone, Debug)]
+pub struct PendingZipBatch {
+    pub token: String,
+    pub peer_ip: String,
+    pub file_ids: Vec<String>,
+    pub all: bool,
+    pub created_at: Instant,
+    pub expires_at: Instant,
 }
 
 /// 服务共享状态（调用方持锁；`caps` 展示字段由生产方维护，
@@ -197,11 +254,15 @@ pub struct WebServiceState {
     pub pin_attempts: Arc<Mutex<HashMap<IpAddr, PinAttempt>>>,
     /// 进度事件出口（`None` 时不发射，纯传输）。
     pub progress_tx: Option<mpsc::Sender<ProgressEvent>>,
-    /// 文件表版本广播（浏览器 SSE 订阅；`None` 时不提供推送，兼容测试）。
-    pub file_events: Option<tokio::sync::broadcast::Sender<u64>>,
-    /// 会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
+    /// 文件表变化广播（浏览器 SSE 订阅；`None` 时不提供推送，兼容测试）。
+    pub file_events: Option<tokio::sync::broadcast::Sender<FileTableChange>>,
+    /// 上传会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
     pub session_events: Option<tokio::sync::broadcast::Sender<String>>,
-    /// 页面关闭宽限：token → 到期时刻；刷新后的心跳会移除。
+    /// 多选下载待开始批次（POST 登记，GET 消费；60s 过期）。
+    pub pending_batches: Arc<Mutex<HashMap<String, PendingZipBatch>>>,
+    /// 活动下载批次的取消标志（应用取消时置位）。
+    pub active_batches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    /// 上传页关闭宽限：token → 到期时刻；上传进度会移除。
     pub closing: Arc<Mutex<HashMap<String, Instant>>>,
     /// 能力快照变更广播（上传入口开关等；SSE 通知页面刷新 caps）。
     pub caps_events: Option<tokio::sync::broadcast::Sender<()>>,
@@ -216,14 +277,46 @@ impl WebServiceState {
     }
 
     /// 就地换表：版本号 +1；被删条目转入保留区（宽限后释放）；
-    /// 同时打扫过期的保留条目。
+    /// 同时计算新增/删除/变更摘要供浏览器 SSE 使用。
     pub fn update_files(&self, next: HashMap<String, SharedFile>) {
         let now = Instant::now();
         let deadline = now + RETAIN_GRACE;
-        let removed = lock(&self.files).replace(next);
+        let change = {
+            let mut files = lock(&self.files);
+            let old = files.files.clone();
+            let added: Vec<AdapterFileDto> = next
+                .iter()
+                .filter(|(id, _)| !old.contains_key(*id))
+                .map(|(_, entry)| adapter_file_dto(&entry.file))
+                .collect();
+            let changed: Vec<String> = next
+                .iter()
+                .filter(|(id, entry)| {
+                    old.get(*id).is_some_and(|previous| {
+                        previous.file.file_name != entry.file.file_name
+                            || previous.file.size != entry.file.size
+                            || previous.file.file_type != entry.file.file_type
+                    })
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            let removed_ids: Vec<String> = old
+                .keys()
+                .filter(|id| !next.contains_key(*id))
+                .cloned()
+                .collect();
+            let removed = files.replace(next);
+            let change = FileTableChange {
+                revision: files.revision,
+                added,
+                removed: removed_ids,
+                changed,
+            };
+            (change, removed)
+        };
         let mut retained = lock(&self.retained);
         retained.retain(|_, entry| entry.deadline > now);
-        for file in removed {
+        for file in change.1 {
             // ArkTS 在 native 调用返回后立即关闭旧句柄：保留区必须先
             // dup 一份私有 fd，否则宽限期内按旧表下载会读到已关闭/被复用的 fd。
             let Some(source) = file.source.duplicate() else {
@@ -236,26 +329,20 @@ impl WebServiceState {
                     file: SharedFile {
                         file: file.file,
                         source,
+                        last_modified_ms: file.last_modified_ms,
                     },
                     deadline,
                 },
             );
         }
         if let Some(tx) = &self.file_events {
-            let _ = tx.send(lock(&self.files).revision);
+            let _ = tx.send(change.0);
         }
     }
 
-    /// 标记页面关闭：宽限内没有新心跳则结束会话；刷新后的心跳会取消。
+    /// 标记上传页面关闭：宽限内没有新上传活动则清理上传会话。
     pub fn mark_page_leave(&self, token: &str, peer: SocketAddr) -> bool {
         let known = {
-            let sessions = lock(&self.sessions);
-            sessions
-                .sessions
-                .get(token)
-                .map(|session| session.peer_ip == peer.ip().to_string())
-                .unwrap_or(false)
-        } || {
             let uploads = lock(&self.uploads);
             uploads
                 .sessions
@@ -269,11 +356,11 @@ impl WebServiceState {
         known
     }
 
-    /// 惰性打扫下载侧：会话超时终结 + 保留区过期释放。
-    /// 返回被终结的（token，原因），调用方按终态收口。
-    pub fn sweep(&self, now: Instant) -> Vec<(String, SessionEndReason)> {
+    /// 打扫保留区、待下载批次与过期下载会话；不发应用事件。
+    pub fn sweep_retained(&self, now: Instant) {
         lock(&self.retained).retain(|_, entry| entry.deadline > now);
-        lock(&self.sessions).sweep(now)
+        lock(&self.pending_batches).retain(|_, batch| batch.expires_at > now);
+        lock(&self.sessions).cleanup(now);
     }
 
     /// 惰性打扫上传侧：返回被终结的完整会话，调用方负责清理
@@ -282,13 +369,10 @@ impl WebServiceState {
         lock(&self.uploads).sweep(now)
     }
 
-    /// 全量惰性打扫（各请求入口调用）：下载超时终结 + 上传超时终结
-    /// （清临时文件并上报 `Finished`）+ 保留区过期释放。
+    /// 全量惰性打扫（各请求入口调用）：上传超时终结（清临时文件并上报
+    /// `Finished`）+ 保留区过期释放 + 上传关闭宽限 + 待下载批次过期。
     pub(crate) async fn sweep_all(&self, now: Instant) {
-        for (token, _reason) in self.sweep(now) {
-            self.broadcast_session_end(&token);
-            self.emit(ProgressEvent::Finished { token }).await;
-        }
+        self.sweep_retained(now);
         let closed: Vec<String> = {
             let mut closing = lock(&self.closing);
             let expired: Vec<String> = closing
@@ -302,11 +386,6 @@ impl WebServiceState {
             expired
         };
         for token in closed {
-            if lock(&self.sessions).expire(&token) {
-                self.broadcast_session_end(&token);
-                self.emit(ProgressEvent::Finished { token }).await;
-                continue;
-            }
             let upload = { lock(&self.uploads).sessions.remove(&token) };
             if let Some(session) = upload {
                 remove_tmp_files(&session);
@@ -502,21 +581,10 @@ impl WebServiceState {
         None
     }
 
-    /// 刷新下载会话的活动时刻（heartbeat / 字节进度）。
-    pub fn touch_download(&self, token: &str) {
-        lock(&self.sessions).touch(token, Instant::now());
-        lock(&self.closing).remove(token);
-    }
-
     /// 刷新上传会话的活动时刻（字节进度）。
     pub fn touch_upload(&self, token: &str) {
         lock(&self.uploads).touch(token, Instant::now());
         lock(&self.closing).remove(token);
-    }
-
-    /// 下载会话是否仍存在（取消/回收后用于中止正在下发的响应）。
-    pub fn download_session_active(&self, token: &str) -> bool {
-        lock(&self.sessions).contains(token)
     }
 
     /// 上传会话是否仍存在（取消/回收后用于中止正在写入的请求体）。
@@ -683,7 +751,14 @@ async fn handle(
             Ok(prepare_download(&query, state, peer, user_agent).await)
         }
         ("GET", "/web/download") => Ok(start_download(&req, &query, state, peer).await),
-        ("GET", "/web/download-all") => Ok(start_download_all(&req, &query, state, peer).await),
+        ("POST", "/web/download-batch") => {
+            let body = read_body_capped(req.into_body(), 64 * 1024).await;
+            match body {
+                Ok(bytes) => Ok(prepare_download_batch(&bytes, &query, state, peer).await),
+                Err(_) => Ok(text_response(StatusCode::BAD_REQUEST, "请求体过大")),
+            }
+        }
+        ("GET", "/web/download-batch") => Ok(download_batch(&req, &query, state, peer).await),
         ("POST", "/web/prepare-upload") => {
             let user_agent = req
                 .headers()
@@ -694,7 +769,6 @@ async fn handle(
         }
         ("POST", "/web/upload") => Ok(receive_upload(req, &query, state, peer).await),
         ("POST", "/web/finish") => Ok(finish_session(&query, state, peer).await),
-        ("POST", "/web/heartbeat") => Ok(heartbeat_response(&query, &state, peer).await),
         ("POST", "/web/leave") => Ok(leave_response(&query, &state, peer)),
         _ => Ok(text_response(StatusCode::NOT_FOUND, "未知路径")),
     }
@@ -781,42 +855,6 @@ fn leave_response(
     }
 }
 
-async fn heartbeat_response(
-    query: &HashMap<String, String>,
-    state: &WebServiceState,
-    peer: SocketAddr,
-) -> Response<BoxBody> {
-    let Some(token) = query.get("token") else {
-        return text_response(StatusCode::BAD_REQUEST, "缺少 token");
-    };
-    let token_owned: String;
-    let pending: bool;
-    {
-        let mut sessions = lock(&state.sessions);
-        let Some(session) = sessions.sessions.get_mut(token) else {
-            return text_response(StatusCode::NOT_FOUND, "会话已失效");
-        };
-        if session.peer_ip != peer.ip().to_string() {
-            return text_response(StatusCode::FORBIDDEN, "无效 token");
-        }
-        pending = !matches!(session.state, SessionState::Accepted);
-        if !pending {
-            session.last_activity = Instant::now();
-        }
-        token_owned = token.clone();
-    }
-    // 心跳到达即视为页面仍在：待确认中也撤销关闭宽限，避免刷新后等待确认期间被回收
-    lock(&state.closing).remove(token);
-    if pending {
-        return text_response(StatusCode::CONFLICT, "等待对方确认中");
-    }
-    // 访问会话仍存活：通知应用侧续期任务，避免本地看门狗误收口。
-    state
-        .emit(ProgressEvent::Heartbeat { token: token_owned })
-        .await;
-    json_response(StatusCode::OK, "{\"ok\":true}")
-}
-
 /// 单页/上传页：二维码能力令牌与访问码是并列入口。
 /// 带令牌时换取 HttpOnly Cookie；裸地址在设置了访问码时渲染访问码页，
 /// 未设置访问码时给出「请扫码」提示页。
@@ -898,13 +936,21 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
         return text_response(StatusCode::NOT_IMPLEMENTED, "推送未启用");
     };
     let rx = tx.subscribe();
-    let initial = lock(&state.files).revision;
+    let initial = FileTableChange {
+        revision: lock(&state.files).revision,
+        added: Vec::new(),
+        removed: Vec::new(),
+        changed: Vec::new(),
+    };
     let interval = tokio::time::interval(Duration::from_secs(25));
     let file_stream = futures_util::stream::unfold(
         (rx, interval, Some(initial)),
         |(mut rx, mut interval, initial)| async move {
-            if let Some(revision) = initial {
-                let chunk = format!("data: {revision}\n\n");
+            if let Some(initial) = initial {
+                let chunk = format!(
+                    "data: {}\n\n",
+                    serde_json::to_string(&initial).unwrap_or_else(|_| "{}".to_string())
+                );
                 return Some((
                     Ok::<_, std::io::Error>(Frame::data(Bytes::from(chunk))),
                     (rx, interval, None),
@@ -913,8 +959,11 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
             loop {
                 tokio::select! {
                     result = rx.recv() => match result {
-                        Ok(revision) => {
-                            let chunk = format!("data: {revision}\n\n");
+                        Ok(change) => {
+                            let chunk = format!(
+                                "data: {}\n\n",
+                                serde_json::to_string(&change).unwrap_or_else(|_| "{}".to_string())
+                            );
                             return Some((
                                 Ok::<_, std::io::Error>(Frame::data(Bytes::from(chunk))),
                                 (rx, interval, None),
@@ -1039,156 +1088,68 @@ async fn prepare_download(
     if lock(&state.files).files.is_empty() {
         return text_response(StatusCode::NOT_FOUND, "分享无可下载文件");
     }
+    // 生产环境总有能力令牌/访问码；无门禁仅测试/旧调用，直接放行并告警，
+    // 不再走应用确认（确认链路已删除）。
+    if !state.auth_required() && !state.capability_required() {
+        log::warn!("网页分享未启用访问门禁，测试/旧调用直接放行");
+    }
     let peer_ip: String = peer.ip().to_string();
-    // 复用：token 有效、已接受、同 IP → 刷新为当前文件表后直接下发。
-    // 刷新是页面轮询 revision 后拿到新清单的关键：同一浏览器的已授权会话
-    // 不因发送方增删文件而失效，也不重复弹确认。
     if let Some(token) = query.get("token") {
-        let accepted: bool = {
-            let sessions = lock(&state.sessions);
-            match sessions.sessions.get(token) {
+        let (revision, offered) = current_offered(&state);
+        let mut session_error: Option<Response<BoxBody>> = None;
+        {
+            let mut sessions = lock(&state.sessions);
+            match sessions.sessions.get_mut(token) {
                 Some(session) if session.peer_ip == peer_ip => {
-                    if matches!(session.state, SessionState::Accepted) {
-                        true
-                    } else {
-                        return token_conflict(token);
-                    }
+                    // 页面点击下载前会 prepare：刷新快照并下发当前文件表。
+                    session.offered_files = offered;
+                    session.file_revision = revision;
+                    session.last_used = now;
                 }
-                Some(_) => return text_response(StatusCode::FORBIDDEN, "无效 token"),
-                None => false,
+                Some(_) => {
+                    session_error = Some(text_response(StatusCode::FORBIDDEN, "无效 token"));
+                }
+                None => {}
             }
-        };
-        if accepted {
-            if let Some(files) = refresh_session_files(&state, token) {
-                state
-                    .emit(ProgressEvent::FilesUpdated {
-                        token: token.clone(),
-                        files,
-                    })
-                    .await;
-            }
-            state.touch_download(token);
+        }
+        if let Some(error) = session_error {
+            return error;
+        }
+        if lock(&state.sessions).contains(token) {
             return file_list_response(&state, token);
         }
     }
-    // 同 IP 已有待确认会话：不堆决策，回 409 并带上 token，
-    // 页面据此改用该 token 轮询（连接中断后也能恢复）。
-    {
-        let sessions = lock(&state.sessions);
-        let waiting = sessions
-            .sessions
-            .values()
-            .find(|session| {
-                session.peer_ip == peer_ip && matches!(session.state, SessionState::Pending { .. })
-            })
-            .map(|session| session.token.clone());
-        if let Some(token) = waiting {
-            return token_conflict(&token);
-        }
-    }
-    // 访问码模式下，页面响应丢失后重试或同一浏览器新标签页到达时，复用
-    // 刚被接受且尚未开始下载的会话：不重复建任务、不重复提示，直接回当前表。
-    if state.auth_required() {
-        let adopt: Option<String> = {
-            let sessions = lock(&state.sessions);
-            let wait_first = sessions.timeouts.wait_first_file;
-            sessions
-                .sessions
-                .values()
-                .filter(|session| {
-                    session.peer_ip == peer_ip
-                        && !session.download_started
-                        && matches!(session.state, SessionState::Accepted)
-                        && now.duration_since(session.created_at) <= wait_first
-                })
-                .max_by_key(|session| session.created_at)
-                .map(|session| session.token.clone())
-        };
-        if let Some(token) = adopt {
-            if let Some(files) = refresh_session_files(&state, &token) {
-                state
-                    .emit(ProgressEvent::FilesUpdated {
-                        token: token.clone(),
-                        files,
-                    })
-                    .await;
-            }
-            state.touch_download(&token);
-            return file_list_response(&state, &token);
-        }
-    }
-    // 建挂起会话：快照当前文件表。
+    // 新建 token：冻结当前文件表；不产生应用任务。
     let token: String = uuid::Uuid::new_v4().to_string();
-    let (decision_tx, decision_rx) = oneshot::channel();
     let (revision, offered) = current_offered(&state);
+    let file_count = offered.len();
     {
         let mut sessions = lock(&state.sessions);
-        sessions.insert_pending(TokenSession {
+        sessions.insert(TokenSession {
             token: token.clone(),
             share_id: lock(&state.share_id).clone(),
-            peer_ip,
+            peer_ip: peer_ip.clone(),
             user_agent: user_agent.clone(),
             created_at: now,
-            last_activity: now,
-            state: SessionState::Pending {
-                decision_tx: Some(decision_tx),
-            },
+            last_used: now,
             offered_files: offered,
             file_revision: revision,
-            download_started: false,
         });
     }
-    // 待确认事件（NAPI 侧转确认弹窗；文件清单随事件下发）。
-    let pending_files: Option<Vec<AdapterFileDto>> = {
-        let sessions = lock(&state.sessions);
-        sessions.sessions.get(&token).map(|session| {
-            session
-                .offered_files
-                .values()
-                .map(|offered| AdapterFileDto {
-                    id: offered.file_id.clone(),
-                    file_name: offered.file.file_name.clone(),
-                    size: offered.file.size,
-                    file_type: offered.file.file_type.clone(),
-                    preview: offered.file.preview.clone(),
-                    sha256: offered.file.sha256.clone(),
-                })
-                .collect()
+    log::info!(
+        "网页访问 ip={} files={} ua={}",
+        peer_ip,
+        file_count,
+        user_agent.as_deref().unwrap_or("")
+    );
+    state
+        .emit(ProgressEvent::WebAccess {
+            ip: peer_ip,
+            user_agent,
+            file_count,
         })
-    };
-    if let Some(files) = pending_files {
-        state
-            .emit(ProgressEvent::PrepareDownloadRequested {
-                token: token.clone(),
-                ip: peer.ip().to_string(),
-                user_agent,
-                files,
-            })
-            .await;
-    }
-    // 页面门禁通过（能力令牌或访问码）即外发授权：启用任一门禁时不再等待应用确认，
-    // 立即置为已接受并下发文件表；应用侧仅收到「网页访问」提示。
-    // 无任何门禁的旧调用/测试仍保留待确认流程（确认是唯一的安全边界）。
-    if state.auth_required() || state.capability_required() {
-        let _ = lock(&state.sessions).accept(&token, Instant::now());
-        return file_list_response(&state, &token);
-    }
-    match decision_rx.await {
-        Ok(true) => {
-            // 接受方已把会话置接受并刷新时刻；此处幂等确认后下发表。
-            let _ = lock(&state.sessions).accept(&token, Instant::now());
-            file_list_response(&state, &token)
-        }
-        Ok(false) => {
-            lock(&state.sessions).expire(&token);
-            text_response(StatusCode::FORBIDDEN, "对方已拒绝")
-        }
-        Err(_) => {
-            // 决策通道被丢弃（超时或过期）：会话已由终结方移除。
-            lock(&state.sessions).expire(&token);
-            text_response(StatusCode::REQUEST_TIMEOUT, "等待确认超时")
-        }
-    }
+        .await;
+    file_list_response(&state, &token)
 }
 
 /// 当前文件表 → 会话快照（版本号与文件清单一次性取出）。
@@ -1202,51 +1163,18 @@ fn current_offered(state: &WebServiceState) -> (u64, HashMap<String, OfferedFile
                 file_id: id.clone(),
                 file_revision: files.revision,
                 file: entry.file.clone(),
+                last_modified_ms: entry.last_modified_ms,
             },
         );
     }
     (files.revision, offered)
 }
 
-/// 把已授权下载会话的文件快照刷新为当前表（增删文件后同一 token 继续可用）。
-fn refresh_session_files(state: &WebServiceState, token: &str) -> Option<Vec<AdapterFileDto>> {
-    let (revision, offered) = current_offered(state);
-    let files: Vec<AdapterFileDto> = offered
-        .values()
-        .map(|entry| AdapterFileDto {
-            id: entry.file_id.clone(),
-            file_name: entry.file.file_name.clone(),
-            size: entry.file.size,
-            file_type: entry.file.file_type.clone(),
-            preview: entry.file.preview.clone(),
-            sha256: entry.file.sha256.clone(),
-        })
-        .collect();
-    let mut sessions = lock(&state.sessions);
-    if let Some(session) = sessions.sessions.get_mut(token) {
-        if session.file_revision != revision {
-            session.offered_files = offered;
-            session.file_revision = revision;
-            return Some(files);
-        }
-    }
-    None
-}
-
-/// 409 响应：带上待确认会话 token，页面据此恢复轮询。
-fn token_conflict(token: &str) -> Response<BoxBody> {
-    let mut response = text_response(StatusCode::CONFLICT, "等待对方确认中");
-    if let Ok(value) = hyper::header::HeaderValue::from_str(token) {
-        response.headers_mut().insert("x-handysend-token", value);
-    }
-    response
-}
-
-/// 按 token 下发表（会话缺失时回 408，调用方刷新重试即建新会话）。
+/// 按 token 下发表（会话缺失时回 403，页面重新 prepare 即建新会话）。
 fn file_list_response(state: &WebServiceState, token: &str) -> Response<BoxBody> {
     let sessions = lock(&state.sessions);
     let Some(session) = sessions.sessions.get(token) else {
-        return text_response(StatusCode::REQUEST_TIMEOUT, "等待确认超时");
+        return text_response(StatusCode::FORBIDDEN, "会话已失效");
     };
     let mut files: HashMap<String, localsend::model::transfer::FileDto> = HashMap::new();
     for (id, offered) in session.offered_files.iter() {
@@ -1288,8 +1216,8 @@ async fn start_download(
         .get("preview")
         .map(|value| value == "1")
         .unwrap_or(false);
-    // 校验会话与快照归属。
-    let (meta_file, total, source) = {
+    // 校验会话与快照归属（先释放会话锁，避免与 retained→sessions 的打扫锁序冲突）。
+    let meta_file = {
         let mut sessions = lock(&state.sessions);
         let Some(session) = sessions.sessions.get_mut(token) else {
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
@@ -1297,24 +1225,18 @@ async fn start_download(
         if session.peer_ip != peer.ip().to_string() {
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         }
-        if !matches!(session.state, SessionState::Accepted) {
-            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
-        }
         let Some(offered) = session.offered_files.get(file_id) else {
             return download_error_response(req, StatusCode::FORBIDDEN, updated_message);
         };
-        let meta = offered.file.clone();
-        let total = meta.size;
-        if !preview {
-            session.download_started = true;
-        }
-        session.last_activity = now;
-        // 内容源按快照定位：现表优先，保留区兜底（宽限内）。
-        // `locate_source` 返回独立副本（fd 已 dup），即使随后换表也不受影响。
-        match state.locate_source(file_id, now) {
-            Some(found) => (meta, total, found),
-            None => return download_error_response(req, StatusCode::GONE, updated_message),
-        }
+        session.last_used = now;
+        offered.file.clone()
+    };
+    let total = meta_file.size;
+    // 内容源按快照定位：现表优先，保留区兜底（宽限内）。
+    // `locate_source` 返回独立副本（fd 已 dup），即使随后换表也不受影响。
+    let source = match state.locate_source(file_id, now) {
+        Some(found) => found,
+        None => return download_error_response(req, StatusCode::GONE, updated_message),
     };
     // Range：起点越界回 416，其余按分片下发（200/206）。
     let range = parse_range(
@@ -1337,7 +1259,6 @@ async fn start_download(
         }
     };
     let progress_tx = state.progress_tx.clone();
-    let token_owned = token.clone();
     let file_id_owned = file_id.clone();
     let length = end_exclusive - start;
     let (body_tx, body_rx) = mpsc::channel::<Bytes>(BODY_CHANNEL_CAPACITY);
@@ -1349,11 +1270,26 @@ async fn start_download(
                 .map(|chunk| (Ok::<_, std::io::Error>(Frame::data(chunk)), rx))
         },
     ));
+    let (batch, cancel) = if preview {
+        (None, None)
+    } else {
+        let batch_id = uuid::Uuid::new_v4().to_string();
+        let cancel = Arc::new(AtomicBool::new(false));
+        lock(&state.active_batches).insert(batch_id.clone(), Arc::clone(&cancel));
+        (
+            Some(BatchEmit {
+                batch_id,
+                ip: peer.ip().to_string(),
+                user_agent: None,
+                files: vec![adapter_file_dto(&meta_file)],
+            }),
+            Some(cancel),
+        )
+    };
     let serve_state = Arc::clone(&state);
     tokio::spawn(async move {
         serve_content(
             source,
-            token_owned,
             file_id_owned,
             total,
             start,
@@ -1361,6 +1297,8 @@ async fn start_download(
             body_tx,
             progress_tx,
             serve_state,
+            batch,
+            cancel,
             !preview,
         )
         .await;
@@ -1402,16 +1340,45 @@ async fn start_download(
     response
 }
 
+/// 一个下载批次的事件上下文（单文件或 zip 共用）。
+#[derive(Clone, Debug)]
+struct BatchEmit {
+    batch_id: String,
+    ip: String,
+    user_agent: Option<String>,
+    files: Vec<AdapterFileDto>,
+}
+
 /// 流式 ZIP 响应写入器：把 ZIP 字节块送入 HTTP 响应体通道。
 struct ZipResponseWriter {
     tx: mpsc::Sender<Bytes>,
+    client_gone: Arc<AtomicBool>,
+}
+
+/// 一个待写出的 ZIP 条目：名称、声明大小、源与 Zip64 标记。
+struct ZipBatchEntry {
+    file_id: String,
+    entry_name: String,
+    size: u64,
+    last_modified_ms: Option<u64>,
+    large: bool,
+    source: FileSource,
+}
+
+/// 阻塞 ZIP 写出的结果。
+struct ZipWriteResult {
+    outcome: DownloadOutcome,
+    error: Option<String>,
 }
 
 impl Write for ZipResponseWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.tx
             .blocking_send(Bytes::copy_from_slice(buf))
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "客户端已断开"))?;
+            .map_err(|_| {
+                self.client_gone.store(true, Ordering::Relaxed);
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, "客户端已断开")
+            })?;
         Ok(buf.len())
     }
 
@@ -1447,34 +1414,282 @@ fn unique_zip_name(name: &str, used: &mut HashMap<String, usize>) -> String {
     format!("{stem}_{count}{ext}")
 }
 
-/// 阻塞写出流式 ZIP：数据边读边送响应体，不预打包、不落临时文件。
-fn write_zip_stream(
-    tx: mpsc::Sender<Bytes>,
-    files: Vec<(String, FileSource)>,
-) -> anyhow::Result<()> {
-    let mut zip = ZipWriter::new_stream(ZipResponseWriter { tx });
-    let mut used: HashMap<String, usize> = HashMap::new();
-    for (name, source) in files {
-        let entry_name = unique_zip_name(&name, &mut used);
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
-        zip.start_file(entry_name, options)?;
-        let mut file = open_zip_source(source)?;
-        let mut buffer = vec![0u8; 64 * 1024];
-        loop {
-            let read = file.read(&mut buffer)?;
-            if read == 0 {
-                break;
-            }
-            zip.write_all(&buffer[..read])?;
-        }
+fn emit_blocking(tx: &Option<mpsc::Sender<ProgressEvent>>, event: ProgressEvent) -> bool {
+    match tx {
+        Some(tx) => tx.blocking_send(event).is_ok(),
+        None => true,
     }
-    zip.finish()?;
-    Ok(())
 }
 
-/// `GET /web/download-all?token=`：把会话快照内全部文件流式打成 ZIP 一次下发。
-/// 浏览器对连续多个程序化下载通常只放行第一个，单次 ZIP 可保证全部文件到达。
-async fn start_download_all(
+/// 阻塞写出流式 ZIP：数据边读边送响应体，不预打包、不落临时文件。
+///
+/// 条目名称、大小与 `large` 标记由调用方预先布局；本函数只按布局写出，
+/// 并严格校验每个源文件读出的字节数等于声明大小。
+fn write_zip_stream(
+    tx: mpsc::Sender<Bytes>,
+    files: Vec<ZipBatchEntry>,
+    force_zip64: bool,
+    batch: BatchEmit,
+    progress_tx: Option<mpsc::Sender<ProgressEvent>>,
+    cancel: Arc<AtomicBool>,
+) -> ZipWriteResult {
+    let client_gone = Arc::new(AtomicBool::new(false));
+    let mut zip = ZipWriter::new_stream(ZipResponseWriter {
+        tx,
+        client_gone: Arc::clone(&client_gone),
+    });
+    if force_zip64 {
+        // 恰好 4GB 边界时 zip crate 的 `>` 判断会漏掉 Zip64 EOCD；
+        // 空 extensible data sector 会强制它写出完整 Zip64 尾部。
+        zip.set_raw_zip64_extensible_data_sector(Box::new([]));
+    }
+    if !emit_blocking(
+        &progress_tx,
+        ProgressEvent::DownloadStarted {
+            batch_id: batch.batch_id.clone(),
+            ip: batch.ip.clone(),
+            user_agent: batch.user_agent.clone(),
+            files: batch.files.clone(),
+        },
+    ) {
+        return ZipWriteResult {
+            outcome: DownloadOutcome::Cancelled,
+            error: Some("进度通道已关闭".to_string()),
+        };
+    }
+    let mut buffer = vec![0u8; 64 * 1024];
+    for entry in files {
+        if cancel.load(Ordering::Relaxed) || client_gone.load(Ordering::Relaxed) {
+            return ZipWriteResult {
+                outcome: DownloadOutcome::Cancelled,
+                error: Some("下载已取消".to_string()),
+            };
+        }
+        let options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .large_file(entry.large)
+            .last_modified_time(zip_plan::entry_date_time(entry.last_modified_ms));
+        if let Err(e) = zip.start_file(&entry.entry_name, options) {
+            return ZipWriteResult {
+                outcome: DownloadOutcome::Failed,
+                error: Some(format!("创建 zip 条目失败: {e}")),
+            };
+        }
+        let mut file = match open_zip_source(entry.source) {
+            Ok(value) => value,
+            Err(e) => {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Failed,
+                    error: Some(format!("打开源文件失败: {e}")),
+                };
+            }
+        };
+        let mut remaining = entry.size;
+        let mut sent: u64 = 0;
+        let mut throttle = ProgressThrottle::new();
+        while remaining > 0 {
+            if cancel.load(Ordering::Relaxed) || client_gone.load(Ordering::Relaxed) {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Cancelled,
+                    error: Some("下载已取消".to_string()),
+                };
+            }
+            let want = remaining.min(buffer.len() as u64) as usize;
+            let read = match file.read(&mut buffer[..want]) {
+                Ok(value) => value,
+                Err(e) => {
+                    return ZipWriteResult {
+                        outcome: DownloadOutcome::Failed,
+                        error: Some(format!("读取源文件失败: {e}")),
+                    };
+                }
+            };
+            if read == 0 {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Failed,
+                    error: Some(format!(
+                        "zip 源文件长度不足 file={} 声明={} 剩余={}",
+                        entry.file_id, entry.size, remaining
+                    )),
+                };
+            }
+            if let Err(e) = zip.write_all(&buffer[..read]) {
+                let cancelled =
+                    cancel.load(Ordering::Relaxed) || client_gone.load(Ordering::Relaxed);
+                return ZipWriteResult {
+                    outcome: if cancelled {
+                        DownloadOutcome::Cancelled
+                    } else {
+                        DownloadOutcome::Failed
+                    },
+                    error: Some(format!("写出 zip 失败: {e}")),
+                };
+            }
+            remaining -= read as u64;
+            sent += read as u64;
+            if throttle.allow(Instant::now())
+                && !emit_blocking(
+                    &progress_tx,
+                    ProgressEvent::DownloadProgress {
+                        batch_id: batch.batch_id.clone(),
+                        file_id: entry.file_id.clone(),
+                        sent_bytes: sent,
+                        total_bytes: entry.size,
+                    },
+                )
+            {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Cancelled,
+                    error: Some("进度通道已关闭".to_string()),
+                };
+            }
+        }
+        // 声明大小之外还有内容：说明源文件在传输期间变化，无法保证
+        // Content-Length 与内容一致，直接失败。
+        let mut extra = [0u8; 1];
+        match file.read(&mut extra) {
+            Ok(0) => {}
+            Ok(_) => {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Failed,
+                    error: Some(format!(
+                        "zip 源文件长度超过声明 file={} 声明={}",
+                        entry.file_id, entry.size
+                    )),
+                };
+            }
+            Err(e) => {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Failed,
+                    error: Some(format!("校验源文件长度失败: {e}")),
+                };
+            }
+        }
+        if !emit_blocking(
+            &progress_tx,
+            ProgressEvent::DownloadFileDone {
+                batch_id: batch.batch_id.clone(),
+                file_id: entry.file_id.clone(),
+                total_bytes: entry.size,
+            },
+        ) {
+            return ZipWriteResult {
+                outcome: DownloadOutcome::Cancelled,
+                error: Some("进度通道已关闭".to_string()),
+            };
+        }
+    }
+    if let Err(e) = zip.finish() {
+        let cancelled = cancel.load(Ordering::Relaxed) || client_gone.load(Ordering::Relaxed);
+        return ZipWriteResult {
+            outcome: if cancelled {
+                DownloadOutcome::Cancelled
+            } else {
+                DownloadOutcome::Failed
+            },
+            error: Some(format!("完成 zip 失败: {e}")),
+        };
+    }
+    ZipWriteResult {
+        outcome: DownloadOutcome::Succeeded,
+        error: None,
+    }
+}
+
+/// `POST /web/download-batch?token=`：登记多选下载清单，返回 batchId（不建任务）。
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct DownloadBatchRequest {
+    #[serde(default)]
+    files: Vec<String>,
+    #[serde(default)]
+    all: bool,
+}
+
+async fn prepare_download_batch(
+    body: &[u8],
+    query: &HashMap<String, String>,
+    state: Arc<WebServiceState>,
+    peer: SocketAddr,
+) -> Response<BoxBody> {
+    let now = Instant::now();
+    state.sweep_all(now).await;
+    let Some(token) = query.get("token") else {
+        return text_response(StatusCode::FORBIDDEN, "无效 token");
+    };
+    let request: DownloadBatchRequest = match serde_json::from_slice(body) {
+        Ok(value) => value,
+        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体格式错误"),
+    };
+    let peer_ip = peer.ip().to_string();
+    let (file_ids, total_bytes) = {
+        let mut sessions = lock(&state.sessions);
+        let Some(session) = sessions.sessions.get_mut(token) else {
+            return text_response(StatusCode::FORBIDDEN, "会话已失效");
+        };
+        if session.peer_ip != peer_ip {
+            return text_response(StatusCode::FORBIDDEN, "无效 token");
+        }
+        session.last_used = now;
+        let mut ids: Vec<String> = if request.all {
+            let mut offered: Vec<&OfferedFile> = session.offered_files.values().collect();
+            offered.sort_by(|a, b| {
+                a.file
+                    .file_name
+                    .cmp(&b.file.file_name)
+                    .then_with(|| a.file_id.cmp(&b.file_id))
+            });
+            offered
+                .into_iter()
+                .map(|item| item.file_id.clone())
+                .collect()
+        } else {
+            request.files
+        };
+        if ids.is_empty() {
+            return text_response(StatusCode::BAD_REQUEST, "未选择文件");
+        }
+        let mut unique: Vec<String> = Vec::with_capacity(ids.len());
+        for id in ids.drain(..) {
+            if !unique.contains(&id) {
+                if !session.offered_files.contains_key(&id) {
+                    return text_response(StatusCode::GONE, "分享内容已更新，请刷新");
+                }
+                unique.push(id);
+            }
+        }
+        let total: u64 = unique
+            .iter()
+            .filter_map(|id| session.offered_files.get(id))
+            .map(|item| item.file.size)
+            .sum();
+        (unique, total)
+    };
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    {
+        let mut batches = lock(&state.pending_batches);
+        batches.insert(
+            batch_id.clone(),
+            PendingZipBatch {
+                token: token.clone(),
+                peer_ip,
+                file_ids: file_ids.clone(),
+                all: request.all,
+                created_at: now,
+                expires_at: now + Duration::from_secs(60),
+            },
+        );
+    }
+    let response = serde_json::json!({
+        "batchId": batch_id,
+        "fileCount": file_ids.len(),
+        "totalBytes": total_bytes,
+    });
+    json_response(StatusCode::OK, &response.to_string())
+}
+
+/// `GET /web/download-batch?batch=`：消费待下载批次并流式下发 ZIP。
+async fn download_batch(
     req: &Request<Incoming>,
     query: &HashMap<String, String>,
     state: Arc<WebServiceState>,
@@ -1485,60 +1700,164 @@ async fn start_download_all(
     let i18n = web_page_i18n(accept_language(req));
     let ended_message: &str = &i18n.access_ended_reload;
     let updated_message: &str = &i18n.share_updated_retry;
-    let Some(token) = query.get("token") else {
-        return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
+    let Some(batch_id) = query.get("batch") else {
+        return download_error_response(req, StatusCode::BAD_REQUEST, ended_message);
     };
-    let files: Vec<(String, FileSource)> = {
-        let mut sessions = lock(&state.sessions);
-        let Some(session) = sessions.sessions.get_mut(token) else {
+    let pending = { lock(&state.pending_batches).remove(batch_id) };
+    let Some(pending) = pending else {
+        return download_error_response(req, StatusCode::GONE, updated_message);
+    };
+    if pending.peer_ip != peer.ip().to_string() {
+        return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
+    }
+    let (offered, user_agent) = {
+        let sessions = lock(&state.sessions);
+        let Some(session) = sessions.get(&pending.token) else {
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         };
-        if session.peer_ip != peer.ip().to_string() {
-            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
-        }
-        if !matches!(session.state, SessionState::Accepted) {
-            return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
-        }
-        let mut files: Vec<(String, FileSource)> = Vec::new();
-        for offered in session.offered_files.values() {
-            match state.locate_source(&offered.file_id, now) {
-                Some(source) => files.push((offered.file.file_name.clone(), source)),
-                None => return download_error_response(req, StatusCode::GONE, updated_message),
+        let offered: Vec<OfferedFile> = if pending.all {
+            let mut all: Vec<OfferedFile> = session.offered_files.values().cloned().collect();
+            all.sort_by(|a, b| {
+                a.file
+                    .file_name
+                    .cmp(&b.file.file_name)
+                    .then_with(|| a.file_id.cmp(&b.file_id))
+            });
+            all
+        } else {
+            let mut selected: Vec<OfferedFile> = Vec::new();
+            for id in &pending.file_ids {
+                let Some(item) = session.offered_files.get(id) else {
+                    return download_error_response(req, StatusCode::GONE, updated_message);
+                };
+                selected.push(item.clone());
             }
-        }
-        if files.is_empty() {
+            selected
+        };
+        (offered, session.user_agent.clone())
+    };
+    let (entries, total_len, force_zip64, batch) = {
+        if offered.is_empty() {
             return download_error_response(req, StatusCode::GONE, updated_message);
         }
-        session.download_started = true;
-        session.last_activity = now;
-        files
+        let mut used: HashMap<String, usize> = HashMap::new();
+        let mut planned: Vec<(String, String, u64, Option<u64>, FileSource)> = Vec::new();
+        let mut batch_files: Vec<AdapterFileDto> = Vec::new();
+        for item in offered.into_iter() {
+            let entry_name = unique_zip_name(&item.file.file_name, &mut used);
+            let Some(source) = state.locate_source(&item.file_id, now) else {
+                return download_error_response(req, StatusCode::GONE, updated_message);
+            };
+            batch_files.push(adapter_file_dto(&item.file));
+            planned.push((
+                item.file_id,
+                entry_name,
+                item.file.size,
+                item.last_modified_ms,
+                source,
+            ));
+        }
+        let sizes: Vec<zip_plan::SizeEntry> = planned
+            .iter()
+            .map(|item| zip_plan::SizeEntry {
+                name_len: item.1.len(),
+                size: item.2,
+            })
+            .collect();
+        let layout = match zip_plan::layout(&sizes) {
+            Ok(value) => value,
+            Err(e) => {
+                log::error!("网页 zip 长度计算失败: {e}");
+                return download_error_response(
+                    req,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    updated_message,
+                );
+            }
+        };
+        let entries: Vec<ZipBatchEntry> = planned
+            .into_iter()
+            .enumerate()
+            .map(
+                |(index, (file_id, entry_name, size, last_modified_ms, source))| ZipBatchEntry {
+                    file_id,
+                    entry_name,
+                    size,
+                    last_modified_ms,
+                    large: layout.entries[index].large,
+                    source,
+                },
+            )
+            .collect();
+        (
+            entries,
+            layout.total_len,
+            layout.force_zip64,
+            BatchEmit {
+                batch_id: batch_id.clone(),
+                ip: peer.ip().to_string(),
+                user_agent,
+                files: batch_files,
+            },
+        )
     };
+    let cancel = Arc::new(AtomicBool::new(false));
+    lock(&state.active_batches).insert(batch_id.clone(), Arc::clone(&cancel));
+    let progress_tx = state.progress_tx.clone();
     let (body_tx, body_rx) = mpsc::channel::<Bytes>(BODY_CHANNEL_CAPACITY);
+    // 响应体流超时后丢弃接收端，让阻塞写线程的 blocking_send 失败退出。
     let body = http_body_util::StreamBody::new(futures_util::stream::unfold(
         body_rx,
         |mut rx| async move {
-            rx.recv()
-                .await
-                .map(|chunk| (Ok::<_, std::io::Error>(Frame::data(chunk)), rx))
+            match tokio::time::timeout(Duration::from_secs(30), rx.recv()).await {
+                Ok(Some(chunk)) => Some((Ok::<_, std::io::Error>(Frame::data(chunk)), rx)),
+                Ok(None) | Err(_) => None,
+            }
         },
     ));
+    let serve_state = Arc::clone(&state);
+    let batch_for_events = batch.clone();
     tokio::spawn(async move {
-        match tokio::task::spawn_blocking(move || write_zip_stream(body_tx, files)).await {
-            Ok(Ok(())) => {}
-            Ok(Err(e)) => log::warn!("网页全部下载写出失败: {e}"),
-            Err(e) => log::warn!("网页全部下载任务失败: {e}"),
+        let result = tokio::task::spawn_blocking(move || {
+            write_zip_stream(
+                body_tx,
+                entries,
+                force_zip64,
+                batch,
+                progress_tx,
+                Arc::clone(&cancel),
+            )
+        })
+        .await;
+        let (outcome, error) = match result {
+            Ok(ZipWriteResult { outcome, error }) => (outcome, error),
+            Err(e) => (DownloadOutcome::Failed, Some(format!("zip 任务失败: {e}"))),
+        };
+        let tx = serve_state.progress_tx.clone();
+        if let Some(tx) = tx {
+            let _ = tx
+                .send(ProgressEvent::DownloadEnded {
+                    batch_id: batch_for_events.batch_id.clone(),
+                    outcome,
+                    error,
+                })
+                .await;
         }
+        lock(&serve_state.active_batches).remove(&batch_for_events.batch_id);
     });
+    let zip_name = zip_plan::zip_file_name();
     let mut response = Response::new(body.boxed());
     let headers = response.headers_mut();
     headers.insert(
         CONTENT_TYPE,
         hyper::header::HeaderValue::from_static("application/zip"),
     );
-    headers.insert(
-        CONTENT_DISPOSITION,
-        hyper::header::HeaderValue::from_static("attachment; filename=\"handysend-files.zip\""),
-    );
+    if let Ok(value) =
+        hyper::header::HeaderValue::from_str(&format!("attachment; filename=\"{zip_name}\""))
+    {
+        headers.insert(CONTENT_DISPOSITION, value);
+    }
+    headers.insert(CONTENT_LENGTH, hyper::header::HeaderValue::from(total_len));
     headers.insert(
         hyper::header::CACHE_CONTROL,
         hyper::header::HeaderValue::from_static("no-store"),
@@ -1546,8 +1865,8 @@ async fn start_download_all(
     response
 }
 
-/// `POST /web/finish?token=`：完成回执（幂等 advisory）。
-/// 已知会话移除并记终结；未知 token 仍回 200（网络重试安全）。
+/// `POST /web/finish?token=`：上传完成回执（幂等 advisory）。
+/// 下载已完成批次收口，不再使用该接口；未知 token 仍回 200（网络重试安全）。
 async fn finish_session(
     query: &HashMap<String, String>,
     state: Arc<WebServiceState>,
@@ -1555,15 +1874,6 @@ async fn finish_session(
 ) -> Response<BoxBody> {
     let Some(token) = query.get("token") else {
         return text_response(StatusCode::FORBIDDEN, "无效 token");
-    };
-    let removed = {
-        let mut sessions = lock(&state.sessions);
-        match sessions.sessions.get(token) {
-            Some(session) if session.peer_ip == peer.ip().to_string() => {
-                sessions.sessions.remove(token).is_some()
-            }
-            _ => false,
-        }
     };
     let removed_upload = {
         let mut uploads = lock(&state.uploads);
@@ -1581,7 +1891,7 @@ async fn finish_session(
             None => false,
         }
     };
-    if removed || removed_upload {
+    if removed_upload {
         state
             .emit(ProgressEvent::Finished {
                 token: token.clone(),
@@ -1670,6 +1980,15 @@ fn sanitize_file_name(name: &str) -> String {
 /// 否则建挂起会话并等待决策：接受回文件表 / 拒绝回 403 /
 /// 决策通道被丢弃回 408。上传未开放或分享停止回 404。
 /// 接受即全量（不再逐文件挑）。
+/// 409 响应：带上待确认上传会话 token，页面据此恢复轮询。
+fn token_conflict(token: &str) -> Response<BoxBody> {
+    let mut response = text_response(StatusCode::CONFLICT, "等待对方确认中");
+    if let Ok(value) = hyper::header::HeaderValue::from_str(token) {
+        response.headers_mut().insert("x-handysend-token", value);
+    }
+    response
+}
+
 async fn prepare_upload(
     body: Incoming,
     query: &HashMap<String, String>,
@@ -2092,7 +2411,6 @@ async fn stream_upload_body(
 #[allow(clippy::too_many_arguments)]
 async fn serve_content(
     source: FileSource,
-    token: String,
     file_id: String,
     total: u64,
     start: u64,
@@ -2100,6 +2418,8 @@ async fn serve_content(
     body_tx: mpsc::Sender<Bytes>,
     progress_tx: Option<mpsc::Sender<ProgressEvent>>,
     state: Arc<WebServiceState>,
+    batch: Option<BatchEmit>,
+    cancel: Option<Arc<AtomicBool>>,
     emit_events: bool,
 ) {
     async fn emit(progress_tx: &Option<mpsc::Sender<ProgressEvent>>, event: ProgressEvent) {
@@ -2107,6 +2427,37 @@ async fn serve_content(
             let _ = tx.send(event).await;
         }
     }
+    let mut started = false;
+    let mut outcome = DownloadOutcome::Succeeded;
+    let mut error: Option<String> = None;
+    let mut delivered: u64 = 0;
+    let expected: u64 = end_exclusive.saturating_sub(start);
+
+    let emit_started = |batch: &BatchEmit| ProgressEvent::DownloadStarted {
+        batch_id: batch.batch_id.clone(),
+        ip: batch.ip.clone(),
+        user_agent: batch.user_agent.clone(),
+        files: batch.files.clone(),
+    };
+    let emit_file_done = |batch: &BatchEmit| ProgressEvent::DownloadFileDone {
+        batch_id: batch.batch_id.clone(),
+        file_id: file_id.clone(),
+        total_bytes: total,
+    };
+    let emit_progress = |batch: &BatchEmit, sent: u64| ProgressEvent::DownloadProgress {
+        batch_id: batch.batch_id.clone(),
+        file_id: file_id.clone(),
+        sent_bytes: sent,
+        total_bytes: total,
+    };
+    let emit_ended = |batch: &BatchEmit, outcome: DownloadOutcome, error: Option<String>| {
+        ProgressEvent::DownloadEnded {
+            batch_id: batch.batch_id.clone(),
+            outcome,
+            error,
+        }
+    };
+
     // 已由 `locate_source` 复制好的内容源：fd 副本在任务结束时关闭。
     struct OwnedFd(libc::c_int);
     impl Drop for OwnedFd {
@@ -2116,8 +2467,7 @@ async fn serve_content(
             }
         }
     }
-    // 下载期间持续续期：大文件传输超过空闲窗口也不会被 sweep 收掉。
-    state.touch_download(&token);
+
     match source {
         FileSource::Fd(fd) => {
             let dup_fd = OwnedFd(fd);
@@ -2126,7 +2476,11 @@ async fn serve_content(
             let mut sent: u64 = start;
             let mut throttle = ProgressThrottle::new();
             loop {
-                if sent >= end_exclusive || !state.download_session_active(&token) {
+                if sent >= end_exclusive
+                    || cancel
+                        .as_ref()
+                        .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                {
                     break;
                 }
                 let want: usize = ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
@@ -2144,119 +2498,153 @@ async fn serve_content(
                 })
                 .await;
                 let Ok((n, mut buf, read_offset)) = chunk else {
+                    outcome = DownloadOutcome::Failed;
+                    error = Some("读文件任务失败".to_string());
                     break;
                 };
                 if n <= 0 {
+                    outcome = DownloadOutcome::Failed;
+                    error = Some("源文件读取不足".to_string());
                     break;
                 }
                 offset = read_offset + n as libc::off_t;
                 sent += n as u64;
+                delivered += n as u64;
                 buf.truncate(n as usize);
                 if emit_events && throttle.allow(Instant::now()) {
-                    state.touch_download(&token);
-                    emit(
-                        &progress_tx,
-                        ProgressEvent::Progress {
-                            token: token.clone(),
-                            file_id: file_id.clone(),
-                            sent_bytes: sent,
-                            total_bytes: total,
-                        },
-                    )
-                    .await;
+                    if !started {
+                        if let Some(batch) = &batch {
+                            emit(&progress_tx, emit_started(batch)).await;
+                            started = true;
+                        }
+                    }
+                    if let Some(batch) = &batch {
+                        emit(
+                            &progress_tx,
+                            emit_progress(batch, sent.saturating_sub(start)),
+                        )
+                        .await;
+                    }
                 }
-                if body_tx.send(Bytes::from(buf)).await.is_err() {
-                    // 接收端关闭（浏览器取消下载）：属预期，不记失败。
-                    break;
+                match tokio::time::timeout(Duration::from_secs(30), body_tx.send(Bytes::from(buf)))
+                    .await
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(_)) | Err(_) => {
+                        outcome = DownloadOutcome::Cancelled;
+                        error = Some("客户端已断开".to_string());
+                        break;
+                    }
                 }
-            }
-            let delivered: u64 = sent.saturating_sub(start);
-            let expected: u64 = end_exclusive.saturating_sub(start);
-            if delivered != expected {
-                log::warn!("自研 web 下发长度不符 file={file_id} 交付={delivered} 期望={expected}");
-            }
-            // 仅分片覆盖到文件末尾且交付完整时发终值。
-            if emit_events && end_exclusive == total && delivered == expected {
-                emit(
-                    &progress_tx,
-                    ProgressEvent::Done {
-                        token,
-                        file_id,
-                        total_bytes: total,
-                    },
-                )
-                .await;
             }
         }
         FileSource::Path(path) => {
-            let mut file = match tokio::fs::File::open(&path).await {
-                Ok(file) => file,
-                Err(e) => {
-                    log::warn!("自研 web 打开文件失败 path={path}: {e}");
-                    return;
-                }
-            };
-            {
-                use std::io::SeekFrom;
-                use tokio::io::AsyncSeekExt;
-                if file.seek(SeekFrom::Start(start)).await.is_err() {
-                    log::warn!("自研 web 定位失败 path={path} 偏移={start}");
-                    return;
-                }
+            let mut file_opt = tokio::fs::File::open(&path).await.ok();
+            if file_opt.is_none() {
+                outcome = DownloadOutcome::Failed;
+                error = Some("打开源文件失败".to_string());
             }
-            let mut sent: u64 = start;
-            let mut throttle = ProgressThrottle::new();
-            loop {
-                use tokio::io::AsyncReadExt;
-                if sent >= end_exclusive || !state.download_session_active(&token) {
-                    break;
+            if let Some(mut file) = file_opt.take() {
+                {
+                    use std::io::SeekFrom;
+                    use tokio::io::AsyncSeekExt;
+                    if file.seek(SeekFrom::Start(start)).await.is_err() {
+                        outcome = DownloadOutcome::Failed;
+                        error = Some("定位源文件失败".to_string());
+                    } else {
+                        let mut sent: u64 = start;
+                        let mut throttle = ProgressThrottle::new();
+                        loop {
+                            use tokio::io::AsyncReadExt;
+                            if sent >= end_exclusive
+                                || cancel
+                                    .as_ref()
+                                    .is_some_and(|flag| flag.load(Ordering::Relaxed))
+                            {
+                                break;
+                            }
+                            let want: usize =
+                                ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
+                            let mut buf = vec![0u8; want];
+                            let n = match file.read(&mut buf).await {
+                                Ok(n) => n,
+                                Err(_) => {
+                                    outcome = DownloadOutcome::Failed;
+                                    error = Some("读取源文件失败".to_string());
+                                    break;
+                                }
+                            };
+                            if n == 0 {
+                                outcome = DownloadOutcome::Failed;
+                                error = Some("源文件读取不足".to_string());
+                                break;
+                            }
+                            sent += n as u64;
+                            delivered += n as u64;
+                            buf.truncate(n);
+                            if emit_events && throttle.allow(Instant::now()) {
+                                if !started {
+                                    if let Some(batch) = &batch {
+                                        emit(&progress_tx, emit_started(batch)).await;
+                                        started = true;
+                                    }
+                                }
+                                if let Some(batch) = &batch {
+                                    emit(
+                                        &progress_tx,
+                                        emit_progress(batch, sent.saturating_sub(start)),
+                                    )
+                                    .await;
+                                }
+                            }
+                            match tokio::time::timeout(
+                                Duration::from_secs(30),
+                                body_tx.send(Bytes::from(buf)),
+                            )
+                            .await
+                            {
+                                Ok(Ok(())) => {}
+                                Ok(Err(_)) | Err(_) => {
+                                    outcome = DownloadOutcome::Cancelled;
+                                    error = Some("客户端已断开".to_string());
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
-                let want: usize = ((end_exclusive - sent).min(READ_BUF_SIZE as u64)) as usize;
-                let mut buf = vec![0u8; want];
-                let n = match file.read(&mut buf).await {
-                    Ok(n) => n,
-                    Err(_) => break,
-                };
-                if n == 0 {
-                    break;
-                }
-                sent += n as u64;
-                buf.truncate(n);
-                if emit_events && throttle.allow(Instant::now()) {
-                    state.touch_download(&token);
-                    emit(
-                        &progress_tx,
-                        ProgressEvent::Progress {
-                            token: token.clone(),
-                            file_id: file_id.clone(),
-                            sent_bytes: sent,
-                            total_bytes: total,
-                        },
-                    )
-                    .await;
-                }
-                if body_tx.send(Bytes::from(buf)).await.is_err() {
-                    break;
-                }
-            }
-            let delivered: u64 = sent.saturating_sub(start);
-            let expected: u64 = end_exclusive.saturating_sub(start);
-            if delivered != expected {
-                log::warn!("自研 web 下发长度不符 file={file_id} 交付={delivered} 期望={expected}");
-            }
-            // 仅分片覆盖到文件末尾且交付完整时发终值。
-            if emit_events && end_exclusive == total && delivered == expected {
-                emit(
-                    &progress_tx,
-                    ProgressEvent::Done {
-                        token,
-                        file_id,
-                        total_bytes: total,
-                    },
-                )
-                .await;
             }
         }
+    }
+
+    // 0 字节文件也要产生任务并正常收口。
+    if emit_events && !started {
+        if let Some(batch) = &batch {
+            emit(&progress_tx, emit_started(batch)).await;
+        }
+    }
+    if delivered != expected {
+        if outcome == DownloadOutcome::Succeeded {
+            outcome = DownloadOutcome::Failed;
+            error = Some("下发长度不符".to_string());
+        }
+        log::warn!(
+            "自研 web 下发长度不符 file={} 交付={} 期望={}",
+            file_id,
+            delivered,
+            expected
+        );
+    } else if end_exclusive != total {
+        outcome = DownloadOutcome::Cancelled;
+        error = Some("分片下载未完成完整文件".to_string());
+    } else if emit_events {
+        if let Some(batch) = &batch {
+            emit(&progress_tx, emit_file_done(batch)).await;
+        }
+    }
+    if let Some(batch) = &batch {
+        emit(&progress_tx, emit_ended(batch, outcome, error)).await;
+        lock(&state.active_batches).remove(&batch.batch_id);
     }
 }
 

@@ -18,11 +18,12 @@ import {
   NativePrepareUploadAbortedEvent,
   NativeProgressEvent,
   NativeChecksumProgressEvent,
-  NativeWebSendPrepareDownloadEvent,
-  NativeWebSendProgressEvent,
+  NativeWebAccessEvent,
+  NativeWebDownloadStartedEvent,
+  NativeWebDownloadProgressEvent,
+  NativeWebDownloadFileDoneEvent,
+  NativeWebDownloadEndedEvent,
   NativeWebSendSessionEndEvent,
-  NativeWebSendHeartbeatEvent,
-  NativeWebSendFilesUpdatedEvent,
   NativeWebUploadPrepareEvent,
   NativeWebUploadProgressEvent,
   NativeWebUploadDoneEvent,
@@ -69,11 +70,11 @@ import {
 import { handleDeviceFound, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handleChecksumProgress } from './repository/ChecksumRepository';
 import {
-  handlePrepareDownloadTyped,
-  handleWebSendProgressTyped,
-  handleWebDownloadFinished,
-  handleWebSendHeartbeatTyped,
-  handleWebSendFilesUpdatedTyped,
+  handleWebAccessTyped,
+  handleWebDownloadStartedTyped,
+  handleWebDownloadProgressTyped,
+  handleWebDownloadFileDoneTyped,
+  handleWebDownloadEndedTyped,
   handlePrepareUploadTyped,
   handleWebUploadProgressTyped,
   handleWebUploadDoneTyped,
@@ -83,6 +84,7 @@ import {
   restartWebService,
   hasActiveWebDownloads,
   hasActiveWebUploads } from './repository/WebShareRepository';
+import { noteWebAccess } from './BackgroundTransferService';
 
 // ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
 import { LOCAL_SEND_KEY } from './transfer/adapters/LocalSendSendAdapter';
@@ -227,8 +229,6 @@ export { getShareLink,
   setWebUploadAutoAccept,
   isWebUploadAutoAccept,
   getWebAccessCode,
-  isWebAccessCodeEnabled,
-  takeWebAccessNotice,
   hasSharedFiles,
   getSharedFileCount,
   isWebUploadEnabled,
@@ -454,24 +454,26 @@ export function initAppService(context: common.UIAbilityContext): void {
       // 将其作为取消事件呈现，使传输页作出反应。
       handlePrepareUploadAbortedEventTyped(e as NativePrepareUploadAbortedEvent);
     });
-    onBridgeEvent('webSendPrepareDownload', (e: NativeEvent) => {
-      handlePrepareDownloadTyped(e as NativeWebSendPrepareDownloadEvent);
+    onBridgeEvent('webAccess', (e: NativeEvent) => {
+      let access = e as NativeWebAccessEvent;
+      handleWebAccessTyped(access);
+      noteWebAccess();
     });
-    onBridgeEvent('webSendProgress', (e: NativeEvent) => {
-      handleWebSendProgressTyped(e as NativeWebSendProgressEvent);
+    onBridgeEvent('webDownloadStarted', (e: NativeEvent) => {
+      handleWebDownloadStartedTyped(e as NativeWebDownloadStartedEvent);
+    });
+    onBridgeEvent('webDownloadProgress', (e: NativeEvent) => {
+      handleWebDownloadProgressTyped(e as NativeWebDownloadProgressEvent);
+    });
+    onBridgeEvent('webDownloadFileDone', (e: NativeEvent) => {
+      handleWebDownloadFileDoneTyped(e as NativeWebDownloadFileDoneEvent);
+    });
+    onBridgeEvent('webDownloadEnded', (e: NativeEvent) => {
+      handleWebDownloadEndedTyped(e as NativeWebDownloadEndedEvent);
     });
     onBridgeEvent('webSendSessionEnd', (e: NativeEvent) => {
-      // 新链路终结通知（下载/上传共用该事件，各按 token 认领）：
-      // 待确认阶段直接取消；进行中按访问会话文件完成度收口
-      let finishedToken: string = (e as NativeWebSendSessionEndEvent).sessionId;
-      handleWebDownloadFinished(finishedToken);
-      handleWebUploadFinished(finishedToken);
-    });
-    onBridgeEvent('webSendHeartbeat', (e: NativeEvent) => {
-      handleWebSendHeartbeatTyped(e as NativeWebSendHeartbeatEvent);
-    });
-    onBridgeEvent('webSendFilesUpdated', (e: NativeEvent) => {
-      handleWebSendFilesUpdatedTyped(e as NativeWebSendFilesUpdatedEvent);
+      // 仅上传会话使用；下载已改用 webDownloadEnded
+      handleWebUploadFinished((e as NativeWebSendSessionEndEvent).sessionId);
     });
     onBridgeEvent('webUploadPrepare', (e: NativeEvent) => {
       handlePrepareUploadTyped(e as NativeWebUploadPrepareEvent);

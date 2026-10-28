@@ -273,38 +273,50 @@ export interface NativeDeviceLostEvent {
   fingerprint: string
 }
 
-export interface NativeWebSendPrepareDownloadEvent {
-  type: 'webSendPrepareDownload'
-  sessionId: string
+export interface NativeWebAccessEvent {
+  type: 'webAccess'
   ip: string
   userAgent?: string
-  // 建会话时服务端快照的文件清单：任务文件以该清单为准，避免与当前暂存区竞态
+  fileCount: number
+}
+
+// 下载批次开始：一批一个任务；files 为该批次完整文件清单
+export interface NativeWebDownloadStartedEvent {
+  type: 'webDownloadStarted'
+  batchId: string
+  ip: string
+  userAgent?: string
   files: Array<NativeTransferFileInfo>
 }
 
-// Web 下载进度：由 Rust 桥接层在 fd 流式读取处按节流发射
-export interface NativeWebSendProgressEvent {
-  type: 'webSendProgress'
-  sessionId: string
+// 单文件下载进度（zip 内逐条目）
+export interface NativeWebDownloadProgressEvent {
+  type: 'webDownloadProgress'
+  batchId: string
   fileId: string
   sentBytes: number
   totalBytes: number
 }
 
+export interface NativeWebDownloadFileDoneEvent {
+  type: 'webDownloadFileDone'
+  batchId: string
+  fileId: string
+  totalBytes: number
+}
+
+// 下载批次结束：succeeded | failed | cancelled
+export interface NativeWebDownloadEndedEvent {
+  type: 'webDownloadEnded'
+  batchId: string
+  outcome: string
+  error?: string
+}
+
+// 上传会话结束（下载侧已不再使用）
 export interface NativeWebSendSessionEndEvent {
   type: 'webSendSessionEnd'
   sessionId: string
-}
-
-export interface NativeWebSendHeartbeatEvent {
-  type: 'webSendHeartbeat'
-  sessionId: string
-}
-
-export interface NativeWebSendFilesUpdatedEvent {
-  type: 'webSendFilesUpdated'
-  sessionId: string
-  files: Array<NativeTransferFileInfo>
 }
 
 // 浏览器上传请求：待用户确认，含文件清单（与 prepareUpload 同源解析）
@@ -426,11 +438,12 @@ export type NativeEvent =
   NativeChecksumProgressEvent |
   NativeDeviceFoundEvent |
   NativeDeviceLostEvent |
-  NativeWebSendPrepareDownloadEvent |
-  NativeWebSendProgressEvent |
+  NativeWebAccessEvent |
+  NativeWebDownloadStartedEvent |
+  NativeWebDownloadProgressEvent |
+  NativeWebDownloadFileDoneEvent |
+  NativeWebDownloadEndedEvent |
   NativeWebSendSessionEndEvent |
-  NativeWebSendHeartbeatEvent |
-  NativeWebSendFilesUpdatedEvent |
   NativeWebUploadPrepareEvent |
   NativeWebUploadProgressEvent |
   NativeWebUploadDoneEvent |
@@ -465,11 +478,12 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'checksumProgress': ['cancelId', 'hashedBytes'],
   'deviceFound': ['device'],
   'deviceLost': ['fingerprint'],
-  'webSendPrepareDownload': ['sessionId', 'ip', 'files'],
-  'webSendProgress': ['sessionId', 'fileId', 'sentBytes', 'totalBytes'],
+  'webAccess': ['ip', 'fileCount'],
+  'webDownloadStarted': ['batchId', 'ip', 'files'],
+  'webDownloadProgress': ['batchId', 'fileId', 'sentBytes', 'totalBytes'],
+  'webDownloadFileDone': ['batchId', 'fileId', 'totalBytes'],
+  'webDownloadEnded': ['batchId', 'outcome'],
   'webSendSessionEnd': ['sessionId'],
-  'webSendHeartbeat': ['sessionId'],
-  'webSendFilesUpdated': ['sessionId', 'files'],
   'webUploadPrepare': ['token', 'ip', 'userAgent', 'files'],
   'webUploadProgress': ['token', 'fileId', 'receivedBytes', 'totalBytes'],
   'webUploadDone': ['token', 'fileId', 'path'],
@@ -569,22 +583,45 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeDeviceFoundEvent;
     case 'deviceLost':
       return { type: 'deviceLost', fingerprint: payload['fingerprint'] as string } as NativeDeviceLostEvent;
-    case 'webSendPrepareDownload':
-      return parseWebSendPrepareDownloadEvent(payload);
-    case 'webSendProgress':
+    case 'webAccess':
       return {
-        type: 'webSendProgress',
-        sessionId: payload['sessionId'] as string,
+        type: 'webAccess',
+        ip: payload['ip'] as string,
+        userAgent: payload['userAgent'] as string | undefined,
+        fileCount: payload['fileCount'] as number
+      } as NativeWebAccessEvent;
+    case 'webDownloadStarted':
+      return {
+        type: 'webDownloadStarted',
+        batchId: payload['batchId'] as string,
+        ip: payload['ip'] as string,
+        userAgent: payload['userAgent'] as string | undefined,
+        files: parseWebFileList(payload['files'])
+      } as NativeWebDownloadStartedEvent;
+    case 'webDownloadProgress':
+      return {
+        type: 'webDownloadProgress',
+        batchId: payload['batchId'] as string,
         fileId: payload['fileId'] as string,
         sentBytes: payload['sentBytes'] as number,
         totalBytes: payload['totalBytes'] as number
-      } as NativeWebSendProgressEvent;
+      } as NativeWebDownloadProgressEvent;
+    case 'webDownloadFileDone':
+      return {
+        type: 'webDownloadFileDone',
+        batchId: payload['batchId'] as string,
+        fileId: payload['fileId'] as string,
+        totalBytes: payload['totalBytes'] as number
+      } as NativeWebDownloadFileDoneEvent;
+    case 'webDownloadEnded':
+      return {
+        type: 'webDownloadEnded',
+        batchId: payload['batchId'] as string,
+        outcome: payload['outcome'] as string,
+        error: payload['error'] as string | undefined
+      } as NativeWebDownloadEndedEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
-    case 'webSendHeartbeat':
-      return { type: 'webSendHeartbeat', sessionId: payload['sessionId'] as string } as NativeWebSendHeartbeatEvent;
-    case 'webSendFilesUpdated':
-      return parseWebSendFilesUpdatedEvent(payload);
     case 'webUploadPrepare':
       return parseWebUploadPrepareEvent(payload);
     case 'webUploadProgress':
@@ -717,26 +754,6 @@ function parseWebFileList(raw: Object | undefined): Array<NativeTransferFileInfo
     }
   }
   return files;
-}
-
-function parseWebSendPrepareDownloadEvent(
-  payload: Record<string, Object>): NativeWebSendPrepareDownloadEvent {
-  return {
-    type: 'webSendPrepareDownload',
-    sessionId: payload['sessionId'] as string,
-    ip: payload['ip'] as string,
-    userAgent: payload['userAgent'] as string | undefined,
-    files: parseWebFileList(payload['files'])
-  } as NativeWebSendPrepareDownloadEvent;
-}
-
-function parseWebSendFilesUpdatedEvent(
-  payload: Record<string, Object>): NativeWebSendFilesUpdatedEvent {
-  return {
-    type: 'webSendFilesUpdated',
-    sessionId: payload['sessionId'] as string,
-    files: parseWebFileList(payload['files'])
-  } as NativeWebSendFilesUpdatedEvent;
 }
 
 function parseWebUploadPrepareEvent(

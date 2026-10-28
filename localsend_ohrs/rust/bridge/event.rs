@@ -99,32 +99,41 @@ pub enum BridgeEvent {
     /// （仅为事件模型完整性与序列化测试保留）。
     DeviceLost { fingerprint: String },
 
-    // ── WebSend（关键事件）──
-    /// Web 浏览器请求下载文件（待用户决策）。
-    WebSendPrepareDownload {
-        session_id: String,
+    // ── Web（关键事件）──
+    /// 网页访问（仅新建 token 时发；只用于日志/后台保活，不建任务）。
+    WebAccess {
+        ip: String,
+        user_agent: Option<String>,
+        file_count: usize,
+    },
+    /// 下载批次开始（第一个 body chunk 入队后发；应用据此建任务）。
+    WebDownloadStarted {
+        batch_id: String,
         ip: String,
         user_agent: Option<String>,
         files: Vec<FileDto>,
     },
-    /// Web 浏览器下载进度（高频瞬态事件，channel 满时丢弃）。
-    /// `sent_bytes` 为已读入 HTTP 栈的字节（受 channel 缓冲影响会略超前于实际
-    /// 网络交付，属可接受近似）；`total_bytes` 为该文件声明大小。
-    WebSendProgress {
-        session_id: String,
+    /// 单文件下载进度（zip 内逐条目）。
+    WebDownloadProgress {
+        batch_id: String,
         file_id: String,
         sent_bytes: u64,
         total_bytes: u64,
     },
-    /// WebSend 会话结束。
-    WebSendSessionEnd { session_id: String },
-    /// 网页访问会话心跳（页面仍打开，ArkTS 侧续期任务）。
-    WebSendHeartbeat { session_id: String },
-    /// 网页访问会话文件表随分享版本更新（ArkTS 侧同步任务文件清单）。
-    WebSendFilesUpdated {
-        session_id: String,
-        files: Vec<FileDto>,
+    /// 单文件下载完成。
+    WebDownloadFileDone {
+        batch_id: String,
+        file_id: String,
+        total_bytes: u64,
     },
+    /// 下载批次结束（成功/失败/取消，只发一次）。
+    WebDownloadEnded {
+        batch_id: String,
+        outcome: String,
+        error: Option<String>,
+    },
+    /// 上传会话结束。
+    WebSendSessionEnd { session_id: String },
 
     /// 浏览器上传请求（待用户决策；含文件清单）。
     WebUploadPrepare {
@@ -203,7 +212,7 @@ impl BridgeEvent {
         matches!(
             self,
             BridgeEvent::UploadProgress { .. }
-                | BridgeEvent::WebSendProgress { .. }
+                | BridgeEvent::WebDownloadProgress { .. }
                 | BridgeEvent::WebUploadProgress { .. }
                 | BridgeEvent::ChecksumProgress { .. }
                 | BridgeEvent::MtaSendProgress { .. }
@@ -215,7 +224,7 @@ impl BridgeEvent {
     pub fn is_terminal_progress(&self) -> bool {
         match self {
             BridgeEvent::UploadProgress { progress, .. } => *progress >= 1.0,
-            BridgeEvent::WebSendProgress {
+            BridgeEvent::WebDownloadProgress {
                 sent_bytes,
                 total_bytes,
                 ..
@@ -368,17 +377,21 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
     ("checksumProgress", Some(&["cancelId", "hashedBytes"])),
     ("deviceFound", Some(&["device"])),
     ("deviceLost", Some(&["fingerprint"])),
+    ("webAccess", Some(&["ip", "userAgent", "fileCount"])),
     (
-        "webSendPrepareDownload",
-        Some(&["sessionId", "ip", "userAgent", "files"]),
+        "webDownloadStarted",
+        Some(&["batchId", "ip", "userAgent", "files"]),
     ),
     (
-        "webSendProgress",
-        Some(&["sessionId", "fileId", "sentBytes", "totalBytes"]),
+        "webDownloadProgress",
+        Some(&["batchId", "fileId", "sentBytes", "totalBytes"]),
     ),
+    (
+        "webDownloadFileDone",
+        Some(&["batchId", "fileId", "totalBytes"]),
+    ),
+    ("webDownloadEnded", Some(&["batchId", "outcome", "error"])),
     ("webSendSessionEnd", Some(&["sessionId"])),
-    ("webSendHeartbeat", Some(&["sessionId"])),
-    ("webSendFilesUpdated", Some(&["sessionId", "files"])),
     (
         "webUploadPrepare",
         Some(&["token", "ip", "userAgent", "files"]),
@@ -491,21 +504,29 @@ mod tests {
             BridgeEvent::DeviceLost {
                 fingerprint: "fp".into(),
             },
-            BridgeEvent::WebSendPrepareDownload {
-                session_id: "s".into(),
+            BridgeEvent::WebAccess {
+                ip: "192.168.1.5".into(),
+                user_agent: None,
+                file_count: 1,
+            },
+            BridgeEvent::WebDownloadStarted {
+                batch_id: "b".into(),
                 ip: "192.168.1.5".into(),
                 user_agent: None,
                 files: Vec::new(),
             },
+            BridgeEvent::WebDownloadFileDone {
+                batch_id: "b".into(),
+                file_id: "f".into(),
+                total_bytes: 10,
+            },
+            BridgeEvent::WebDownloadEnded {
+                batch_id: "b".into(),
+                outcome: "succeeded".into(),
+                error: None,
+            },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
-            },
-            BridgeEvent::WebSendHeartbeat {
-                session_id: "s".into(),
-            },
-            BridgeEvent::WebSendFilesUpdated {
-                session_id: "s".into(),
-                files: Vec::new(),
             },
             BridgeEvent::MtaServerStarted { port: 53317 },
             BridgeEvent::MtaWsConnected,
@@ -736,27 +757,35 @@ mod tests {
             BridgeEvent::DeviceLost {
                 fingerprint: "fp".into(),
             },
-            BridgeEvent::WebSendPrepareDownload {
-                session_id: "s".into(),
+            BridgeEvent::WebAccess {
+                ip: "192.168.1.5".into(),
+                user_agent: Some("Mozilla".into()),
+                file_count: 1,
+            },
+            BridgeEvent::WebDownloadStarted {
+                batch_id: "b".into(),
                 ip: "192.168.1.5".into(),
                 user_agent: Some("Mozilla".into()),
                 files: Vec::new(),
             },
-            BridgeEvent::WebSendProgress {
-                session_id: "s".into(),
+            BridgeEvent::WebDownloadProgress {
+                batch_id: "b".into(),
                 file_id: "f".into(),
                 sent_bytes: 5,
                 total_bytes: 10,
             },
+            BridgeEvent::WebDownloadFileDone {
+                batch_id: "b".into(),
+                file_id: "f".into(),
+                total_bytes: 10,
+            },
+            BridgeEvent::WebDownloadEnded {
+                batch_id: "b".into(),
+                outcome: "failed".into(),
+                error: Some("e".into()),
+            },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
-            },
-            BridgeEvent::WebSendHeartbeat {
-                session_id: "s".into(),
-            },
-            BridgeEvent::WebSendFilesUpdated {
-                session_id: "s".into(),
-                files: Vec::new(),
             },
             BridgeEvent::WebUploadPrepare {
                 token: "t".into(),

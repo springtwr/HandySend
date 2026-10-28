@@ -151,6 +151,18 @@ function extendWebKeepalive(): void {
   }
 }
 
+/**
+ * 网页访问只续期有界保活并确保后台长时任务存在；不创建统一会话、不发通知。
+ * 调用方为 AppService 的 webAccess 事件路由。
+ */
+export function noteWebAccess(): void {
+  if (!webServiceRunning()) {
+    return;
+  }
+  extendWebKeepalive();
+  ensureTransferTaskForBackground();
+}
+
 function cancelWebKeepaliveTimer(): void {
   if (webKeepaliveTimer >= 0) {
     clearTimeout(webKeepaliveTimer);

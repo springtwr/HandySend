@@ -165,7 +165,7 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 ### 事件推送
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。
-事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await`
+事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebAccess/WebDownload*、Mta*（进度除外）、Error 等）`send().await`
 发送并带 1 秒超时防护（无消费者或通道满时丢弃并告警，不永久阻塞事件循环）；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃，但可判定终值（进度 100%）者按关键事件送达
 （每文件完成判定的依据，不得因 channel 满而丢失；`ChecksumProgress` 无终值判定，每文件完成由 ArkTS 侧 `await` 返回时确定）。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
@@ -197,15 +197,17 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
    `POST /web/auth` 校验访问码并下发 `handysend_web_auth`（同样绑定 IP/UA），裸地址可直接提交，不要求先持能力 Cookie；
    `/caps`、建会话、下载、上传与完成回执要求能力 Cookie 或访问码 Cookie 之一
 3. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；
-   `GET /caps` 只读快照，不建会话；待确认冲突返回 409 并在 `X-Handysend-Token` 头带出 token
-4. 待确认会话经 `Prepare*Requested` 进度事件转确认弹窗；接受后浏览器开始传输；完成回执（`POST /web/finish`）与惰性打扫收口终态；
-   运行期每 10s 周期打扫超时会话（无新请求时也清理临时文件并推送终结事件）
+   `GET /caps` 只读快照，不建会话。下载会话只做授权与快照缓存：绝对 TTL 2 小时、最多 32 个，
+   页面每次下载前 prepare 刷新；访问只记日志并续期网页保活，不建任务。
+4. 上传仍走待确认流程（`PrepareUploadRequested`，接受/拒绝/过期）；下载不再等待应用确认，
+   页面门禁通过即直接回文件表。下载批次开始/结束经 `WebDownloadStarted` / `WebDownloadEnded` 收口；
+   上传完成回执（`POST /web/finish`）与惰性打扫收口上传终态。
 
 二维码与本次访问码是并列的页面入口：扫描二维码免密进入，裸地址展示访问码页。
 访问码由客户端每次启动服务时生成（6 位数字，仅本次分享有效），分享停止或服务重启即失效，不进入设置持久化；
 服务端仍兼容空值与旧调用（测试），空值表示免访问码。
-能力令牌只解决「谁可以打开页面」，不替代确认（仅服务端兼容场景）：令牌可能被转发/截图，
-IP+UA 绑定也不构成强身份；设置访问码时，通过任一入口即构成外发授权。
+能力令牌只解决「谁可以打开页面」：令牌可能被转发/截图，IP+UA 绑定也不构成强身份；
+设置访问码时，通过任一入口即构成外发授权。生产环境始终有访问码/能力令牌；无门禁仅测试/旧调用放行并告警。
 
 服务监听 `0.0.0.0`（全部网卡）；`WebServiceConfig.port` 为 0 时由系统随机分配，非 0 时优先绑定该端口，
 被占用则回退随机端口并返回实际端口。ArkTS 侧持久化实际端口，下次启动优先复用；实际端口与设置端口不一致时面板提示回退。
@@ -220,22 +222,19 @@ IP+UA 绑定也不构成强身份；设置访问码时，通过任一入口即�
 
 ### 下载（本机 → 浏览器）
 
-- 按 token 查快照归属后下发：fd 内容源在换表时由保留区 `dup` 私有副本、请求定位时再复制一份消费
-  （`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片
-- 进度事件复用既有 `WebSendProgress`（`sessionId` 即 token），终结经 `WebSendSessionEnd`；ArkTS 侧按 token 归属统一会话（`WebDownloadAdapter`）
-- 授权语义：页面门禁通过（扫码或本次访问码任一）即视为外发授权，服务端直接置会话为已接受并回文件表，
-  不再阻塞等待应用确认；应用侧只创建进行中任务，并弹一次「网页访问」提示。
-  未设置访问码时保留原来的待确认流程（仅服务端兼容场景；确认是唯一安全边界，能力令牌只做页面门禁）；
-  访问码模式下响应丢失后重试会复用刚接受的会话，避免重复任务/重复提示
-- `GET /web/download-all` 将会话快照内全部文件流式打成 ZIP 一次下发，避免浏览器连续程序化下载只放行第一个；
-  ZIP 条目以文件名去重，不预打包、不落临时文件
-- 下载任务声明 `canCancel`：用户可在任务列表/详情页结束网页任务，服务端移除会话后正在下发的响应在下个读块停止；
-  结束时页面尚未收到心跳结果前点击直链，`GET /web/download` 回 HTML 友好错误页（访问已结束 / 分享内容已更新，附刷新入口），
-  刷新后重新建访问会话并由应用重新确认，不再让用户停在纯文本 403 页
-- `update_web_service_files` 热换文件表（版本号单调增，被删文件为活跃会话保留到宽限结束）；
-  已授权会话再次 prepare 时刷新为当前文件表；页面通过 `/web/events` SSE 接收文件表 revision、上传入口变更与会话结束事件并自动更新，保留 15 秒低频轮询兜底
-- 页面打开期间每 25s `POST /web/heartbeat` 为访问会话续期：服务端续 `last_activity`，并经 `WebSendHeartbeat` 通知应用侧续期任务；
-  文件表 revision 变化时服务端下发 `WebSendFilesUpdated`，应用同步任务文件清单；`stop_web_service` 幂等停止
+- 单文件 `GET /web/download`：按 token 查快照归属后下发；fd 内容源在换表时由保留区 `dup` 私有副本、
+  请求定位时再复制一份消费（`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片。
+- 多文件 `POST /web/download-batch` 登记选中文件（或 `all=true`）→ `GET /web/download-batch?batch=` 流式 ZIP；
+  一个批次一个任务，ZIP 条目以文件名去重、不预打包、不落临时文件。
+- ZIP 使用 `Stored`，发响应头前按条目名/大小精确计算 `Content-Length`（含 Zip64），
+  浏览器下载管理器因此能显示百分比；条目时间取源文件本地时间，单个文件 ≥4GB 使用 `large_file`。
+- 批次事件 `WebDownloadStarted` / `WebDownloadProgress` / `WebDownloadFileDone` / `WebDownloadEnded`
+  （`batchId` 为任务主键）；任务取消调用 `cancel_web_download`，响应在下个读块停止。
+- 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 接收
+  `{revision, added, removed, changed}`：只新增自动追加；删除/修改失效并要求刷新；混合/跳号统一刷新。
+  15 秒低频 `/caps` 轮询兜底。
+- 网页访问只在新建 token 时发 `WebAccess`（IP/UA/文件数），应用只记日志并续期有界保活；
+  下载不再有页面心跳、leave、下载 session-end。`stop_web_service` 幂等停止。
 
 ### 上传（浏览器 → 本机）
 
@@ -245,7 +244,8 @@ IP+UA 绑定也不构成强身份；设置访问码时，通过任一入口即�
   服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
 - 未完成字节写在目标目录下的应用保留子目录 `.handysend-upload-part/`（与最终文件同父目录，完成后原子改名）；
   该子目录是本应用独占的临时区，接受新一批上传时清理其中不属于活跃会话的遗留半成品——
-  进程被强制终止时也只有这里会留下文件，清理不会触碰目标目录里的用户文件或已交付文件
+  进程被强制终止时也只有这里会留下文件，清理不会触碰目标目录里的用户文件或已交付文件。
+  `/web/leave` 仅上传使用：15s 宽限给刷新/bfcache 留时间，真正关闭后清理；下载不再使用。
 - 终结/过期只清理未完成的临时文件，不删除已改名为最终交付物的文件
 - 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
   文件与文本混合时文本按普通文本文件处理
@@ -280,12 +280,14 @@ IP+UA 绑定也不构成强身份；设置访问码时，通过任一入口即�
 
 - 按 `/caps` 条件渲染下载/发送页签；下载走浏览器下载管理器（大文件无内存压力），
   文本类文件无预览字段时用 Range 取前 128KB 内联预览
-- 下载/上传 token 分键存于 `sessionStorage`；刷新后先为下载 token 补一次心跳（服务端据此撤销页面关闭标记），
-  留存的 token 若已失效则静默重建访问会话；上传顺序直传（XHR 看进度），
+- 下载/上传 token 分键存于 `sessionStorage`；下载刷新时直接 prepare 复用或重建会话，不再心跳；
+  上传顺序直传（XHR 看进度），
   文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
   混合内容时文本作为 `message.txt` 随文件发送（文本文件）
 - 页头可切换主题（跟随系统/浅色/深色）与语言（简体/繁体/英文），偏好存于浏览器 `localStorage`
-- 访问码页（服务端按 Cookie 注入 `data-auth`，裸地址进入时展示）、错误码映射（401/403/404/408/409/413）、
+- 下载页支持多选 + zip 批次：单文件直接下载，多文件由服务端统一 zip；浏览器用精确 `Content-Length` 显示进度；
+  文件列表经 SSE `{revision, added, removed, changed}` 感知：只新增自动追加，删除/修改失效并要求刷新
+- 访问码页（服务端按 Cookie 注入 `data-auth`，裸地址进入时展示）、错误码映射（401/403/404/410/413；上传另有 408/409）、
   上传全部完成后 `sendBeacon` 上报完成回执
 
 ## Discovery — 设备发现

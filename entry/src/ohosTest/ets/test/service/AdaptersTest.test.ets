@@ -3,7 +3,6 @@ import { fileIo as fs } from '@kit.CoreFileKit'
 import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/ets/model/Types'
 import {
   SessionDataFlow,
-  SessionEventKind,
   SessionInitiator,
   SessionStage
 } from '../../../../main/ets/model/transfer/TransferSession'
@@ -48,11 +47,10 @@ import {
 } from '../../../../main/ets/service/transfer/adapters/WebUploadAdapter'
 import {
   WEB_DOWNLOAD_KEY,
-  beginWebDownloadBurst,
-  handleWebFileDownload,
-  handleWebDownloadProgress,
-  markWebDownloadAccepted,
-  markWebDownloadDeclined
+  beginWebDownloadBatch,
+  handleWebDownloadEnded,
+  handleWebDownloadFileDone,
+  handleWebDownloadProgress
 } from '../../../../main/ets/service/transfer/adapters/WebDownloadAdapter'
 import {
   ReceivedFileEntry,
@@ -969,54 +967,59 @@ export default function AdaptersTest() {
       resetSessionHistoryCache()
     })
 
-    it('webDownload_burstPendingThenDecline', 0, () => {
+    it('webDownload_batchCreatesOneTask', 0, () => {
       resetRegistry()
-      let id = beginWebDownloadBurst('192.168.1.50', true)
+      let id = beginWebDownloadBatch('batch-1', '192.168.1.50', [{
+        fileId: 'f1',
+        fileName: 'report.pdf',
+        fileType: 'application/pdf',
+        totalBytes: 100
+      }, {
+        fileId: 'f2',
+        fileName: 'photo.jpg',
+        fileType: 'image/jpeg',
+        totalBytes: 200
+      }])
       let s = getSession(id)
       expect(s !== undefined).assertTrue()
       if (s !== undefined) {
-        expect(s.stage).assertEqual(SessionStage.awaitingConfirmation)
+        expect(s.stage).assertEqual(SessionStage.active)
         expect(s.dataFlow).assertEqual(SessionDataFlow.outbound)
         expect(s.initiatedBy).assertEqual(SessionInitiator.remote)
+        expect(s.files.length).assertEqual(2)
       }
-      // 同 IP 再次请求复用同一突发会话
-      let again = beginWebDownloadBurst('192.168.1.50', true)
+      // 同 batchId 幂等复用，不重复建任务
+      let again = beginWebDownloadBatch('batch-1', '192.168.1.50', [])
       expect(again).assertEqual(id)
-      handleWebFileDownload('192.168.1.50', 'f1', 'report.pdf', 100)
-      handleWebDownloadProgress('192.168.1.50', 'f1', 100, 100)
-      let mid = getSession(id)
-      if (mid !== undefined) {
-        expect(mid.files.length).assertEqual(1)
-        expect(mid.files[0].fileName).assertEqual('report.pdf')
-        expect(mid.bytesSent).assertEqual(100)
-      }
-      // 对端条目只显示纯 IP：标题为 IP、副标题为空（网页来源由来源徽标表达）
-      let adapter = getAdapter(WEB_DOWNLOAD_KEY)
-      expect(adapter !== undefined).assertTrue()
-      if (adapter !== undefined) {
-        let display = adapter.getDisplayDescriptor(id)
-        expect(display.peerTitle).assertEqual('192.168.1.50')
-        expect(display.peerSubtitle).assertEqual('')
-      }
-      markWebDownloadDeclined('192.168.1.50')
-      let declined = getSession(id)
-      if (declined !== undefined) {
-        expect(declined.stage).assertEqual(SessionStage.declined)
+      handleWebDownloadProgress('batch-1', 'f1', 100, 100)
+      handleWebDownloadFileDone('batch-1', 'f1', 100)
+      handleWebDownloadEnded('batch-1', 'succeeded')
+      let done = getSession(id)
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.succeeded)
       }
       resetRegistry()
     })
 
-    it('webDownload_partiallyFailedNotReused', 0, () => {
+    it('webDownload_partialFailureMapsPartiallyFailed', 0, () => {
       resetRegistry()
-      // 部分失败属终态：同 IP 新请求须新建突发，不得复用旧会话
-      let id = beginWebDownloadBurst('192.168.1.60', true)
-      markWebDownloadAccepted('192.168.1.60')
-      finish(id, SessionStage.partiallyFailed, '')
-      let next = beginWebDownloadBurst('192.168.1.60', true)
-      expect(next === id).assertFalse()
-      let s = getSession(next)
-      if (s !== undefined) {
-        expect(s.stage).assertEqual(SessionStage.awaitingConfirmation)
+      let id = beginWebDownloadBatch('batch-2', '192.168.1.51', [{
+        fileId: 'f1',
+        fileName: 'a.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 10
+      }, {
+        fileId: 'f2',
+        fileName: 'b.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 10
+      }])
+      handleWebDownloadProgress('batch-2', 'f1', 10, 10)
+      handleWebDownloadFileDone('batch-2', 'f1', 10)
+      handleWebDownloadEnded('batch-2', 'failed', '网络中断')
+      let failed = getSession(id)
+      if (failed !== undefined) {
+        expect(failed.stage).assertEqual(SessionStage.partiallyFailed)
       }
       resetRegistry()
     })
@@ -1106,47 +1109,6 @@ export default function AdaptersTest() {
       let back = decidePeerGroupAbandon(MtaSenderStage.WAITING_PEER_CONFIRM, 0, 1, 2)
       expect(back.zeroStreak).assertEqual(0)
       expect(back.abandoned).assertFalse()
-    })
-
-    it('webDownload_acceptAdvancesViaRegistry', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('192.168.1.51', true)
-      let pending = getSession(id)
-      if (pending !== undefined) {
-        expect(pending.stage).assertEqual(SessionStage.awaitingConfirmation)
-      }
-      // 接受经注册表推进：状态转进行中并补记 confirmed / started 时间线
-      markWebDownloadAccepted('192.168.1.51')
-      let accepted = getSession(id)
-      if (accepted !== undefined) {
-        expect(accepted.stage).assertEqual(SessionStage.active)
-        let confirmed = 0
-        let started = 0
-        for (let i = 0; i < accepted.timeline.length; i++) {
-          if (accepted.timeline[i].kind === SessionEventKind.confirmed) {
-            confirmed++
-          }
-          if (accepted.timeline[i].kind === SessionEventKind.started) {
-            started++
-          }
-        }
-        expect(confirmed).assertEqual(1)
-        expect(started).assertEqual(1)
-      }
-      // 幂等：重复接受不重复推进、不重复补记时间线
-      markWebDownloadAccepted('192.168.1.51')
-      let again = getSession(id)
-      if (again !== undefined) {
-        expect(again.stage).assertEqual(SessionStage.active)
-        let confirmedAgain = 0
-        for (let i = 0; i < again.timeline.length; i++) {
-          if (again.timeline[i].kind === SessionEventKind.confirmed) {
-            confirmedAgain++
-          }
-        }
-        expect(confirmedAgain).assertEqual(1)
-      }
-      resetRegistry()
     })
 
     it('mtaReceive_textAccept_noBehaviorChange', 0, () => {
@@ -1263,10 +1225,15 @@ export default function AdaptersTest() {
       expect(findByProtocol('mta-receive', 'mta-receive-session') !== undefined).assertTrue()
       resetRegistry()
 
-      // 网页下载：token 即协议会话标识（服务端事实源，跨端对账与 invoker 回调用它）
-      let webId = beginWebDownloadBurst('192.168.1.60', true)
+      // 网页下载：batchId 即协议会话标识
+      let webId = beginWebDownloadBatch('batch-7', '192.168.1.60', [{
+        fileId: 'f1',
+        fileName: 'a.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 10
+      }])
       let web = getSession(webId)
-      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('192.168.1.60')
+      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('batch-7')
 
       resetRegistry()
     })
