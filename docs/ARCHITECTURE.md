@@ -179,12 +179,15 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 
 **相册保存流程**：
 
-1. 接收完成 → `ReceiveRepository.finishReceiveSession` 提取媒体文件写入 `pendingRecvMediaFiles`
-2. 统一会话详情页 `SessionDetailPage` 经 `consumeRecvMediaFiles` 消费
+1. 接收会话成功终结 → 壳层 `MainTabFloating` 在「保存到相册」开启且会话声明 `canSaveToGallery` 时自动弹出保存弹窗
+   （同一会话只提示一次；文本消息会话不提示）
+2. 媒体来源优先取协议适配器的 `getGalleryMediaFiles`（MTA 接收与网页上传），适配器未提供该能力时回退到接收侧一次性媒体信号
+   （`ReceiveRepository.finishReceiveSession` 写入的 `pendingRecvMediaFiles`）
 3. 用户点击 SaveButton 授权后经 `GallerySaveService.saveMediaToGallery` 从 Download 最终位置读取媒体文件保存到相册
 4. 保存结果经 `ReceiveHistoryService.updateGallerySavedStatus` 回写接收历史（fd-direct 下无沙箱副本，文件即交付物、保留于 Download）
 
-MTA 接收的待保存媒体（`ReceiverState.pendingMediaFiles`）经 `MtaReceiveAdapter.getGalleryMediaFiles` 接入统一详情页的相册保存入口。
+媒体库旧版标题校验拒绝标题中的点号等字符，而网页发送的 Android 截图文件名常带 `com.xxx.yyy`。此类文件改走
+「按扩展名创建资产 + 引用原文件」：标题中的非法字符替换为下划线，文件本身不复制、不改名。
 
 ### 4.7 BackgroundTransferService — 后台传输服务
 
