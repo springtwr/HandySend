@@ -79,6 +79,7 @@ import ChecksumBatchTest from './service/ChecksumBatchTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
+import GallerySaveNameTest from './service/GallerySaveNameTest.test'
 import SendSessionRegistrationTest from './service/SendSessionRegistrationTest.test'
 import SendDiagnosticsTest from './service/SendDiagnosticsTest.test'
 import TransferCenterTest from './viewmodel/TransferCenterTest.test'
@@ -172,6 +173,7 @@ export default function testsuite() {
   SessionHistoryStoreTest()
   RegistriesTest()
   AdaptersTest()
+  GallerySaveNameTest()
   SendSessionRegistrationTest()
   SendDiagnosticsTest()
   TransferCenterTest()
