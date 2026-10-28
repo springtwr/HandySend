@@ -287,10 +287,12 @@ async fn spawn_with_files(
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel(8);
     let (session_events, _) = tokio::sync::broadcast::channel(8);
+    let (caps_events, _) = tokio::sync::broadcast::channel(8);
     let state = WebServiceState {
         progress_tx: Some(progress_tx),
         file_events: Some(file_events),
         session_events: Some(session_events),
+        caps_events: Some(caps_events),
         ..Default::default()
     };
     state.caps.lock().unwrap().share_state = ShareState::Active;
@@ -645,6 +647,56 @@ async fn test_file_events_stream_initial_revision() {
         "缺 SSE 头"
     );
     assert!(prefix.contains("data: "), "缺初始版本事件");
+    handle.abort();
+}
+
+/// 上传入口开关变更经 SSE caps 事件即时推送，页面无需等待轮询。
+#[tokio::test]
+async fn test_caps_events_stream_pushes_upload_toggle() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("回环连接失败");
+    let request = format!("GET /web/events HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("请求写入失败");
+    let mut buf = vec![0u8; 1024];
+    let read = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+        .await
+        .expect("读取 SSE 首包超时")
+        .expect("读取 SSE 失败");
+    let mut received: String = String::from_utf8_lossy(&buf[..read]).into_owned();
+    assert!(
+        received.contains("content-type: text/event-stream"),
+        "缺 SSE 头：{received}"
+    );
+    state
+        .caps_events
+        .as_ref()
+        .expect("测试服务应启用 caps 广播")
+        .send(())
+        .expect("caps 广播失败");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    while !received.contains("event: caps") {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "未收到 caps 事件：{received}"
+        );
+        let read = tokio::time::timeout(Duration::from_secs(1), stream.read(&mut buf)).await;
+        match read {
+            Ok(Ok(count)) if count > 0 => {
+                received.push_str(&String::from_utf8_lossy(&buf[..count]));
+            }
+            _ => break,
+        }
+    }
+    assert!(
+        received.contains("event: caps"),
+        "应推送 caps 事件：{received}"
+    );
     handle.abort();
 }
 
@@ -1172,6 +1224,30 @@ async fn test_accepted_session_refreshes_on_revision() {
     assert_eq!(b_body.as_bytes(), b"BBB");
     let (a_status, _, _) = http_get(addr, &format!("/web/download?token={token}&fileId=a")).await;
     assert_eq!(a_status, 403);
+    handle.abort();
+}
+
+/// 待确认会话的页面心跳也撤销关闭标记：刷新后等待确认期间不被关闭宽限回收。
+#[tokio::test]
+async fn test_heartbeat_clears_page_leave_for_pending_session() {
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    let prepare = tokio::spawn(http_post(addr, "/web/prepare-download"));
+    let token = wait_pending_token(&state).await;
+    let (leave_status, _, _) = http_post(addr, &format!("/web/leave?token={token}")).await;
+    assert_eq!(leave_status, 200);
+    assert!(
+        state.closing.lock().unwrap().contains_key(&token),
+        "页面关闭应进入宽限"
+    );
+    // 待确认阶段心跳回 409，同样应撤销关闭标记
+    let (beat_status, _, _) = http_post(addr, &format!("/web/heartbeat?token={token}")).await;
+    assert_eq!(beat_status, 409);
+    assert!(
+        !state.closing.lock().unwrap().contains_key(&token),
+        "心跳应撤销关闭宽限"
+    );
+    state.sessions.lock().unwrap().decline(&token);
+    let _ = tokio::time::timeout(Duration::from_secs(5), prepare).await;
     handle.abort();
 }
 

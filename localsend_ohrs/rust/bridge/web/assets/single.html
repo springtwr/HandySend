@@ -1187,6 +1187,8 @@ html[data-auth="open"] #gate {
   'use strict';
   var BASE = '';
   var dlToken = sessionStorage.getItem('handysend_dl_token') || '';
+  // 是否为上个页面实例留存的 token：失效属正常过期，静默重建即可，不把页面停在结束态
+  var dlTokenRestored = dlToken !== '';
   var ulToken = sessionStorage.getItem('handysend_ul_token') || '';
   var filesData = {};
   var i18n = null;
@@ -1898,7 +1900,12 @@ html[data-auth="open"] #gate {
       return;
     }
     if (token === dlToken) {
-      markDownloadEnded();
+      if (dlTokenRestored) {
+        // 留存的旧会话在页面加载期间被回收：静默重建，避免一进页就显示已结束
+        recoverStaleRestoredToken();
+      } else {
+        markDownloadEnded();
+      }
     }
     if (token === ulToken) {
       setUploading(false);
@@ -1911,6 +1918,7 @@ html[data-auth="open"] #gate {
 
   /** 本次访问已结束：禁用手动重试/下载，只提示刷新页面。 */
   function markDownloadEnded() {
+    dlTokenRestored = false;
     downloadEnded = true;
     downloadStale = false;
     downloadPending = false;
@@ -1933,15 +1941,21 @@ html[data-auth="open"] #gate {
     if (isLocked || !dlToken) {
       return;
     }
-    fetch(BASE + '/web/heartbeat?token=' + encodeURIComponent(dlToken), {
+    var beatToken = dlToken;
+    fetch(BASE + '/web/heartbeat?token=' + encodeURIComponent(beatToken), {
       method: 'POST',
       cache: 'no-store'
     }).then(function (response) {
+      // 请求在途期间已换用新 token：本次结果不再代表当前会话
+      if (dlToken !== beatToken) {
+        return;
+      }
       if (response.status === 401) {
         showGate('');
         return;
       }
       if (response.ok) {
+        dlTokenRestored = false;
         downloadStale = false;
         downloadPending = false;
         return;
@@ -1951,11 +1965,32 @@ html[data-auth="open"] #gate {
         return;
       }
       if (response.status === 404 || response.status === 403 || response.status === 410) {
+        if (dlTokenRestored) {
+          // 刷新/重开后携带的旧 token 已失效（服务端重启或会话到期）：
+          // 静默换新会话，避免页面一打开就停在「本次网页访问已结束」
+          recoverStaleRestoredToken();
+          return;
+        }
         // 应用侧结束了任务或服务端回收了访问会话：进入结束态，必须刷新页面重新访问。
         markDownloadEnded();
       }
     }).catch(function () {
     });
+  }
+
+  /** 丢弃留存的旧访问会话并重新建会话（不进入结束态）。 */
+  function recoverStaleRestoredToken() {
+    dlTokenRestored = false;
+    setDownloadToken('');
+    downloadEnded = false;
+    downloadStale = false;
+    downloadPending = false;
+    hide('status-retry');
+    setStatus('');
+    // 列表尚未开始加载时补一次；进行中的请求由服务端按新会话回表
+    if (!downloadLoadStarted) {
+      ensureDownloadLoaded();
+    }
   }
 
   // ========== 下载 ==========
@@ -1964,6 +1999,8 @@ html[data-auth="open"] #gate {
     dlToken = token || '';
     downloadStale = false;
     if (dlToken) {
+      // 服务端本次下发/确认的会话：此后结束就是真的结束
+      dlTokenRestored = false;
       sessionStorage.setItem('handysend_dl_token', dlToken);
     } else {
       sessionStorage.removeItem('handysend_dl_token');
@@ -2629,6 +2666,11 @@ html[data-auth="open"] #gate {
   themePref = detectTheme();
   applyThemeUi(themePref);
   langPref = detectLang();
+  // 刷新后的旧会话应尽快续期：心跳落到关闭宽限内即撤销页面关闭标记，
+  // 不依赖文案与快照请求是否及时完成。
+  if (!isLocked && dlToken) {
+    heartbeat();
+  }
   if (isLocked) {
     setTimeout(function () {
       try {

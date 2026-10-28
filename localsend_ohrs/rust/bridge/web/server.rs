@@ -63,7 +63,8 @@ const CAPABILITY_COOKIE: &str = "handysend_web_cap";
 /// 访问码授权有效期（服务重启或访问码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// 页面关闭后的结束宽限：刷新会在宽限内重新心跳并取消关闭。
-const LEAVE_GRACE: Duration = Duration::from_secs(3);
+/// 留足重新加载（含文案与快照请求）的时间，避免刷新被误判为关闭。
+const LEAVE_GRACE: Duration = Duration::from_secs(15);
 /// 被删文件保留宽限（供已建会话按快照下完）。
 const RETAIN_GRACE: Duration = Duration::from_secs(30);
 /// 内容下发读块（与旧 fd 内容源同量级）。
@@ -789,6 +790,7 @@ async fn heartbeat_response(
         return text_response(StatusCode::BAD_REQUEST, "缺少 token");
     };
     let token_owned: String;
+    let pending: bool;
     {
         let mut sessions = lock(&state.sessions);
         let Some(session) = sessions.sessions.get_mut(token) else {
@@ -797,13 +799,17 @@ async fn heartbeat_response(
         if session.peer_ip != peer.ip().to_string() {
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         }
-        if !matches!(session.state, SessionState::Accepted) {
-            return text_response(StatusCode::CONFLICT, "等待对方确认中");
+        pending = !matches!(session.state, SessionState::Accepted);
+        if !pending {
+            session.last_activity = Instant::now();
         }
-        session.last_activity = Instant::now();
         token_owned = token.clone();
     }
+    // 心跳到达即视为页面仍在：待确认中也撤销关闭宽限，避免刷新后等待确认期间被回收
     lock(&state.closing).remove(token);
+    if pending {
+        return text_response(StatusCode::CONFLICT, "等待对方确认中");
+    }
     // 访问会话仍存活：通知应用侧续期任务，避免本地看门狗误收口。
     state
         .emit(ProgressEvent::Heartbeat { token: token_owned })
@@ -885,8 +891,8 @@ fn html_response(
     html_full_response(StatusCode::OK, &body)
 }
 
-/// `GET /web/events`：文件表版本 SSE。先发当前版本，后续换表时推送新版本；
-/// 页面据此刷新清单，不必高频轮询 `/caps`。
+/// `GET /web/events`：单页 SSE。先发当前文件表版本，随后推送换表版本号、
+/// 上传入口开关变更（caps）与会话结束事件；页面据此即时刷新，不必高频轮询。
 fn events_response(state: &WebServiceState) -> Response<BoxBody> {
     let Some(tx) = &state.file_events else {
         return text_response(StatusCode::NOT_IMPLEMENTED, "推送未启用");
@@ -942,8 +948,28 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
             (Ok::<_, std::io::Error>(Frame::data(Bytes::from(chunk))), rx)
         })
     });
-    let body =
-        http_body_util::StreamBody::new(futures_util::stream::select(file_stream, session_stream));
+    // 能力快照变更（上传入口开关等）：页面收到后重新拉 /caps。
+    let (dummy_caps_tx, dummy_caps_rx) = tokio::sync::broadcast::channel::<()>(1);
+    drop(dummy_caps_tx);
+    let caps_rx = state
+        .caps_events
+        .as_ref()
+        .map(|tx| tx.subscribe())
+        .unwrap_or(dummy_caps_rx);
+    let caps_stream = futures_util::stream::unfold(caps_rx, |mut rx| async move {
+        rx.recv().await.ok().map(|()| {
+            (
+                Ok::<_, std::io::Error>(Frame::data(Bytes::from_static(
+                    b"event: caps\ndata: refresh\n\n",
+                ))),
+                rx,
+            )
+        })
+    });
+    let body = http_body_util::StreamBody::new(futures_util::stream::select(
+        futures_util::stream::select(file_stream, session_stream),
+        caps_stream,
+    ));
     let mut response = Response::new(body.boxed());
     let headers = response.headers_mut();
     headers.insert(
