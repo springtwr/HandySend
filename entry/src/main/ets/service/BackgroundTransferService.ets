@@ -69,6 +69,8 @@ let state: TransferTaskState = TransferTaskState.idle;
 let startGeneration: number = 0;
 // 长时任务返回的通知 Id（进度更新必须复用）
 let notificationId: number = -1;
+// 通知发布串行链：停止任务前等待在途发布结束，避免 publish 与 cancel 竞态
+let notificationPublishChain: Promise<void> = Promise.resolve();
 // 申请时使用的上下文（停止时复用）
 let taskContext: common.UIAbilityContext | undefined = undefined;
 // 缓存的 UIAbilityContext：申请时记录（缺省回退 AppCore 既有上下文），
@@ -241,10 +243,14 @@ function buildProgressContent(overall: OverallSnapshot): string {
 }
 
 // 以长时任务通知 Id 发布实况通知帧（downloadTemplate + SYSTEM_LIVE_VIEW）
+// 发布串行执行并携带启停代次：停止/重启后，队列中的旧帧直接跳过，
+// 在途发布也不会再以过期的通知 Id 记录误导性成功/失败日志。
 function publishFrame(title: string, content: string, progressValue: number): void {
   if (notificationId < 0) {
     return;
   }
+  let publishedId: number = notificationId;
+  let generation: number = startGeneration;
   let template: notificationManager.NotificationTemplate = {
     name: 'downloadTemplate',
     data: {
@@ -254,7 +260,7 @@ function publishFrame(title: string, content: string, progressValue: number): vo
     }
   };
   let request: notificationManager.NotificationRequest = {
-    id: notificationId,
+    id: publishedId,
     notificationSlotType: notificationManager.SlotType.LIVE_VIEW,
     template: template,
     content: {
@@ -266,11 +272,23 @@ function publishFrame(title: string, content: string, progressValue: number): vo
       }
     }
   };
-  notificationManager.publish(request).then(() => {
-    logger.debug('通知已发布 id=' + notificationId + ' progress=' + progressValue);
-  }).catch((e: Object) => {
-    // 拒绝原因不止业务错误（如权限/系统异常对象），按可恢复降级记录（传输本身继续）
-    logger.warn('通知发布失败：' + String(e));
+  notificationPublishChain = notificationPublishChain.then((): Promise<void> => {
+    if (generation !== startGeneration || publishedId !== notificationId) {
+      return Promise.resolve();
+    }
+    return notificationManager.publish(request).then((): void => {
+      if (generation !== startGeneration || publishedId !== notificationId) {
+        return;
+      }
+      logger.debug('通知已发布 id=' + publishedId + ' progress=' + progressValue);
+    }).catch((e: Object): void => {
+      if (generation !== startGeneration || publishedId !== notificationId) {
+        return;
+      }
+      // 拒绝原因不止业务错误（如权限/系统异常对象），按可恢复降级记录（传输本身继续）
+      logger.warn('通知发布失败：' + String(e));
+    });
+  }).catch((): void => {
   });
 }
 
@@ -495,6 +513,7 @@ function resetCycleState(): void {
 function stopTaskInternal(): void {
   // 令未决的申请回调失效
   startGeneration++;
+  let stopGeneration: number = startGeneration;
   clearWebKeepalive();
   let wasRunning: boolean = state === TransferTaskState.running;
   let ctx = taskContext;
@@ -502,11 +521,21 @@ function stopTaskInternal(): void {
   state = TransferTaskState.idle;
   taskContext = undefined;
   if (wasRunning && ctx !== undefined) {
-    backgroundTaskManager.stopBackgroundRunning(ctx).then(() => {
-      logger.debug('后台任务已停止');
-    }).catch((e: BusinessError) => {
-      logger.warn('停止后台任务失败：' + e.code + ' ' + e.message);
-    });
+    let context: common.UIAbilityContext = ctx;
+    let stopTask = (): void => {
+      // 等待期间已有新周期启动：旧周期的停止不得误停新任务
+      if (stopGeneration !== startGeneration) {
+        return;
+      }
+      backgroundTaskManager.stopBackgroundRunning(context).then(() => {
+        logger.debug('后台任务已停止');
+      }).catch((e: BusinessError) => {
+        logger.warn('停止后台任务失败：' + e.code + ' ' + e.message);
+      });
+    };
+    // 先让队列中的过期帧失效并等待在途发布结束，再取消通知，消除 publish 与 cancel 的竞态
+    let pending: Promise<void> = notificationPublishChain;
+    pending.then(stopTask, stopTask);
   }
 }
 
