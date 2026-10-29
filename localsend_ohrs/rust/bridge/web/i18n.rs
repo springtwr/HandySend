@@ -54,6 +54,9 @@ pub struct WebPageI18n {
     pub download_selected: String,
     pub download_zip_hint: String,
     pub list_updated: String,
+    pub text_preview_label: String,
+    pub copy: String,
+    pub copied: String,
     pub upload: String,
     pub choose_file: String,
     pub clear: String,
@@ -126,6 +129,9 @@ fn simplified() -> WebPageI18n {
         download_selected: "下载所选（%d）".to_string(),
         download_zip_hint: "多个文件将打包为一个 zip 压缩文件，下载完成后需解压使用。".to_string(),
         list_updated: "文件列表已更新。".to_string(),
+        text_preview_label: "内容预览".to_string(),
+        copy: "复制".to_string(),
+        copied: "已复制".to_string(),
         upload: "发送".to_string(),
         choose_file: "选择文件".to_string(),
         clear: "清空".to_string(),
@@ -189,6 +195,9 @@ fn traditional() -> WebPageI18n {
         download_selected: "下載所選（%d）".to_string(),
         download_zip_hint: "多個檔案將打包為一個 zip 壓縮檔，下載完成後需解壓使用。".to_string(),
         list_updated: "檔案清單已更新。".to_string(),
+        text_preview_label: "內容預覽".to_string(),
+        copy: "複製".to_string(),
+        copied: "已複製".to_string(),
         upload: "傳送".to_string(),
         choose_file: "選擇檔案".to_string(),
         clear: "清除".to_string(),
@@ -253,6 +262,9 @@ fn english() -> WebPageI18n {
         download_selected: "Download selected (%d)".to_string(),
         download_zip_hint: "Multiple files will be packed into one zip archive. Extract it after download.".to_string(),
         list_updated: "File list updated.".to_string(),
+        text_preview_label: "Preview".to_string(),
+        copy: "Copy".to_string(),
+        copied: "Copied".to_string(),
         upload: "Send".to_string(),
         choose_file: "Choose files".to_string(),
         clear: "Clear".to_string(),
@@ -293,6 +305,9 @@ mod tests {
         let json = serde_json::to_value(web_page_i18n("en")).unwrap();
         assert_eq!(json["downloadAll"], serde_json::json!("Download all"));
         assert_eq!(json["themeSystem"], serde_json::json!("Follow system"));
+        assert_eq!(json["textPreviewLabel"], serde_json::json!("Preview"));
+        assert_eq!(json["copy"], serde_json::json!("Copy"));
+        assert_eq!(json["copied"], serde_json::json!("Copied"));
         assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
         assert!(json["httpsHint"].as_str().unwrap().len() > 0);
         assert!(json["accessLinkRequired"].as_str().unwrap().len() > 0);

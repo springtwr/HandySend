@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::{Frame, Incoming};
-use hyper::header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE};
+use hyper::header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE};
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
@@ -1034,8 +1034,10 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
         (rx, interval, Some(initial)),
         |(mut rx, mut interval, initial)| async move {
             if let Some(initial) = initial {
+                // `retry` 让浏览器（尤其 Safari）在断线后按固定短间隔重连；
+                // 单页实例同时负责在 CLOSED 状态下显式重建，双重兜底。
                 let chunk = format!(
-                    "data: {}\n\n",
+                    "retry: 3000\ndata: {}\n\n",
                     serde_json::to_string(&initial).unwrap_or_else(|_| "{}".to_string())
                 );
                 return Some((
@@ -1060,9 +1062,10 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => return None,
                     },
                     _ = interval.tick() => {
+                        // 命名事件而非注释帧：页面可据此判断连接仍然存活（注释帧不触发 JS 事件）。
                         return Some((
                             Ok::<_, std::io::Error>(Frame::data(Bytes::from_static(
-                                b": keepalive\n\n",
+                                b"event: ping\ndata: {}\n\n",
                             ))),
                             (rx, interval, None),
                         ));
@@ -1112,9 +1115,10 @@ fn events_response(state: &WebServiceState) -> Response<BoxBody> {
         CONTENT_TYPE,
         hyper::header::HeaderValue::from_static("text/event-stream"),
     );
+    // no-cache 与 no-store 同时发送：部分 Safari 版本对 SSE 只认 no-cache。
     headers.insert(
-        hyper::header::CACHE_CONTROL,
-        hyper::header::HeaderValue::from_static("no-store"),
+        CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-cache, no-store"),
     );
     headers.insert(
         hyper::header::CONNECTION,

@@ -448,6 +448,18 @@ async fn test_single_page_and_unknown_path() {
     assert!(body.contains("/i18n.json"), "单页应先拉取文案");
     assert!(body.contains("message.txt"), "单页应支持文本发送");
     assert!(
+        body.contains("data-text-action=\"select\"") && body.contains("data-text-action=\"copy\""),
+        "文本预览应提供全选与复制入口"
+    );
+    assert!(
+        body.contains("class=\"download-all-bar\""),
+        "全选应与下载所选同排"
+    );
+    assert!(
+        body.contains("syncCapsPolling") && body.contains("checkEventsHealth"),
+        "单页应具备 SSE 断线重建与兜底轮询"
+    );
+    assert!(
         body.contains("shareUpdatedRetry"),
         "单页应分流 410（分享已更新请刷新）"
     );
@@ -647,6 +659,10 @@ async fn test_file_events_stream_initial_revision() {
     assert!(prefix.contains("data: "), "缺初始版本事件");
     assert!(prefix.contains("\"revision\""), "初始事件应带 revision");
     assert!(prefix.contains("\"added\""), "初始事件应带变化摘要字段");
+    assert!(
+        prefix.contains("retry: 3000"),
+        "初始帧应声明重连间隔，帮助 Safari 断线后快速恢复"
+    );
     handle.abort();
 }
 

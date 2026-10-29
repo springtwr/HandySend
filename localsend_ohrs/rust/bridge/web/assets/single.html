@@ -554,12 +554,20 @@ button.status-retry {
   margin: 0 0 12px;
 }
 
+/* 全选与“下载所选”同排：勾选项靠左、主操作靠右，不再单独占用一行 */
+.download-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .select-all-row {
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
   color: var(--harmony-font-secondary);
   font-size: 13px;
 }
@@ -675,16 +683,82 @@ button.status-retry {
 
 .text-preview {
   margin: 0 4px 12px;
-  padding: 12px 14px;
+  padding: 10px 12px 12px;
   border-radius: var(--radius-textarea);
   background: var(--harmony-background-secondary);
   color: var(--harmony-font-secondary);
   font-size: 14px;
   line-height: 22px;
-  white-space: pre-wrap;
-  word-break: break-word;
+}
+
+/* 预览标题与操作按钮：全选 / 复制（移动端也可一键完成） */
+.text-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.text-preview-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--harmony-font-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-preview-tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.text-preview-action {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--harmony-brand);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.text-preview-action:hover {
+  background: var(--harmony-comp-emphasize-tertiary);
+}
+
+.text-preview-action:active {
+  filter: brightness(0.9);
+}
+
+.text-preview-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.text-preview-body {
   max-height: 180px;
   overflow-y: auto;
+  border-radius: 4px;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.text-preview-body:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
 }
 
 /* ========== 上传区 ========== */
@@ -1184,11 +1258,13 @@ html[data-auth="open"] #gate {
           <button id="download-status-retry" class="btn btn--small btn--tonal status-retry hidden"
             type="button"></button>
           <div id="download-all-wrap" class="download-all hidden">
-            <label class="select-all-row">
-              <input id="select-all" type="checkbox">
-              <span id="select-all-label"></span>
-            </label>
-            <button class="btn btn--primary btn--block" id="download-selected-btn" type="button"></button>
+            <div class="download-all-bar">
+              <label class="select-all-row">
+                <input id="select-all" type="checkbox">
+                <span id="select-all-label"></span>
+              </label>
+              <button class="btn btn--small btn--tonal" id="download-selected-btn" type="button"></button>
+            </div>
             <p class="hint-text" id="download-selected-tip"></p>
           </div>
           <div id="file-list" class="file-list"></div>
@@ -1246,7 +1322,13 @@ html[data-auth="open"] #gate {
   var uploading = false;
   var statusLoading = false;
   var capsTimer = -1;
+  var capsPollMs = 0;
   var fileEvents = null;
+  // SSE 连接健康检查：Safari 首次进入/后台标签页偶发连接未建立或半开，
+  // 原实现只在 fileEvents 为 null 时创建，连接失效后不会重建。
+  var eventsRetryTimer = -1;
+  var eventsWatchdogTimer = -1;
+  var lastEventAt = 0;
   var lastRevision = -1;
   // 页面展示的列表版本 / 服务端会话快照版本
   var listRevision = -1;
@@ -1316,6 +1398,9 @@ html[data-auth="open"] #gate {
     downloadSelected: '下载所选（%d）',
     downloadZipHint: '多个文件将打包为一个 zip 压缩文件，下载完成后需解压使用。',
     listUpdated: '文件列表已更新。',
+    textPreviewLabel: '内容预览',
+    copy: '复制',
+    copied: '已复制',
     upload: '发送',
     chooseFile: '选择文件',
     clear: '清空',
@@ -1760,12 +1845,21 @@ html[data-auth="open"] #gate {
     }
   }
 
-  // 语言切换后刷新动态生成的文案（文件行、清空提示等）。
+  // 语言切换后刷新动态生成的文案（文件行、文本预览操作、清空提示等）。
   function refreshLanguageTexts() {
     setDownloadStatus('');
     var links = document.querySelectorAll('#file-list .btn--small');
     for (var i = 0; i < links.length; i++) {
       links[i].innerText = t('download');
+    }
+    var labels = document.querySelectorAll('#file-list .text-preview-label');
+    for (var j = 0; j < labels.length; j++) {
+      labels[j].innerText = t('textPreviewLabel');
+    }
+    var actions = document.querySelectorAll('#file-list .text-preview-action');
+    for (var k = 0; k < actions.length; k++) {
+      var action = actions[k].getAttribute('data-text-action');
+      actions[k].innerText = action === 'select' ? t('selectAll') : t('copy');
     }
     updateDownloadActions();
     var removes = document.querySelectorAll('#upload-progress .file-remove-btn');
@@ -1932,38 +2026,121 @@ html[data-auth="open"] #gate {
     startRealtime();
   }
 
+  // 轮询间隔随 SSE 状态切换：连接正常 15s 兜底；未连接/断开时 3s，
+  // 避免 Safari 首次进入时 SSE 失效后列表要等到下一次 15s 才刷新。
+  function syncCapsPolling() {
+    var desired = (fileEvents !== null && fileEvents.readyState === 1) ? 15000 : 3000;
+    if (capsTimer >= 0 && capsPollMs === desired) {
+      return;
+    }
+    if (capsTimer >= 0) {
+      clearInterval(capsTimer);
+      capsTimer = -1;
+    }
+    capsPollMs = desired;
+    capsTimer = setInterval(function () {
+      if (!document.hidden) {
+        loadCaps(true);
+      }
+    }, desired);
+  }
+
+  function scheduleEventsReconnect(delay) {
+    if (eventsRetryTimer >= 0) {
+      return;
+    }
+    eventsRetryTimer = setTimeout(function () {
+      eventsRetryTimer = -1;
+      openEvents();
+    }, delay === undefined ? 2000 : delay);
+  }
+
+  // 建立/重建 SSE：EventSource 进入 CLOSED 后不会自愈，必须显式重新创建。
+  function openEvents() {
+    if (isLocked || typeof EventSource === 'undefined') {
+      return;
+    }
+    if (fileEvents !== null && fileEvents.readyState !== 2) {
+      return;
+    }
+    if (fileEvents !== null) {
+      try { fileEvents.close(); } catch (_e) { }
+      fileEvents = null;
+    }
+    var source = new EventSource(BASE + '/web/events');
+    fileEvents = source;
+    lastEventAt = Date.now();
+    source.onopen = function () {
+      lastEventAt = Date.now();
+      syncCapsPolling();
+      // 断线期间可能漏掉变化：连上后补一次快照。
+      loadCaps(true);
+    };
+    source.onmessage = function (event) {
+      lastEventAt = Date.now();
+      var change = null;
+      try { change = JSON.parse(event.data); } catch (_e) { change = null; }
+      if (!change || typeof change.revision !== 'number') {
+        var revision = parseInt(event.data, 10);
+        if (!isNaN(revision) && revision !== lastRevision && !document.hidden) {
+          loadCaps(true);
+        }
+        return;
+      }
+      handleFileTableChange(change);
+    };
+    source.addEventListener('session-end', function (event) {
+      lastEventAt = Date.now();
+      handleSessionEnd(event.data);
+    });
+    source.addEventListener('caps', function () {
+      lastEventAt = Date.now();
+      loadCaps(true);
+    });
+    // 服务端每 25s 发一次 ping 事件，用于判断连接是否仍然活着（注释帧不会触发 message）。
+    source.addEventListener('ping', function () {
+      lastEventAt = Date.now();
+    });
+    source.onerror = function () {
+      if (fileEvents !== source) {
+        return;
+      }
+      syncCapsPolling();
+      // CLOSED 表示浏览器已放弃重连（如 401/非 event-stream 响应）：主动重建。
+      if (source.readyState === 2) {
+        try { source.close(); } catch (_e) { }
+        fileEvents = null;
+        scheduleEventsReconnect(2000);
+      }
+    };
+  }
+
+  // 看门狗：连接 OPEN 但长时间没有任何事件/心跳，视为半开并重建。
+  function checkEventsHealth() {
+    if (isLocked) {
+      return;
+    }
+    if (fileEvents === null || fileEvents.readyState === 2) {
+      openEvents();
+      syncCapsPolling();
+      return;
+    }
+    if (fileEvents.readyState === 1 && lastEventAt > 0 && Date.now() - lastEventAt > 70000) {
+      try { fileEvents.close(); } catch (_e) { }
+      fileEvents = null;
+      openEvents();
+      syncCapsPolling();
+    }
+  }
+
   function startRealtime() {
     if (isLocked) {
       return;
     }
-    if (fileEvents === null && typeof EventSource !== 'undefined') {
-      fileEvents = new EventSource(BASE + '/web/events');
-      fileEvents.onmessage = function (event) {
-        var change = null;
-        try { change = JSON.parse(event.data); } catch (_e) { change = null; }
-        if (!change || typeof change.revision !== 'number') {
-          var revision = parseInt(event.data, 10);
-          if (!isNaN(revision) && revision !== lastRevision && !document.hidden) {
-            loadCaps(true);
-          }
-          return;
-        }
-        handleFileTableChange(change);
-      };
-      fileEvents.addEventListener('session-end', function (event) {
-        handleSessionEnd(event.data);
-      });
-      fileEvents.addEventListener('caps', function () {
-        loadCaps(true);
-      });
-    }
-    // SSE 为主；保留低频轮询兜底，兼容代理/长连接被中断的场景
-    if (capsTimer < 0) {
-      capsTimer = setInterval(function () {
-        if (!document.hidden) {
-          loadCaps(true);
-        }
-      }, 15000);
+    openEvents();
+    syncCapsPolling();
+    if (eventsWatchdogTimer < 0) {
+      eventsWatchdogTimer = setInterval(checkEventsHealth, 30000);
     }
   }
 
@@ -1975,6 +2152,15 @@ html[data-auth="open"] #gate {
     if (capsTimer >= 0) {
       clearInterval(capsTimer);
       capsTimer = -1;
+    }
+    capsPollMs = 0;
+    if (eventsRetryTimer >= 0) {
+      clearTimeout(eventsRetryTimer);
+      eventsRetryTimer = -1;
+    }
+    if (eventsWatchdogTimer >= 0) {
+      clearInterval(eventsWatchdogTimer);
+      eventsWatchdogTimer = -1;
     }
   }
 
@@ -2180,6 +2366,23 @@ html[data-auth="open"] #gate {
     allBox.disabled = keys.length === 0;
   }
 
+  /** 文本预览块：标题栏提供「全选 / 复制」，正文可聚焦后按 Ctrl/Cmd+A 只选中本块。 */
+  function textPreviewHtml(idx, content, loading) {
+    return '<div class="text-preview">' +
+      '<div class="text-preview-head">' +
+      '<span class="text-preview-label">' + esc(t('textPreviewLabel')) + '</span>' +
+      '<span class="text-preview-tools">' +
+      '<button type="button" class="text-preview-action" data-text-action="select" data-idx="' + idx + '">' +
+      esc(t('selectAll')) + '</button>' +
+      '<button type="button" class="text-preview-action" data-text-action="copy" data-idx="' + idx + '">' +
+      esc(t('copy')) + '</button>' +
+      '</span>' +
+      '</div>' +
+      '<div class="text-preview-body" id="preview-' + idx + '" tabindex="0" role="region" aria-label="' +
+      esc(t('textPreviewLabel')) + '">' + content + '</div>' +
+      '</div>';
+  }
+
   function renderFileList(files, sessionToken) {
     var keys = fileKeysSorted(files);
     var valid = {};
@@ -2203,10 +2406,9 @@ html[data-auth="open"] #gate {
         esc(t('download')) + '</a>' +
         '</div>';
       if (file.preview) {
-        html += '<div class="text-preview">' + esc(file.preview) + '</div>';
+        html += textPreviewHtml(i, esc(file.preview), false);
       } else if (file.fileName.slice(-4).toLowerCase() === '.txt') {
-        html += '<div class="text-preview" id="preview-' + i + '">' +
-          esc(t('previewLoading')) + '</div>';
+        html += textPreviewHtml(i, esc(t('previewLoading')), true);
         loadTextPreview(keys[i], sessionToken, i);
       }
       html += '</div>';
@@ -2414,6 +2616,110 @@ html[data-auth="open"] #gate {
       triggerDownload(token, fileId);
     });
   });
+
+  // 文本预览操作：全选 / 复制（事件委托，覆盖实时重绘后的新节点）。
+  $('file-list').addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-text-action]') : null;
+    if (!btn) { return; }
+    var idx = btn.getAttribute('data-idx');
+    if (btn.getAttribute('data-text-action') === 'select') {
+      selectPreview(idx);
+    } else {
+      copyPreview(idx, btn);
+    }
+  });
+
+  // 预览正文聚焦时 Ctrl/Cmd+A 只选中本块，不再选中整个网页文本。
+  $('file-list').addEventListener('keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) {
+      return;
+    }
+    var body = e.target && e.target.closest ? e.target.closest('.text-preview-body') : null;
+    if (!body) { return; }
+    e.preventDefault();
+    selectNodeContents(body);
+  });
+
+  // ========== 文本预览：全选 / 复制 ==========
+
+  /** 选中元素内的全部文本：Ctrl/Cmd+A 与「全选」按钮共用。 */
+  function selectNodeContents(el) {
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (!selection) {
+      return;
+    }
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  /** 全选某条预览正文：先聚焦，避免选择结果被焦点切换清掉。 */
+  function selectPreview(idx) {
+    var el = document.getElementById('preview-' + idx);
+    if (!el) {
+      return;
+    }
+    try {
+      el.focus({ preventScroll: true });
+    } catch (_e) {
+      el.focus();
+    }
+    selectNodeContents(el);
+  }
+
+  /** 复制文本：优先 Clipboard API（仅安全上下文），失败回退 execCommand。 */
+  function copyText(text, btn) {
+    if (!text) {
+      return;
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        flashCopyButton(btn);
+      }, function () {
+        fallbackCopyText(text, btn);
+      });
+      return;
+    }
+    fallbackCopyText(text, btn);
+  }
+
+  function fallbackCopyText(text, btn) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      flashCopyButton(btn);
+    } catch (_e) {
+    }
+    document.body.removeChild(ta);
+  }
+
+  function flashCopyButton(btn) {
+    if (!btn) {
+      return;
+    }
+    var old = btn.innerText;
+    btn.innerText = t('copied');
+    btn.disabled = true;
+    setTimeout(function () {
+      btn.innerText = old;
+      btn.disabled = false;
+    }, 1500);
+  }
+
+  /** 复制某条预览的完整内容（不截断；正文最多展示 180px 高度，但内容仍完整）。 */
+  function copyPreview(idx, btn) {
+    var el = document.getElementById('preview-' + idx);
+    if (!el) {
+      return;
+    }
+    copyText(el.innerText || el.textContent || '', btn);
+  }
 
   // 文本预览：Range 取前 128KB，不下完整文件。
   function loadTextPreview(fileId, sessionToken, idx) {
@@ -2835,11 +3141,28 @@ html[data-auth="open"] #gate {
     }
   });
 
-  // 页面回到前台：补一次 caps；文件表变化由 SSE/兜底轮询决定是否提示刷新。
+  // 页面回到前台/从 bfcache 恢复：重建可能已失效的 SSE 并补一次 caps。
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState !== 'visible' || isLocked) {
       return;
     }
+    startRealtime();
+    loadCaps(true);
+  });
+
+  window.addEventListener('pageshow', function (event) {
+    if (!event.persisted || isLocked) {
+      return;
+    }
+    startRealtime();
+    loadCaps(true);
+  });
+
+  window.addEventListener('online', function () {
+    if (isLocked) {
+      return;
+    }
+    startRealtime();
     loadCaps(true);
   });
 
