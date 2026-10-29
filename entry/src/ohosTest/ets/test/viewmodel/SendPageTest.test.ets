@@ -321,16 +321,17 @@ export default function SendPageTest() {
       expect(onlyLocal[0]).assertEqual('localsend')
     })
 
-    it('protocolDisabledHint_shownOnlyWhenBothOffAndNotDismissed', 0, () => {
-      // 单一协议禁用：不显示任何常驻提示
-      expect(shouldShowProtocolDisabledHint(false, true, false)).assertFalse()
-      expect(shouldShowProtocolDisabledHint(true, false, false)).assertFalse()
-      // 两者均开启：不显示
-      expect(shouldShowProtocolDisabledHint(true, true, false)).assertFalse()
-      // 两个协议均关闭且未关闭提示：显示
-      expect(shouldShowProtocolDisabledHint(false, false, false)).assertTrue()
+    it('protocolDisabledHint_shownOnlyWhenAllOffAndNotDismissed', 0, () => {
+      // 任一传输方式开启（含独立的网页传输）：不显示任何常驻提示
+      expect(shouldShowProtocolDisabledHint(false, true, false, false)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(true, false, false, false)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(false, false, true, false)).assertFalse()
+      // 三者均开启：不显示
+      expect(shouldShowProtocolDisabledHint(true, true, true, false)).assertFalse()
+      // 三种传输方式均关闭且未关闭提示：显示
+      expect(shouldShowProtocolDisabledHint(false, false, false, false)).assertTrue()
       // 已在本次会话内关闭提示：不再显示
-      expect(shouldShowProtocolDisabledHint(false, false, true)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(false, false, false, true)).assertFalse()
     })
   })
 }

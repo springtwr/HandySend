@@ -5,7 +5,18 @@
 import { UIContext } from '@kit.ArkUI';
 
 /**
+ * 文本是否含显式换行（CR/LF/Unicode 行分隔符）。
+ * measureText 会把换行当作零宽字符，多行短文本的测量宽度可能仍小于内容区宽度，
+ * 故必须先按显式换行判定为多行，不能只依赖测量宽度。
+ */
+export function hasExplicitLineBreak(text: string): boolean {
+  return text.indexOf('\n') >= 0 || text.indexOf('\r') >= 0 ||
+    text.indexOf('\u2028') >= 0 || text.indexOf('\u2029') >= 0;
+}
+
+/**
  * 判定单行/多行对齐：
+ * - 含显式换行 → 多行左对齐（TextAlign.Start）；
  * - 可用宽度 ≤ 0（尚未测量到）→ 左对齐（TextAlign.Start）；
  * - 整段文本单行测量宽度 ≤ 内容区可用宽度 → 单行居中（TextAlign.Center）；
  * - 否则多行左对齐（TextAlign.Start）。
@@ -16,7 +27,7 @@ import { UIContext } from '@kit.ArkUI';
  */
 export function resolveSingleLineTextAlign(uiContext: UIContext, text: string, fontSize: number,
   availableWidthVp: number): TextAlign {
-  if (availableWidthVp <= 0) {
+  if (hasExplicitLineBreak(text) || availableWidthVp <= 0) {
     return TextAlign.Start;
   }
   let singleLineWidthPx: number = uiContext.getMeasureUtils().measureText({

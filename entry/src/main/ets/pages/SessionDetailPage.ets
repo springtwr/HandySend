@@ -458,7 +458,7 @@ export struct SessionDetailPage {
    * 文本消息会话仅在待确认（canConfirm）时占用底部操作区，其余阶段不占位。
    */
   private hasActions(): boolean {
-    if (this.viewModel.hasTextPreview()) {
+    if (this.viewModel.isTextMessageSession()) {
       return this.viewModel.canConfirm();
     }
     return this.viewModel.canConfirm() || this.viewModel.canDecline() || this.viewModel.canCancel();

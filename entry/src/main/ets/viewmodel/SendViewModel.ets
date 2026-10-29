@@ -194,12 +194,13 @@ export function filterSeenSourceKeysByProtocolToggles(seen: Array<string>,
 }
 
 /**
- * 「两个协议均禁用」提示卡显隐判定（纯函数，可独立测试）：
- * 单一协议禁用时不提示；仅两个总开关都关闭、且用户未在本次会话内关闭过该提示时显示。
+ * 「所有传输方式均禁用」提示卡显隐判定（纯函数，可独立测试）：
+ * 单一方式禁用时不提示；仅 LocalSend、互传联盟与网页传输总开关都关闭、
+ * 且用户未在本次会话内关闭过该提示时显示。
  */
 export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
-  dismissed: boolean): boolean {
-  return !localSendEnabled && !mtaEnabled && !dismissed;
+  webSendEnabled: boolean, dismissed: boolean): boolean {
+  return !localSendEnabled && !mtaEnabled && !webSendEnabled && !dismissed;
 }
 
 // 发送页签业务状态 + 命令，从 SendContent 抽出。

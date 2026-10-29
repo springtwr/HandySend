@@ -1010,7 +1010,7 @@
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有网络接口已关闭，其他设备无法发现此设备。请到高级设置 > 网络接口中打开"
+      "value": "所有网络接口已关闭，LocalSend 将无法正常使用。请到 设置 > LocalSend > 高级设置 > 网络接口 中打开可用接口"
     },
     {
       "name": "network_interface_desc",
@@ -1054,11 +1054,11 @@
     },
     {
       "name": "web_access_auto_accept_upload_desc",
-      "value": "其他人通过网页上传文件时不再经过你的确认"
+      "value": "其他人通过网页向你发送文件时不再需要经你确认，文本消息会自动复制到剪贴板"
     },
     {
       "name": "web_access_unavailable",
-      "value": "浏览器传输未启动。"
+      "value": "网页服务暂未就绪"
     },
     {
       "name": "web_download_request_title",
@@ -1285,8 +1285,12 @@
       "value": "蓝牙未开启，互传设备将无法被发现，请开启蓝牙"
     },
     {
-      "name": "mta_wifi_off_warning",
-      "value": "未开启 WLAN，局域网与互传的设备发现、传输可能失败，请开启 WLAN"
+      "name": "wifi_off_lan_and_mta_warning",
+      "value": "未开启 WLAN，文件传输将无法正常使用，请开启 WLAN"
+    },
+    {
+      "name": "mta_wifi_off_standalone_warning",
+      "value": "未开启 WLAN，与互传联盟设备的发现与传输可能失败，请开启 WLAN"
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
@@ -1394,7 +1398,7 @@
     },
     {
       "name": "send_all_protocols_disabled_hint",
-      "value": "LocalSend 与互传联盟均已关闭，无法发送或接收文件"
+      "value": "所有传输方式均已关闭，应用将无法正常使用，请到设置中开启至少一种传输方式"
     },
     {
       "name": "send_protocol_hint_settings",
@@ -2010,7 +2014,11 @@
     },
     {
       "name": "new_transfer_alert_message",
-      "value": "%s 想要发送 %d 个文件"
+      "value": "%s 发来 %d 个文件"
+    },
+    {
+      "name": "new_transfer_alert_message_text",
+      "value": "%s 发来 1 条消息"
     },
     {
       "name": "new_transfer_alert_message_outbound",
@@ -2109,16 +2117,8 @@
       "value": "删除（%d）"
     },
     {
-      "name": "web_access_upload_off",
-      "value": "浏览器上传未开启。"
-    },
-    {
       "name": "web_settings",
       "value": "网页传输"
-    },
-    {
-      "name": "web_access_empty_hint",
-      "value": "启动后，附近的浏览器可下载本机分享的文件，或向本机发送文件。"
     },
     {
       "name": "web_send_label",

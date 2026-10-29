@@ -135,7 +135,8 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
 /** 开始一次 MTA 发送（taskId 为协议标识）。 */
 export function beginMtaSendSession(taskId: string, targetAlias: string, deviceType: string,
   deviceModel: string, brandBadge: string, files: Array<SessionFileDescriptor>,
-  mtaBrandId: number = -1, bleAddress: string = '', senderIdHex: string = ''): string {
+  mtaBrandId: number = -1, bleAddress: string = '', senderIdHex: string = '',
+  textMessage: boolean = false): string {
   // 同设备取代：新会话创建之前移除该对端上一条已终态会话的可见条目。
   // MTA 协议载体不携带对端 IP，故以「对端发送者 ID」（跨会话稳定）声明身份；
   // 缺失时回退昵称，由注册表按回退顺序匹配。
@@ -149,7 +150,8 @@ export function beginMtaSendSession(taskId: string, targetAlias: string, deviceT
     peer: buildPeer(targetAlias, deviceType, deviceModel, brandBadge, mtaBrandId, bleAddress, senderIdHex),
     files: files,
     capabilities: capabilities(),
-    stage: SessionStage.active
+    stage: SessionStage.active,
+    textMessage: textMessage
   });
   return session.id;
 }
@@ -400,7 +402,8 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       buildDescriptors(request),
       request !== undefined ? request.brandId : -1,
       request !== undefined ? request.bleAddress : '',
-      request !== undefined ? request.senderIdHex : '');
+      request !== undefined ? request.senderIdHex : '',
+      request !== undefined && request.isTextSend);
     activeUnifiedId = unifiedId;
     // 会话已创建：注册表成为「发送中」的事实源，清除发起中标志
     sendStarting = false;

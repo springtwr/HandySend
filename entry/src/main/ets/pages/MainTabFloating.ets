@@ -354,6 +354,12 @@ struct MainTabFloating {
   private buildNewTransferMessage(session: TransferSession): string {
     let peer: string = session.peer.displayName.length > 0 ? session.peer.displayName :
       getStringSync(this.getUIContext(), $r('app.string.session_peer_unknown_device'));
+    // 对端发来的文本消息不按文件计数：统一表达为「发来 1 条消息」，避免出现「1 个文件」
+    if (session.textMessage && session.dataFlow === SessionDataFlow.inbound) {
+      let textTemplate: string = getStringSync(this.getUIContext(),
+        $r('app.string.new_transfer_alert_message_text'));
+      return textTemplate.replace('%s', peer);
+    }
     let templateRes: Resource = session.dataFlow === SessionDataFlow.outbound ?
       $r('app.string.new_transfer_alert_message_outbound') : $r('app.string.new_transfer_alert_message');
     let template: string = getStringSync(this.getUIContext(), templateRes);

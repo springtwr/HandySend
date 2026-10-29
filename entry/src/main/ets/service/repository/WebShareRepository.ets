@@ -57,6 +57,8 @@ import {
 import { ensureRecvDownloadDir, ensureRecvTextDir, uniquePath } from './ReceiveTargets';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { readTextOfLocation } from '../../utils/FileTextUtil';
+import { copyText } from '../../utils/ClipboardUtil';
+import { DialogService } from '../DialogService';
 import { generateWebAccessCode } from '../../utils/WebAccessCode';
 import {
   WEB_DOWNLOAD_KEY,
@@ -71,6 +73,7 @@ import {
   finishWebUploadIfAllDone,
   handleWebUploadDone,
   handleWebUploadProgress,
+  isWebUploadTextMessage,
   markWebUploadAccepted,
   markWebUploadDeclined,
   setWebUploadInvokers
@@ -855,7 +858,15 @@ export function handleWebDownloadStartedTyped(event: NativeWebDownloadStartedEve
   if (descriptors.length === 0) {
     return;
   }
-  beginWebDownloadBatch(event.batchId, event.ip, descriptors);
+  // 仅手动输入的文本消息在文件表中携带 preview；普通 .txt 文件没有该字段。
+  let textPreview: string = '';
+  if (event.files.length === 1) {
+    let preview: string | undefined = event.files[0].preview;
+    if (preview !== undefined && preview.length > 0) {
+      textPreview = preview;
+    }
+  }
+  beginWebDownloadBatch(event.batchId, event.ip, descriptors, textPreview);
   logger.info('网页下载开始 batch=' + event.batchId + ' ip=' + event.ip +
     ' 文件数=' + descriptors.length);
   notifyChange();
@@ -995,8 +1006,18 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
   if (webUploadAutoAccept) {
     // 本次挂载已开启上传免确认：先登记为进行中，再按正常接受流程预置落盘目标。
     // 目标目录准备失败时 acceptWebUpload 内部会转为拒绝，不会静默落盘。
+    let isNewSession: boolean = findWebUploadSession(token) === undefined;
     logger.info('Web 上传按本次挂载授权自动接受 token=' + token);
     beginWebUploadBurst(token, false, descriptors, ip, previewText);
+    // 与 LocalSend 自动接收口径一致：免确认收到文本消息时立即复制到剪贴板。
+    // 只在首次登记时复制，浏览器重试 prepare 不会重复覆盖剪贴板。
+    if (isNewSession && previewText.length > 0) {
+      if (copyText(previewText)) {
+        DialogService.showCenterToast($r('app.string.received_text_copied_toast'));
+      } else {
+        logger.warn('Web 上传文本消息写入剪贴板失败 token=' + token);
+      }
+    }
     acceptWebUpload(token);
   } else {
     logger.debug('Web 上传进入待确认 token=' + token);
@@ -1172,7 +1193,8 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
   }
   let isTextMessage: boolean = session.files.length === 1 &&
     session.files[0].fileType === 'text/plain' &&
-    session.files[0].fileName === 'message.txt';
+    session.files[0].fileName === 'message.txt' &&
+    isWebUploadTextMessage(session.id);
   // 文本消息只落应用私有文本目录，不依赖 Download 目录授权；
   // 普通文件才需要惰性获取 Download/<包名>/。
   let downloadDir: string = '';
@@ -1289,7 +1311,8 @@ function archiveUploadHistory(session: TransferSession): void {
   let senderAlias: string = session.peer.displayName.length > 0 ? session.peer.displayName : 'Web Browser';
   let isTextMessage: boolean = session.files.length === 1 &&
     session.files[0].fileType === 'text/plain' &&
-    session.files[0].fileName === 'message.txt';
+    session.files[0].fileName === 'message.txt' &&
+    isWebUploadTextMessage(session.id);
   for (let i = 0; i < session.files.length; i++) {
     let f = session.files[i];
     let displayFileName: string = f.fileName;

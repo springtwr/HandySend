@@ -1010,7 +1010,7 @@
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有網路介面已關閉，其他裝置無法發現此裝置。請到進階設定 > 網路介面中開啟"
+      "value": "所有網路介面已關閉，LocalSend 將無法正常使用。請到 設定 > LocalSend > 進階設定 > 網路介面 中開啟可用介面"
     },
     {
       "name": "network_interface_desc",
@@ -1054,11 +1054,11 @@
     },
     {
       "name": "web_access_auto_accept_upload_desc",
-      "value": "其他人透過網頁上傳檔案時不再經過你的確認"
+      "value": "其他人透過網頁向你傳送檔案時不再需要經你確認，文字訊息會自動複製到剪貼簿"
     },
     {
       "name": "web_access_unavailable",
-      "value": "瀏覽器傳輸未啟動。"
+      "value": "網頁服務暫未就緒"
     },
     {
       "name": "web_download_request_title",
@@ -1285,8 +1285,12 @@
       "value": "藍牙未開啟，互傳裝置將無法被發現，請開啟藍牙"
     },
     {
-      "name": "mta_wifi_off_warning",
-      "value": "未開啟 WLAN，區域網路與互傳的裝置探索、傳輸可能失敗，請開啟 WLAN"
+      "name": "wifi_off_lan_and_mta_warning",
+      "value": "未開啟 WLAN，檔案傳輸將無法正常使用，請開啟 WLAN"
+    },
+    {
+      "name": "mta_wifi_off_standalone_warning",
+      "value": "未開啟 WLAN，與互傳聯盟裝置的探索與傳輸可能失敗，請開啟 WLAN"
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
@@ -1394,7 +1398,7 @@
     },
     {
       "name": "send_all_protocols_disabled_hint",
-      "value": "LocalSend 與互傳聯盟均已關閉，無法傳送或接收檔案"
+      "value": "所有傳輸方式均已關閉，應用程式將無法正常使用，請至設定中開啟至少一種傳輸方式"
     },
     {
       "name": "send_protocol_hint_settings",
@@ -2010,7 +2014,11 @@
     },
     {
       "name": "new_transfer_alert_message",
-      "value": "%s 想要傳送 %d 個檔案"
+      "value": "%s 發來 %d 個檔案"
+    },
+    {
+      "name": "new_transfer_alert_message_text",
+      "value": "%s 發來 1 則訊息"
     },
     {
       "name": "new_transfer_alert_message_outbound",
@@ -2109,16 +2117,8 @@
       "value": "刪除（%d）"
     },
     {
-      "name": "web_access_upload_off",
-      "value": "瀏覽器上傳未開啟。"
-    },
-    {
       "name": "web_settings",
       "value": "網頁傳輸"
-    },
-    {
-      "name": "web_access_empty_hint",
-      "value": "啟動後，附近的瀏覽器可下載本機分享的檔案，或向本機傳送檔案。"
     },
     {
       "name": "web_send_label",

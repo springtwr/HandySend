@@ -155,7 +155,10 @@ export struct SendContent {
   private getConnectionWarningText(): ResourceStr | undefined {
     if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings) {
       if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
-        return $r('app.string.mta_wifi_off_warning');
+        // 该合并提示只在 LocalSend 与互传均开启时成立；LocalSend 已关闭时只说明互传自身的 WLAN 依赖
+        return this.viewModel.localSendEnabled ?
+          $r('app.string.wifi_off_lan_and_mta_warning') :
+          $r('app.string.mta_wifi_off_standalone_warning');
       }
       if (!this.viewModel.mtaWifiOn && !this.viewModel.mtaBluetoothOn) {
         return $r('app.string.mta_bt_wifi_off_warning');
@@ -816,7 +819,7 @@ export struct SendContent {
           // 「两个协议均禁用」中性提示卡：单一协议禁用不提示，仅当已无任何可用路径时才说明。
           // 主动禁用不是故障，故取中性/信息语义色（非警示橙），并提供「去设置」入口与关闭入口。
           if (shouldShowProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
-            this.protocolHintDismissed)) {
+            this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
             Row({ space: DesignTokens.space.sm }) {
               Text($r('app.string.send_all_protocols_disabled_hint'))
                 .fontSize(DesignTokens.font.bodyM)

@@ -134,7 +134,8 @@ export function beginLocalSendSession(businessSessionId: string, device: Discove
     initiatedBy: SessionInitiator.local,
     peer: buildPeer(device),
     files: descriptors,
-    capabilities: capabilitiesFor(files)
+    capabilities: capabilitiesFor(files),
+    textMessage: isSingleTextMessageSend(files)
   });
   contexts.set(session.id, { device: device, businessSessionId: businessSessionId, files: files });
   return session.id;
@@ -185,13 +186,20 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return emptyDisplayDescriptor();
     }
+    // 手输文本消息在发送期也携带内容预览；文件选择器选取的 .txt 不带 preview。
+    let ctx: SendContext | undefined = contexts.get(sessionId);
+    let text: string = '';
+    if (ctx !== undefined && isSingleTextMessageSend(ctx.files)) {
+      text = ctx.files[0].preview ?? '';
+    }
     return {
       peerTitle: session.peer.displayName,
       peerSubtitle: session.peer.ip ?? '',
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_send'),
-      supportsTextPreview: false
+      supportsTextPreview: text.length > 0,
+      textPreview: text
     };
   },
   confirm: (): void => {

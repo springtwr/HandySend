@@ -143,6 +143,9 @@ export interface SessionCreateInput {
   capabilities: SessionCapabilities
   stage?: SessionStage
   stageText?: ResourceStr
+  // 会话是否为手动输入的文本消息（区别于文件选择器选中的 .txt 等文本文件）。
+  // 由协议适配器在创建时显式声明，详情页据此决定是否渲染文本消息卡片。
+  textMessage?: boolean
 }
 
 /**
@@ -196,6 +199,8 @@ export class TransferSession {
   dataFlow: SessionDataFlow = SessionDataFlow.outbound
   initiatedBy: SessionInitiator = SessionInitiator.local
   @Trace stage: SessionStage = SessionStage.active
+  // 是否为手动输入的文本消息会话（非文本文件）；创建后不变，不参与进度刷新
+  textMessage: boolean = false
   peer: SessionPeer = emptyPeer()
   @Trace files: Array<SessionFile> = []
   @Trace bytesSent: number = 0

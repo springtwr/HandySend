@@ -21,8 +21,10 @@ import {
  * 按「非 MTA / 无品牌」降级，故无需迁移逻辑。
  * v4 时间线落盘形态剥离逐事件的会话标识与 detail（见 persistedTimelineOf）：
  * 沿用「读取不校验版本」策略，旧条目仍带这两个字段，直接忽略即可，无需迁移。
+ * v5 新增可选文本消息标记 `textMessage`（区分手输文本消息与 .txt 文本文件）；
+ * 旧条目缺省该字段，展示层按非文本消息降级。
  */
-export const SESSION_HISTORY_SCHEMA_VERSION: number = 4;
+export const SESSION_HISTORY_SCHEMA_VERSION: number = 5;
 
 /** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
 export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;
@@ -62,6 +64,8 @@ export interface SessionHistoryEntry {
   files: Array<SessionHistoryFileEntry>
   fileCount: number
   totalBytes: number
+  // 是否为手动输入的文本消息会话（可选：旧条目缺省按非文本消息降级）
+  textMessage?: boolean
   // ── 结果与错误 ──
   outcome: SessionHistoryOutcome
   errorMessage: string
@@ -319,6 +323,7 @@ function rebuildAggregatesFromFiles(e: SessionHistoryEntry, totalBytes: number):
     files: e.files,
     fileCount: e.files.length,
     totalBytes: totalBytes,
+    textMessage: e.textMessage,
     outcome: e.outcome,
     errorMessage: e.errorMessage,
     errorCode: e.errorCode,

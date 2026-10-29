@@ -7,6 +7,7 @@ import {
   SessionStage
 } from '../../../../main/ets/model/transfer/TransferSession'
 import {
+  LOCAL_SEND_KEY,
   beginLocalSendSession,
   updateLocalSendProgress,
   finishLocalSend
@@ -43,7 +44,8 @@ import {
   WEB_UPLOAD_KEY,
   beginWebUploadBurst,
   handleWebUploadDone,
-  handleWebUploadProgress
+  handleWebUploadProgress,
+  isWebUploadTextMessage
 } from '../../../../main/ets/service/transfer/adapters/WebUploadAdapter'
 import {
   WEB_DOWNLOAD_KEY,
@@ -210,7 +212,16 @@ export default function AdaptersTest() {
       expect(textSession !== undefined).assertTrue()
       if (textSession !== undefined) {
         expect(textSession.capabilities.hasByteProgress).assertFalse()
+        expect(textSession.textMessage).assertTrue()
         expect(rowHasByteProgress(liveSessionRow(textSession))).assertFalse()
+      }
+      // 发送期即按文本消息展示（内容来自发送条目 preview），不再是普通文件
+      let sendAdapter = getAdapter(LOCAL_SEND_KEY)
+      expect(sendAdapter !== undefined).assertTrue()
+      if (sendAdapter !== undefined) {
+        let display = sendAdapter.getDisplayDescriptor(textId)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('你好')
       }
       // 普通文件发送（不承载文本内容）保持字节进度
       let fileId = beginLocalSendSession('file_1', device(), [
@@ -226,10 +237,15 @@ export default function AdaptersTest() {
       expect(fileSession !== undefined).assertTrue()
       if (fileSession !== undefined) {
         expect(fileSession.capabilities.hasByteProgress).assertTrue()
+        expect(fileSession.textMessage).assertFalse()
         // 尚未产生字节时不显示 0% 进度条（改由阶段文案表达），产生字节后进入字节进度口径
         expect(rowHasByteProgress(liveSessionRow(fileSession))).assertFalse()
         updateFileProgress(fileId, 'f2', 40, 100)
         expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
+      }
+      if (sendAdapter !== undefined) {
+        let fileDisplay = sendAdapter.getDisplayDescriptor(fileId)
+        expect(fileDisplay.supportsTextPreview).assertFalse()
       }
       resetRegistry()
     })
@@ -1001,6 +1017,48 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('webDownload_textPreviewOnlyForDeclaredTextMessage', 0, () => {
+      resetRegistry()
+      // 普通 .txt 分享：文件表不带 preview → 不按文本消息展示
+      let fileId = beginWebDownloadBatch('batch-txt', '192.168.1.52', [{
+        fileId: 'f1',
+        fileName: 'note.txt',
+        fileType: 'text/plain',
+        totalBytes: 10
+      }])
+      let fileSession = getSession(fileId)
+      expect(fileSession !== undefined).assertTrue()
+      if (fileSession !== undefined) {
+        expect(fileSession.textMessage).assertFalse()
+      }
+      let adapter = getAdapter(WEB_DOWNLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(fileId)
+        expect(display.supportsTextPreview).assertFalse()
+      }
+      resetRegistry()
+
+      // 手输文本消息：文件表携带 preview → 保留文本消息语义
+      let textId = beginWebDownloadBatch('batch-text', '192.168.1.53', [{
+        fileId: 'f1',
+        fileName: 'text_1.txt',
+        fileType: 'text/plain',
+        totalBytes: 5
+      }], '你好')
+      let textSession = getSession(textId)
+      expect(textSession !== undefined).assertTrue()
+      if (textSession !== undefined) {
+        expect(textSession.textMessage).assertTrue()
+      }
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(textId)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('你好')
+      }
+      resetRegistry()
+    })
+
     it('webDownload_partialFailureMapsPartiallyFailed', 0, () => {
       resetRegistry()
       let id = beginWebDownloadBatch('batch-2', '192.168.1.51', [{
@@ -1408,6 +1466,34 @@ export default function AdaptersTest() {
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('hello')
       }
+      resetRegistry()
+    })
+
+    it('web_upload_txtFile_isNotTextMessage', 0, () => {
+      resetRegistry()
+      // 用户从文件选择器上传的单个 .txt：没有浏览器声明的 preview，
+      // 即使文件名恰好为 message.txt 也不能按文本消息展示。
+      let id = beginWebUploadBurst('web-txt-1', false, [{
+        fileId: 'f0',
+        fileName: 'note.txt',
+        fileType: 'text/plain',
+        totalBytes: 6
+      }], '10.0.0.12')
+      handleWebUploadProgress('web-txt-1', 'f0', 6, 6)
+      handleWebUploadDone('web-txt-1', 'f0', '/storage/Download/note.txt')
+      let adapter = getAdapter(WEB_UPLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(id)
+        expect(display.supportsTextPreview).assertFalse()
+        expect(display.textPreview === undefined || display.textPreview === '').assertTrue()
+      }
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.textMessage).assertFalse()
+      }
+      expect(isWebUploadTextMessage(id)).assertFalse()
       resetRegistry()
     })
 

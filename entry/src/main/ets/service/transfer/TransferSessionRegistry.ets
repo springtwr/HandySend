@@ -358,6 +358,7 @@ export function createSession(input: SessionCreateInput): TransferSession {
   session.peer = input.peer;
   session.capabilities = input.capabilities;
   session.stageText = input.stageText ?? '';
+  session.textMessage = input.textMessage === true;
   session.startedAt = Date.now();
   // 采集本机标识（昵称 / 默认 IP / 网卡接口名），随历史持久化以支撑详情展示
   session.localAlias = getDeviceAlias();

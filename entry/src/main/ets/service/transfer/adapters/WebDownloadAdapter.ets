@@ -19,8 +19,7 @@ import {
 } from '../../../model/transfer/TransferSession';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
-import { getMimeForFileName, isTextFile } from '../../../utils/MimeUtils';
-import { readTextOfLocation } from '../../../utils/FileTextUtil';
+import { getMimeForFileName } from '../../../utils/MimeUtils';
 import {
   createSession,
   finish,
@@ -55,27 +54,17 @@ function capabilities(): SessionCapabilities {
 
 function resolveTextPreview(session: TransferSession): string {
   let cached: string | undefined = textPreviewCache.get(session.id);
-  if (cached !== undefined) {
-    return cached;
-  }
-  if (session.files.length !== 1) {
-    return '';
-  }
-  let file = session.files[0];
-  if (!isTextFile(file.fileType, file.fileName) || file.path.length === 0) {
-    return '';
-  }
-  let text: string = readTextOfLocation(file.path) ?? '';
-  textPreviewCache.set(session.id, text);
-  return text;
+  return cached !== undefined ? cached : '';
 }
 
 /**
  * 批次开始：建（或幂等复用）统一任务。
- * 文件清单由 repository 补齐本地路径；本函数不持有定时器。
+ * 文件清单由 repository 补齐本地路径；`textPreview` 仅手动输入的文本消息携带，
+ * 普通 .txt 文件为空串（不按文本消息展示）。
+ * 本函数不持有定时器。
  */
 export function beginWebDownloadBatch(batchId: string, ip: string,
-  files: Array<SessionFileDescriptor>): string {
+  files: Array<SessionFileDescriptor>, textPreview: string = ''): string {
   let existingId: string | undefined = batches.get(batchId);
   if (existingId !== undefined) {
     let existing = getSession(existingId);
@@ -97,8 +86,12 @@ export function beginWebDownloadBatch(batchId: string, ip: string,
     },
     files: files,
     capabilities: capabilities(),
-    stage: SessionStage.active
+    stage: SessionStage.active,
+    textMessage: textPreview.length > 0
   });
+  if (textPreview.length > 0) {
+    textPreviewCache.set(session.id, textPreview);
+  }
   batches.set(batchId, session.id);
   return session.id;
 }

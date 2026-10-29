@@ -130,6 +130,7 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
     files: files,
     fileCount: session.files.length,
     totalBytes: session.totalBytes,
+    textMessage: session.textMessage,
     outcome: outcome,
     errorMessage: session.errorMessage,
     errorCode: session.errorCode,

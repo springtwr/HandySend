@@ -520,7 +520,7 @@ export class SessionDetailViewModel {
       return;
     }
     this.autoFinishArmed = false;
-    if (!isAutoFinish() || this.hasTextPreview()) {
+    if (!isAutoFinish() || this.isTextMessageSession()) {
       return;
     }
     this.autoFinishRequested = true;
@@ -613,9 +613,32 @@ export class SessionDetailViewModel {
     return this.session !== undefined && isPreparing(this.session);
   }
 
-  /** 是否为文本消息会话（携带可复制的文本内容）。 */
+  /** 是否为文本消息会话（展示描述符携带可复制的文本内容）。 */
   hasTextPreview(): boolean {
     return isTextSessionDescriptor(this.display);
+  }
+
+  /**
+   * 会话是否应按「文本消息」呈现（区别于文件选择器选中的 .txt 等文本文件）。
+   * 实时态取会话显式标记（适配器创建时声明）并兼容描述符携带的文本内容；
+   * 历史态取归档标记；旧历史条目无标记时回退到应用私有文本目录路径判据。
+   */
+  isTextMessageContent(): boolean {
+    if (this.session !== undefined) {
+      return this.session.textMessage || this.hasTextPreview();
+    }
+    if (this.historyEntry !== undefined) {
+      if (this.historyEntry.textMessage === true) {
+        return true;
+      }
+      if (this.historyEntry.textMessage === false) {
+        return false;
+      }
+      let files = this.detailFiles();
+      return files.length === 1 && isTextFile(files[0].fileType, files[0].fileName) &&
+        this.isSandboxTextFile(files[0]);
+    }
+    return this.hasTextPreview();
   }
 
   /**
@@ -632,25 +655,19 @@ export class SessionDetailViewModel {
 
   /**
    * 当前预览模式（实时态与历史态同规则）。
-   * 「恰好一个文本类文件」只说明具备内联预览的形状；待确认/进行中阶段该条目可能只是尚无内容的
-   * 占位（如互传接收下载前的「主文件名」占位条目），此时内联预览必然落到「内容不可用」而误导用户。
-   * 故在形状判定之上增加「可预览来源」守卫：条目已有路径、会话携带文本消息内容、或会话已终态/历史
-   * 只读时，才采用内联预览；否则按文件清单呈现（确认阶段以主文件名占位，不误报不可用）。
+   * 「恰好一个文本类文件」只说明具备内联预览的形状；只有会话本身是手动输入的文本消息时
+   * 才内联展示正文。文件选择器选中的 .txt 等文本文件按普通文件清单呈现（仍可点击预览），
+   * 避免被误标为「来自某设备的文本」。
    */
   previewMode(): SessionPreviewMode {
     let files = this.detailFiles();
     if (decidePreviewMode(files) !== SessionPreviewMode.inline) {
       return SessionPreviewMode.list;
     }
-    let hasPath: boolean = files[0].path.length > 0;
-    let terminal: boolean = this.session !== undefined && isTerminalStage(this.session.stage);
-    if (hasPath || this.hasTextPreview() || terminal || this.isReadOnly()) {
-      return SessionPreviewMode.inline;
-    }
-    return SessionPreviewMode.list;
+    return this.isTextMessageContent() ? SessionPreviewMode.inline : SessionPreviewMode.list;
   }
 
-  /** 是否为内联文本预览（会话仅一个文本类文件）。 */
+  /** 是否为内联文本预览（会话仅一个文本类文件且为文本消息）。 */
   isInlinePreview(): boolean {
     return this.previewMode() === SessionPreviewMode.inline;
   }

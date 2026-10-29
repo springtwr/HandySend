@@ -205,7 +205,7 @@ export default function SessionHistoryStoreTest() {
       expect(SESSION_HISTORY_SEGMENT_COUNT).assertEqual(8)
       expect(HISTORY_SEGMENT_SIZE).assertEqual(250)
       // 归档条目的 schema 版本参与持久化契约，变更需显式确认读侧兼容性
-      expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(4)
+      expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(5)
     })
 
     // ── 分段存储：容量为段大小整数倍，裁剪只丢弃最旧整段 ──
@@ -632,6 +632,37 @@ export default function SessionHistoryStoreTest() {
         if (built !== undefined) {
           expect(built.outcome).assertEqual(SessionHistoryOutcome.declined)
           expect(built.fileCount).assertEqual(1)
+        }
+      }
+      resetRegistry()
+    })
+
+    it('build_entry_preservesTextMessageFlag', 0, () => {
+      resetRegistry()
+      let input: SessionCreateInput = {
+        protocolKey: 'localsend-receive',
+        protocolSessionId: 'p-text',
+        dataFlow: SessionDataFlow.inbound,
+        initiatedBy: SessionInitiator.remote,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f',
+          fileName: 'text_1.txt',
+          fileType: 'text/plain',
+          totalBytes: 6
+        }],
+        capabilities: defaultCapabilities(),
+        textMessage: true
+      }
+      let s = createSession(input)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.textMessage).assertTrue()
         }
       }
       resetRegistry()

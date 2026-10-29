@@ -225,7 +225,8 @@ export function handleMtaReceiveState(state: ReceiverState): void {
       peer: buildPeer(state),
       files: descriptors,
       capabilities: capabilities(),
-      stage: SessionStage.awaitingConfirmation
+      stage: SessionStage.awaitingConfirmation,
+      textMessage: textContent.length > 0
     });
     activeUnifiedId = session.id;
     if (textContent.length > 0) {

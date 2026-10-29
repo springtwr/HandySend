@@ -25,8 +25,7 @@ import {
 import { MediaFileInfo } from '../../../model/Types';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
-import { getMimeForFileName, isImage, isMediaMime, isTextFile } from '../../../utils/MimeUtils';
-import { readTextOfLocation } from '../../../utils/FileTextUtil';
+import { getMimeForFileName, isImage, isMediaMime } from '../../../utils/MimeUtils';
 import {
   appendFiles,
   createSession,
@@ -209,24 +208,17 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
 const textPreviewCache: Map<string, string> = new Map();
 
 /**
- * 解析会话文本预览内容：会话恰好包含一个文本类文件且其本地内容位置可读时返回内容，
- * 否则返回空串（不声明支持文本预览，按不可用降级）。读取结果按会话缓存。
+ * 解析会话文本预览内容：只有浏览器在 prepare-upload 中显式声明的文本消息才返回内容，
+ * 其余（包含用户选择上传的单个 .txt 文件）返回空串，避免把文本文件误当文本消息。
  */
 function resolveTextPreview(session: TransferSession): string {
   let cached: string | undefined = textPreviewCache.get(session.id);
-  if (cached !== undefined) {
-    return cached;
-  }
-  if (session.files.length !== 1) {
-    return '';
-  }
-  let file = session.files[0];
-  if (!isTextFile(file.fileType, file.fileName) || file.path.length === 0) {
-    return '';
-  }
-  let text: string = readTextOfLocation(file.path) ?? '';
-  textPreviewCache.set(session.id, text);
-  return text;
+  return cached !== undefined ? cached : '';
+}
+
+/** 该上传会话是否为浏览器声明的文本消息（仅显式携带 preview 的 message.txt）。 */
+export function isWebUploadTextMessage(unifiedId: string): boolean {
+  return textPreviewCache.has(unifiedId);
 }
 
 /**
@@ -265,7 +257,9 @@ export function beginWebUploadBurst(token: string, needsConfirm: boolean,
     files: offeredFiles,
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active,
-    stageText: needsConfirm ? '' : $r('app.string.session_waiting_peer_upload')
+    stageText: needsConfirm ? '' : $r('app.string.session_waiting_peer_upload'),
+    // 仅浏览器显式声明 preview 的文本消息；普通 .txt 文件不带该标记
+    textMessage: previewText.length > 0
   });
   let ctx: BurstContext = {
     unifiedId: session.id,
@@ -323,7 +317,6 @@ export function handleWebUploadProgress(token: string, fileId: string, receivedB
     // 挂载清单已在创建时登记同一文件：仅登记字节状态
     if (sessionHasFile(ctx.unifiedId, fileId)) {
       ctx.knownFiles.set(fileId, { size: totalBytes, done: totalBytes > 0 && receivedBytes >= totalBytes });
-      textPreviewCache.delete(ctx.unifiedId);
     } else {
       let descriptor: SessionFileDescriptor = {
         fileId: fileId,
@@ -333,7 +326,6 @@ export function handleWebUploadProgress(token: string, fileId: string, receivedB
       };
       appendFiles(ctx.unifiedId, [descriptor]);
       ctx.knownFiles.set(fileId, { size: totalBytes, done: totalBytes > 0 && receivedBytes >= totalBytes });
-      textPreviewCache.delete(ctx.unifiedId);
     }
   } else if (totalBytes > 0 && receivedBytes >= totalBytes) {
     record.done = true;
@@ -344,7 +336,7 @@ export function handleWebUploadProgress(token: string, fileId: string, receivedB
 
 /**
  * 上传完成事件：服务端落盘完毕（携带最终路径），回填本地路径并记完成。
- * 落盘位置可能在文本预览缓存之后就绪：失效对应缓存使预览可重读。
+ * 文本消息预览来自浏览器声明内容，落盘后继续保留，不回读文件（回读会把普通 .txt 也当成文本消息）。
  */
 export function handleWebUploadDone(token: string, fileId: string, path: string): void {
   let ctx = resolveCtx(token);
