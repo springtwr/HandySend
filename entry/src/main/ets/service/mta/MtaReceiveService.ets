@@ -58,7 +58,7 @@ import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
 import { isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntries } from '../repository/ReceiveHistoryService';
-import { uniquePath, recvTextDir } from '../repository/ReceiveTargets';
+import { ensureRecvTextDir, uniquePath } from '../repository/ReceiveTargets';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
 
@@ -1152,9 +1152,9 @@ export class MtaReceiveService {
     await this.completeAndRestart();
   }
 
-  /** 接收文本的落盘目录：与 LocalSend 接收文本共用同一路径来源，避免口径分叉。 */
+  /** 接收文本的落盘目录：与 LocalSend 接收文本共用同一路径来源（已去尾斜杠），避免路径出现重复分隔符。 */
   private recvTextSaveDir(): string {
-    return recvTextDir();
+    return ensureRecvTextDir();
   }
 
   /** 把文本消息写入接收文本目录（重名自动加序号、不覆盖），返回真实路径。 */
