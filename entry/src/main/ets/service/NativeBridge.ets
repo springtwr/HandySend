@@ -35,6 +35,7 @@ import {
   failFileUpload,
   startWebService,
   stopWebService,
+  markWebServiceStopped,
   updateWebServiceFiles,
   setWebServiceUploadEnabled,
   setWebUploadTargets,
@@ -285,6 +286,11 @@ export async function nativeStartWebService(configJson: string): Promise<number>
 /** 停止自研网页服务（幂等）。 */
 export function nativeStopWebService(): void {
   stopWebService();
+}
+
+/** 将网页分享标记为停止但保留服务，供页面显示结束态；由调用方延时硬停止。 */
+export function nativeMarkWebServiceStopped(): void {
+  markWebServiceStopped();
 }
 
 /** 就地替换自研网页服务的分享文件表，返回生效的文件数。 */

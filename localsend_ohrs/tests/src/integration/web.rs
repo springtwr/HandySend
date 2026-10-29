@@ -1317,6 +1317,70 @@ async fn test_range_partial_content() {
     handle.abort();
 }
 
+/// 停止分享只标记 stopped 并清空数据，服务仍可响应结束页/ caps。
+#[tokio::test]
+async fn test_mark_stopped_clears_files_and_broadcasts_caps() {
+    let (handle, addr, state, _progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"hello")]).await;
+    let token = prepare_accepted(addr, &state).await;
+    let mut caps_events = state
+        .caps_events
+        .as_ref()
+        .expect("测试服务应启用 caps 广播")
+        .subscribe();
+    state.mark_stopped();
+    tokio::time::timeout(Duration::from_secs(2), caps_events.recv())
+        .await
+        .expect("停止态应广播 caps")
+        .expect("caps 广播通道应可用");
+    let (status, _headers, body) = http_request(addr, "GET", "/caps").await;
+    assert_eq!(status, 200);
+    assert!(body.contains("\"shareState\":\"stopped\""));
+    assert!(body.contains("\"hasDownload\":false"));
+    // 会话已清空：旧 token 不能再下载。
+    let (status, _, _) = http_request(
+        addr,
+        "GET",
+        &format!("/web/download?token={token}&fileId=f1"),
+    )
+    .await;
+    assert_eq!(status, 403);
+    handle.abort();
+}
+
+/// 关闭信号会结束已建立的旧连接（避免浏览器复用旧连接读到旧状态）。
+#[tokio::test]
+async fn test_shutdown_signal_closes_existing_connections() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (handle, addr, state, _progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"hello")]).await;
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("连接失败");
+    let request = format!("GET /web/events HTTP/1.1\r\nHost: {addr}\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("请求写入失败");
+    let mut buf = [0u8; 1024];
+    let first = tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf))
+        .await
+        .expect("应收到 SSE 初始响应")
+        .expect("SSE 响应读取失败");
+    assert!(first > 0, "应收到 SSE 初始响应");
+    state.shutdown.trigger();
+    loop {
+        match tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(_)) => continue,
+            Ok(Err(e)) => panic!("关闭后读连接失败: {e}"),
+            Err(_) => panic!("关闭信号后连接未及时结束"),
+        }
+    }
+    handle.abort();
+}
+
 /// 上传建会话并接受，返回 token。
 async fn prepare_upload_accepted(
     addr: SocketAddr,

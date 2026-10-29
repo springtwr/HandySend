@@ -31,6 +31,13 @@ pub fn stop_web_service() -> Result<()> {
     Ok(())
 }
 
+/// 把分享标记为停止但保留服务，供已打开页面显示结束态；随后由 ArkTS 计时硬停止。
+#[napi]
+pub fn mark_web_service_stopped() -> Result<()> {
+    runtime::mark_stopped();
+    Ok(())
+}
+
 /// 就地替换分享文件表（版本号 +1；返回生效文件数）。
 #[napi]
 pub fn update_web_service_files(files_json: String) -> Result<u32> {

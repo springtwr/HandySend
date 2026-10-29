@@ -32,7 +32,7 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Notify};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -211,6 +211,42 @@ impl ClientBinding {
     }
 }
 
+/// 连接关闭信号：硬停止或重启服务时通知所有已建立连接退出，
+/// 避免浏览器复用旧 keep-alive/SSE 连接继续读到旧状态。
+#[derive(Debug, Default)]
+pub struct ShutdownSignal {
+    closed: AtomicBool,
+    notify: Notify,
+}
+
+impl ShutdownSignal {
+    /// 标记关闭并唤醒所有等待中的连接任务。
+    pub fn trigger(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    /// 是否已触发关闭。
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
+    /// 等待关闭信号；信号已触发时立即返回。
+    pub async fn wait(&self) {
+        if self.is_closed() {
+            return;
+        }
+        let notified = self.notify.notified();
+        tokio::pin!(notified);
+        // 先注册等待再复查，避免复查与触发之间的丢失唤醒。
+        notified.as_mut().enable();
+        if self.is_closed() {
+            return;
+        }
+        notified.await;
+    }
+}
+
 /// 多选下载的待开始批次（POST 登记，GET 消费；不建应用任务）。
 #[derive(Clone, Debug)]
 pub struct PendingZipBatch {
@@ -266,6 +302,8 @@ pub struct WebServiceState {
     pub closing: Arc<Mutex<HashMap<String, Instant>>>,
     /// 能力快照变更广播（上传入口开关等；SSE 通知页面刷新 caps）。
     pub caps_events: Option<tokio::sync::broadcast::Sender<()>>,
+    /// 服务硬停止/重启时通知已建立连接退出（旧连接不得继续用旧状态应答）。
+    pub shutdown: Arc<ShutdownSignal>,
 }
 
 impl WebServiceState {
@@ -337,6 +375,43 @@ impl WebServiceState {
         }
         if let Some(tx) = &self.file_events {
             let _ = tx.send(change.0);
+        }
+    }
+
+    /// 停止分享但保留服务进程：清空文件/会话/批次并广播 stopped 状态，
+    /// 供已打开的网页立即显示“分享已结束”，也允许短暂内刷新看到结束页。
+    pub fn mark_stopped(&self) {
+        {
+            let mut caps = lock(&self.caps);
+            caps.share_state = ShareState::Stopped;
+            caps.has_download = false;
+            caps.upload_enabled = false;
+        }
+        {
+            let mut files = lock(&self.files);
+            files.files.clear();
+            files.revision = files.revision.saturating_add(1);
+        }
+        lock(&self.sessions).sessions.clear();
+        lock(&self.pending_batches).clear();
+        let active = {
+            let mut batches = lock(&self.active_batches);
+            std::mem::take(&mut *batches)
+        };
+        for (_, cancel) in active {
+            cancel.store(true, Ordering::SeqCst);
+        }
+        let uploads = {
+            let mut store = lock(&self.uploads);
+            std::mem::take(&mut store.sessions)
+        };
+        for session in uploads.values() {
+            remove_tmp_files(session);
+        }
+        lock(&self.closing).clear();
+        lock(&self.retained).clear();
+        if let Some(tx) = &self.caps_events {
+            let _ = tx.send(());
         }
     }
 
@@ -695,15 +770,27 @@ async fn serve_io<I>(io: TokioIo<I>, state: Arc<WebServiceState>, peer: SocketAd
 where
     I: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
+    let shutdown = Arc::clone(&state.shutdown);
     let service = service_fn(move |req: Request<Incoming>| {
         let req_state = Arc::clone(&state);
         async move { handle(req, req_state, peer).await }
     });
-    if let Err(e) = hyper::server::conn::http1::Builder::new()
-        .serve_connection(io, service)
-        .await
-    {
-        log::debug!("自研 web 连接结束: {e}");
+    let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, service);
+    tokio::pin!(conn);
+    if shutdown.is_closed() {
+        return;
+    }
+    tokio::select! {
+        biased;
+        _ = shutdown.wait() => {
+            // 硬停止/重启：直接丢弃连接，关闭旧 TCP/SSE，避免浏览器复用旧状态连接。
+            log::debug!("自研 web 旧连接因服务停止而关闭: {peer}");
+        }
+        result = conn.as_mut() => {
+            if let Err(e) = result {
+                log::debug!("自研 web 连接结束: {e}");
+            }
+        }
     }
 }
 

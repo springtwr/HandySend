@@ -20,7 +20,7 @@ use crate::bridge::lock;
 use crate::bridge::server::clone_event_tx;
 use crate::bridge::state::bridge;
 use crate::bridge::web::caps::ShareState;
-use crate::bridge::web::server::{FileTableChange, ProgressEvent, WebServiceState};
+use crate::bridge::web::server::{FileTableChange, ProgressEvent, ShutdownSignal, WebServiceState};
 use crate::bridge::web::session::{FileSource, SharedFile, SharedFileTable};
 use crate::bridge::web::upload::UploadStore;
 
@@ -241,6 +241,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         active_batches: Arc::new(Mutex::new(HashMap::new())),
         closing: Arc::new(Mutex::new(HashMap::new())),
         caps_events: Some(caps_events),
+        shutdown: Arc::new(ShutdownSignal::default()),
     });
     let listener = {
         // 先停旧实例并等其任务退出：监听套接字释放后再绑定首选端口，
@@ -282,6 +283,17 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     Ok(port)
 }
 
+/// 停止分享但保留服务 30 秒左右的结束态（仅标记状态，不关闭监听）。
+///
+/// 由 ArkTS 在停止网页服务时先调用：已打开页面经 SSE caps 事件立即切到
+/// “分享已结束”，短时间内刷新也能拿到 stopped 页面；随后再硬停止服务。
+pub fn mark_stopped() {
+    if let Some(state) = current_state() {
+        state.mark_stopped();
+        log::info!("网页分享已进入停止态，等待页面收尾");
+    }
+}
+
 /// 停止自研 web 服务（幂等）。
 pub fn stop() {
     stop_internal();
@@ -290,14 +302,20 @@ pub fn stop() {
 /// 停止旧实例并等待任务真正退出，确保监听套接字已释放。
 /// 仅用于 `start` 的同端口重建；同步 `stop` 保持非阻塞语义。
 async fn stop_internal_async() {
-    let (server_task, forward_task, sweep_task) = {
+    let (state, server_task, forward_task, sweep_task) = {
         let mut runtime = lock(runtime());
         (
+            runtime.state.take(),
             runtime.server_task.take(),
             runtime.forward_task.take(),
             runtime.sweep_task.take(),
         )
     };
+    // 先关闭所有已建立连接：浏览器复用旧 keep-alive 连接时会落到新服务上，
+    // 不会继续读到旧（停止态）快照。
+    if let Some(state) = state {
+        state.shutdown.trigger();
+    }
     if let Some(task) = server_task {
         task.abort();
         let _ = task.await;
@@ -310,21 +328,30 @@ async fn stop_internal_async() {
         task.abort();
         let _ = task.await;
     }
-    lock(runtime()).state = None;
 }
 
 fn stop_internal() {
-    let mut runtime = lock(runtime());
-    if let Some(task) = runtime.server_task.take() {
+    let (state, server_task, forward_task, sweep_task) = {
+        let mut runtime = lock(runtime());
+        (
+            runtime.state.take(),
+            runtime.server_task.take(),
+            runtime.forward_task.take(),
+            runtime.sweep_task.take(),
+        )
+    };
+    if let Some(state) = state {
+        state.shutdown.trigger();
+    }
+    if let Some(task) = server_task {
         task.abort();
     }
-    if let Some(task) = runtime.forward_task.take() {
+    if let Some(task) = forward_task {
         task.abort();
     }
-    if let Some(task) = runtime.sweep_task.take() {
+    if let Some(task) = sweep_task {
         task.abort();
     }
-    runtime.state = None;
 }
 
 /// 就地替换分享文件表（版本号 +1；返回生效文件数）。

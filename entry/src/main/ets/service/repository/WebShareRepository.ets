@@ -24,6 +24,7 @@ import {
 import {
   nativeStartWebService,
   nativeStopWebService,
+  nativeMarkWebServiceStopped,
   nativeUpdateWebServiceFiles,
   nativeSetWebServiceUploadEnabled,
   nativeAcceptWebSession,
@@ -120,6 +121,10 @@ export function getWebAccessCode(): string {
 
 // 分享文件表是否正在替换（避免暂存区连续变化时并发换表）
 let webUpdating: boolean = false;
+
+// 停止服务后保留 stopped 页面供网页收尾的时间；超时再真正关闭监听端口
+const WEB_STOP_GRACE_MS: number = 30000;
+let webStopTimer: number = -1;
 
 // 网页服务当前是否开放浏览器上传：决定面板是否出示上传入口
 let webUploadEnabled: boolean = false;
@@ -337,11 +342,15 @@ function markWebServiceUnavailable(): void {
   shareLinkInfo = '';
   webPortFallback = false;
   webUploadEnabled = false;
+  // 启动失败时若仍残留上一个停止态实例，也安排一次硬停止兜底
+  scheduleWebStop();
   notifyChange();
 }
 
 /** 以当前挂载与上传开关启动服务（调用方已备好文件句柄与档案）。 */
 async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
+  // 任何重新启服都取消旧的延时停止，避免宽限期结束后误停新实例
+  cancelScheduledWebStop();
   // 每次启动生成新的本次访问码：服务重启后旧访问码与旧二维码一起失效。
   webAccessCode = generateWebAccessCode();
   // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
@@ -578,13 +587,43 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
   webUploadAutoAccept = false;
 }
 
+/** 取消待执行的硬停止（重新启服时调用，避免误停新实例）。 */
+function cancelScheduledWebStop(): void {
+  if (webStopTimer >= 0) {
+    clearTimeout(webStopTimer);
+    webStopTimer = -1;
+  }
+}
+
+/** 停止分享后保留服务一段时间，让页面显示结束态并可短暂刷新，再关闭端口。 */
+function scheduleWebStop(): void {
+  cancelScheduledWebStop();
+  webStopTimer = setTimeout(() => {
+    webStopTimer = -1;
+    try {
+      nativeStopWebService();
+    } catch (e) {
+      logger.warn('延时停止网页服务失败：' + String(e));
+    }
+  }, WEB_STOP_GRACE_MS);
+}
+
 /** 停止网页服务：关闭句柄、清空档案与地址（幂等）。 */
 export async function stopShareLink(): Promise<void> {
   logger.debug('停止分享已调用');
-  try {
-    nativeStopWebService();
-  } catch (e) {
-    logger.warn('停止网页服务失败: ' + String(e));
+  let wasRunning: boolean = sharePort > 0;
+  if (wasRunning) {
+    try {
+      // 先只标记停止并广播：已打开页面立即显示结束，刷新也可在宽限内看到停止态
+      nativeMarkWebServiceStopped();
+      scheduleWebStop();
+    } catch (e) {
+      logger.warn('标记网页服务停止失败：' + String(e));
+      try {
+        nativeStopWebService();
+      } catch (_se) {
+      }
+    }
   }
   closeShareFileHandles();
   shareLinkInfo = '';
@@ -597,7 +636,7 @@ export async function stopShareLink(): Promise<void> {
   clearShareFileProfiles();
   webUploadAutoAccept = false;
   webUploadEnabled = false;
-  logger.info('网页分享服务已停止');
+  logger.info('网页分享已停止，服务保留一段时间供页面收尾');
   notifyChange();
 }
 
