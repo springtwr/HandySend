@@ -185,7 +185,7 @@ export struct ShareLinkPage {
     if (this.viewModel.sendDisabled || !this.isSendRunning()) {
       return false;
     }
-    return !this.viewModel.hasDownload || this.viewModel.showHttpsHint;
+    return this.viewModel.shouldShowNoFileWarning() || this.viewModel.showHttpsHint;
   }
 
   /** 端口回退提示文案：默认端口与实际端口。 */
@@ -204,7 +204,7 @@ export struct ShareLinkPage {
     if (this.viewModel.webPortFallback) {
       this.buildWarningBanner(this.portFallbackText())
     } else if (!this.viewModel.sendDisabled && this.isSendRunning()) {
-      if (!this.viewModel.hasDownload) {
+      if (this.viewModel.shouldShowNoFileWarning()) {
         this.buildWarningBanner($r('app.string.web_access_no_file_warning'), true)
       } else if (this.viewModel.showHttpsHint) {
         this.buildWarningBanner($r('app.string.web_share_https_hint'))

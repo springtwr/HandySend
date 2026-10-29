@@ -45,6 +45,19 @@ export default function ShareLinkViewModelTest() {
       }
     })
 
+    it('noFileWarning_suppressedDuringInitialSync', 0, () => {
+      let vm = new ShareLinkViewModel()
+      // 无文件且未处于开启瞬间：展示警告
+      expect(vm.shouldShowNoFileWarning()).assertTrue()
+      // 刚开启网页传输：等服务挂载暂存文件期间不展示，避免横幅闪现
+      vm.suppressNoFileWarning = true
+      expect(vm.shouldShowNoFileWarning()).assertFalse()
+      // 文件已挂载：无论抑制状态如何都不展示
+      vm.suppressNoFileWarning = false
+      vm.sharedFileCount = 1
+      expect(vm.shouldShowNoFileWarning()).assertFalse()
+    })
+
     it('uploadAllowed_reflectsToggle', 0, () => {
       let origReceive: boolean = getWebReceiveAllowed()
       let vm = new ShareLinkViewModel()

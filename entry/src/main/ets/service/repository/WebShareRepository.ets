@@ -163,6 +163,8 @@ interface ShareFileProfile {
   fd: number
   preview: string
   sha256: string
+  // 在暂存列表中的展示顺序（供网页列表与暂存顺序保持一致）
+  order: number
   // 源文件修改时间（Unix 毫秒，可缺省）：供网页 zip 条目还原时间
   lastModified?: number
 }
@@ -195,6 +197,7 @@ function registerShareFileProfiles(files: Array<SendFileItem>, handles: Array<fs
       fd: i < handles.length ? handles[i].fd : -1,
       preview: f.preview !== undefined ? f.preview : '',
       sha256: f.hash !== undefined ? f.hash : '',
+      order: i,
       lastModified: f.lastModified
     };
   }
@@ -205,6 +208,8 @@ function registerShareFileProfiles(files: Array<SendFileItem>, handles: Array<fs
 function buildWebFilesJson(): string {
   let entries: Array<WebFileJson> = [];
   let ids: Array<string> = Object.keys(shareFileProfiles);
+  // 按档案记录的顺序输出，保证换表回退时浏览器列表顺序不跳动
+  ids.sort((a: string, b: string): number => shareFileProfiles[a].order - shareFileProfiles[b].order);
   for (let i = 0; i < ids.length; i++) {
     let profile = shareFileProfiles[ids[i]];
     entries.push({

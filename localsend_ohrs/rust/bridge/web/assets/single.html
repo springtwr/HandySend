@@ -1320,6 +1320,8 @@ html[data-auth="open"] #gate {
   var dlToken = sessionStorage.getItem('handysend_dl_token') || '';
   var ulToken = sessionStorage.getItem('handysend_ul_token') || '';
   var filesData = {};
+  // 应用暂存列表的展示顺序（文件标识）；为空时回退按文件名排序
+  var fileOrder = [];
   var i18n = null;
   var activeTab = 'download';
   var downloadLoadStarted = false;
@@ -1930,6 +1932,7 @@ html[data-auth="open"] #gate {
 
   function resetDownloadList() {
     filesData = {};
+    fileOrder = [];
     $('file-list').innerHTML = '';
     $('download-all-wrap').classList.add('hidden');
     $('tab-download-count').innerText = '';
@@ -2321,6 +2324,7 @@ html[data-auth="open"] #gate {
       lastShareId = data.shareId || lastShareId;
       setDownloadToken(data.token);
       filesData = data.files || {};
+      fileOrder = Array.isArray(data.fileOrder) ? data.fileOrder : [];
       downloadLoadStarted = true;
       listRevision = data.revision;
       sessionRevision = data.revision;
@@ -2357,7 +2361,18 @@ html[data-auth="open"] #gate {
   }
 
   function fileKeysSorted(files) {
-    return Object.keys(files).sort(function (a, b) {
+    var keys = Object.keys(files);
+    var pos = {};
+    for (var i = 0; i < fileOrder.length; i++) {
+      pos[fileOrder[i]] = i;
+    }
+    return keys.sort(function (a, b) {
+      // 应用下发的顺序优先；顺序缺失的行回退到文件名，保证旧会话仍可稳定展示
+      var pa = pos[a] !== undefined ? pos[a] : Number.MAX_SAFE_INTEGER;
+      var pb = pos[b] !== undefined ? pos[b] : Number.MAX_SAFE_INTEGER;
+      if (pa !== pb) {
+        return pa - pb;
+      }
       var fa = files[a].fileName || '';
       var fb = files[b].fileName || '';
       return fa < fb ? -1 : (fa > fb ? 1 : (a < b ? -1 : 1));

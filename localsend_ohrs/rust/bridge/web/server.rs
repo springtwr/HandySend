@@ -278,6 +278,8 @@ pub struct WebServiceState {
     pub cap_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
     /// 当前分享文件表（换表版本号单调增）。
     pub files: Arc<Mutex<SharedFileTable>>,
+    /// 文件展示顺序（与 ArkTS 暂存列表一致；仅用于浏览器列表排序，不参与内容定位）。
+    pub file_order: Arc<Mutex<Vec<String>>>,
     /// 被删文件的保留区（宽限内已建会话仍可下）。
     pub retained: Arc<Mutex<HashMap<String, RetainedFile>>>,
     /// 下载会话表。
@@ -392,6 +394,7 @@ impl WebServiceState {
             files.files.clear();
             files.revision = files.revision.saturating_add(1);
         }
+        lock(&self.file_order).clear();
         lock(&self.sessions).sessions.clear();
         lock(&self.pending_batches).clear();
         let active = {
@@ -1155,6 +1158,9 @@ struct FileListResponse {
     revision: u64,
     alias: String,
     files: HashMap<String, localsend::model::transfer::FileDto>,
+    /// 文件展示顺序（与 ArkTS 暂存列表一致；浏览器据此渲染列表）。
+    #[serde(rename = "fileOrder")]
+    file_order: Vec<String>,
 }
 
 /// `POST /web/prepare-download?token=`：
@@ -1189,11 +1195,13 @@ async fn prepare_download(
         let (revision, offered) = current_offered(&state);
         let mut session_error: Option<Response<BoxBody>> = None;
         {
+            let order = current_order(&state, &offered);
             let mut sessions = lock(&state.sessions);
             match sessions.sessions.get_mut(token) {
                 Some(session) if session.peer_ip == peer_ip => {
                     // 页面点击下载前会 prepare：刷新快照并下发当前文件表。
                     session.offered_files = offered;
+                    session.offer_order = order;
                     session.file_revision = revision;
                     session.last_used = now;
                 }
@@ -1213,6 +1221,7 @@ async fn prepare_download(
     // 新建 token：冻结当前文件表；不产生应用任务。
     let token: String = uuid::Uuid::new_v4().to_string();
     let (revision, offered) = current_offered(&state);
+    let order = current_order(&state, &offered);
     let file_count = offered.len();
     {
         let mut sessions = lock(&state.sessions);
@@ -1224,6 +1233,7 @@ async fn prepare_download(
             created_at: now,
             last_used: now,
             offered_files: offered,
+            offer_order: order,
             file_revision: revision,
         });
     }
@@ -1261,6 +1271,35 @@ fn current_offered(state: &WebServiceState) -> (u64, HashMap<String, OfferedFile
     (files.revision, offered)
 }
 
+/// 当前展示顺序：按 ArkTS 下发的顺序过滤出快照内文件；旧调用缺顺序时按文件名兜底。
+fn current_order(state: &WebServiceState, offered: &HashMap<String, OfferedFile>) -> Vec<String> {
+    let configured = lock(&state.file_order);
+    let mut result: Vec<String> = Vec::new();
+    let mut seen: HashMap<String, bool> = HashMap::new();
+    for id in configured.iter() {
+        if offered.contains_key(id) && !seen.contains_key(id) {
+            seen.insert(id.clone(), true);
+            result.push(id.clone());
+        }
+    }
+    if result.len() < offered.len() {
+        let mut rest: Vec<String> = offered
+            .keys()
+            .filter(|id| !seen.contains_key(*id))
+            .cloned()
+            .collect();
+        rest.sort_by(|a, b| {
+            offered[a]
+                .file
+                .file_name
+                .cmp(&offered[b].file.file_name)
+                .then_with(|| a.cmp(b))
+        });
+        result.extend(rest);
+    }
+    result
+}
+
 /// 按 token 下发表（会话缺失时回 403，页面重新 prepare 即建新会话）。
 fn file_list_response(state: &WebServiceState, token: &str) -> Response<BoxBody> {
     let sessions = lock(&state.sessions);
@@ -1277,6 +1316,7 @@ fn file_list_response(state: &WebServiceState, token: &str) -> Response<BoxBody>
         revision: session.file_revision,
         alias: lock(&state.alias).clone(),
         files,
+        file_order: session.offer_order.clone(),
     };
     let text: String = serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string());
     json_response(StatusCode::OK, &text)

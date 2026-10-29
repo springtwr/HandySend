@@ -54,6 +54,8 @@ export class ShareLinkViewModel {
   @Trace public autoAcceptUpload: boolean = false;
   // 当前挂载的分享文件数：为 0 时顶部给出无文件警告（地址与二维码仍展示）
   @Trace public sharedFileCount: number = 0;
+  // 刚开启网页传输时的短暂抑制：等发送页把暂存列表同步到服务后，再决定是否提示无文件
+  @Trace public suppressNoFileWarning: boolean = false;
   // 浏览器上传入口是否已开放：决定面板是否出示上传入口
   @Trace public uploadEnabled: boolean = false;
   // 可展示的网页地址（多地址时页面出现选择器）
@@ -69,10 +71,25 @@ export class ShareLinkViewModel {
   private refreshCallback: (() => void) | undefined = undefined;
   // 上传服务启动进行中标志：启动中重复进入不重复重启
   private startingReceive: boolean = false;
+  private noFileWarningTimer: number = -1;
 
   /** 是否挂了可下载的文件（决定顶部是否给出无文件警告）。 */
   get hasDownload(): boolean {
     return this.sharedFileCount > 0;
+  }
+
+  /** 是否展示「没有选择要发送的文件」警告：开启瞬间等待暂存列表同步完成，避免横幅闪一下。 */
+  shouldShowNoFileWarning(): boolean {
+    return !this.hasDownload && !this.suppressNoFileWarning;
+  }
+
+  /** 清除「刚开启」抑制；暂存文件挂载成功后立即结束抑制。 */
+  private clearNoFileWarningSuppression(): void {
+    this.suppressNoFileWarning = false;
+    if (this.noFileWarningTimer >= 0) {
+      clearTimeout(this.noFileWarningTimer);
+      this.noFileWarningTimer = -1;
+    }
   }
 
   /** 允许对方上传：仅当网页传输总开关开启时生效。 */
@@ -132,6 +149,7 @@ export class ShareLinkViewModel {
    * 取消订阅仓库变化通知。必须在 Page 的 aboutToDisappear 中调用。
    */
   unsubscribeFromRepository(): void {
+    this.clearNoFileWarningSuppression();
     if (this.refreshCallback !== undefined) {
       unsubscribe(this.refreshCallback);
       this.refreshCallback = undefined;
@@ -151,6 +169,9 @@ export class ShareLinkViewModel {
     this.uploadAllowed = getWebReceiveAllowed();
     this.autoAcceptUpload = isWebUploadAutoAccept();
     this.sharedFileCount = getSharedFileCount();
+    if (this.sharedFileCount > 0) {
+      this.clearNoFileWarningSuppression();
+    }
     this.uploadEnabled = isWebUploadEnabled();
     // 地址与网卡选择同步：服务停止后地址清空，网卡列表仍可用于下次进入
     this.webAddresses = getWebAddresses();
@@ -196,6 +217,15 @@ export class ShareLinkViewModel {
    * 开启网页传输总开关并启动服务（与设置页双向同步）。
    */
   enableWebTransfer(): void {
+    // 服务先起来、发送页再异步挂载暂存文件；期间先不显示无文件警告，避免横幅闪现
+    this.suppressNoFileWarning = true;
+    if (this.noFileWarningTimer >= 0) {
+      clearTimeout(this.noFileWarningTimer);
+    }
+    this.noFileWarningTimer = setTimeout(() => {
+      this.noFileWarningTimer = -1;
+      this.suppressNoFileWarning = false;
+    }, 2000);
     setWebSendAllowed(true);
     applyWebSendAllowed(true);
   }
@@ -205,6 +235,7 @@ export class ShareLinkViewModel {
    * 有活跃网页会话时由 Page 先确认，再取消会话并调用本方法。
    */
   async stopWebTransfer(): Promise<void> {
+    this.clearNoFileWarningSuppression();
     setWebSendAllowed(false);
     await stopShareLink();
   }

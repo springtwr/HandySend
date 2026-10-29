@@ -32,6 +32,8 @@ pub struct TokenSession {
     pub last_used: Instant,
     /// 建会话时出示的文件快照。
     pub offered_files: HashMap<String, OfferedFile>,
+    /// 建会话时的展示顺序（与 ArkTS 暂存列表一致）。
+    pub offer_order: Vec<String>,
     /// 建会话时冻结的文件表版本。
     pub file_revision: u64,
 }
@@ -302,6 +304,7 @@ mod tests {
             created_at: now,
             last_used: now,
             offered_files: HashMap::new(),
+            offer_order: Vec::new(),
             file_revision: 1,
         }
     }

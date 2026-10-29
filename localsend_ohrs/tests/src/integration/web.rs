@@ -553,6 +553,21 @@ async fn test_i18n_by_language() {
     handle.abort();
 }
 
+/// 浏览器列表顺序：以应用暂存顺序下发，不按文件名重新排序。
+#[tokio::test]
+async fn test_prepare_download_returns_app_file_order() {
+    let (handle, addr, state, _rx, _ctx) =
+        spawn_with_files(vec![("f1", "b.txt", b"b"), ("f2", "a.txt", b"a")]).await;
+    *state.file_order.lock().unwrap() = vec!["f2".to_string(), "f1".to_string()];
+    let (status, _, body) = http_post(addr, "/web/prepare-download").await;
+    assert_eq!(status, 200, "prepare-download 失败: {body}");
+    assert!(
+        body.contains("\"fileOrder\":[\"f2\",\"f1\"]"),
+        "文件顺序未按应用暂存顺序下发: {body}"
+    );
+    handle.abort();
+}
+
 /// 完整链路：prepare→复用→下载字节→批次事件。
 #[tokio::test]
 async fn test_prepare_download_batch_flow() {

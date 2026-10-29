@@ -170,6 +170,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         validate_pin(pin)?;
     }
     let mut files: HashMap<String, SharedFile> = HashMap::new();
+    let mut file_order: Vec<String> = Vec::new();
     for entry in config.files.iter() {
         if entry.file_id.is_empty() {
             continue;
@@ -181,6 +182,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         } else {
             FileSource::Path(entry.file_path.clone())
         };
+        file_order.push(entry.file_id.clone());
         files.insert(
             entry.file_id.clone(),
             SharedFile {
@@ -227,6 +229,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         auth_sessions: Arc::new(Mutex::new(HashMap::new())),
         cap_sessions: Arc::new(Mutex::new(HashMap::new())),
         files: Arc::new(Mutex::new(table)),
+        file_order: Arc::new(Mutex::new(file_order)),
         retained: Arc::new(Mutex::new(HashMap::new())),
         sessions: Arc::new(Mutex::new(
             crate::bridge::web::session::SessionStore::default(),
@@ -381,6 +384,7 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
     let entries: Vec<FileEntry> =
         serde_json::from_str(files_json).map_err(|e| anyhow::anyhow!("文件 JSON 解析失败: {e}"))?;
     let mut files: HashMap<String, SharedFile> = HashMap::new();
+    let mut file_order: Vec<String> = Vec::new();
     for entry in entries.iter() {
         if entry.file_id.is_empty() {
             continue;
@@ -392,6 +396,7 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
         } else {
             FileSource::Path(entry.file_path.clone())
         };
+        file_order.push(entry.file_id.clone());
         files.insert(
             entry.file_id.clone(),
             SharedFile {
@@ -411,6 +416,7 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
     }
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
     let count = files.len() as u32;
+    *lock(&state.file_order) = file_order;
     state.update_files(files);
     Ok(count)
 }
