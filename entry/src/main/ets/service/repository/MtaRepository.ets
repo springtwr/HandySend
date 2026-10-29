@@ -302,6 +302,11 @@ function pruneStaleDevices(scene: MtaDeviceListClearScene): number {
   if (scannedDevices.length === 0) {
     return 0;
   }
+  // 扫描已停止：健康判定必然不通过，直接静默返回，避免每次页面/可见性停扫都留下一条
+  // “跳过陈旧条目剔除”的 debug 日志；此处不改变列表。
+  if (!scanning) {
+    return 0;
+  }
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
     MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
