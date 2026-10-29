@@ -39,6 +39,7 @@ import {
 import {
   SessionHistoryEntry, SessionHistoryQuery
 } from '../../model/transfer/SessionHistory';
+import { hasPreviewableTextPath } from '../../model/transfer/SessionArchiveRules';
 import {
   archiveSession,
   getSessionHistory as loadSessionHistory,
@@ -794,6 +795,12 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
     kind = SessionEventKind.declined;
   }
   pushTimeline(session, kind, errorMessage);
+  // 成功归档不变量：文本消息必须已有可预览路径。缺失只记录诊断，不改变终态语义；
+  // 硬性回归约束由设备端用例断言，避免归档后历史条目只剩「内容不可用」。
+  if (isSuccessStage(outcome) && !hasPreviewableTextPath(session)) {
+    logger.error(`文本消息成功会话缺少可预览路径 id=${session.id} 协议=${session.protocolKey}` +
+      ` 方向=${session.dataFlow} 文件数=${session.files.length}`);
+  }
   archiveSession(session);
   logger.info(`会话终结 id=${sessionId} 协议=${session.protocolKey} 结果=${outcome}` +
     ` 错误码=${session.errorCode} 文件数=${session.files.length}`);

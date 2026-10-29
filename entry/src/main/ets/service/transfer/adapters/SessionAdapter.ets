@@ -5,6 +5,9 @@
  * 实现确认/拒绝/取消/重试动作，声明能力与展示描述符。
  * 新增协议只需注册适配器与描述符，不改动会话引擎、聚合、后台驱动、
  * 取消分发与统一页面外壳。
+ *
+ * 成功终结的时序契约：调用成功 finish 前，适配器/仓库必须已把可预览文件的
+ * 最终路径写入统一会话；完成信号由协议事件决定，禁止以用户接受等动作替代。
  */
 
 import { SessionCapabilities, SessionDisplayDescriptor } from '../../../model/transfer/TransferSession';

@@ -17,7 +17,8 @@ import {
   ensureReceiveSession,
   finishLocalReceiveSession,
   markReceiveActive,
-  updateReceiveProgress
+  updateReceiveProgress,
+  updateReceiveSessionFilePath
 } from '../../../../main/ets/service/transfer/adapters/LocalSendReceiveAdapter'
 import { getAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import {
@@ -81,6 +82,7 @@ import {
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import { createSendSession } from '../../../../main/ets/service/repository/SendRepository'
 import { liveSessionRow, rowHasByteProgress } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
+import { SessionHistoryEntry } from '../../../../main/ets/model/transfer/SessionHistory'
 
 function device(): DiscoveredDevice {
   return {
@@ -108,6 +110,17 @@ function textReceiveState(senderName: string, text: string): ReceiverState {
   request.textContent = text
   state.receiveRequest = request
   return state
+}
+
+/** 取任务历史中某会话首个文件的归档路径（无条目、无文件或无路径时返回空串）。 */
+function historyPathOf(sessionId: string): string {
+  let entries: Array<SessionHistoryEntry> = getHistory();
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].sessionId === sessionId && entries[i].files.length > 0) {
+      return entries[i].files[0].path ?? '';
+    }
+  }
+  return '';
 }
 
 export default function AdaptersTest() {
@@ -301,6 +314,11 @@ export default function AdaptersTest() {
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('你好')
       }
+      // 接受时预写最终路径、全部完成后才终结：归档条目携带路径，详情页可读取正文
+      let textSavedPath = '/storage/text_recv/message.txt'
+      updateReceiveSessionFilePath('sess-txt', 'f1', textSavedPath)
+      finishLocalReceiveSession('sess-txt', SessionStage.succeeded)
+      expect(historyPathOf(id)).assertEqual(textSavedPath)
       // 无文本内容的普通文件：不产生文本预览
       let plainId = ensureReceiveSession('sess-bin', 'Sender', '10.0.0.3', 'fp', 'mobile', 'Model',
         [{
@@ -1044,7 +1062,8 @@ export default function AdaptersTest() {
         fileId: 'f1',
         fileName: 'text_1.txt',
         fileType: 'text/plain',
-        totalBytes: 5
+        totalBytes: 5,
+        path: '/storage/text_send/text_1.txt'
       }], '你好')
       let textSession = getSession(textId)
       expect(textSession !== undefined).assertTrue()
@@ -1056,6 +1075,9 @@ export default function AdaptersTest() {
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('你好')
       }
+      // 批次结束归档：分享源路径随描述符写入历史（详情页可读取正文）
+      handleWebDownloadEnded('batch-text', 'succeeded')
+      expect(historyPathOf(textId)).assertEqual('/storage/text_send/text_1.txt')
       resetRegistry()
     })
 
@@ -1531,6 +1553,8 @@ export default function AdaptersTest() {
         expect(after.supportsTextPreview).assertTrue()
         expect(after.textPreview).assertEqual('hello')
       }
+      // 落盘完成先回填路径再终结：归档条目携带路径，历史态详情页可读取正文
+      expect(historyPathOf(id)).assertEqual('/storage/text_recv/message.txt')
       resetRegistry()
     })
 

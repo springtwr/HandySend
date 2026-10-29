@@ -30,6 +30,7 @@ import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
+import SessionArchiveRulesTest from './model/SessionArchiveRulesTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 import HistorySegmentsTest from './model/HistorySegmentsTest.test'
@@ -125,6 +126,7 @@ export default function testsuite() {
   SendTextPreparationTest()
   MtaProtocolModelsTest()
   MtaDiscoveryGuardTest()
+  SessionArchiveRulesTest()
   SendProgressTest()
   DragDropParserTest()
   WebAddressTest()
