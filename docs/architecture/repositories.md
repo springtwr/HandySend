@@ -115,8 +115,8 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 > （未提供时页面回退既有接收媒体信号）。
 >
 > **注 10**：文本消息会话经描述符携带文本，正向动作为「接受文本（不复制）」（回接受 ack，
-> 不进入下载流程；剪贴板写入由界面在用户选择「复制」时独立完成）；文件会话经
-> `getGalleryMediaFiles` 提供相册媒体。
+> 不进入下载流程，落盘完成通知回填真实路径后再按成功收尾；剪贴板写入由界面在用户选择「复制」时
+> 独立完成）；文件会话经 `getGalleryMediaFiles` 提供相册媒体。
 
 ## 事件回调机制
 

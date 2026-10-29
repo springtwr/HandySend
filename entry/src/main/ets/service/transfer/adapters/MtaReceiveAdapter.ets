@@ -5,7 +5,7 @@
  * REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态。
  * 确认/拒绝/取消/接受文本与相册媒体经 MtaRepository 注入的入口下发；
  * 文本消息会话经展示描述符携带文本内容，正向动作为「接受文本」（不进入下载），
- * 剪贴板写入由 UI 侧在用户选择「复制」时独立完成。
+ * 接受后的终态由落盘完成通知在回填真实路径后给出，剪贴板写入由 UI 侧在用户选择「复制」时独立完成。
  */
 
 import {
@@ -60,11 +60,42 @@ let activeUnifiedId: string | undefined = undefined;
 // 待确认超时定时器（-1 表示未运行；同一时刻至多一个接收会话）
 let pendingTimeoutId: number = -1;
 
+// 文本接受后的落盘兜底超时（毫秒）：落盘通知始终不达时按失败收尾，避免会话永久停在进行中
+const MTA_TEXT_SAVE_TIMEOUT_MS: number = 15000;
+
+// 文本落盘兜底定时器（-1 表示未运行）
+let textSaveTimeoutId: number = -1;
+
 function cancelPendingTimeout(): void {
   if (pendingTimeoutId >= 0) {
     clearTimeout(pendingTimeoutId);
     pendingTimeoutId = -1;
   }
+}
+
+function cancelTextSaveTimeout(): void {
+  if (textSaveTimeoutId >= 0) {
+    clearTimeout(textSaveTimeoutId);
+    textSaveTimeoutId = -1;
+  }
+}
+
+/** 启动文本落盘兜底超时：仅当触发的仍是本次文本会话时按失败收尾。 */
+function scheduleTextSaveTimeout(sessionId: string): void {
+  cancelTextSaveTimeout();
+  textSaveTimeoutId = setTimeout(() => {
+    textSaveTimeoutId = -1;
+    if (activeUnifiedId !== sessionId) {
+      return;
+    }
+    let session = getSession(sessionId);
+    if (session === undefined || session.stage !== SessionStage.active ||
+      textContentByUnifiedId.get(sessionId) === undefined) {
+      return;
+    }
+    finish(sessionId, SessionStage.failed, '文本落盘超时', 'text_save_timeout');
+    activeUnifiedId = undefined;
+  }, MTA_TEXT_SAVE_TIMEOUT_MS);
 }
 
 function schedulePendingTimeout(sessionId: string): void {
@@ -100,15 +131,28 @@ export function setMtaReceiveInvokers(
 }
 
 /**
- * 「文本已落盘（带路径）」通知：把真实保存路径回填到当前活跃统一会话的文本文件条目。
- * 回填只允许「空 → 非空」且仅非终态写入，故会话不存在、已终态或参数为空时均为空操作，
- * 不产生异常。用于任务历史归档后仍可按路径读取文本内容预览。
+ * 「文本已落盘（带路径）」通知：把真实保存路径回填到当前活跃统一会话的文本文件条目；
+ * 用户已接受（会话进行中）时同时以此作为文本接收的终态信号，按成功收尾。
+ * 先回填后收尾，保证归档的历史条目携带真实路径，详情页在实时态与历史态均可按路径读取文本内容预览。
+ * 回填只允许「空 → 非空」且仅非终态写入，故会话不存在、已终态或参数为空时均为空操作，不产生异常。
  */
 export function notifyMtaTextSaved(savedPath: string): void {
   if (activeUnifiedId === undefined) {
     return;
   }
-  updateSessionFilePath(activeUnifiedId, MTA_RECEIVE_TEXT_FILE_ID, savedPath);
+  let sessionId: string = activeUnifiedId;
+  if (!updateSessionFilePath(sessionId, MTA_RECEIVE_TEXT_FILE_ID, savedPath)) {
+    return;
+  }
+  let session = getSession(sessionId);
+  // 未经用户接受（仍为待确认）时只回填路径、不终结，终态仍由用户动作决定
+  if (session === undefined || session.stage !== SessionStage.active ||
+    textContentByUnifiedId.get(sessionId) === undefined) {
+    return;
+  }
+  cancelTextSaveTimeout();
+  finish(sessionId, SessionStage.succeeded);
+  activeUnifiedId = undefined;
 }
 
 /**
@@ -217,6 +261,8 @@ export function handleMtaReceiveState(state: ReceiverState): void {
       fileType: textContent.length > 0 ? 'text/plain' : getMimeForFileName(fileName),
       totalBytes: totalBytes
     });
+    // 新会话开始：上一会话遗留的文本落盘兜底定时器不再适用
+    cancelTextSaveTimeout();
     let session = createSession({
       protocolKey: MTA_RECEIVE_KEY,
       protocolSessionId: protocolSessionId,
@@ -278,6 +324,7 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     finish(activeUnifiedId, SessionStage.succeeded);
     activeUnifiedId = undefined;
   } else if (stage === ReceiverStage.FAILED) {
+    cancelTextSaveTimeout();
     finish(activeUnifiedId, SessionStage.failed, state.lastError);
     activeUnifiedId = undefined;
   }
@@ -315,14 +362,14 @@ const adapter: SessionAdapter = {
   confirm: (sessionId: string): void => {
     // 用户已处理（确认或接受文本）：取消待确认超时
     cancelPendingTimeout();
-    // 文本消息：接受即收尾（回接受 ack 与成功状态、不进入下载流程）；
+    // 文本消息：接受即回接受 ack 与成功状态（不进入下载流程）；终态由落盘完成通知在
+    // 回填真实保存路径后给出，避免会话在路径归档前终结导致历史条目缺路径、详情页无法读取内容。
     // 剪贴板是否写入由 UI 侧在用户选择「复制」时独立完成，不混入协议接受语义
     if (textContentByUnifiedId.get(sessionId) !== undefined) {
       if (acceptTextInvoker !== undefined) {
         acceptTextInvoker();
+        scheduleTextSaveTimeout(sessionId);
       }
-      // 文本接受无下载流程、协议侧不产生终态信号，此处统一按成功收尾
-      finish(sessionId, SessionStage.succeeded);
       return;
     }
     if (acceptInvoker !== undefined) {
@@ -356,6 +403,7 @@ const adapter: SessionAdapter = {
     // 新会话刚设置的 activeUnifiedId，否则新会话的状态信号被丢弃而永久卡死
     if (activeUnifiedId === sessionId) {
       cancelPendingTimeout();
+      cancelTextSaveTimeout();
       releaseActive();
     }
   }

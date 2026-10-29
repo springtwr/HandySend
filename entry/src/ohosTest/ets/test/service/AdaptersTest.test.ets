@@ -1200,9 +1200,16 @@ export default function AdaptersTest() {
         let display = adapter.getDisplayDescriptor(copyId.id)
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('你好')
-        adapter.confirm(copyId.id)
+        confirmSession(copyId.id)
         expect(acceptedText).assertEqual(1)
         expect(acceptedDownload).assertEqual(0)
+        // 落盘通知到达前保持进行中：路径尚未归档，不提前终结（否则历史条目缺路径）
+        let copying = getSession(copyId.id)
+        if (copying !== undefined) {
+          expect(copying.stage).assertEqual(SessionStage.active)
+        }
+        // 落盘完成通知回填真实路径后，按成功收尾
+        notifyMtaTextSaved('/storage/recv/text_recv/sharedText.txt')
         let copied = getSession(copyId.id)
         if (copied !== undefined) {
           expect(copied.stage).assertEqual(SessionStage.succeeded)
@@ -1215,8 +1222,9 @@ export default function AdaptersTest() {
       let closeId = findByProtocol('mta-receive', 'mta-receive-session')
       expect(closeId !== undefined).assertTrue()
       if (closeId !== undefined && adapter !== undefined) {
-        adapter.confirm(closeId.id)
+        confirmSession(closeId.id)
         expect(acceptedText).assertEqual(2)
+        notifyMtaTextSaved('/storage/recv/text_recv/sharedText (1).txt')
         let closed = getSession(closeId.id)
         if (closed !== undefined) {
           expect(closed.stage).assertEqual(SessionStage.succeeded)
@@ -1389,6 +1397,54 @@ export default function AdaptersTest() {
       let after = getSession(found.id)
       expect(after !== undefined ? after.files[0].path : 'x').assertEqual(savedPath)
 
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('mtaReceiveText_acceptThenSaved_pathArchived', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      setMtaReceiveInvokers(
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): Array<MediaFileInfo> => []
+      )
+      handleMtaReceiveState(textReceiveState('MtaSender', '落盘后归档'))
+      let session = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(session !== undefined).assertTrue()
+      if (session === undefined) {
+        resetRegistry()
+        resetSessionHistoryCache()
+        return
+      }
+      // 走统一确认入口（与界面一致）：注册表先把阶段推进到进行中，再触发适配器接受文本
+      confirmSession(session.id)
+      // 接受后先落盘：通知到达前会话保持进行中，避免在真实路径可得前先行归档
+      let activeSession = getSession(session.id)
+      expect(activeSession !== undefined ? activeSession.stage : SessionStage.failed)
+        .assertEqual(SessionStage.active)
+
+      // 落盘通知：回填真实路径后按成功收尾，历史条目同样携带该路径（详情页可读取内容）
+      let savedPath = '/storage/recv/text_recv/sharedText.txt'
+      notifyMtaTextSaved(savedPath)
+      let done = getSession(session.id)
+      expect(done !== undefined ? done.stage : SessionStage.failed).assertEqual(SessionStage.succeeded)
+      expect(done !== undefined ? done.files[0].path : '').assertEqual(savedPath)
+      let entries = getHistory()
+      let matched = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === session.id) {
+          matched = true
+          expect(entries[i].files[0].path).assertEqual(savedPath)
+        }
+      }
+      expect(matched).assertTrue()
       resetRegistry()
       resetSessionHistoryCache()
     })

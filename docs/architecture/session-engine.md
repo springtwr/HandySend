@@ -112,7 +112,8 @@
   - 文本消息的文本内容由 `ReceiveRepository` 摄入请求时取自待处理请求的 `preview`（仅手动输入文本带该字段），写经
     `ensureReceiveSession` 进入适配器侧映射，展示描述符据以携带文本内容（`supportsTextPreview` + `textPreview`）
   - 详情页渲染文本预览卡片（可滚动文本 + URL 时「打开链接」），与任务列表行的文本会话动作一致，均为「关闭」+「复制」：关闭＝直接触发接受，
-    复制＝写入剪贴板成功后触发接受（复制内容文件优先、描述符兜底，文件读取按缺省 200KB 上限截断并提示，与多文件清单/接收历史同口径）；接受经适配器回接受 ack 并按成功收尾（不进入下载流程），剪贴板写入为 UI 侧副作用，与协议接受正交；
+    复制＝写入剪贴板成功后触发接受（复制内容文件优先、描述符兜底，文件读取按缺省 200KB 上限截断并提示，与多文件清单/接收历史同口径）；接受经适配器回接受 ack，
+    落盘完成通知回填真实路径后按成功收尾（不进入下载流程），剪贴板写入为 UI 侧副作用，与协议接受正交；
     文本会话判定由适配器在创建时声明的 `TransferSession.textMessage` 与展示描述符（`supportsTextPreview` + `textPreview`）共同承载：
     前者区分手输文本消息与 `.txt` 等文本文件并随历史归档，后者提供正文预览内容；详情页与列表行共用同一口径，列表行模型在构建期预计算该标志
   - 文件接收会话以 `canSaveToGallery` 声明相册能力，完成态的标题栏菜单次级入口经 `getGalleryMediaFiles` 取媒体文件交由 `GallerySaveService` 保存
@@ -160,7 +161,8 @@
     下载落盘完成（`COMPLETED`）时，以状态快照中的逐文件元数据（`receivedFiles`：名称/大小/真实类型）
     与逐文件路径（`savedFiles`，与 `receivedFiles` 按下标一一对应）组装描述符（`fileId`=`mta-<i>`、类型缺失按文件名扩展名兜底）经 `setSessionFiles`
     整体替换占位条目后按成功终结；路径随描述符写入，归档时由逐文件条目透传，故实时终态可见期与历史只读态的条目数/名称/大小/路径一致。
-    失败/取消/拒绝路径不触发回填；互传原生文本消息不经下载流程（无 `COMPLETED`），保持既有「接受文本即收尾」语义
+    失败/取消/拒绝路径不触发回填；互传原生文本消息不经下载流程（无 `COMPLETED`），其落盘完成通知先回填真实路径、
+    再按成功终结会话，保证归档条目与详情页预览不因提前归档而缺路径
   - 展示描述符的 `directionLabel`、对端名称与副标题（`peerTitle` / `peerSubtitle`）及会话离散阶段文案（`TransferSession.stageText`，MTA 各阶段文案）以 `ResourceStr` 承载并配三语言资源，随系统语言切换
   - 描述符另携带对端 `deviceType` 与可选 `mtaBrandId`：`mtaBrandId` 存在即表示对端为互传（MTA）来源，设备卡据此渲染品牌彩色图标（-1 为未知品牌，回退默认 MTA 图标），
     否则按 `deviceType` 渲染设备类型图标（缺失或未知回退手机）；该规则与发送页设备列表同源（`DeviceIconUtil.getPeerDeviceIconResource`），保证同一设备两处图标一致。
