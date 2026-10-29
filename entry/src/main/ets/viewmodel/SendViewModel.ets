@@ -1175,6 +1175,11 @@ export class SendViewModel {
     }
   }
 
+  /** 网页分享是否已挂载当前暂存内容：面板入口据此避免重复挂载并重置本次授权。 */
+  isWebShareMounted(): boolean {
+    return hasSharedFiles();
+  }
+
   async shareByLink(): Promise<string> {
     // 菜单仅在发送开关开启时才走挂载；此处再写一次允许开关以保持幂等
     setWebSendAllowed(true);

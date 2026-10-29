@@ -465,7 +465,7 @@ export async function restartWebService(): Promise<void> {
     return;
   }
   let uploadEnabled: boolean = webUploadEnabled;
-  await stopShareLink();
+  // 设置变更重建服务不属于手动停止，保留上传免确认状态
   await startWebServiceLocked(uploadEnabled);
 }
 
@@ -542,8 +542,6 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
       registerShareFileProfiles(files, openedHandles);
       closeShareFileHandles();
       shareFileHandles = openedHandles;
-      // 新一次分享从「需确认」开始：上传免确认只在本次挂载内由面板显式打开
-      webUploadAutoAccept = false;
       refreshWebAddress();
       logger.info('分享文件已就地挂载，当前可下载 ' + files.length + ' 个');
       return;
@@ -583,8 +581,6 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
     }
   }
   shareFileHandles = openedHandles;
-  // 新一次分享从「需确认」开始：上传免确认只在本次挂载内由面板显式打开
-  webUploadAutoAccept = false;
 }
 
 /** 取消待执行的硬停止（重新启服时调用，避免误停新实例）。 */
@@ -687,7 +683,7 @@ export async function unmountShare(): Promise<void> {
     let count: number = nativeUpdateWebServiceFiles('[]');
     closeShareFileHandles();
     clearShareFileProfiles();
-    webUploadAutoAccept = false;
+    // 撤下文件只影响下载列表，不重置与暂存内容无关的上传免确认
     // 总开关关闭时停服务；仅撤下文件时保留地址/二维码与上传入口。
     if (!getWebSendAllowed()) {
       await stopShareLink();

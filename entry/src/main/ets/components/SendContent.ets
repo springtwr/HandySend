@@ -479,9 +479,10 @@ export struct SendContent {
   }
 
   // 点击网页图标：进入统一的「网页传输」面板。
-  // 总开关开启且有暂存文件时先挂载并进入；否则直接进入（面板内出示状态与开启入口）。
+  // 已挂载同一份暂存内容时直接进入，避免重复挂载重置本次上传免确认。
   onOpenWebPanel(): void {
-    if (!this.viewModel.webSendAllowed || this.viewModel.stagedFiles.length === 0) {
+    if (!this.viewModel.webSendAllowed || this.viewModel.stagedFiles.length === 0 ||
+      this.viewModel.isWebShareMounted()) {
       this.onNavigateTo('ShareLinkPage', undefined);
       return;
     }
