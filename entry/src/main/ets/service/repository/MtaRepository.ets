@@ -33,7 +33,8 @@ import {
   mtaClearSceneText,
   shouldAttemptMtaScanRearm,
   shouldPruneStaleDevices,
-  shouldTriggerScanRecovery
+  shouldTriggerScanRecovery,
+  scanRecoveryDelayMs
 } from '../../model/mta/MtaDiscoveryModels';
 import { MtaReceiveService, setMtaReceiveTextSavedNotifier } from '../mta/MtaReceiveService';
 import {
@@ -83,11 +84,31 @@ const MTA_SCAN_RETRY_COOLDOWN_MS: number = 10000;
 const MTA_SCAN_REARM_INTERVAL_MS: number = 5000;
 
 /**
- * 扫描静默停顿判定阈值（毫秒）：不小于设备存活期 TTL。
- * 取值与 TTL 相同，确保「暂停前先剔光」不会发生——一旦距最近发现结果达到该阈值即判为疑似停顿，
- * 转而触发恢复并跳过剔除，而不是让既有条目先被 TTL 剔除至空。
+ * 扫描静默停顿判定阈值（毫秒）：曾发现过设备、随后长时间无新结果时使用。
+ * 取值与设备存活期 TTL 相同，确保不会在既有条目被 TTL 剔光之后才判定停顿——
+ * 达到该阈值即先判疑似停顿并跳过剔除，再触发恢复。
  */
 const MTA_SCAN_STALL_THRESHOLD_MS: number = MTA_DEVICE_TTL_MS;
+
+/**
+ * 冷启动无发现宽限（毫秒）：本次扫描会话从未发现任何设备时，等待更久才判疑似停顿。
+ * 空环境下无发现是正常结果，不能按故障频繁重启扫描；用户可主动刷新立即恢复。
+ */
+const MTA_SCAN_COLD_START_GRACE_MS: number = 120000;
+
+/** 扫描恢复退避（毫秒）：连续恢复仍无结果时逐级拉长间隔，封顶取最后一档 */
+const MTA_SCAN_RECOVERY_BACKOFF_MS: Array<number> = [60000, 120000, 300000];
+
+/** 用户主动刷新冷却（毫秒）：与确认窗口同量级，防止连续点击反复重启扫描 */
+const MTA_MANUAL_RESCAN_COOLDOWN_MS: number = 3000;
+
+/**
+ * 当前列表对应的冷启动宽限：仅列表为空时使用较长宽限；列表非空说明已经有设备条目，
+ * 继续用普通停顿阈值，避免新扫描会话把已缓存条目保留过久。
+ */
+function coldStartGraceForCurrentList(): number {
+  return scannedDevices.length === 0 ? MTA_SCAN_COLD_START_GRACE_MS : MTA_SCAN_STALL_THRESHOLD_MS;
+}
 
 /** 整组清空诊断同类事件节流窗口（毫秒）：窗口内同类原因的事件去重，避免刷屏 */
 const MTA_CLEAR_DIAG_THROTTLE_MS: number = 5000;
@@ -120,6 +141,10 @@ let lastScanResultMs: number = 0;
 let scanSessionStartMs: number = 0;
 // 最近一次触发扫描停顿恢复的时刻（恢复节流）：避免疑似停顿反复重启扫描
 let lastScanStallRecoveryMs: number = 0;
+// 连续扫描恢复次数：用于逐级退避，发现结果/新扫描会话/手动刷新时清零
+let scanRecoveryStreak: number = 0;
+// 最近一次用户主动刷新时刻：冷却期内忽略重复点击
+let lastManualRescanMs: number = 0;
 // 清空诊断节流状态：记录上次输出原因与时刻，并对同类事件计数抑制次数
 let clearDiagLastMs: number = 0;
 let clearDiagLastReason: MtaDeviceListClearReason = MtaDeviceListClearReason.UNKNOWN;
@@ -208,6 +233,9 @@ function mergeScannedDevice(device: MtaDiscoveredDevice): void {
   device.lastSeen = Date.now();
   // 扫描健康度跟踪：记录最近一次有新发现结果的时刻（停顿判定的单一基准）
   lastScanResultMs = device.lastSeen;
+  // 收到新结果即视为本轮停顿已恢复：清零退避，下一次停顿重新从短间隔开始
+  scanRecoveryStreak = 0;
+  lastScanStallRecoveryMs = 0;
   let key = mtaDeviceIdentityKey(device);
   let updated: Array<MtaDiscoveredDevice> = [];
   let found = false;
@@ -273,7 +301,7 @@ function pruneStaleDevices(scene: MtaDeviceListClearScene): number {
   }
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
-    MTA_SCAN_STALL_THRESHOLD_MS);
+    MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
   if (!shouldPruneStaleDevices(health)) {
     logger.debug('跳过陈旧条目剔除：扫描不健康 扫描中=' + (health.scanning ? '是' : '否') +
       ' 疑似停顿=' + (health.suspectedStall ? '是' : '否') + ' 条目数=' + scannedDevices.length);
@@ -308,17 +336,20 @@ function pruneStaleDevices(scene: MtaDeviceListClearScene): number {
 function runScanHealthCheck(): void {
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
-    MTA_SCAN_STALL_THRESHOLD_MS);
+    MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
   if (health.suspectedStall) {
     if (scannedDevices.length > 0) {
       // 列表非空时，疑似停顿可能演变为整组清空：经统一诊断出口按「扫描停顿」原因记录
       emitMtaClearDiagnostic(MtaDeviceListClearReason.SCAN_STALL, scannedDevices.length,
         MtaDeviceListClearScene.SCAN_STALL);
-    } else {
-      logger.debug('互传发现扫描疑似静默停顿（当前无条目）：跳过剔除并尝试恢复');
     }
-    if (shouldTriggerScanRecovery(health, now, lastScanStallRecoveryMs, MTA_SCAN_STALL_THRESHOLD_MS)) {
+    let recoveryDelay: number = scanRecoveryDelayMs(scanRecoveryStreak, MTA_SCAN_RECOVERY_BACKOFF_MS);
+    if (shouldTriggerScanRecovery(health, now, lastScanStallRecoveryMs, recoveryDelay)) {
       lastScanStallRecoveryMs = now;
+      scanRecoveryStreak++;
+      if (scannedDevices.length === 0) {
+        logger.debug('互传发现扫描冷启动无结果，按退避触发恢复 连续恢复次数=' + scanRecoveryStreak);
+      }
       triggerScanRecovery();
     }
     return;
@@ -424,7 +455,7 @@ function settleRescanPrune(): void {
   }
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
-    MTA_SCAN_STALL_THRESHOLD_MS);
+    MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
   if (!shouldPruneStaleDevices(health)) {
     logger.debug('跳过主动刷新确认剔除：扫描不健康 扫描中=' + (health.scanning ? '是' : '否') +
       ' 疑似停顿=' + (health.suspectedStall ? '是' : '否') + ' 条目数=' + scannedDevices.length);
@@ -463,11 +494,35 @@ export function rescanMtaDiscovery(): void {
     logger.debug('发送暂停中，主动刷新仅记录可见性期望');
     return;
   }
+  // 共享刷新按钮同时触发 LocalSend 与 MTA：此处仅对 MTA 做冷却，
+  // LocalSend 仍按原有「扫描中合并排队一次」逻辑接收每次点击，行为不变。
+  let now = Date.now();
+  if (now - lastManualRescanMs < MTA_MANUAL_RESCAN_COOLDOWN_MS) {
+    logger.debug('主动刷新已忽略：冷却中 距上次=' + (now - lastManualRescanMs) + 'ms');
+    return;
+  }
+  lastManualRescanMs = now;
   scanRetryBlockedUntil = 0;
   if (scanning) {
+    let client = scanClient;
+    // 空列表是用户最可能反复点击刷新的场景：强制停/起扫描，立即重置底层状态；
+    // 非空列表保持既有软刷新，避免让正在展示的设备先消失。
+    if (client !== undefined && scannedDevices.length === 0) {
+      logger.debug('主动刷新：空列表，强制重启扫描并重置停顿退避');
+      scanRecoveryStreak = 0;
+      lastScanStallRecoveryMs = 0;
+      client.resetReportDedupe();
+      clearRescanSettleTimer();
+      client.stopScan().then((): void => {
+        beginScan();
+      }).catch((e: Object): void => {
+        logger.warn('主动刷新停止扫描失败，按普通起扫重试: ' + String(e));
+        beginScan();
+      });
+      return;
+    }
     // 已在扫描：不清空列表（清空会让既有设备"先消失"）；先重置扫描上报去重使在线设备在
     // 下一轮结果中重新上报，再布置确认窗口剔除窗口内未再上报的离线设备
-    let client = scanClient;
     if (client !== undefined) {
       client.resetReportDedupe();
     }
@@ -541,6 +596,8 @@ function beginScan(): void {
   // 重置本次扫描会话基准：健康度判定从会话起始时刻起算，避免沿用上一会话的陈旧发现时刻
   scanSessionStartMs = Date.now();
   lastScanResultMs = 0;
+  scanRecoveryStreak = 0;
+  lastScanStallRecoveryMs = 0;
   scanning = true;
   notifyChange();
   client.startScan().then((): void => {
@@ -700,9 +757,11 @@ function handleBluetoothDisabled(): void {
 /** 蓝牙开启：清除失败冷却后按需恢复发现扫描与接收服务 */
 function handleBluetoothEnabled(): void {
   let scanStarted = false;
+  // 蓝牙恢复视为新的扫描环境：重置恢复退避，异常重新从短间隔开始
+  scanRecoveryStreak = 0;
+  lastScanStallRecoveryMs = 0;
   if (shouldScanDesired() && !scanning) {
     scanRetryBlockedUntil = 0;
-    lastScanStallRecoveryMs = 0;
     logger.debug('蓝牙已开启：恢复互传发现扫描');
     // beginScan 内部已通知 UI
     beginScan();

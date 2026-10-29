@@ -223,17 +223,36 @@ export class MtaScanHealth {
  * 构建扫描健康度快照（纯函数）。
  * 健康判定基准取「最近一次有新发现结果的时刻」；本次会话尚无发现时以会话起始时刻为基准，
  * 避免刚起扫即被判为停顿。处于扫描中且基准时刻距当前达到停顿阈值即疑似静默停顿。
+ * `coldStartGraceMs` 为冷启动无发现时的宽限（0 或缺省时与 `stallThresholdMs` 相同），
+ * 用于区分「从未发现过设备」与「曾发现后长时间无新结果」两种场景。
  */
 export function buildMtaScanHealth(scanning: boolean, lastResultMs: number, sessionStartMs: number,
-  nowMs: number, stallThresholdMs: number): MtaScanHealth {
+  nowMs: number, stallThresholdMs: number, coldStartGraceMs: number = 0): MtaScanHealth {
   let health = new MtaScanHealth();
   health.scanning = scanning;
   health.lastResultMs = lastResultMs;
   health.sessionStartMs = sessionStartMs;
   let reference = lastResultMs > 0 ? lastResultMs : sessionStartMs;
-  health.suspectedStall = scanning && reference > 0 && stallThresholdMs > 0 &&
-    nowMs - reference >= stallThresholdMs;
+  let threshold = lastResultMs > 0 ? stallThresholdMs :
+    (coldStartGraceMs > 0 ? coldStartGraceMs : stallThresholdMs);
+  health.suspectedStall = scanning && reference > 0 && threshold > 0 &&
+    nowMs - reference >= threshold;
   return health;
+}
+
+/**
+ * 扫描恢复退避延迟（纯函数）：`attempts` 为本次停顿连续恢复次数，0 表示尚未恢复。
+ * 返回下一次恢复相对上次恢复至少要间隔的毫秒数；超过退避表长度后取最后一档。
+ */
+export function scanRecoveryDelayMs(attempts: number, delays: Array<number>): number {
+  if (attempts <= 0 || delays.length === 0) {
+    return 0;
+  }
+  let index: number = attempts - 1;
+  if (index >= delays.length) {
+    index = delays.length - 1;
+  }
+  return delays[index];
 }
 
 /** 扫描是否健康（扫描中且未疑似停顿） */

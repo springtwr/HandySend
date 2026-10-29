@@ -15,6 +15,7 @@ import {
   mapMtaBluetoothObservation,
   mtaClearReasonText,
   resolveMtaShouldScan,
+  scanRecoveryDelayMs,
   shouldClearMtaOnBluetoothStatus,
   shouldAttemptMtaScanRearm,
   shouldPruneStaleDevices,
@@ -176,6 +177,29 @@ export default function MtaDiscoveryGuardTest() {
       expect(shouldPruneStaleDevices(buildMtaScanHealth(true, 5000, 1000, 5000 + ttl, ttl))).assertFalse()
       // 扫描中且有近期发现结果：允许剔除
       expect(shouldPruneStaleDevices(buildMtaScanHealth(true, 5000, 1000, 5000 + ttl - 1, ttl))).assertTrue()
+    })
+
+    it('cold_start_uses_longer_grace', 0, () => {
+      let normal = 60000
+      let cold = 120000
+      // 从未发现设备：达到普通阈值仍不算停顿，达到冷启动宽限才判停顿
+      expect(buildMtaScanHealth(true, 0, 1000, 1000 + normal, normal, cold).suspectedStall).assertFalse()
+      expect(buildMtaScanHealth(true, 0, 1000, 1000 + cold - 1, normal, cold).suspectedStall).assertFalse()
+      expect(buildMtaScanHealth(true, 0, 1000, 1000 + cold, normal, cold).suspectedStall).assertTrue()
+      // 曾发现设备：仍按普通阈值判定
+      expect(buildMtaScanHealth(true, 5000, 1000, 5000 + normal, normal, cold).suspectedStall).assertTrue()
+    })
+
+    it('recovery_backoff_delay_levels', 0, () => {
+      let delays: Array<number> = [60000, 120000, 300000]
+      // 尚未恢复：无退避延迟（首次由冷启动宽限/普通阈值控制）
+      expect(scanRecoveryDelayMs(0, delays)).assertEqual(0)
+      // 连续恢复次数逐级对应退避表，超过后封顶最后一档
+      expect(scanRecoveryDelayMs(1, delays)).assertEqual(60000)
+      expect(scanRecoveryDelayMs(2, delays)).assertEqual(120000)
+      expect(scanRecoveryDelayMs(3, delays)).assertEqual(300000)
+      expect(scanRecoveryDelayMs(9, delays)).assertEqual(300000)
+      expect(scanRecoveryDelayMs(1, [])).assertEqual(0)
     })
 
     it('suspected_stall_triggers_recovery', 0, () => {
