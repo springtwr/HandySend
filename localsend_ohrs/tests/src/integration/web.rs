@@ -1381,6 +1381,40 @@ async fn test_shutdown_signal_closes_existing_connections() {
     handle.abort();
 }
 
+/// 文本预览允许读取建会话后新增的当前文件；真实下载仍被会话快照隔离。
+#[tokio::test]
+async fn test_preview_reads_file_added_after_session_snapshot() {
+    let (handle, addr, state, _progress_rx, ctx) =
+        spawn_with_files(vec![("f1", "old.txt", b"old")]).await;
+    let token = prepare_accepted(addr, &state).await;
+    // 建会话后换表新增 f2：旧 token 的会话快照只有 f1。
+    let path = ctx.write_file("new.txt", b"new preview");
+    let mut table: HashMap<String, SharedFile> = HashMap::new();
+    table.insert(
+        "f2".to_string(),
+        SharedFile {
+            file: test_file_dto("f2", "new.txt", 11),
+            source: FileSource::Path(path.to_string_lossy().into_owned()),
+            last_modified_ms: None,
+        },
+    );
+    state.update_files(table);
+    let base = format!("/web/download?token={token}&fileId=f2");
+    let (status, _headers, body) = http_request_with_headers(
+        addr,
+        "GET",
+        &format!("{base}&preview=1"),
+        &[("Range", "bytes=0-2")],
+    )
+    .await;
+    assert_eq!(status, 206);
+    assert_eq!(body.as_bytes(), b"new");
+    // 预览放行新文件不代表下载放行：无 preview 时仍按旧快照拒绝。
+    let (status, _, _) = http_request(addr, "GET", &base).await;
+    assert_eq!(status, 403);
+    handle.abort();
+}
+
 /// 上传建会话并接受，返回 token。
 async fn prepare_upload_accepted(
     addr: SocketAddr,

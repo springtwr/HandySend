@@ -1304,7 +1304,7 @@ async fn start_download(
         .map(|value| value == "1")
         .unwrap_or(false);
     // 校验会话与快照归属（先释放会话锁，避免与 retained→sessions 的打扫锁序冲突）。
-    let meta_file = {
+    let snapshot_file = {
         let mut sessions = lock(&state.sessions);
         let Some(session) = sessions.sessions.get_mut(token) else {
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
@@ -1312,11 +1312,26 @@ async fn start_download(
         if session.peer_ip != peer.ip().to_string() {
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         }
-        let Some(offered) = session.offered_files.get(file_id) else {
-            return download_error_response(req, StatusCode::FORBIDDEN, updated_message);
-        };
         session.last_used = now;
-        offered.file.clone()
+        session
+            .offered_files
+            .get(file_id)
+            .map(|offered| offered.file.clone())
+    };
+    let meta_file = match snapshot_file {
+        Some(file) => file,
+        None if preview => {
+            // 文本预览是页面内联读取：允许读取建会话后新增的当前文件表条目；
+            // 真实下载仍严格限制在会话快照内，避免使用旧 token 下载新文件。
+            let files = lock(&state.files);
+            match files.files.get(file_id) {
+                Some(entry) => entry.file.clone(),
+                None => {
+                    return download_error_response(req, StatusCode::FORBIDDEN, updated_message)
+                }
+            }
+        }
+        None => return download_error_response(req, StatusCode::FORBIDDEN, updated_message),
     };
     let total = meta_file.size;
     // 内容源按快照定位：现表优先，保留区兜底（宽限内）。
