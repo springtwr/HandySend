@@ -644,10 +644,10 @@ export async function startWebUpload(): Promise<void> {
   if (!getWebSendAllowed()) {
     return;
   }
-  if (shareLinkInfo.length > 0 && webUploadEnabled) {
+  if (sharePort > 0 && webUploadEnabled) {
     return;
   }
-  if (shareLinkInfo.length > 0) {
+  if (sharePort > 0) {
     try {
       nativeSetWebServiceUploadEnabled(true);
       webUploadEnabled = true;
@@ -665,7 +665,7 @@ export async function startWebUpload(): Promise<void> {
  * 避免重复进入面板时重建服务器打断进行中的传输。
  */
 export async function ensureWebUpload(): Promise<void> {
-  if (shareLinkInfo.length > 0 && webUploadEnabled) {
+  if (sharePort > 0 && webUploadEnabled) {
     return;
   }
   await startWebUpload();
@@ -676,7 +676,7 @@ export async function ensureWebUpload(): Promise<void> {
  * 以空文件表热替换；出站方向（网页发送）已关闭时服务随之完全停止。
  */
 export async function unmountShare(): Promise<void> {
-  if (shareLinkInfo.length === 0) {
+  if (sharePort <= 0) {
     return;
   }
   try {
@@ -701,7 +701,7 @@ export async function unmountShare(): Promise<void> {
  * 总开关关闭时服务随之停止。
  */
 export async function disableWebUpload(): Promise<void> {
-  if (shareLinkInfo.length === 0) {
+  if (sharePort <= 0) {
     return;
   }
   try {
@@ -749,7 +749,7 @@ function reuseShareFileIds(files: Array<SendFileItem>): void {
  * 保证换表瞬间不存在「表里指向已关闭 fd」的窗口。
  */
 export async function updateShareFiles(files: Array<SendFileItem>): Promise<void> {
-  if (shareLinkInfo.length === 0 || webUpdating) {
+  if (sharePort <= 0 || webUpdating) {
     return;
   }
   if (files.length === 0) {
@@ -900,7 +900,7 @@ export function applyWebSendAllowed(enabled: boolean): void {
     });
     return;
   }
-  if (shareLinkInfo.length === 0) {
+  if (sharePort <= 0) {
     startWebServiceLocked(getWebReceiveAllowed()).catch((e: Error) => {
       logger.error('网页传输开启后拉起服务失败: ' + String(e));
     });
@@ -938,7 +938,7 @@ export async function restoreWebService(): Promise<void> {
   if (!getWebSendAllowed()) {
     return;
   }
-  if (shareLinkInfo.length === 0) {
+  if (sharePort <= 0) {
     await startWebServiceLocked(getWebReceiveAllowed());
     return;
   }
