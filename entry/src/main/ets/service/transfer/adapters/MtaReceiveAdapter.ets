@@ -243,6 +243,11 @@ export function handleMtaReceiveState(state: ReceiverState): void {
 
   // 新请求到达（REQUEST_RECEIVED）：创建待确认会话
   if (stage === ReceiverStage.REQUEST_RECEIVED) {
+    // 收尾复位会先清空 receiveRequest 再通知，此时阶段可能仍停留在 REQUEST_RECEIVED；
+    // 无请求的快照不得生成待确认会话（否则文本接收成功后会弹出无内容的确认框）
+    if (request === undefined) {
+      return;
+    }
     if (activeUnifiedId !== undefined && getSession(activeUnifiedId) !== undefined) {
       return;
     }

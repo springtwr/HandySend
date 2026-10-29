@@ -1471,6 +1471,38 @@ export default function AdaptersTest() {
       resetSessionHistoryCache()
     })
 
+    it('mtaReceive_resetSnapshot_noGhostConfirm', 0, () => {
+      resetRegistry()
+      setMtaReceiveInvokers(
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): Array<MediaFileInfo> => []
+      )
+      handleMtaReceiveState(textReceiveState('MtaSender', '复位快照'))
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      confirmSession(found.id)
+      notifyMtaTextSaved('/storage/text_recv/sharedText.txt')
+      let beforeReset: number = querySessions({ protocolKey: MTA_RECEIVE_KEY }).length
+      // 文本收尾复位：receiveRequest 已清空、阶段仍停留在 REQUEST_RECEIVED（服务真实通知顺序）
+      let resetState = new ReceiverState()
+      resetState.stage = ReceiverStage.REQUEST_RECEIVED
+      handleMtaReceiveState(resetState)
+      let afterReset: number = querySessions({ protocolKey: MTA_RECEIVE_KEY }).length
+      expect(afterReset).assertEqual(beforeReset)
+      resetRegistry()
+    })
+
     it('mtaReceive_thumbnailFastPath_createdWithPreview', 0, () => {
       resetRegistry()
       // 快路径：预取在预算内完成，待确认状态创建时即携带非空缩略图路径，
