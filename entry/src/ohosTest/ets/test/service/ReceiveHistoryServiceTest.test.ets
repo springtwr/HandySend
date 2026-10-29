@@ -6,6 +6,7 @@ import {
   clearAll,
   getHistory,
   initHistory,
+  repairTextMessageFlags,
   updateGallerySavedStatus
 } from '../../../../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
@@ -40,6 +41,26 @@ export default function ReceiveHistoryServiceTest() {
       expect(getHistory().length).assertEqual(2)
       expect(getHistory()[0].id).assertEqual('h-add-1')
       expect(getHistory()[0].fileName).assertEqual('a.png')
+    })
+
+    it('repairTextMessageFlags_fixesMessagesInTextDirOnly', 0, () => {
+      // 接收文本消息目录内的 text/plain 条目：旧版本误写为 false，读取时修复
+      let textMessage = makeEntry('h-repair-1', 'message.txt')
+      textMessage.fileType = 'text/plain'
+      textMessage.path = '/app/files/text_recv/message.txt'
+      // 普通 .txt 文件位于 Download：保持文件语义
+      let textFile = makeEntry('h-repair-2', 'note.txt')
+      textFile.fileType = 'text/plain'
+      textFile.path = '/storage/Download/note.txt'
+      // 非文本类型即使路径命中也不改
+      let image = makeEntry('h-repair-3', 'photo.png')
+      image.path = '/app/files/text_recv/photo.png'
+      let entries: Array<ReceiveHistoryEntry> = [textMessage, textFile, image]
+      let repaired: number = repairTextMessageFlags(entries, '/app/files/text_recv/')
+      expect(repaired).assertEqual(1)
+      expect(textMessage.isMessage).assertTrue()
+      expect(textFile.isMessage).assertFalse()
+      expect(image.isMessage).assertFalse()
     })
 
     it('addEntries_exceeds_max_removes_oldest', 0, () => {

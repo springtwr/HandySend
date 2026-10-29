@@ -1466,6 +1466,15 @@ export default function AdaptersTest() {
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('hello')
       }
+      // 落盘完成不能丢弃文本消息标记：接收历史归档仍据此区分文本消息与 .txt 文件
+      handleWebUploadProgress('web-text-1', 'f0', 5, 5)
+      handleWebUploadDone('web-text-1', 'f0', '/storage/text_recv/message.txt')
+      expect(isWebUploadTextMessage(id)).assertTrue()
+      if (adapter !== undefined) {
+        let after = adapter.getDisplayDescriptor(id)
+        expect(after.supportsTextPreview).assertTrue()
+        expect(after.textPreview).assertEqual('hello')
+      }
       resetRegistry()
     })
 

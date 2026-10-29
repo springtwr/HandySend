@@ -17,6 +17,7 @@ import {
   segmentsOfDirtyRange
 } from '../../model/HistorySegments';
 import { receiveHistoryPreferencesUtil } from '../../utils/PreferencesUtil';
+import { recvTextDir } from './ReceiveTargets';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService', '历史');
 
@@ -29,11 +30,37 @@ let history: Array<ReceiveHistoryEntry> = [];
 // 上一次落盘的条目快照：用于比对出变更区间，只重写受影响的段
 let lastPersisted: Array<ReceiveHistoryEntry> = [];
 
+/**
+ * 修复历史条目的文本消息标记（读取时自愈）：
+ * 接收文本消息统一落在应用私有接收文本目录，普通文件落在 Download；
+ * 路径位于该目录的 text/plain 条目必为文本消息，据此纠正旧版本误写的 false。
+ * 返回修复条数（仅内存修正，不额外落盘）。
+ */
+export function repairTextMessageFlags(entries: Array<ReceiveHistoryEntry>, textDir: string): number {
+  if (textDir.length === 0) {
+    return 0;
+  }
+  let repaired: number = 0;
+  for (let i = 0; i < entries.length; i++) {
+    let entry: ReceiveHistoryEntry = entries[i];
+    if (entry.isMessage === false && entry.fileType === 'text/plain' &&
+      entry.path.length > 0 && entry.path.startsWith(textDir)) {
+      entry.isMessage = true;
+      repaired++;
+    }
+  }
+  return repaired;
+}
+
 export function initHistory(context: common.UIAbilityContext): void {
   logger.debug('初始化历史');
   // 确保读写前接收历史偏好存储已初始化
   receiveHistoryPreferencesUtil.init(context);
   history = readAllSegments();
+  let repaired: number = repairTextMessageFlags(history, recvTextDir());
+  if (repaired > 0) {
+    logger.info('已修复历史文本消息标记 count=' + repaired);
+  }
   lastPersisted = history.slice();
   logger.debug('已加载 ' + history.length + ' 条记录');
 }

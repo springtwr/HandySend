@@ -345,7 +345,6 @@ export function handleWebUploadDone(token: string, fileId: string, path: string)
   }
   if (path.length > 0) {
     updateSessionFilePath(ctx.unifiedId, fileId, path);
-    textPreviewCache.delete(ctx.unifiedId);
   }
   let record = ctx.knownFiles.get(fileId);
   if (record !== undefined) {

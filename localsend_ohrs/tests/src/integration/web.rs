@@ -448,8 +448,8 @@ async fn test_single_page_and_unknown_path() {
     assert!(body.contains("/i18n.json"), "单页应先拉取文案");
     assert!(body.contains("message.txt"), "单页应支持文本发送");
     assert!(
-        body.contains("data-text-action=\"select\"") && body.contains("data-text-action=\"copy\""),
-        "文本预览应提供全选与复制入口"
+        body.contains("data-text-action=\"copy\""),
+        "文本预览应提供复制入口"
     );
     assert!(
         body.contains("class=\"download-all-bar\""),

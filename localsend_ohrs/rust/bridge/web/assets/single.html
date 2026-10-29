@@ -554,22 +554,29 @@ button.status-retry {
   margin: 0 0 12px;
 }
 
-/* 全选与“下载所选”同排：勾选项靠左、主操作靠右，不再单独占用一行 */
+/* 全选与“下载所选”同排：全选为小胶囊，下载所选占满剩余宽度 */
 .download-all-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.select-all-row {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  margin-bottom: 0;
-  color: var(--harmony-font-secondary);
-  font-size: 13px;
+.select-all-pill {
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+}
+
+.select-all-pill[aria-pressed="true"] {
+  background: var(--harmony-comp-emphasize-secondary);
+  color: var(--harmony-brand);
+}
+
+.download-selected-pill {
+  flex: 1 1 auto;
+  height: 40px;
+  border-radius: var(--radius-control);
 }
 
 .file-select {
@@ -1259,11 +1266,10 @@ html[data-auth="open"] #gate {
             type="button"></button>
           <div id="download-all-wrap" class="download-all hidden">
             <div class="download-all-bar">
-              <label class="select-all-row">
-                <input id="select-all" type="checkbox">
-                <span id="select-all-label"></span>
-              </label>
-              <button class="btn btn--small btn--tonal" id="download-selected-btn" type="button"></button>
+              <button id="select-all-btn" class="btn btn--normal select-all-pill" type="button"
+                aria-pressed="false"></button>
+              <button class="btn btn--primary download-selected-pill" id="download-selected-btn"
+                type="button"></button>
             </div>
             <p class="hint-text" id="download-selected-tip"></p>
           </div>
@@ -1330,6 +1336,8 @@ html[data-auth="open"] #gate {
   var eventsWatchdogTimer = -1;
   var lastEventAt = 0;
   var lastRevision = -1;
+  // 当前服务实例的分享标识（服务重启后变化）：变化时丢弃旧 revision 基线
+  var lastShareId = '';
   // 页面展示的列表版本 / 服务端会话快照版本
   var listRevision = -1;
   var sessionRevision = -1;
@@ -1395,6 +1403,7 @@ html[data-auth="open"] #gate {
     downloadAll: '全部下载',
     downloadAllUnsupported: '当前浏览器不支持自动批量下载，请逐个点击下载。',
     selectAll: '全选',
+    deselectAll: '取消全选',
     downloadSelected: '下载所选（%d）',
     downloadZipHint: '多个文件将打包为一个 zip 压缩文件，下载完成后需解压使用。',
     listUpdated: '文件列表已更新。',
@@ -1533,6 +1542,11 @@ html[data-auth="open"] #gate {
 
   function showGate(errorKey) {
     setLocked(true);
+    // 授权失效通常意味着服务已重启：旧 token、旧列表与旧 revision 基线全部失效，
+    // 丢弃后由登录成功的 caps/prepare 重新建立，避免新服务下仍展示上次的文件列表。
+    resetDownloadList();
+    setDownloadToken('');
+    setUploadToken('');
     showGateError(errorKey);
     $('gate-input').value = '';
     setTimeout(function () {
@@ -1680,7 +1694,7 @@ html[data-auth="open"] #gate {
     $('text-input').setAttribute('aria-label', t('textPlaceholder'));
     $('tab-download-label').innerText = t('downloadTitle');
     $('tab-upload-label').innerText = t('uploadTitle');
-    $('select-all-label').innerText = t('selectAll');
+    $('select-all-btn').innerText = t('selectAll');
     $('download-selected-btn').innerText = t('downloadSelected').replace('%d', '0');
     $('download-selected-tip').innerText = '';
     // 访问码门禁
@@ -1858,8 +1872,7 @@ html[data-auth="open"] #gate {
     }
     var actions = document.querySelectorAll('#file-list .text-preview-action');
     for (var k = 0; k < actions.length; k++) {
-      var action = actions[k].getAttribute('data-text-action');
-      actions[k].innerText = action === 'select' ? t('selectAll') : t('copy');
+      actions[k].innerText = t('copy');
     }
     updateDownloadActions();
     var removes = document.querySelectorAll('#upload-progress .file-remove-btn');
@@ -1929,6 +1942,7 @@ html[data-auth="open"] #gate {
     sessionRevision = -1;
     listLoaded = false;
     listStale = false;
+    lastShareId = '';
     setDownloadStatus('');
     clearLoadingStatus();
   }
@@ -2297,18 +2311,28 @@ html[data-auth="open"] #gate {
       return undefined;
     }
     return response.json().then(function (data) {
+      var shareChanged = lastShareId.length > 0 && !!data.shareId && data.shareId !== lastShareId;
+      lastShareId = data.shareId || lastShareId;
       setDownloadToken(data.token);
       filesData = data.files || {};
       downloadLoadStarted = true;
       listRevision = data.revision;
       sessionRevision = data.revision;
-      // 快照版本至少到 data.revision；请求期间若还有新变化，保留 listStale 供补拉。
-      if (data.revision > lastRevision) {
+      if (shareChanged) {
+        // 新服务实例的 revision 从 0 重新计数，不能沿用旧基线判定「落后」。
         lastRevision = data.revision;
-      }
-      listStale = lastRevision > data.revision;
-      if (!listStale) {
+        listStale = false;
         listLoaded = true;
+        selectedDownloadFiles = {};
+      } else {
+        // 快照版本至少到 data.revision；请求期间若还有新变化，保留 listStale 供补拉。
+        if (data.revision > lastRevision) {
+          lastRevision = data.revision;
+        }
+        listStale = lastRevision > data.revision;
+        if (!listStale) {
+          listLoaded = true;
+        }
       }
       preparedBatchId = '';
       preparedSignature = '';
@@ -2356,14 +2380,14 @@ html[data-auth="open"] #gate {
     var keys = fileKeysSorted(filesData);
     var ids = selectedIds();
     $('download-all-wrap').classList.toggle('hidden', keys.length === 0);
-    $('select-all-label').innerText = t('selectAll');
+    var allSelected = keys.length > 0 && ids.length === keys.length;
+    var selectAllBtn = $('select-all-btn');
+    selectAllBtn.innerText = allSelected ? t('deselectAll') : t('selectAll');
+    selectAllBtn.setAttribute('aria-pressed', allSelected ? 'true' : 'false');
+    selectAllBtn.disabled = keys.length === 0;
     $('download-selected-btn').innerText = t('downloadSelected').replace('%d', String(ids.length));
     $('download-selected-tip').innerText = keys.length >= 2 ? t('downloadZipHint') : '';
     $('download-selected-btn').disabled = ids.length === 0;
-    var allBox = $('select-all');
-    allBox.checked = keys.length > 0 && ids.length === keys.length;
-    allBox.indeterminate = ids.length > 0 && ids.length < keys.length;
-    allBox.disabled = keys.length === 0;
   }
 
   /** 文本预览块：标题栏提供「全选 / 复制」，正文可聚焦后按 Ctrl/Cmd+A 只选中本块。 */
@@ -2372,8 +2396,6 @@ html[data-auth="open"] #gate {
       '<div class="text-preview-head">' +
       '<span class="text-preview-label">' + esc(t('textPreviewLabel')) + '</span>' +
       '<span class="text-preview-tools">' +
-      '<button type="button" class="text-preview-action" data-text-action="select" data-idx="' + idx + '">' +
-      esc(t('selectAll')) + '</button>' +
       '<button type="button" class="text-preview-action" data-text-action="copy" data-idx="' + idx + '">' +
       esc(t('copy')) + '</button>' +
       '</span>' +
@@ -2579,11 +2601,15 @@ html[data-auth="open"] #gate {
     });
   }
 
-  $('select-all').addEventListener('change', function () {
+  $('select-all-btn').addEventListener('click', function () {
     var keys = fileKeysSorted(filesData);
-    var checked = $('select-all').checked;
-    for (var i = 0; i < keys.length; i++) {
-      if (checked) { selectedDownloadFiles[keys[i]] = true; } else { delete selectedDownloadFiles[keys[i]]; }
+    var allSelected = keys.length > 0 && selectedIds().length === keys.length;
+    if (allSelected) {
+      selectedDownloadFiles = {};
+    } else {
+      for (var i = 0; i < keys.length; i++) {
+        selectedDownloadFiles[keys[i]] = true;
+      }
     }
     renderFileList(filesData, dlToken);
     onSelectionChanged();
@@ -2617,16 +2643,11 @@ html[data-auth="open"] #gate {
     });
   });
 
-  // 文本预览操作：全选 / 复制（事件委托，覆盖实时重绘后的新节点）。
+  // 文本预览复制（事件委托，覆盖实时重绘后的新节点）。
   $('file-list').addEventListener('click', function (e) {
-    var btn = e.target && e.target.closest ? e.target.closest('[data-text-action]') : null;
+    var btn = e.target && e.target.closest ? e.target.closest('[data-text-action="copy"]') : null;
     if (!btn) { return; }
-    var idx = btn.getAttribute('data-idx');
-    if (btn.getAttribute('data-text-action') === 'select') {
-      selectPreview(idx);
-    } else {
-      copyPreview(idx, btn);
-    }
+    copyPreview(btn.getAttribute('data-idx'), btn);
   });
 
   // 预览正文聚焦时 Ctrl/Cmd+A 只选中本块，不再选中整个网页文本。
@@ -2652,20 +2673,6 @@ html[data-auth="open"] #gate {
     range.selectNodeContents(el);
     selection.removeAllRanges();
     selection.addRange(range);
-  }
-
-  /** 全选某条预览正文：先聚焦，避免选择结果被焦点切换清掉。 */
-  function selectPreview(idx) {
-    var el = document.getElementById('preview-' + idx);
-    if (!el) {
-      return;
-    }
-    try {
-      el.focus({ preventScroll: true });
-    } catch (_e) {
-      el.focus();
-    }
-    selectNodeContents(el);
   }
 
   /** 复制文本：优先 Clipboard API（仅安全上下文），失败回退 execCommand。 */

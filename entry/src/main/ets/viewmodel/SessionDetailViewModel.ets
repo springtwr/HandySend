@@ -631,9 +631,8 @@ export class SessionDetailViewModel {
       if (this.historyEntry.textMessage === true) {
         return true;
       }
-      if (this.historyEntry.textMessage === false) {
-        return false;
-      }
+      // 兼容旧版本误写的 false：应用私有文本目录只存文本消息，按路径兜底识别；
+      // 普通 .txt 文件位于 Download 或用户选择器路径，不会命中该目录。
       let files = this.detailFiles();
       return files.length === 1 && isTextFile(files[0].fileType, files[0].fileName) &&
         this.isSandboxTextFile(files[0]);

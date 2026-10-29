@@ -51,6 +51,7 @@ pub struct WebPageI18n {
     pub download_all: String,
     pub download_all_unsupported: String,
     pub select_all: String,
+    pub deselect_all: String,
     pub download_selected: String,
     pub download_zip_hint: String,
     pub list_updated: String,
@@ -126,6 +127,7 @@ fn simplified() -> WebPageI18n {
         download_all: "全部下载".to_string(),
         download_all_unsupported: "当前浏览器不支持自动批量下载，请逐个点击下载。".to_string(),
         select_all: "全选".to_string(),
+        deselect_all: "取消全选".to_string(),
         download_selected: "下载所选（%d）".to_string(),
         download_zip_hint: "多个文件将打包为一个 zip 压缩文件，下载完成后需解压使用。".to_string(),
         list_updated: "文件列表已更新。".to_string(),
@@ -192,6 +194,7 @@ fn traditional() -> WebPageI18n {
         download_all: "全部下載".to_string(),
         download_all_unsupported: "目前瀏覽器不支援自動批次下載，請逐一點擊下載。".to_string(),
         select_all: "全選".to_string(),
+        deselect_all: "取消全選".to_string(),
         download_selected: "下載所選（%d）".to_string(),
         download_zip_hint: "多個檔案將打包為一個 zip 壓縮檔，下載完成後需解壓使用。".to_string(),
         list_updated: "檔案清單已更新。".to_string(),
@@ -259,6 +262,7 @@ fn english() -> WebPageI18n {
         download_all_unsupported:
             "Your browser does not support automatic batch download; download files one by one.".to_string(),
         select_all: "Select all".to_string(),
+        deselect_all: "Deselect all".to_string(),
         download_selected: "Download selected (%d)".to_string(),
         download_zip_hint: "Multiple files will be packed into one zip archive. Extract it after download.".to_string(),
         list_updated: "File list updated.".to_string(),
@@ -304,6 +308,7 @@ mod tests {
     fn test_i18n_serializes_camel_case_keys() {
         let json = serde_json::to_value(web_page_i18n("en")).unwrap();
         assert_eq!(json["downloadAll"], serde_json::json!("Download all"));
+        assert_eq!(json["deselectAll"], serde_json::json!("Deselect all"));
         assert_eq!(json["themeSystem"], serde_json::json!("Follow system"));
         assert_eq!(json["textPreviewLabel"], serde_json::json!("Preview"));
         assert_eq!(json["copy"], serde_json::json!("Copy"));
