@@ -306,6 +306,7 @@ export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
 // MtaRepository —— 应用级 MTA 运行时（发现扫描 / 接收服务 / 收发互斥 / 命令门面）
 export { startMtaDiscoveryScan,
   rescanMtaDiscovery,
+  isMtaManualRefreshInFlight,
   stopMtaDiscoveryScan,
   markMtaSendClicked,
   getMtaSendClickedMs,

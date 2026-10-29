@@ -265,7 +265,7 @@ export struct SendTargetZone {
           }
         })
 
-        if (this.viewModel.isScanning) {
+        if (this.viewModel.isScanning || this.viewModel.isRefreshing) {
           LoadingProgress()
             .width(24)
             .height(24)

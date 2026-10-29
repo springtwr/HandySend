@@ -35,6 +35,7 @@ import {
   isMtaConnectionWarnings,
   markMtaSendClicked,
   rescanMtaDiscovery,
+  isMtaManualRefreshInFlight,
   getLocalSendEnabled,
   getMtaEnabled,
   setWebSendAllowed,
@@ -82,6 +83,9 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送
 // 设备来源键（与 DeviceSourceRegistry 中注册的来源描述符 key 一一对应）
 const SOURCE_KEY_LOCAL_SEND: string = 'localsend';
 const SOURCE_KEY_MTA: string = 'mta';
+
+/** 统一刷新按钮的最短加载显示时间（毫秒）：避免两个来源瞬间完成导致按钮闪烁 */
+const REFRESH_MIN_DISPLAY_MS: number = 500;
 
 // ── 点击设备即发送的发起结果 ──
 
@@ -248,6 +252,12 @@ export class SendViewModel {
   @Trace public seenSourceKeys: Array<string> = []
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public isScanning: boolean = false
+  // 统一刷新按钮的加载态：覆盖 LocalSend 扫描与 MTA 手动刷新窗口
+  @Trace public isRefreshing: boolean = false
+  private isMtaRefreshing: boolean = false
+  private pendingRefresh: boolean = false
+  private refreshStartedMs: number = 0
+  private refreshSettleTimer: number = -1
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   private context: common.UIAbilityContext | undefined = undefined
@@ -446,6 +456,9 @@ export class SendViewModel {
     this.applyFavoriteAliases();
     // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
     this.updateSeenSourceKeys();
+    // 统一刷新状态：MTA 手动刷新窗口随仓储变更通知同步，两个来源都结束后恢复按钮
+    this.isMtaRefreshing = isMtaManualRefreshInFlight();
+    this.tryFinishRefresh();
   }
 
   /** 局域网设备项内容签名：覆盖列表展示与发起发送所需字段（不含 RSSI 等非展示字段） */
@@ -1049,6 +1062,59 @@ export class SendViewModel {
   /** 暂存内容总字节数（供发送前大文件提示判定；与展示文案同源）。 */
   getStagedTotalBytes(): number {
     return this.computeStagedTotalSize();
+  }
+
+  /**
+   * 统一刷新入口：并行触发 LocalSend 与 MTA 刷新，返回是否真正发起。
+   * 刷新中再次点击只合并为一次待补刷，保留 LocalSend 既有“扫描中排队一次”语义。
+   */
+  refreshAllDevices(): boolean {
+    if (this.isRefreshing) {
+      this.pendingRefresh = true;
+      return false;
+    }
+    this.isRefreshing = true;
+    this.refreshStartedMs = Date.now();
+    if (this.serverReady) {
+      rescanDevices();
+    }
+    rescanMtaDiscovery();
+    this.isScanning = isScanningStatus();
+    this.isMtaRefreshing = isMtaManualRefreshInFlight();
+    this.tryFinishRefresh();
+    return true;
+  }
+
+  /**
+   * 统一刷新完成判定：LocalSend 扫描与 MTA 手动刷新窗口都结束后，
+   * 且满足最短展示时间，才恢复按钮；有合并请求时补刷一次。
+   */
+  private tryFinishRefresh(): void {
+    if (!this.isRefreshing) {
+      return;
+    }
+    if (this.refreshSettleTimer >= 0) {
+      return;
+    }
+    let remaining: number = REFRESH_MIN_DISPLAY_MS - (Date.now() - this.refreshStartedMs);
+    if (remaining > 0) {
+      this.refreshSettleTimer = setTimeout((): void => {
+        this.refreshSettleTimer = -1;
+        this.tryFinishRefresh();
+      }, remaining);
+      return;
+    }
+    if (this.isScanning || this.isMtaRefreshing) {
+      return;
+    }
+    this.isRefreshing = false;
+    if (this.pendingRefresh) {
+      this.pendingRefresh = false;
+      // 先让本轮结束态完成一次渲染，再消费待补刷，避免按钮状态合并丢失
+      setTimeout((): void => {
+        this.refreshAllDevices();
+      }, 0);
+    }
   }
 
   // 触发一轮 LocalSend 发现扫描（MTA 扫描由调用方另行触发，避免重复发起）

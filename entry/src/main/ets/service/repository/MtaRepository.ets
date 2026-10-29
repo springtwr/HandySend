@@ -145,6 +145,9 @@ let lastScanStallRecoveryMs: number = 0;
 let scanRecoveryStreak: number = 0;
 // 最近一次用户主动刷新时刻：冷却期内忽略重复点击
 let lastManualRescanMs: number = 0;
+// 手动刷新结算窗口：为统一刷新按钮提供“MTA 刷新是否仍在进行”的完成信号
+let manualRefreshInFlight: boolean = false;
+let manualRefreshSettleTimer: number = -1;
 // 清空诊断节流状态：记录上次输出原因与时刻，并对同类事件计数抑制次数
 let clearDiagLastMs: number = 0;
 let clearDiagLastReason: MtaDeviceListClearReason = MtaDeviceListClearReason.UNKNOWN;
@@ -483,6 +486,25 @@ function settleRescanPrune(): void {
   }
 }
 
+/** 手动刷新结算窗口是否进行中：供发送页统一刷新按钮判断 MTA 侧是否完成。 */
+export function isMtaManualRefreshInFlight(): boolean {
+  return manualRefreshInFlight;
+}
+
+/** 开启手动刷新结算窗口：3 秒后结束并通知，供统一刷新按钮恢复。 */
+function beginManualRefreshWindow(): void {
+  manualRefreshInFlight = true;
+  if (manualRefreshSettleTimer >= 0) {
+    clearTimeout(manualRefreshSettleTimer);
+  }
+  manualRefreshSettleTimer = setTimeout((): void => {
+    manualRefreshSettleTimer = -1;
+    manualRefreshInFlight = false;
+    notifyChange();
+  }, MTA_RESCAN_SETTLE_MS);
+  notifyChange();
+}
+
 /** 用户主动刷新：重置失败冷却并重新收集；在线设备保留、离线设备经确认窗口即时剔除（无需等满 TTL） */
 export function rescanMtaDiscovery(): void {
   if (!getMtaEnabled()) {
@@ -502,6 +524,7 @@ export function rescanMtaDiscovery(): void {
     return;
   }
   lastManualRescanMs = now;
+  beginManualRefreshWindow();
   scanRetryBlockedUntil = 0;
   if (scanning) {
     let client = scanClient;

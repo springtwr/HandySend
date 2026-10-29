@@ -409,8 +409,8 @@ export struct SendContent {
 
   // 刷新旋转使用 springMotion
   refreshDevices(): void {
-    // 扫描中不累加旋转角度（刷新旋转由 LoadingProgress 呈现）
-    if (!this.viewModel.isScanning) {
+    // 扫描中/统一刷新中不累加旋转角度（由 LoadingProgress 或既有扫描反馈呈现）
+    if (!this.viewModel.isRefreshing && !this.viewModel.isScanning) {
       this.getUIContext()
         .animateTo({
           duration: 800,
@@ -419,12 +419,8 @@ export struct SendContent {
           this.viewModel.refreshAngle = this.viewModel.refreshAngle + 360;
         });
     }
-    // 点击始终触发刷新：扫描进行中会合并排队（最多补扫一次）
-    if (this.viewModel.serverReady) {
-      this.viewModel.rescanDevices();
-    }
-    // MTA 发现扫描与 LocalSend 发现同一触发时机（不依赖 LocalSend 服务器就绪）
-    this.viewModel.rescanMtaDevices();
+    // 统一刷新入口：刷新中重复点击由 ViewModel 合并为一次待补刷
+    this.viewModel.refreshAllDevices();
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
