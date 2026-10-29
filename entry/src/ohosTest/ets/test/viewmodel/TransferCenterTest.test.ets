@@ -58,7 +58,6 @@ import {
   sourceLabelForSession,
   SessionRowModel,
   sortSessionRows,
-  isSingleTextFileTask,
   TransferCenterGroups,
   TransferCenterViewModel,
   RowValidationResult,
@@ -930,17 +929,26 @@ export default function TransferCenterTest() {
       resetSessionDomain()
     })
 
-    it('fileCountText_singleTextFile_showsTextLabel_liveAndHistory', 0, () => {
+    it('fileCountText_singleTextFile_showsFileCount_textMessageShowsLabel', 0, () => {
       resetRegistry()
-      // 实时行：恰好一个文本类文件 → 文件数量位置显示「文本」标签
+      // 单文本文件但不是文本消息：按文件数量展示，不冒用「文本」标签
       let textFiles: Array<SessionFile> = [sessionFileOf('note.txt', 'text/plain')]
       let liveRow = liveSessionRow(createSession(inputWithFiles('txt-live', textFiles)))
-      expect(fileCountTextId(liveRow)).assertEqual($r('app.string.transfer_center_text_label').id)
-
-      // 历史行：同一会话转为历史条目后判定不变（实时行与历史行同口径）
+      expect(fileCountTextId(liveRow)).assertEqual($r('app.string.transfer_center_file_count', 1).id)
       let historyRow = historyEntryRow(
         historyEntryWithFiles('txt-hist', [historyFileOf('note.txt', 'text/plain')]))
-      expect(fileCountTextId(historyRow)).assertEqual($r('app.string.transfer_center_text_label').id)
+      expect(fileCountTextId(historyRow)).assertEqual($r('app.string.transfer_center_file_count', 1).id)
+
+      // 文本消息：实时行与历史行均使用「文本」标签
+      let messageInput = inputWithFiles('msg-live', textFiles)
+      messageInput.textMessage = true
+      let messageRow = liveSessionRow(createSession(messageInput))
+      expect(fileCountTextId(messageRow)).assertEqual($r('app.string.transfer_center_text_label').id)
+      let messageHistory = historyEntryWithFiles('msg-hist',
+        [historyFileOf('note.txt', 'text/plain')])
+      messageHistory.textMessage = true
+      expect(fileCountTextId(historyEntryRow(messageHistory)))
+        .assertEqual($r('app.string.transfer_center_text_label').id)
       resetRegistry()
     })
 
@@ -1021,7 +1029,7 @@ export default function TransferCenterTest() {
       }
       expect(matched).assertTrue()
 
-      // 单个文本类文件：沿用既有「文本」标签口径
+      // 单个文本类文件但不是文本消息：显示文件数量，不显示「文本」
       resetRegistry()
       let singleInput = input('mta-receive', 'mta-real-single')
       singleInput.dataFlow = SessionDataFlow.inbound
@@ -1035,20 +1043,10 @@ export default function TransferCenterTest() {
         path: '/d/note.txt'
       }])).assertTrue()
       expect(fileCountTextId(liveSessionRow(single)))
-        .assertEqual($r('app.string.transfer_center_text_label').id)
+        .assertEqual($r('app.string.transfer_center_file_count', 1).id)
 
       resetRegistry()
       resetSessionHistoryCache()
-    })
-
-    it('singleTextFilePredicate_reusesTextFileJudgement', 0, () => {
-      // 恰好一个文本类文件：MIME 命中或扩展名命中均判为真（判定唯一来源为统一文本类判定）
-      expect(isSingleTextFileTask(1, 'text/plain', 'payload')).assertTrue()
-      expect(isSingleTextFileTask(1, '', 'readme.md')).assertTrue()
-      // 多文件、单非文本、空清单均判为假
-      expect(isSingleTextFileTask(2, 'text/plain', 'a.txt')).assertFalse()
-      expect(isSingleTextFileTask(1, 'application/octet-stream', 'archive.bin')).assertFalse()
-      expect(isSingleTextFileTask(0, '', '')).assertFalse()
     })
 
     it('describeCenterRows_threeDistinctSessions_eachLineOwnContent', 0, () => {

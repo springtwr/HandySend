@@ -23,7 +23,7 @@ import {
   isTerminalStage,
   resolveSessionActions
 } from '../model/transfer/TransferSession';
-import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
+import { SessionHistoryEntry } from '../model/transfer/SessionHistory';
 import {
   cancel,
   clearHistory as clearSessionHistoryFromRegistry,
@@ -41,7 +41,6 @@ import { getSource } from '../service/transfer/DeviceSourceRegistry';
 import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
 import { isLargeTransfer } from '../utils/LargeTransferUtil';
-import { isTextFile } from '../utils/MimeUtils';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -169,21 +168,11 @@ function percentOfBytes(bytesSent: number, totalBytes: number): number {
 }
 
 /**
- * 任务条目「单文本类文件」判定（纯函数，无副作用）：
- * 恰好一个文件且该文件为文本类时返回真，其余情形（多文件、单非文本、空）返回假。
- * 文本类判定复用统一入口（MimeUtils.isTextFile），不在此处比对 MIME/扩展名。
+ * 行模型文件数量文案（纯函数，无副作用）：只有文本消息会话使用本地化「文本」标签，
+ * 普通文本类文件（如用户选择发送或接收的 .txt）仍按文件数量展示；实时行与历史行共用同一口径。
  */
-export function isSingleTextFileTask(fileCount: number, fileType: string, fileName: string): boolean {
-  return fileCount === 1 && isTextFile(fileType, fileName);
-}
-
-/**
- * 行模型文件数量文案（纯函数，无副作用）：命中「恰好一个文本类文件」时用本地化「文本」标签，
- * 其余情形保持既有文件数量文案；实时行与历史行共用同一口径。
- */
-function fileCountTextOf(fileCount: number, singleFileType: string,
-  singleFileName: string): ResourceStr {
-  if (isSingleTextFileTask(fileCount, singleFileType, singleFileName)) {
+function fileCountTextOf(fileCount: number, isTextMessage: boolean): ResourceStr {
+  if (isTextMessage) {
     return $r('app.string.transfer_center_text_label');
   }
   return $r('app.string.transfer_center_file_count', fileCount);
@@ -234,10 +223,9 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
   if (isText && descriptor !== undefined && descriptor.textPreview !== undefined) {
     preview = descriptor.textPreview;
   }
-  // 文件数量文案：恰好一个文本类文件时用「文本」标签，否则用文件数量（与历史行同口径）
+  // 文件数量文案：文本消息用「文本」标签；普通文本类文件仍按文件数量展示（与历史行同口径）
   let liveFiles: Array<SessionFile> = session.files;
-  let onlyFileType: string = liveFiles.length === 1 ? liveFiles[0].fileType : '';
-  let onlyFileName: string = liveFiles.length === 1 ? liveFiles[0].fileName : '';
+  let isTextMessage: boolean = session.textMessage || isText;
   return {
     key: session.id,
     sessionId: session.id,
@@ -246,7 +234,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     directionLabel: directionLabelFor(session.dataFlow),
     dataFlow: session.dataFlow,
     sourceLabel: sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? ''),
-    fileCountText: fileCountTextOf(liveFiles.length, onlyFileType, onlyFileName),
+    fileCountText: fileCountTextOf(liveFiles.length, isTextMessage),
     timestamp: ts,
     session: session,
     isTextSession: isText,
@@ -257,10 +245,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
 /** 由持久化历史条目构建行模型（无实时对象，保留终态快照）。 */
 export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
   let ts: number = sessionTimestamp(entry.startedAt, entry.finishedAt);
-  // 文件数量文案与实时行同口径：历史逐文件清单恰好一个文本类文件时用「文本」标签
-  let historyFiles: Array<SessionHistoryFileEntry> = entry.files;
-  let onlyFileType: string = historyFiles.length === 1 ? historyFiles[0].fileType : '';
-  let onlyFileName: string = historyFiles.length === 1 ? historyFiles[0].fileName : '';
+  // 文件数量文案与实时行同口径：历史条目的文本消息标记决定是否使用「文本」标签
   return {
     key: entry.sessionId,
     sessionId: entry.sessionId,
@@ -269,7 +254,7 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     directionLabel: directionLabelFor(entry.dataFlow),
     dataFlow: entry.dataFlow,
     sourceLabel: sourceLabelForSession(entry.protocolKey, entry.peerDeviceType),
-    fileCountText: fileCountTextOf(entry.fileCount, onlyFileType, onlyFileName),
+    fileCountText: fileCountTextOf(entry.fileCount, entry.textMessage === true),
     timestamp: ts,
     historyStage: stageForOutcome(entry.outcome),
     isTextSession: false,

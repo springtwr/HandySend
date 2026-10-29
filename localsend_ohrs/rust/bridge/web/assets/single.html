@@ -368,6 +368,12 @@ body {
   display: none;
 }
 
+/* 下载分段内通知（列表已更新/错误）与后续操作区留出间距：
+   该容器不是 flex，通知与全选/下载按钮之间不会自动产生 gap */
+#download-status:not(:empty) {
+  margin-bottom: 12px;
+}
+
 /* 访问已结束：保留列表用于回看，但禁用下载入口 */
 .file-list.is-ended .btn--small {
   opacity: 0.4;

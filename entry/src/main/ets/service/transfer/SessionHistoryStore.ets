@@ -45,6 +45,7 @@ import {
 } from '../../model/HistorySegments';
 import { removeSendTextFiles, sendTextDir } from '../repository/SendRepository';
 import { recvTextDir } from '../repository/ReceiveTargets';
+import { isTextFile } from '../../utils/MimeUtils';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任务历史');
 
@@ -153,6 +154,35 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
 }
 
 /**
+ * 修复历史条目的文本消息标记（读取时自愈）：
+ * 收发文本消息统一落在应用私有文本目录，普通文本文件位于 Download 或用户选择器路径；
+ * 单文件、文本类且路径命中私有文本目录的条目必为文本消息，据此纠正旧版本误写的 false/缺省。
+ * 返回修复条数。
+ */
+export function repairHistoryTextMessageFlags(entries: Array<SessionHistoryEntry>,
+  sendDir: string, recvDir: string): number {
+  let repaired: number = 0;
+  for (let i = 0; i < entries.length; i++) {
+    let entry: SessionHistoryEntry = entries[i];
+    if (entry.textMessage === true || entry.files.length !== 1) {
+      continue;
+    }
+    let file: SessionHistoryFileEntry = entry.files[0];
+    if (file.path === undefined || file.path.length === 0 ||
+      !isTextFile(file.fileType, file.fileName)) {
+      continue;
+    }
+    let inSendDir: boolean = sendDir.length > 0 && file.path.startsWith(sendDir);
+    let inRecvDir: boolean = recvDir.length > 0 && file.path.startsWith(recvDir);
+    if (inSendDir || inRecvDir) {
+      entry.textMessage = true;
+      repaired++;
+    }
+  }
+  return repaired;
+}
+
+/**
  * 基于应用偏好存储的任务历史实现（本期默认后端）。
  *
  * 持有**内存权威列表**：首次访问时从偏好存储加载一次并缓存；此后读取直接命中内存，
@@ -208,12 +238,13 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
 
   private readFromPreferences(): Array<SessionHistoryEntry> {
     let entries: Array<SessionHistoryEntry> = this.readAllSegments();
-    // 读取即自愈：去重 + 聚合字段以逐文件清单为准重建，一次性清理既有脏数据
+    // 读取即自愈：修复旧版本丢失的文本消息标记，再做去重与聚合字段重建
+    let repaired: number = repairHistoryTextMessageFlags(entries, sendTextDir(), recvTextDir());
     let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(entries);
-    // 仅在清洗确有改动时回写：健康数据此前每次冷启动都要全量序列化并覆写一遍，
+    // 仅在清洗或修复确有改动时回写：健康数据此前每次冷启动都要全量序列化并覆写一遍，
     // 属纯浪费。判定按引用与顺序比对——sanitizeHistory 未改动的条目保持原对象引用，
     // 被剔除或重建聚合字段的条目才会导致不等。
-    if (!isSameEntries(entries, sanitized)) {
+    if (repaired > 0 || !isSameEntries(entries, sanitized)) {
       // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
       this.writeDirtySegments(sanitized);
       this.lastPersisted = sanitized.slice();

@@ -5,6 +5,7 @@ import {
   getSessionHistory,
   isSameEntries,
   removeSessionHistoryByIds,
+  repairHistoryTextMessageFlags,
   resetSessionHistoryCache
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
@@ -666,6 +667,25 @@ export default function SessionHistoryStoreTest() {
         }
       }
       resetRegistry()
+    })
+
+    it('repairHistoryTextMessageFlags_usesPrivateTextDirs', 0, () => {
+      // 私有文本目录内的单文本类文件 = 文本消息；Download 内的 .txt 仍是普通文件
+      let sendDir: string = '/app/files/text_send/'
+      let recvDir: string = '/app/files/text_recv/'
+      let message = entryWithPaths('repair-msg', 10, ['/app/files/text_recv/message.txt'])
+      message.files[0].fileName = 'message.txt'
+      let textFile = entryWithPaths('repair-file', 11, ['/storage/Download/note.txt'])
+      textFile.files[0].fileName = 'note.txt'
+      let image = entryWithPaths('repair-image', 12, ['/app/files/text_recv/photo.png'])
+      image.files[0].fileName = 'photo.png'
+      image.files[0].fileType = 'image/png'
+      let entries: Array<SessionHistoryEntry> = [message, textFile, image]
+      let repaired: number = repairHistoryTextMessageFlags(entries, sendDir, recvDir)
+      expect(repaired).assertEqual(1)
+      expect(message.textMessage).assertTrue()
+      expect(textFile.textMessage === true).assertFalse()
+      expect(image.textMessage === true).assertFalse()
     })
 
     it('build_entry_assemblesV2Fields', 0, () => {

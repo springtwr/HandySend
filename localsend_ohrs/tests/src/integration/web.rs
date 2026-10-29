@@ -456,6 +456,10 @@ async fn test_single_page_and_unknown_path() {
         "全选应与下载所选同排"
     );
     assert!(
+        body.contains("#download-status:not(:empty)"),
+        "下载通知与操作区之间应保留间距"
+    );
+    assert!(
         body.contains("syncCapsPolling") && body.contains("checkEventsHealth"),
         "单页应具备 SSE 断线重建与兜底轮询"
     );
