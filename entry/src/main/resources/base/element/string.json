@@ -329,10 +329,6 @@
       "value": "Automatically leave the transfer page when the transfer completes"
     },
     {
-      "name": "save_to_history_label",
-      "value": "Save to history"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "Save to gallery"
     },
@@ -434,7 +430,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "Receive History"
+      "value": "File Receive History"
     },
     {
       "name": "receive_history_empty",
@@ -691,10 +687,6 @@
     {
       "name": "link_share_button",
       "value": "Receive via web"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "History"
     },
     {
       "name": "receive_details_title",
@@ -1618,7 +1610,7 @@
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "File history"
+      "value": "File receive history"
     },
     {
       "name": "session_detail_title",

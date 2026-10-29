@@ -329,10 +329,6 @@
       "value": "文件传输完成后自动退出传输页面"
     },
     {
-      "name": "save_to_history_label",
-      "value": "保存到历史"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "保存到相册"
     },
@@ -434,7 +430,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "接收历史"
+      "value": "文件接收历史"
     },
     {
       "name": "receive_history_empty",
@@ -691,10 +687,6 @@
     {
       "name": "link_share_button",
       "value": "用网页接收"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "历史"
     },
     {
       "name": "receive_details_title",
@@ -1618,7 +1610,7 @@
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "文件历史"
+      "value": "文件接收历史"
     },
     {
       "name": "session_detail_title",
