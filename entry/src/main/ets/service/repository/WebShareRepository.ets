@@ -447,7 +447,8 @@ export async function restartWebService(): Promise<void> {
         fileType: profile.fileType,
         size: profile.size,
         preview: profile.preview,
-        hash: profile.sha256
+        hash: profile.sha256,
+        lastModified: profile.lastModified
       });
     }
     // 设置已变化：必须重建服务，不能走就地换表
@@ -769,7 +770,8 @@ function buildWebFilesJsonFor(files: Array<SendFileItem>, handles: Array<fs.File
       filePath: f.filePath,
       fd: i < handles.length ? handles[i].fd : -1,
       preview: f.preview !== undefined ? f.preview : '',
-      sha256: f.hash !== undefined ? f.hash : ''
+      sha256: f.hash !== undefined ? f.hash : '',
+      lastModified: f.lastModified
     });
   }
   return JSON.stringify(entries);

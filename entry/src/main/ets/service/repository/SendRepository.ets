@@ -614,11 +614,15 @@ export async function prepareSendFiles(
       // 净化文件名，确保其符合当前平台规范
       rawName = nativeSanitizeFileName(rawName);
       // filePath 直接承载源定位（picker URI 或沙箱路径），不复制文件到沙箱；
-      // 发送时由 sendToDevice 打开 fd 直读源文件；此处仅 open+stat 取真实大小后立即关闭
+      // 发送时由 sendToDevice 打开 fd 直读源文件；此处仅 open+stat 取真实大小/修改时间后立即关闭
       let file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       let size: number;
+      let lastModified: number;
       try {
-        size = fs.statSync(file.fd).size;
+        let stat = fs.statSync(file.fd);
+        size = stat.size;
+        // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
+        lastModified = Math.floor(stat.mtime * 1000);
       } finally {
         fs.closeSync(file);
       }
@@ -640,7 +644,8 @@ export async function prepareSendFiles(
         fileName: rawName,
         fileType: mimeGetMimeForFileName(rawName),
         size: size,
-        preview: preview
+        preview: preview,
+        lastModified: lastModified
       });
     } catch (e) {
       logger.warn('准备文件失败：' + e);
