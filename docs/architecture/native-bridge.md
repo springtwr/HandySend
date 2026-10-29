@@ -230,11 +230,12 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
   浏览器下载管理器因此能显示百分比；条目时间取源文件本地时间，单个文件 ≥4GB 使用 `large_file`。
 - 批次事件 `WebDownloadStarted` / `WebDownloadProgress` / `WebDownloadFileDone` / `WebDownloadEnded`
   （`batchId` 为任务主键）；任务取消调用 `cancel_web_download`，响应在下个读块停止。
-- 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 接收
-  `{revision, added, removed, changed}`：只新增自动追加；删除/修改失效并要求刷新；混合/跳号统一刷新。
-  15 秒低频 `/caps` 轮询兜底。
+- 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 感知变化并
+  静默重拉完整文件表，短暂提示「文件列表已更新」；15 秒低频 `/caps` 轮询兜底。
 - 网页访问只在新建 token 时发 `WebAccess`（IP/UA/文件数），应用只记日志并续期有界保活；
-  下载不再有页面心跳、leave、下载 session-end。`stop_web_service` 幂等停止。
+  下载不再有页面心跳、leave、下载 session-end。停止分享先 `mark_web_service_stopped`
+  标记 stopped 并广播，保留服务约 30 秒供页面收尾/刷新，再由 `stop_web_service` 关闭监听。
+- 服务硬停止/重启会关闭已有 TCP/SSE 连接，避免浏览器复用旧 keep-alive 连接读到停止态。
 
 ### 上传（浏览器 → 本机）
 
@@ -280,13 +281,14 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 - 按 `/caps` 条件渲染下载/发送页签；下载走浏览器下载管理器（大文件无内存压力），
   文本类文件无预览字段时用 Range 取前 128KB 内联预览
+  - 预览允许读取建会话后新增的当前文件表条目；真实下载仍按会话快照隔离
 - 下载/上传 token 分键存于 `sessionStorage`；下载刷新时直接 prepare 复用或重建会话，不再心跳；
   上传顺序直传（XHR 看进度），
   文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
   混合内容时文本作为 `message.txt` 随文件发送（文本文件）
 - 页头可切换主题（跟随系统/浅色/深色）与语言（简体/繁体/英文），偏好存于浏览器 `localStorage`
 - 下载页支持多选 + zip 批次：单文件直接下载，多文件由服务端统一 zip；浏览器用精确 `Content-Length` 显示进度；
-  文件列表经 SSE `{revision, added, removed, changed}` 感知：只新增自动追加，删除/修改失效并要求刷新
+  文件列表经 SSE `/web/events` 感知变化后静默重拉完整文件表，实时更新并短暂提示「文件列表已更新」
 - 访问码页（服务端按 Cookie 注入 `data-auth`，裸地址进入时展示）、错误码映射（401/403/404/410/413；上传另有 408/409）、
   上传全部完成后 `sendBeacon` 上报完成回执
 
