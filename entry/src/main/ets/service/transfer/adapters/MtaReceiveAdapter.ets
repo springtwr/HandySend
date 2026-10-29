@@ -292,6 +292,18 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     return;
   }
 
+  // 服务已复位/停止：该请求已不可能被接受，待确认会话按已取消收口。
+  // 服务决策超时（30s）早于适配器兜底（60s），不能等兜底定时器；否则期间确认会落在无请求的服务上。
+  if (stage === ReceiverStage.SERVICE_RUNNING || stage === ReceiverStage.IDLE) {
+    let session = getSession(activeUnifiedId);
+    if (session !== undefined && session.stage === SessionStage.awaitingConfirmation) {
+      cancelPendingTimeout();
+      finish(activeUnifiedId, SessionStage.cancelled, '接收请求已失效', 'request_lost');
+      activeUnifiedId = undefined;
+    }
+    return;
+  }
+
   // 建链/下载/落盘：进行中 + 阶段文案 + 字节进度
   if (isMtaReceivingStage(stage)) {
     // 防御性推进：已进入接收阶段说明对端已开始传输，会话不应停留在待确认

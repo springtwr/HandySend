@@ -1503,6 +1503,24 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaReceive_serviceReset_finishesPending', 0, () => {
+      resetRegistry()
+      handleMtaReceiveState(textReceiveState('MtaSender', '等待确认'))
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      // 服务决策超时/停止后回到 SERVICE_RUNNING：待确认会话已不可能被接受，应立即按已取消收口
+      let resetState = new ReceiverState()
+      resetState.stage = ReceiverStage.SERVICE_RUNNING
+      handleMtaReceiveState(resetState)
+      let done = getSession(found.id)
+      expect(done !== undefined ? done.stage : SessionStage.active).assertEqual(SessionStage.cancelled)
+      resetRegistry()
+    })
+
     it('mtaReceive_thumbnailFastPath_createdWithPreview', 0, () => {
       resetRegistry()
       // 快路径：预取在预算内完成，待确认状态创建时即携带非空缩略图路径，
