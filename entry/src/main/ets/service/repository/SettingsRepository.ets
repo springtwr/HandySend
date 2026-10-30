@@ -154,12 +154,8 @@ export function loadFromPreferences(): void {
   mtaEnabled = preferencesRepo.getBoolean(KEY_MTA_ENABLED, DEFAULT_MTA_ENABLED);
   webSendAllowed = preferencesRepo.getBoolean(KEY_WEB_SEND_ENABLED, DEFAULT_WEB_SEND_ENABLED);
   webReceiveAllowed = preferencesRepo.getBoolean(KEY_WEB_RECEIVE_ENABLED, DEFAULT_WEB_RECEIVE_ENABLED);
-  // 网页独立安全项：键不存在时从 LocalSend 当前值迁移一次，之后互不影响
+  // 网页独立安全项：与 LocalSend 互不影响，加密传输默认关闭
   webHttpsEnabled = preferencesRepo.getBoolean(KEY_WEB_HTTPS_ENABLED, DEFAULT_WEB_HTTPS_ENABLED);
-  if (!preferencesRepo.has(KEY_WEB_HTTPS_ENABLED)) {
-    webHttpsEnabled = httpsEnabled;
-    preferencesRepo.setBoolean(KEY_WEB_HTTPS_ENABLED, webHttpsEnabled);
-  }
   webPort = preferencesRepo.getNumber(KEY_WEB_PORT, DEFAULT_WEB_PORT);
   if (webPort < WEB_PORT_MIN || webPort > WEB_PORT_MAX) {
     webPort = DEFAULT_WEB_PORT;

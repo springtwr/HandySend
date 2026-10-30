@@ -1,4 +1,4 @@
-// WebSettingsTest：网页独立设置项（加密/端口/接口白黑名单）的默认值、读写与一次性迁移
+// WebSettingsTest：网页独立设置项（加密/端口/接口白黑名单）的默认值、读写与独立性
 // 用例采用「记录-恢复」模式：结束后还原宿主应用的持久化设置，避免污染。
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
@@ -16,13 +16,14 @@ import {
 import {
   DEFAULT_WEB_HTTPS_ENABLED,
   DEFAULT_WEB_LAST_PORT,
-  DEFAULT_WEB_PORT
+  DEFAULT_WEB_PORT,
+  DEFAULT_WEB_RECEIVE_ENABLED,
+  DEFAULT_WEB_SEND_ENABLED
 } from '../../../../main/ets/model/SettingsDefaults'
 import {
   initAllPreferences,
   preferencesUtil,
   KEY_ENCRYPTED_TRANSFER,
-  KEY_RECEIVE_PIN,
   KEY_WEB_HTTPS_ENABLED
 } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
@@ -38,8 +39,11 @@ export default function WebSettingsTest() {
     })
 
     it('defaults_are_off_and_53310', 0, () => {
+      expect(DEFAULT_WEB_SEND_ENABLED).assertFalse()
+      expect(DEFAULT_WEB_RECEIVE_ENABLED).assertFalse()
       expect(DEFAULT_WEB_HTTPS_ENABLED).assertFalse()
       expect(DEFAULT_WEB_PORT).assertEqual(53310)
+      expect(DEFAULT_WEB_LAST_PORT).assertEqual(0)
     })
 
     it('web_settings_write_read_and_reload', 0, () => {
@@ -82,26 +86,17 @@ export default function WebSettingsTest() {
       }
     })
 
-    it('migrates_https_from_localsend_once_when_keys_absent', 0, () => {
+    it('web_https_defaults_off_when_key_absent_and_localsend_encrypts', 0, () => {
       let origHttps: boolean = getWebHttpsEnabled()
       let origLocalHttps: boolean = preferencesUtil.getBoolean(KEY_ENCRYPTED_TRANSFER, false)
-      let origLocalPin: string = preferencesUtil.getString(KEY_RECEIVE_PIN, '')
       try {
-        // 模拟升级前：网页加密键不存在，LocalSend 已有加密与 PIN
+        // 网页加密键不存在时按网页默认关闭，不跟随 LocalSend 的加密状态
         preferencesUtil.delete(KEY_WEB_HTTPS_ENABLED)
         preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, true)
-        preferencesUtil.setString(KEY_RECEIVE_PIN, '9999')
         loadFromPreferences()
-        expect(getWebHttpsEnabled()).assertTrue()
-
-        // 之后修改 LocalSend 值不应再影响网页
-        preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, false)
-        preferencesUtil.setString(KEY_RECEIVE_PIN, '1111')
-        loadFromPreferences()
-        expect(getWebHttpsEnabled()).assertTrue()
+        expect(getWebHttpsEnabled()).assertFalse()
       } finally {
         preferencesUtil.setBoolean(KEY_ENCRYPTED_TRANSFER, origLocalHttps)
-        preferencesUtil.setString(KEY_RECEIVE_PIN, origLocalPin)
         setWebHttpsEnabled(origHttps)
         loadFromPreferences()
       }

@@ -68,7 +68,7 @@ export const DEFAULT_WEB_SEND_ENABLED: boolean = false;
 
 export const DEFAULT_WEB_RECEIVE_ENABLED: boolean = false;
 
-// 网页独立安全项：新装默认关闭/空；升级时由 SettingsRepository 一次性迁移
+// 网页独立安全项：新装默认关闭/空，与 LocalSend 互不影响
 export const DEFAULT_WEB_HTTPS_ENABLED: boolean = false;
 
 
