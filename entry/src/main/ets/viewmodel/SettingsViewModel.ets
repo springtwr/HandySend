@@ -2,7 +2,6 @@ import {
   setHttpsEnabled,
   refreshDeviceInfo,
   setReceivePin,
-  setAutoFinish,
   setSaveToGallery,
   setDestination,
   setCustomAlias,
@@ -28,7 +27,6 @@ import {
   stopServer,
   getAutoConfirmMode,
   getReceivePin,
-  isAutoFinish,
   isSaveToGallery,
   setBackgroundReceiveEnabled,
   isBackgroundReceiveEnabled,
@@ -108,7 +106,6 @@ import {
   DEFAULT_ENCRYPTED_TRANSFER,
   DEFAULT_AUTO_CONFIRM_MODE,
   DEFAULT_RECEIVE_PIN,
-  DEFAULT_AUTO_FINISH,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_BACKGROUND_RECEIVE,
   DEFAULT_DESTINATION,
@@ -179,7 +176,6 @@ export class SettingsViewModel {
   @Trace public encryptedTransfer: boolean = DEFAULT_ENCRYPTED_TRANSFER
   @Trace public autoConfirmMode: string = DEFAULT_AUTO_CONFIRM_MODE as string
   @Trace public receivePin: string = DEFAULT_RECEIVE_PIN
-  @Trace public autoFinish: boolean = DEFAULT_AUTO_FINISH
   @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
   @Trace public backgroundReceive: boolean = DEFAULT_BACKGROUND_RECEIVE
   @Trace public localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED
@@ -240,7 +236,6 @@ export class SettingsViewModel {
     this.encryptedTransfer = getEncryptedTransfer();
     this.autoConfirmMode = getAutoConfirmMode() as string;
     this.receivePin = getReceivePin();
-    this.autoFinish = isAutoFinish();
     this.saveToGallery = isSaveToGallery();
     this.backgroundReceive = isBackgroundReceiveEnabled();
     this.localSendEnabled = getLocalSendEnabled();
@@ -336,11 +331,6 @@ export class SettingsViewModel {
   setReceivePinValue(pin: string): void {
     this.receivePin = pin;
     setReceivePin(pin);
-  }
-
-  setAutoFinishEnabled(on: boolean): void {
-    this.autoFinish = on;
-    setAutoFinish(on);
   }
 
   setGallerySaveEnabled(on: boolean): void {
@@ -730,8 +720,6 @@ export class SettingsViewModel {
     setAutoConfirmMode(DEFAULT_AUTO_CONFIRM_MODE);
     this.receivePin = DEFAULT_RECEIVE_PIN;
     setReceivePin(DEFAULT_RECEIVE_PIN);
-    this.autoFinish = DEFAULT_AUTO_FINISH;
-    setAutoFinish(DEFAULT_AUTO_FINISH);
     this.saveToGallery = DEFAULT_SAVE_TO_GALLERY;
     setSaveToGallery(DEFAULT_SAVE_TO_GALLERY);
     this.backgroundReceive = DEFAULT_BACKGROUND_RECEIVE;

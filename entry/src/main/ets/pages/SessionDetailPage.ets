@@ -47,9 +47,6 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话详情');
 
-// 自动完成（自动返回）延迟：会话进入终态后约 2s 返回（与旧传输页一致）
-const AUTO_FINISH_DELAY_MS: number = 2000;
-
 // 悬浮底部操作区的滚动预留高度（按钮 + 上下内边距 + 与末条的间距）：
 // 操作区悬浮于内容之上，内容需预留该高度以保证末张卡片可完整滚出操作区之上
 const ACTION_AREA_CLEARANCE: number = 96;
@@ -64,8 +61,6 @@ export struct SessionDetailPage {
   // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
   private scroller: Scroller = new Scroller()
   private context: common.UIAbilityContext | undefined = undefined
-  private autoFinishTimer: number = -1
-  private autoFinishDone: boolean = false
   // 多文件时的「点击预览」弹窗：预读到的文本内容、不可用标记与截断标记
   @Local filePreviewText: string = ''
   @Local filePreviewUnavailable: boolean = false
@@ -82,42 +77,6 @@ export struct SessionDetailPage {
 
   aboutToDisappear(): void {
     this.viewModel.unload();
-    this.clearAutoFinishTimer();
-  }
-
-  private clearAutoFinishTimer(): void {
-    if (this.autoFinishTimer >= 0) {
-      clearTimeout(this.autoFinishTimer);
-      this.autoFinishTimer = -1;
-    }
-  }
-
-  /** 请求自动返回：已返回过则忽略。 */
-  private requestAutoFinish(): void {
-    if (this.autoFinishDone) {
-      return;
-    }
-    this.clearAutoFinishTimer();
-    this.autoFinishTimer = setTimeout(() => {
-      this.autoFinishTimer = -1;
-      if (this.autoFinishDone) {
-        return;
-      }
-      this.autoFinishDone = true;
-      logger.debug('自动完成：退出详情页');
-      this.goBack();
-    }, AUTO_FINISH_DELAY_MS);
-  }
-
-  /** 会话进入终态且「自动完成」开启时自动返回（文本消息阅读时不返回）。 */
-  @Monitor('viewModel.autoFinishRequested')
-  onAutoFinishRequested(): void {
-    if (!this.viewModel.autoFinishRequested) {
-      return;
-    }
-    // 消费信号，避免重复触发
-    this.viewModel.autoFinishRequested = false;
-    this.requestAutoFinish();
   }
 
   // ── 多文件条目操作菜单的三项执行与提示 ──
@@ -503,11 +462,6 @@ export struct SessionDetailPage {
         }
       }
     });
-  }
-
-  /** 终态返回：仅退出详情页，不改变会话状态（返回不取消会话）。 */
-  private goBack(): void {
-    this.pathStack.pop();
   }
 
   /** 打开文本消息内容中的链接（仅内容为 URL 时可达）。 */

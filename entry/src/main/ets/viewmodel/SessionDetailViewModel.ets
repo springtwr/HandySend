@@ -36,7 +36,6 @@ import {
   getAdapter,
   isTextSessionDescriptor
 } from '../service/transfer/adapters/SessionAdapter';
-import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与任务列表同源（同一套纯函数，避免两处口径分叉）
 import { directionLabelFor, sourceLabelForSession, stageForOutcome } from './TransferCenterViewModel';
 import { isTextFile } from '../utils/MimeUtils';
@@ -341,23 +340,16 @@ export class SessionDetailViewModel {
   // 实时速度（B/s，0 表示不可用）与预计剩余秒数（-1 表示不可用）
   @Trace public speed: number = 0
   @Trace public etaSeconds: number = -1
-  // 自动完成信号：本次加载的会话进入终态且「自动完成」开启时置位，页面消费后置空
-  @Trace public autoFinishRequested: boolean = false
   private sessionId: string = ''
   private subscribed: boolean = false
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
   private lastSyncMs: number = 0
-  // 是否观察到过进行中阶段：仅在「进行中 → 终态」的跃迁上触发自动完成，
-  // 直接打开一个已终结会话（终态可见窗口内/历史摘要）不触发，避免刚进入即被自动返回
-  private autoFinishArmed: boolean = false
   private changeCallback: () => void = (): void => {
   }
 
   /** 载入会话并订阅注册表变化。 */
   load(sessionId: string): void {
     this.sessionId = sessionId;
-    this.autoFinishArmed = false;
-    this.autoFinishRequested = false;
     // 载入新会话时复位「实时会话已释放」标记
     this.liveReleased = false;
     // 切换会话时复位速度采样与展示，避免残留前一会话的速度/剩余时间
@@ -423,7 +415,7 @@ export class SessionDetailViewModel {
     return this.session !== undefined ? this.timeline : this.historyTimeline;
   }
 
-  /** 从注册表重新读取会话/文件/时间线/描述符，并同步速度显示与自动完成信号。 */
+  /** 从注册表重新读取会话/文件/时间线/描述符，并同步速度显示。 */
   refresh(): void {
     let session = getSession(this.sessionId);
     if (session === undefined) {
@@ -457,7 +449,6 @@ export class SessionDetailViewModel {
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
     this.sourceLabel = sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? '');
     this.syncSpeed(session);
-    this.applyAutoFinish(session);
     this.refreshPreviewContent();
   }
 
@@ -505,25 +496,6 @@ export class SessionDetailViewModel {
     this.etaSeconds = -1;
     // 历史态预览按逐文件路径读取（与实时态同规则）
     this.refreshPreviewContent();
-  }
-
-  /**
-   * 自动完成信号：会话在本次浏览期间由非终态进入终态且「自动完成」开启时置位；
-   * 文本消息阅读场景（需用户阅读/复制内容）不自动返回。
-   */
-  private applyAutoFinish(session: TransferSession): void {
-    if (!isTerminalStage(session.stage)) {
-      this.autoFinishArmed = true;
-      return;
-    }
-    if (!this.autoFinishArmed) {
-      return;
-    }
-    this.autoFinishArmed = false;
-    if (!isAutoFinish() || this.isTextMessageSession()) {
-      return;
-    }
-    this.autoFinishRequested = true;
   }
 
   /** 历史条目的统一状态（供详情状态徽标复用同一套文案/配色）。 */

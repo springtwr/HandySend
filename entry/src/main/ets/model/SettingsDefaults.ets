@@ -15,9 +15,6 @@ export const DEFAULT_AUTO_CONFIRM_MODE: AutoConfirmMode = AutoConfirmMode.off;
 
 export const DEFAULT_RECEIVE_PIN: string = '';
 
-export const DEFAULT_AUTO_FINISH: boolean = true;
-
-
 export const DEFAULT_SAVE_TO_GALLERY: boolean = false;
 
 export const DEFAULT_DESTINATION: string = '';

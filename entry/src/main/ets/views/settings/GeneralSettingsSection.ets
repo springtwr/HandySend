@@ -3,7 +3,7 @@ import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 import { getSystemDeviceName } from '../../utils/AliasGenerator';
 import { CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
 
-// 通用（接收与发送）分区：设备名称 / 自动完成 / 保存到相册 / 自动清空选中文件 / 通知与「设备发现和连接」权限。
+// 通用（接收与发送）分区：设备名称 / 允许后台接收 / 保存到相册 / 自动清空选中文件 / 通知与「设备发现和连接」权限。
 // 本分区是设置页首张卡片，不渲染分组标题，卡片内容直接作为内容区首元素。
 @ComponentV2
 export struct GeneralSettingsSection {
@@ -185,30 +185,6 @@ export struct GeneralSettingsSection {
       .alignItems(VerticalAlign.Center)
 
       Text($r('app.string.background_receive_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .alignSelf(ItemAlign.Start)
-        .margin({ bottom: DesignTokens.space.tiny })
-
-      // 自动完成
-      Row() {
-        Text($r('app.string.auto_finish_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.autoFinish })
-          .onChange((isOn: boolean) => {
-            this.viewModel.setAutoFinishEnabled(isOn);
-          })
-          .id('settings_auto_finish_toggle')
-      }
-      .width('100%')
-      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-      .alignItems(VerticalAlign.Center)
-
-      Text($r('app.string.auto_finish_desc'))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_secondary'))
         .alignSelf(ItemAlign.Start)

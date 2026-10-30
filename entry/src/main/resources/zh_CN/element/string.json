@@ -321,14 +321,6 @@
       "value": "向你发送文件时要求对方输入 PIN 码，留空则禁用"
     },
     {
-      "name": "auto_finish_label",
-      "value": "自动完成"
-    },
-    {
-      "name": "auto_finish_desc",
-      "value": "文件传输完成后自动退出传输页面"
-    },
-    {
       "name": "save_to_history_label",
       "value": "保存到历史"
     },

@@ -30,7 +30,7 @@ import { getFavorites } from './FavoritesService';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { getAppContext, notifyChange } from './AppCore';
 import { DialogService } from '../DialogService';
-import { getAutoConfirmMode, isAutoFinish, isSaveToGallery } from './SettingsRepository';
+import { getAutoConfirmMode, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
   getActiveProgress,
@@ -678,7 +678,7 @@ function handleSendProgressProgress(sessionId: string, fileId: string, progress:
 
 /**
  * 处理单个接收进度更新事件。
- * 处理：文件完成检测、会话完成、文件导出、历史记录、自动完成、清理。
+ * 处理：文件完成检测、会话完成、文件导出、历史记录、清理。
  */
 function handleRecvProgress(progress: TransferProgress, completed: boolean): void {
   let sessionId: string = progress.sessionId;
@@ -724,7 +724,7 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
 }
 
 /**
- * 完成一个接收会话：导出文件、记录历史、自动完成、清理。
+ * 完成一个接收会话：导出文件、记录历史、清理。
  * 当会话中的所有文件均下载完成时调用。全程同步执行。
  */
 function finishReceiveSession(sessionId: string): void {
@@ -818,12 +818,6 @@ function finishReceiveSession(sessionId: string): void {
   // 此时 pendingRecvCompleted 和 pendingRecvMediaFiles 尚未设置。
   // 必须在设置完这些信号后再次通知 UI，使 refreshCallback → updateProgress 能够消费它们。
   notifyChange();
-
-  // ── 自动完成逻辑 ──
-  if (isAutoFinish()) {
-    // 满足自动完成条件：仅记录日志；会话状态清理由下方回收窗口统一负责
-    logger.info('会话 ' + sessionId.substring(0, 8) + ' 已完成，自动关闭');
-  }
 
   // 成功会话保留有界的聚合可见窗口（约 3s）：期间会话仍判定为 'finished' 且
   // 文件大小/发送方别名可得，后台聚合可在窗口内计算出 100% 终态帧；
@@ -1155,7 +1149,7 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
   addHistoryEntries(entries);
 }
 
-// ── 自动完成逻辑 ──
+// ── 会话清理 ──
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，

@@ -20,8 +20,6 @@ export const KEY_AUTO_CONFIRM_MODE: string = 'autoConfirmMode';
 
 export const KEY_RECEIVE_PIN: string = 'receivePin';
 
-export const KEY_AUTO_FINISH: string = 'autoFinish';
-
 export const KEY_SAVE_TO_GALLERY: string = 'saveToGallery';
 
 export const KEY_DESTINATION: string = 'destination';

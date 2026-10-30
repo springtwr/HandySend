@@ -321,14 +321,6 @@
       "value": "向你傳送檔案時要求對方輸入 PIN 碼，留空則停用"
     },
     {
-      "name": "auto_finish_label",
-      "value": "自動完成"
-    },
-    {
-      "name": "auto_finish_desc",
-      "value": "檔案傳輸完成後自動退出傳輸頁面"
-    },
-    {
       "name": "save_to_history_label",
       "value": "儲存到歷史"
     },

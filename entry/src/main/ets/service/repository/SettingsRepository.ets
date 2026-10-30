@@ -7,7 +7,6 @@ import {
   KEY_ENCRYPTED_TRANSFER,
   KEY_AUTO_CONFIRM_MODE,
   KEY_RECEIVE_PIN,
-  KEY_AUTO_FINISH,
   KEY_SAVE_TO_GALLERY,
   KEY_DESTINATION,
   KEY_THEME,
@@ -43,7 +42,6 @@ import {
   DEFAULT_ENCRYPTED_TRANSFER,
   DEFAULT_AUTO_CONFIRM_MODE,
   DEFAULT_RECEIVE_PIN,
-  DEFAULT_AUTO_FINISH,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
@@ -85,7 +83,6 @@ const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '�
 let httpsEnabled: boolean = DEFAULT_ENCRYPTED_TRANSFER;
 let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
 let receivePin: string = DEFAULT_RECEIVE_PIN;
-let autoFinish: boolean = DEFAULT_AUTO_FINISH;
 let saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY;
 let destination: string = DEFAULT_DESTINATION;
 let theme: string = DEFAULT_THEME;
@@ -137,7 +134,6 @@ export function loadFromPreferences(): void {
     savedAutoConfirm as AutoConfirmMode : DEFAULT_AUTO_CONFIRM_MODE;
 
   receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, DEFAULT_RECEIVE_PIN);
-  autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, DEFAULT_AUTO_FINISH);
   saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
   backgroundReceiveEnabled = preferencesRepo.getBoolean(KEY_BACKGROUND_RECEIVE, DEFAULT_BACKGROUND_RECEIVE);
   destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
@@ -217,16 +213,6 @@ export function setReceivePin(pin: string): void {
   // PIN 变更需要重启服务器
   markServerNeedsRestart();
   notifyChange();
-}
-
-export function setAutoFinish(enabled: boolean): void {
-  autoFinish = enabled;
-  preferencesRepo.setBoolean(KEY_AUTO_FINISH, enabled);
-  notifyChange();
-}
-
-export function isAutoFinish(): boolean {
-  return autoFinish;
 }
 
 export function setSaveToGallery(enabled: boolean): void {

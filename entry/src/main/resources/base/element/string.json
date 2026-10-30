@@ -321,14 +321,6 @@
       "value": "Require the sender to enter a PIN when sending files to you. Leave empty to disable"
     },
     {
-      "name": "auto_finish_label",
-      "value": "Auto-finish"
-    },
-    {
-      "name": "auto_finish_desc",
-      "value": "Automatically leave the transfer page when the transfer completes"
-    },
-    {
       "name": "save_to_history_label",
       "value": "Save to history"
     },
