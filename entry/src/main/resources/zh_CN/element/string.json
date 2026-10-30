@@ -2245,6 +2245,42 @@
       "value": "后台临时保活，5 分钟后自动关闭"
     },
     {
+      "name": "bg_transfer_title_background",
+      "value": "后台运行中"
+    },
+    {
+      "name": "bg_transfer_content_background",
+      "value": "关闭通知会立即结束所有后台任务"
+    },
+    {
+      "name": "bg_transfer_title_keepalive",
+      "value": "后台保活中"
+    },
+    {
+      "name": "bg_transfer_content_keepalive",
+      "value": "临时保活5分钟，到期后自动关闭"
+    },
+    {
+      "name": "bg_transfer_title_transfer",
+      "value": "后台传输中"
+    },
+    {
+      "name": "bg_transfer_content_transfer",
+      "value": "关闭通知会中断传输"
+    },
+    {
+      "name": "bg_transfer_content_tasks_percent",
+      "value": "%d 个任务 · %d%%"
+    },
+    {
+      "name": "background_receive_label",
+      "value": "允许后台接收"
+    },
+    {
+      "name": "background_receive_desc",
+      "value": "没有传输任务时，应用将在后台继续运行5分钟，期间可接收网页或 LocalSend 的传输请求"
+    },
+    {
       "name": "web_access_stop",
       "value": "停止网页传输"
     },

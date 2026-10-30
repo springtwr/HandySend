@@ -2245,6 +2245,42 @@
       "value": "Kept alive in the background; closes automatically after 5 minutes."
     },
     {
+      "name": "bg_transfer_title_background",
+      "value": "Running in background"
+    },
+    {
+      "name": "bg_transfer_content_background",
+      "value": "Closing this notification ends all background tasks immediately"
+    },
+    {
+      "name": "bg_transfer_title_keepalive",
+      "value": "Background hold"
+    },
+    {
+      "name": "bg_transfer_content_keepalive",
+      "value": "Temporarily held for 5 minutes; closes automatically when it expires"
+    },
+    {
+      "name": "bg_transfer_title_transfer",
+      "value": "Transferring in background"
+    },
+    {
+      "name": "bg_transfer_content_transfer",
+      "value": "Closing this notification interrupts the transfer"
+    },
+    {
+      "name": "bg_transfer_content_tasks_percent",
+      "value": "%d tasks · %d%%"
+    },
+    {
+      "name": "background_receive_label",
+      "value": "Allow background receiving"
+    },
+    {
+      "name": "background_receive_desc",
+      "value": "Without a transfer, the app keeps running in the background for 5 minutes to receive web or LocalSend requests."
+    },
+    {
       "name": "web_access_stop",
       "value": "Stop web transfer"
     },

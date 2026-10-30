@@ -166,6 +166,30 @@ export struct GeneralSettingsSection {
       })
       .id('settings_alias_entry')
 
+      // 允许后台接收：仅控制无传输时的 5 分钟空闲保活，传输中始终保活
+      Row() {
+        Text($r('app.string.background_receive_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.viewModel.backgroundReceive })
+          .onChange((isOn: boolean) => {
+            this.viewModel.setBackgroundReceiveValue(isOn);
+          })
+          .id('settings_background_receive_toggle')
+      }
+      .width('100%')
+      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+      .alignItems(VerticalAlign.Center)
+
+      Text($r('app.string.background_receive_desc'))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .alignSelf(ItemAlign.Start)
+        .margin({ bottom: DesignTokens.space.tiny })
+
       // 自动完成
       Row() {
         Text($r('app.string.auto_finish_label'))

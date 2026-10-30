@@ -193,8 +193,9 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
-后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请 `dataTransfer` 长时任务；网页服务另带 5 分钟有界后台保活，
-并以实况通知展示聚合进度。数据源唯一为统一会话注册表的协议无关聚合快照（待确认不计入活跃），服务为模块级单例、由 EntryAbility 生命周期驱动。
+后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请独立的 `dataTransfer` 传输长时任务；
+「允许后台接收」开启且网页服务或 LocalSend 服务器运行时，另申请独立的 5 分钟空闲保活长时任务，两条任务各有通知、互不重置。
+数据源唯一为统一会话注册表的协议无关聚合快照（待确认不计入活跃），服务为模块级单例、由 EntryAbility 生命周期驱动。
 
 启停驱动、终态处理、前台引导、删除通知取消等实现细节详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
 

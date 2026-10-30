@@ -75,6 +75,9 @@ export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';
 
 export const KEY_MTA_CONNECTION_WARNINGS: string = 'mtaConnectionWarnings';
 
+// 允许后台接收：无传输任务时退后台保留 5 分钟服务窗口
+export const KEY_BACKGROUND_RECEIVE: string = 'backgroundReceiveEnabled';
+
 export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil', '偏好');

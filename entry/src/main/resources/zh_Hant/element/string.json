@@ -2245,6 +2245,42 @@
       "value": "背景臨時保活，5 分鐘後自動關閉"
     },
     {
+      "name": "bg_transfer_title_background",
+      "value": "背景執行中"
+    },
+    {
+      "name": "bg_transfer_content_background",
+      "value": "關閉通知會立即結束所有背景任務"
+    },
+    {
+      "name": "bg_transfer_title_keepalive",
+      "value": "背景保活中"
+    },
+    {
+      "name": "bg_transfer_content_keepalive",
+      "value": "臨時保活5分鐘，到期後自動關閉"
+    },
+    {
+      "name": "bg_transfer_title_transfer",
+      "value": "背景傳輸中"
+    },
+    {
+      "name": "bg_transfer_content_transfer",
+      "value": "關閉通知會中斷傳輸"
+    },
+    {
+      "name": "bg_transfer_content_tasks_percent",
+      "value": "%d 個任務 · %d%%"
+    },
+    {
+      "name": "background_receive_label",
+      "value": "允許背景接收"
+    },
+    {
+      "name": "background_receive_desc",
+      "value": "沒有傳輸任務時，應用將在背景繼續執行5分鐘，期間可接收網頁或 LocalSend 的傳輸請求"
+    },
+    {
       "name": "web_access_stop",
       "value": "停止網頁傳輸"
     },

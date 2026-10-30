@@ -99,3 +99,6 @@ export const DEFAULT_MTA_RECEIVE_ENABLED: boolean = true;
 export const DEFAULT_MTA_SIMULATED_BRAND: number = MTA_BRAND_ID_THIRD_PARTY;
 
 export const DEFAULT_MTA_CONNECTION_WARNINGS: boolean = true;
+
+// 默认关闭：由用户主动开启无传输时的后台接收窗口
+export const DEFAULT_BACKGROUND_RECEIVE: boolean = false;

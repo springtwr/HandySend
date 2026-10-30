@@ -30,6 +30,8 @@ import {
   getReceivePin,
   isAutoFinish,
   isSaveToGallery,
+  setBackgroundReceiveEnabled,
+  isBackgroundReceiveEnabled,
   getDestination,
   getTheme,
   getLocale,
@@ -108,6 +110,7 @@ import {
   DEFAULT_RECEIVE_PIN,
   DEFAULT_AUTO_FINISH,
   DEFAULT_SAVE_TO_GALLERY,
+  DEFAULT_BACKGROUND_RECEIVE,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
   DEFAULT_LOCALE,
@@ -178,6 +181,7 @@ export class SettingsViewModel {
   @Trace public receivePin: string = DEFAULT_RECEIVE_PIN
   @Trace public autoFinish: boolean = DEFAULT_AUTO_FINISH
   @Trace public saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY
+  @Trace public backgroundReceive: boolean = DEFAULT_BACKGROUND_RECEIVE
   @Trace public localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED
   @Trace public mtaEnabled: boolean = DEFAULT_MTA_ENABLED
   @Trace public webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED
@@ -238,6 +242,7 @@ export class SettingsViewModel {
     this.receivePin = getReceivePin();
     this.autoFinish = isAutoFinish();
     this.saveToGallery = isSaveToGallery();
+    this.backgroundReceive = isBackgroundReceiveEnabled();
     this.localSendEnabled = getLocalSendEnabled();
     this.mtaEnabled = getMtaEnabled();
     this.webSendAllowed = getWebSendAllowed();
@@ -341,6 +346,12 @@ export class SettingsViewModel {
   setGallerySaveEnabled(on: boolean): void {
     this.saveToGallery = on;
     setSaveToGallery(on);
+  }
+
+  /** 允许后台接收：仅控制无传输时的 5 分钟空闲保活，传输中不受影响 */
+  setBackgroundReceiveValue(on: boolean): void {
+    this.backgroundReceive = on;
+    setBackgroundReceiveEnabled(on);
   }
 
   /** 发送成功后自动清空暂存（默认关闭：暂存保留以支持连续发送） */
@@ -723,6 +734,8 @@ export class SettingsViewModel {
     setAutoFinish(DEFAULT_AUTO_FINISH);
     this.saveToGallery = DEFAULT_SAVE_TO_GALLERY;
     setSaveToGallery(DEFAULT_SAVE_TO_GALLERY);
+    this.backgroundReceive = DEFAULT_BACKGROUND_RECEIVE;
+    setBackgroundReceiveEnabled(DEFAULT_BACKGROUND_RECEIVE);
     this.destination = DEFAULT_DESTINATION;
     setDestination(DEFAULT_DESTINATION);
 

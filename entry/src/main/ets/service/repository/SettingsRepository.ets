@@ -33,7 +33,8 @@ import {
   KEY_WEB_DISPLAY_ADDRESS,
   KEY_MTA_RECEIVE_ENABLED,
   KEY_MTA_SIMULATED_BRAND,
-  KEY_MTA_CONNECTION_WARNINGS
+  KEY_MTA_CONNECTION_WARNINGS,
+  KEY_BACKGROUND_RECEIVE
 } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, NetworkInterface } from '../../model/Types';
 import { isEnabledByDefault } from '../../utils/NetworkInterfaceRules';
@@ -71,7 +72,8 @@ import {
   WEB_PORT_MAX,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
-  DEFAULT_MTA_CONNECTION_WARNINGS
+  DEFAULT_MTA_CONNECTION_WARNINGS,
+  DEFAULT_BACKGROUND_RECEIVE
 } from '../../model/SettingsDefaults';
 import { getAppContext, notifyChange } from './AppCore';
 import { LANGUAGE_LIST } from '../../common/LanguageConstants';
@@ -109,6 +111,7 @@ let webDisplayAddress: string = DEFAULT_WEB_DISPLAY_ADDRESS;
 let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
 let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
+let backgroundReceiveEnabled: boolean = DEFAULT_BACKGROUND_RECEIVE;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
 
@@ -136,6 +139,7 @@ export function loadFromPreferences(): void {
   receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, DEFAULT_RECEIVE_PIN);
   autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, DEFAULT_AUTO_FINISH);
   saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
+  backgroundReceiveEnabled = preferencesRepo.getBoolean(KEY_BACKGROUND_RECEIVE, DEFAULT_BACKGROUND_RECEIVE);
   destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
   theme = preferencesRepo.getString(KEY_THEME, DEFAULT_THEME);
   locale = preferencesRepo.getString(KEY_LOCALE, DEFAULT_LOCALE);
@@ -237,6 +241,16 @@ export function setSaveToGallery(enabled: boolean): void {
 
 export function isSaveToGallery(): boolean {
   return saveToGallery;
+}
+
+export function setBackgroundReceiveEnabled(enabled: boolean): void {
+  backgroundReceiveEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_BACKGROUND_RECEIVE, enabled);
+  notifyChange();
+}
+
+export function isBackgroundReceiveEnabled(): boolean {
+  return backgroundReceiveEnabled;
 }
 
 // ── 协议总开关 ──
