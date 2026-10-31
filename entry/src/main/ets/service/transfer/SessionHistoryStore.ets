@@ -192,8 +192,9 @@ export function repairHistoryTextMessageFlags(entries: Array<SessionHistoryEntry
  * 写入先更新内存（立即对读取可见）再触发落盘；偏好存储自身对刷盘做防抖合并。
  *
  * 落盘按**分段**进行（段键布局见 model/HistorySegments.ets）：偏好存储只能按键整体
- * 覆写，单键方案每次写入都要序列化全量历史，代价随保留条数线性增长。分段后新增条目
- * 只重写当前活跃段，代价与总量解耦；裁剪只丢弃最旧的整段。
+ * 覆写，单键方案每次写入都要序列化全量历史，代价随保留条数线性增长。分段后未超过
+ * 硬上限时新增条目只重写当前活跃段；超过硬上限时一次性裁回目标容量，把全量重写
+ * 摊薄到约 250 次追加一次。裁剪按条数保留最近目标容量后重新切段。
  */
 class PreferencesSessionHistoryStore implements SessionHistoryStore {
   // null 表示尚未从偏好存储加载（惰性加载一次）
@@ -223,8 +224,8 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     let startedAt: number = Date.now();
     this.writeDirtySegments(next);
     let elapsed: number = Date.now() - startedAt;
-    // 仅记录可感知的慢写入，避免每次归档都刷日志；用于判断是否还需要环形段/绝对段号
-    if (elapsed >= 16) {
+    // 仅记录明显可感知的慢写入，避免每次归档都刷日志；用于判断是否还需要环形段/绝对段号
+    if (elapsed >= 50) {
       logger.info('历史落盘较慢 ms=' + elapsed + ' 条=' + next.length);
     }
     historyRevision++;
@@ -323,7 +324,8 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
 
   /**
    * 只重写变更区间覆盖的段，并删除超出段数的残留段键。
-   * 追加（最常见的写入）变更区间落在末段，故每次只序列化一段。
+   * 追加（最常见的写入）变更区间落在末段，故通常只序列化一段；
+   * 批量裁剪时变更区间覆盖全部目标段，属每约 250 次追加一次的例外。
    */
   private writeDirtySegments(entries: Array<SessionHistoryEntry>): void {
     // 分段按硬上限切分：750-1000 条保留原样，追加只命中新增的末段

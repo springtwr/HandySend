@@ -2,12 +2,13 @@
  * HistorySegments.ets — 历史分段存储的纯逻辑（键布局、段划分、裁剪计划、变更区间）
  *
  * 偏好存储只提供「按键整体覆写」，单键方案每次写入都要序列化全量历史。
- * 分段把集合切成若干段分键存放，使写入只覆盖当前活跃段，代价与总量解耦。
+ * 分段把集合切成若干段分键存放，未超过硬上限时追加只覆盖当前活跃段，代价与总量解耦。
  *
  * 键布局契约（换存储层时按此契约实现读取即可）：
  * - 段键为 `<前缀>#<段号>`，段号自 0 起**连续**，且**递增表示更新**（0 最老，最大号最新）；
- * - 只丢弃最旧段、不单独删除中间段，故段号始终连续，无需额外索引键；
- * - 读取自 0 起向最大段号拼接（最旧在前）；裁剪从 0 起整段丢弃。
+ * - 写入只追加/覆写目标段，裁剪后删除目标段数之后的残留段，不单独删除中间段；
+ *   故段号始终连续，无需额外索引键；
+ * - 读取自 0 起向最大段号拼接（最旧在前）；裁剪按条数保留最近容量后重新切段。
  */
 
 /** 第 segIndex 段的键名。 */
@@ -17,7 +18,7 @@ export function segmentKey(prefix: string, segIndex: number): string {
 
 /**
  * 探测已存在的段号列表（自 0 起连续，遇缺即止）。
- * 调用方须先确保段号连续（写入路径只追加最大段号、裁剪只丢最旧段）。
+ * 调用方须先确保段号连续（写入路径只追加最大段号；裁剪后删除尾部残留段）。
  */
 export function existingSegments(prefix: string, has: (key: string) => boolean,
   maxSegments: number): Array<number> {
@@ -55,8 +56,8 @@ export function splitIntoSegments<T>(entries: Array<T>, segmentSize: number): Ar
 }
 
 /**
- * 裁剪计划：按「保留最近 capacity 条」丢弃最旧的整段，返回裁剪后应落盘的段序列。
- * 容量为段大小的整数倍，故裁剪只丢弃整段即可精确命中，无需段内裁剪。
+ * 裁剪计划：按「保留最近 capacity 条」裁剪，再按段大小切分，返回应落盘的段序列。
+ * 容量为段大小的整数倍时保留结果由整段组成；实现按条数裁剪，不做独立的段内裁剪。
  */
 export function planSegments<T>(entries: Array<T>, capacity: number,
   segmentSize: number): Array<Array<T>> {
@@ -69,7 +70,7 @@ export function planSegments<T>(entries: Array<T>, capacity: number,
 
 /**
  * 变更区间：找出两份条目集合中内容不同的下标范围，闭区间。
- * 用于只重写受影响的段——追加只命中末段，删除/替换可能横跨多段。
+ * 用于只重写受影响的段——未触发批量裁剪的追加只命中末段，删除/替换可能横跨多段。
  * 无差异时返回 undefined。
  */
 export function dirtyRange<T>(oldEntries: Array<T>, newEntries: Array<T>): DirtyRange | undefined {

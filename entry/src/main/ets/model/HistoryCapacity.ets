@@ -17,7 +17,7 @@ export const SESSION_HISTORY_CAPACITY: number = 750;
 
 /**
  * 任务历史硬上限，单位：会话。
- * 1000 = 250 × 4。达到本值后才触发裁剪，避免每追加一条就整体左移并重写全部段。
+ * 1000 = 250 × 4。超过本值后才触发裁剪，避免每追加一条就整体左移并重写全部段。
  */
 export const SESSION_HISTORY_MAX_ENTRIES: number = 1000;
 
@@ -40,13 +40,13 @@ export const RECEIVE_HISTORY_CAPACITY: number = 5000;
 // - 接收历史单条约 0.3KB，250 条约 80KB；5000 条约 1.6MB。
 //
 // 段数 = 目标容量 ÷ 段大小；硬上限允许额外一段，用于批量裁剪。
-// 目标容量与硬上限都须为段大小的整数倍，否则裁剪会从段中间切，
-// 导致每次追加都整体左移并重写全部段。
+// 目标容量与硬上限都须为段大小的整数倍，否则裁剪后末段会不足一段；
+// 批量裁剪发生在超过硬上限时，追加本身只写末段。
 
 /** 任务历史分段的段大小（单段最多容纳的条目数）。 */
 export const SESSION_HISTORY_SEGMENT_SIZE: number = 250;
 
-/** 任务历史目标容量对应的段数；容量 = 段大小 × 段数。 */
+/** 任务历史目标容量对应的段数；目标容量 = 段大小 × 段数。 */
 export const SESSION_HISTORY_SEGMENT_COUNT: number = 3;
 
 /** 任务历史硬上限对应的段数；多出的一段用于在裁剪前承接新增条目。 */
