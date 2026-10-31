@@ -443,7 +443,7 @@ function onSendSessionEnd(instanceGeneration: number): void {
   let plan = decideMtaSendInstanceEnd(instanceGeneration, sendGeneration);
   if (plan.resumeReceiveAccounting) {
     resumeMtaReceiveAfterSend().catch((e: Object): void => {
-      logger.warn('恢复 MTA 接收服务异常: ' + String(e));
+      logger.warn('恢复 MTA 接收服务异常：' + String(e));
     });
   }
   // 发送结束（成功/失败/取消）：按页面可见性期望显式恢复互传发现扫描。
@@ -533,7 +533,7 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   // 发现扫描用「发送暂停」语义：只临时挂起、不抹除可见性期望，发送结束后按期望恢复。
   pauseMtaDiscoveryForSend();
   let receiveRelease = suspendMtaReceiveForSend().catch((e: Object): void => {
-    logger.warn('暂停 MTA 接收服务失败，按已释放处理: ' + String(e));
+    logger.warn('暂停 MTA 接收服务失败，按已释放处理：' + String(e));
   });
   service.setPeripheralReleaseGate(receiveRelease);
   if (clickedMs > 0) {
@@ -564,7 +564,7 @@ function cancelActiveSend(): void {
     return;
   }
   service.cancelSend().catch((e: Object): void => {
-    logger.warn('MTA 取消发送异常: ' + String(e));
+    logger.warn('MTA 取消发送异常：' + String(e));
   });
 }
 
@@ -576,7 +576,7 @@ function retryLastSend(): void {
     return;
   }
   startMtaSend(request, context).catch((e: Object): void => {
-    logger.warn('MTA 重试发送异常: ' + String(e));
+    logger.warn('MTA 重试发送异常：' + String(e));
   });
 }
 

@@ -173,7 +173,7 @@ function ensureNativeEventListener(): void {
   nativeEventListenerRegistered = true;
   nativeRegisterEventListener((err: Error | null, eventJson: string) => {
     if (err !== null) {
-      logger.error('原生事件回调异常: ' + String(err));
+      logger.error('原生事件回调异常：' + String(err));
       return;
     }
     dispatchNativeEvent(eventJson);
@@ -201,7 +201,7 @@ function dispatchNativeEvent(eventJson: string): void {
     try {
       snapshot[j](event);
     } catch (e) {
-      logger.error('原生事件处理异常: ' + String(e));
+      logger.error('原生事件处理异常：' + String(e));
     }
   }
 }

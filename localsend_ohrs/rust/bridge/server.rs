@@ -55,7 +55,7 @@ pub async fn start_server(
         // 防止并发 start_server 双启动（检查与写回之间存在 TOCTOU 窗口）
         if s.server_handle.is_some() || s.server_starting {
             // 守卫命中说明存在并发注册（调用方时序问题），warn 级便于暴露
-            log::warn!("start_server: 已在运行（守卫命中）");
+            log::warn!("启动服务器：已在运行（守卫命中）");
             return Err(BridgeError::AlreadyRunning);
         }
         s.server_starting = true;
@@ -152,7 +152,7 @@ pub async fn start_server(
                 } else {
                     // 非 in-use 失败直接返回错误，无重试无降级，按操作失败记录
                     log::error!(
-                        "start_server: 第 {} 次尝试在端口 {} 上失败: {}",
+                        "启动服务器：第 {} 次尝试在端口 {} 上失败：{}",
                         attempt,
                         port,
                         err_msg
@@ -244,7 +244,7 @@ pub async fn start_server(
             while let Some(event) = internal_event_rx.recv().await {
                 match event {
                     InternalEvent::Show { args } => {
-                        log::debug!("收到展示请求，参数: {:?}", args);
+                        log::debug!("收到展示请求，参数：{:?}", args);
                     }
                 }
             }
@@ -262,7 +262,8 @@ pub async fn start_server(
         s.verify_checksums = verify_checksums;
         s.receive_pin = pin.clone();
         // 注册成功打点：排查端口占用/意外注册类问题的关键线索
-        log::info!("服务已注册端口 {}", local_port);
+        log::info!("服务已注册");
+        log::debug!("服务已注册端口 {}", local_port);
     }
 
     // 推送 ServerStarted 事件（关键事件）

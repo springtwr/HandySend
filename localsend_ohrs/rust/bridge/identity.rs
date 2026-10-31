@@ -110,7 +110,7 @@ pub fn init_with_persisted_identity(
                 Ok(v) => v,
                 Err(e) => {
                     // 读写失败直接返回错误（不得静默重建身份，否则指纹漂移），按操作失败记录
-                    log::error!("身份加载失败: {e:#}");
+                    log::error!("身份加载失败：{e:#}");
                     return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
                 }
             },
@@ -308,7 +308,7 @@ pub fn get_network_interfaces() -> Vec<NetworkInterfaceInfo> {
             })
             .collect(),
         Err(e) => {
-            log::warn!("获取网络接口失败: {e}");
+            log::warn!("获取网络接口失败：{e}");
             Vec::new()
         }
     }

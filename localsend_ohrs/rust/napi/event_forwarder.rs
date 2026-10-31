@@ -44,7 +44,7 @@ pub fn register_event_callback(tsfn: ThreadsafeFunction<String>) {
             let json = match serde_json::to_string(&event) {
                 Ok(json) => json,
                 Err(e) => {
-                    log::error!("事件序列化失败，丢弃事件: {e:?}");
+                    log::error!("事件序列化失败，丢弃事件：{e:?}");
                     continue;
                 }
             };
@@ -55,11 +55,11 @@ pub fn register_event_callback(tsfn: ThreadsafeFunction<String>) {
                     if status != napi_ohos::Status::Ok {
                         let n =
                             FORWARD_FAILURES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                        log::warn!("事件转发失败: status={:?} 累计={}", status, n);
+                        log::warn!("事件转发失败：status={:?} 累计={}", status, n);
                     }
                 }
                 None => {
-                    log::warn!("事件回调未注册，丢弃事件: {}", event_to_json(&event));
+                    log::warn!("事件回调未注册，丢弃事件：{}", event_to_json(&event));
                 }
             }
         }

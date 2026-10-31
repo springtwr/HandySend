@@ -405,7 +405,7 @@ export class SendViewModel {
           }
         }
       } catch (_e) {
-        logger.warn('解析待分享文本失败: ' + String(_e));
+        logger.warn('解析待分享文本失败：' + String(_e));
       }
     }
     // .slice() 强制产生新数组引用：V2 状态管理下 @Trace 数组同引用重复赋值不触发 UI 刷新
@@ -656,7 +656,7 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       this.stageUris(uris, undefined);
     } catch (e) {
-      logger.warn('选择文件失败: ' + JSON.stringify(e));
+      logger.warn('选择文件失败：' + JSON.stringify(e));
     }
   }
 
@@ -674,7 +674,7 @@ export class SendViewModel {
       let uris: Array<string> = result.photoUris;
       this.stageUris(uris, true);
     } catch (e) {
-      logger.warn('选择图片失败: ' + JSON.stringify(e));
+      logger.warn('选择图片失败：' + JSON.stringify(e));
     }
   }
 
@@ -693,7 +693,7 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       this.stageUris(uris, false);
     } catch (e) {
-      logger.warn('选择音频失败: ' + JSON.stringify(e));
+      logger.warn('选择音频失败：' + JSON.stringify(e));
     }
   }
 
@@ -711,7 +711,7 @@ export class SendViewModel {
       let uris: Array<string> = result.photoUris;
       this.stageUris(uris, false);
     } catch (e) {
-      logger.warn('选择视频失败: ' + JSON.stringify(e));
+      logger.warn('选择视频失败：' + JSON.stringify(e));
     }
   }
 
@@ -728,7 +728,7 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       this.stageUris(uris, undefined);
     } catch (e) {
-      logger.warn('选择文档失败: ' + JSON.stringify(e));
+      logger.warn('选择文档失败：' + JSON.stringify(e));
     }
   }
 
@@ -745,7 +745,7 @@ export class SendViewModel {
       let uris: Array<string> = await documentPicker.select(options);
       this.stageUris(uris, false);
     } catch (e) {
-      logger.warn('选择压缩包失败: ' + JSON.stringify(e));
+      logger.warn('选择压缩包失败：' + JSON.stringify(e));
     }
   }
 
@@ -779,7 +779,7 @@ export class SendViewModel {
       // 文本条目由 stageTextFile 新建沙箱文件承载、URI 每次拖入均不同，无法按 URI 去重，
       // 故按内容精确匹配：已存在相同内容时静默跳过（不新增条目、不提示）
       if (this.isTextContentStaged(item.content)) {
-        logger.debug('拖入文本已跳过（内容重复）: isLink=' + item.isLink);
+        logger.debug('拖入文本已跳过（内容重复）：isLink=' + item.isLink);
         continue;
       }
       let beforeCount: number = this.stagedFiles.length;
@@ -788,7 +788,7 @@ export class SendViewModel {
         added = true;
       }
       // isLink 仅用于来源追溯日志（拖入的超链接以组合文本暂存，行为与纯文本一致）
-      logger.debug('拖入文本已暂存: isLink=' + item.isLink + ' prefix=drop_');
+      logger.debug('拖入文本已暂存：isLink=' + item.isLink + ' prefix=drop_');
     }
     return added;
   }
@@ -1222,7 +1222,7 @@ export class SendViewModel {
     }
     markMtaSendClicked();
     startMtaSendFlow(params, context).catch((e: Object): void => {
-      logger.error('MTA 发送启动失败: ' + String(e));
+      logger.error('MTA 发送启动失败：' + String(e));
     });
   }
 

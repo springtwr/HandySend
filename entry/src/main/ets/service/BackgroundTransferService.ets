@@ -724,7 +724,7 @@ export function initBackgroundTransferService(): void {
     backgroundTaskManager.on('continuousTaskCancel', onContinuousTaskCancel);
     logger.debug('长时任务取消监听已注册');
   } catch (e) {
-    logger.error('注册长时任务取消监听失败：' + JSON.stringify(e));
+    logger.warn('注册长时任务取消监听失败：' + JSON.stringify(e));
   }
 }
 
@@ -797,7 +797,7 @@ function startTaskIfActiveInternal(): void {
   resetCycleState();
   // 新周期开始：把当前进行中的会话重新纳入本轮关注集合
   trackCycleSessions();
-  logger.info('正在启动传输长时任务 sessions=' + overall.sessionCount);
+  logger.debug('正在启动传输长时任务 sessions=' + overall.sessionCount);
   buildBackToFrontWantAgent(abilityContext, NAV_TARGET_TRANSFER_CENTER)
     .then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
       return requestLongTask(abilityContext, agent);
@@ -822,7 +822,7 @@ function startTaskIfActiveInternal(): void {
         state = TransferTaskState.idle;
         taskContext = undefined;
         // 申请失败（如通知校验未通过）不阻塞传输：退化为无保护后台
-        logger.error('启动传输长时任务失败：' + e.code + ' ' + e.message);
+        logger.warn('启动传输长时任务失败，退化为无保护后台：' + e.code + ' ' + e.message);
       }
     });
 }
@@ -844,7 +844,7 @@ function startKeepaliveTaskInternal(): void {
   let gen: number = ++keepaliveStartGeneration;
   keepaliveState = TransferTaskState.starting;
   keepaliveContext = abilityContext;
-  logger.info('正在启动保活长时任务');
+  logger.debug('正在启动保活长时任务');
   buildBackToFrontWantAgent(abilityContext, NAV_TARGET_TRANSFER_CENTER)
     .then((agent: WantAgent): Promise<backgroundTaskManager.ContinuousTaskNotification> => {
       return requestLongTask(abilityContext, agent);
@@ -867,7 +867,7 @@ function startKeepaliveTaskInternal(): void {
       if (gen === keepaliveStartGeneration) {
         keepaliveState = TransferTaskState.idle;
         keepaliveContext = undefined;
-        logger.error('启动保活长时任务失败：' + e.code + ' ' + e.message);
+        logger.warn('启动保活长时任务失败：' + e.code + ' ' + e.message);
       }
     });
 }

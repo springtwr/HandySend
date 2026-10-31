@@ -516,7 +516,7 @@ where
             match ws.send(Message::text(ack)).await {
                 Ok(()) => true,
                 Err(e) => {
-                    log::warn!("MTA 回送 ack 失败: {e}");
+                    log::warn!("MTA 回送确认失败：{e}");
                     false
                 }
             }
@@ -644,7 +644,7 @@ async fn fail_ws<S>(
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    log::error!("MTA 发送失败: {reason}");
+    log::error!("MTA 发送失败：{reason}");
     send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
     terminate_session(ws, TerminatePath::Fail, session_start, false).await;
 }

@@ -492,16 +492,17 @@ impl WebServiceState {
                 token: session.token.clone(),
             })
             .await;
-            log::info!(
-                "上传会话超时结束 token={} ip={} 原因={}",
+            let reason_text: &str = match reason {
+                SessionEndReason::Declined => "对方拒绝",
+                SessionEndReason::PendingTimeout => "等待确认超时",
+                SessionEndReason::PeerNoDownload => "对方未开始上传",
+                SessionEndReason::PeerIdle => "传输空闲超时",
+            };
+            log::info!("上传会话超时结束：{reason_text}");
+            log::debug!(
+                "上传会话超时结束 token={} ip={} 原因={reason_text}",
                 redact_token(&session.token),
-                session.peer_ip,
-                match reason {
-                    SessionEndReason::Declined => "对方拒绝",
-                    SessionEndReason::PendingTimeout => "等待确认超时",
-                    SessionEndReason::PeerNoDownload => "对方未开始上传",
-                    SessionEndReason::PeerIdle => "传输空闲超时",
-                }
+                session.peer_ip
             );
         }
     }
@@ -769,13 +770,13 @@ pub async fn run_server_with_tls(
         let (stream, peer) = match listener.accept().await {
             Ok(pair) => pair,
             Err(e) => {
-                log::debug!("接受连接失败: {e}");
+                log::debug!("接受连接失败：{e}");
                 continue;
             }
         };
         // 逐连接明细只留 trace：浏览器会并行开多条连接且 SSE 会周期性重连，
         // debug 级会持续刷屏（默认 max_level=Debug，trace 不进入日志缓冲）。
-        log::trace!("接收到连接: {peer}");
+        log::trace!("接收到连接：{peer}");
         let acceptor = tls_acceptor.clone();
         let conn_state = Arc::clone(&state);
         tokio::spawn(async move {
@@ -785,7 +786,7 @@ pub async fn run_server_with_tls(
                         serve_io(TokioIo::new(tls_stream), conn_state, peer).await;
                     }
                     Err(e) => {
-                        log::debug!("TLS 握手失败: {e}");
+                        log::debug!("TLS 握手失败：{e}");
                     }
                 }
             } else {
@@ -814,13 +815,13 @@ where
         biased;
         _ = shutdown.wait() => {
             // 硬停止/重启：直接丢弃连接，关闭旧 TCP/SSE，避免浏览器复用旧状态连接。
-            log::debug!("旧连接因服务停止而关闭: {peer}");
+            log::debug!("旧连接因服务停止而关闭：{peer}");
         }
         result = conn.as_mut() => {
             if let Err(e) = result {
                 // 浏览器关闭页面/结束 SSE 时连接会以错误形式收尾，属正常断连：
                 // trace 记录（默认 max_level=Debug 不落缓冲），避免周期性刷屏。
-                log::trace!("连接结束: {peer} {e}");
+                log::trace!("连接结束：{peer} {e}");
             }
         }
     }
@@ -1040,7 +1041,7 @@ fn page_response(
         }
     }
     // 页面真正渲染时记录一次：公开路由本身不打日志，扫码设备是否到达只能靠这里确认。
-    log::info!(
+    log::debug!(
         "页面打开 ip={} host={} path={} ua={}",
         peer.ip(),
         req.headers()
@@ -1311,7 +1312,7 @@ async fn prepare_download(
             file_revision: revision,
         });
     }
-    log::info!(
+    log::debug!(
         "下载会话建立 ip={} host={} files={} ua={}",
         peer_ip,
         host.as_deref().unwrap_or(""),

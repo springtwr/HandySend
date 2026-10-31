@@ -89,12 +89,12 @@ pub async fn run_server(
             accepted = listener.accept() => match accepted {
                 Ok(pair) => pair,
                 Err(e) => {
-                    log::warn!("MTA accept 失败: {e}");
+                    log::warn!("MTA 接受连接失败：{e}");
                     continue;
                 }
             },
         };
-        log::debug!("MTA 接收到连接: {peer}");
+        log::debug!("MTA 接收到连接：{peer}");
         // 传输 WS 小控制帧时避免 Nagle 算法引入额外延迟（低风险，不改变 HTTP/协议行为）
         if let Err(e) = stream.set_nodelay(true) {
             log::debug!("MTA 设置 TCP_NODELAY 失败 ({peer}): {e}");
@@ -138,9 +138,9 @@ where
         // 对端/网络拆除时，优雅关闭底层 IO 可能失败（hyper Kind::Shutdown），
         // 属正常收尾而非传输故障，仅以 trace 记录，避免发送页日志出现误导性错误。
         if e.is_shutdown() {
-            log::debug!("MTA 连接收尾: {e}");
+            log::debug!("MTA 连接收尾：{e}");
         } else {
-            log::debug!("MTA 连接结束: {e}");
+            log::debug!("MTA 连接结束：{e}");
         }
     }
 }
@@ -200,7 +200,7 @@ async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respo
                 // 只发握手即断开），不能据此判死进行中的发送会话——
                 // 与 run_ws 的单连接守卫语义保持一致
                 if upgrade_ctx.ws_connected.load(Ordering::SeqCst) {
-                    log::warn!("MTA WS 升级失败（已有活跃连接，忽略）: {e}");
+                    log::warn!("MTA WS 升级失败（已有活跃连接，忽略）：{e}");
                 } else {
                     send_event(
                         &upgrade_ctx.event_tx,

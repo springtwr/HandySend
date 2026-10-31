@@ -287,8 +287,9 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     runtime.server_task = Some(server_task);
     runtime.forward_task = Some(forward_task);
     runtime.sweep_task = Some(sweep_task);
-    log::info!(
-        "服务已启动 port={port} https={use_https} files={file_count} upload={upload_enabled} 访问码={}",
+    log::info!("网页服务已启动");
+    log::debug!(
+        "网页服务参数 port={port} https={use_https} files={file_count} upload={upload_enabled} 访问码={}",
         if has_access_code { "开" } else { "关" }
     );
     Ok(port)
@@ -506,7 +507,7 @@ pub fn cancel_download(batch_id: &str) -> anyhow::Result<()> {
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("下载批次不存在或已结束: {batch_id}"))?;
     flag.store(true, std::sync::atomic::Ordering::Relaxed);
-    log::info!("下载批次已取消 batch={batch_id}");
+    log::debug!("下载批次已取消 batch={batch_id}");
     Ok(())
 }
 

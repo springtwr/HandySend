@@ -348,7 +348,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   let infoFp: string = (event.senderFingerprint !== undefined && event.senderFingerprint !== null) ?
     event.senderFingerprint : '';
   if (sessionId.length === 0) {
-    logger.warn('PrepareUpload 事件 sessionId 为空，已忽略');
+    logger.warn('上传准备事件缺少会话标识，已忽略');
     return;
   }
   let senderAlias: string = event.senderAlias;
@@ -418,7 +418,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   // 方向过滤：接收侧状态表只承载本机接收会话；发送方向/陌生标识的同类事件一律忽略并留痕，
   // 不改动任何接收侧状态表（不清理接收目录、不发布多余变更通知）。
   if (!isLocalReceiveSessionId(sessionId, Object.keys(receiveSessionStates))) {
-    logger.debug('忽略非本机接收会话的会话结束事件: ' + sessionId.substring(0, 8));
+    logger.debug('忽略非本机接收会话的会话结束事件：' + sessionId.substring(0, 8));
     return;
   }
   if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
@@ -430,7 +430,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
     finishLocalReceiveSession(sessionId, SessionStage.cancelled);
     // 清理该会话在沙箱目录中的半成品文件
     cleanupSessionReceiveFiles(sessionId);
-    logger.info('发送方已取消传输（会话结束）：' + sessionId.substring(0, 8));
+    logger.info('发送方已取消传输');
     notifyChange();
   } else {
     // reason === 'Finished'：Rust 侧会话已结束。可能是成功完成（全部文件
@@ -468,7 +468,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     sessionEndCheckTimers = newTimers;
     // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
     if (sessionFinished[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
-      logger.info('会话已结束（已完成）：' + sessionId.substring(0, 8));
+      logger.debug('会话已结束（已完成） 会话=' + sessionId.substring(0, 8));
       return;
     }
     // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
@@ -479,7 +479,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
       finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'transfer_interrupted');
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
-      logger.info('传输中断（会话异常结束）：' + sessionId.substring(0, 8));
+      logger.info('传输中断（异常结束）');
       notifyChange();
     }
   }, 3000);
@@ -560,7 +560,7 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     // 触发本地 CancellationToken 取消——中断 Rust 层进行中的 send_files
     // （当本机是发送方，收到接收方的 /cancel 通知时）
     nativeCancelTransferLocal(sessionId);
-    logger.info('远端已取消传输：' + sessionId.substring(0, 8));
+    logger.info('发送方已取消传输');
     notifyChange();
   }
 }
@@ -581,7 +581,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   finishLocalReceiveSession(sessionId, SessionStage.cancelled);
   // 清理该会话在沙箱目录中的半成品文件
   cleanupSessionReceiveFiles(sessionId);
-  logger.info('发送方在确认前已中止传输：' + sessionId.substring(0, 8));
+  logger.debug('发送方在确认前已中止传输 会话=' + sessionId.substring(0, 8));
   notifyChange();
 }
 
@@ -784,7 +784,7 @@ function finishReceiveSession(sessionId: string): void {
   // 前置守卫已排除取消/失败态且函数全程同步，不存在中途状态翻转窗口，
   // 直接置完成信号即可
   pendingRecvCompleted = sessionId;
-  logger.debug('已设置 recvTransferCompleted=' + sessionId, { sessionId: sessionId, direction: 'recv' });
+  logger.debug('已设置接收完成标记 会话=' + sessionId, { sessionId: sessionId, direction: 'recv' });
 
   // ── 提取媒体文件信息供相册保存弹窗使用 ──
   if (isSaveToGallery()) {
@@ -924,7 +924,7 @@ async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string
     logger.warn('查询可用空间失败：' + String(e));
   }
   if (free < 0) {
-    logger.warn('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 可用空间未知');
+    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 可用空间未知');
     return '';
   }
   if (decideStorageCheck(free, total, RECEIVE_STORAGE_RESERVE_BYTES) ===
@@ -978,7 +978,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   // 落盘前存储预留检查：可用空间不足时直接拒绝，避免写坏文件与半成品残留
   let storageError: string = await checkStorageBeforeAccept(sessionId, fileIds);
   if (storageError.length > 0) {
-    logger.error('存储预留检查失败，拒绝会话 ' + sessionId.substring(0, 8));
+    logger.warn('存储预留检查失败，拒绝会话：' + storageError);
     try {
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
@@ -988,7 +988,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   let targetPaths: Record<string, string> | undefined =
     await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId]);
   if (targetPaths === undefined) {
-    logger.error('准备接收目标失败，拒绝会话 ' + sessionId.substring(0, 8));
+    logger.error('准备接收目标失败，拒绝会话');
     try {
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
@@ -1004,8 +1004,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   }
   try {
     nativeRespondTransfer(sessionId, true, fileIds);
-    logger.info('已接受请求 ' + sessionId.substring(0, 8) + '，文件数 ' +
-      fileIds.length + ' 个');
+    logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');
     return '';
   } catch (e) {
     // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
@@ -1040,14 +1039,14 @@ export async function respondToRequest(sessionId: string, accept: boolean,
       // 失败原因透传到会话错误信息（存储不足等本地原因用户可见）
       receiveSessionStates[sessionId] = 'canceledBySender';
       finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
-      logger.error('会话 ' + sessionId.substring(0, 8) + ' 因本地准备失败被拒绝');
+      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId.substring(0, 8));
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
     finishLocalReceiveSession(sessionId, SessionStage.declined);
     try {
       nativeRespondTransfer(sessionId, false, acceptedFileIds);
-      logger.info('请求 ' + sessionId.substring(0, 8) + ' 已拒绝');
+      logger.info('请求已拒绝');
     } catch (e) {
       logger.error('响应失败：' + e);
     }

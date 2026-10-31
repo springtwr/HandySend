@@ -689,8 +689,9 @@ pub async fn register_device(
                     "certFingerprint": cert_fp,
                     "publicKey": pub_key,
                 });
-                log::info!(
-                    "注册成功: {} 位于 {}:{} 经由 {}",
+                log::info!("注册成功：{}", resp.alias);
+                log::debug!(
+                    "注册详情：{} 位于 {}:{} 经由 {}",
                     resp.alias,
                     target_ip,
                     target_port,

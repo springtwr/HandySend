@@ -47,7 +47,7 @@ export function isNotificationPermissionGranted(): boolean {
   try {
     return notificationManager.isNotificationEnabledSync();
   } catch (e) {
-    logger.warn('查询通知授权状态失败: ' + errorText(e));
+    logger.warn('查询通知授权状态失败：' + errorText(e));
     return false;
   }
 }
@@ -59,7 +59,7 @@ export function isBluetoothPermissionGranted(): boolean {
     let status: abilityAccessCtrl.GrantStatus = atManager.checkAccessTokenSync(selfTokenId(), BLUETOOTH_PERMISSION);
     return status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED;
   } catch (e) {
-    logger.warn('查询蓝牙授权状态失败: ' + errorText(e));
+    logger.warn('查询蓝牙授权状态失败：' + errorText(e));
     return false;
   }
 }
@@ -94,7 +94,7 @@ export function isPrivacyAgreed(): boolean {
     }
     return true;
   } catch (e) {
-    logger.warn('查询隐私签署状态失败，按已签署处理: ' + errorText(e));
+    logger.warn('查询隐私签署状态失败，按已签署处理：' + errorText(e));
     return true;
   }
 }
@@ -113,7 +113,7 @@ export async function requestNotificationPermission(context: common.UIAbilityCon
       await notificationManager.requestEnableNotification(context);
       granted = isNotificationPermissionGranted();
     } catch (e) {
-      logger.debug('通知授权未通过: ' + errorText(e));
+      logger.debug('通知授权未通过：' + errorText(e));
       granted = false;
     }
   });
@@ -136,7 +136,7 @@ export async function requestBluetoothPermission(context: common.Context): Promi
       let result: PermissionRequestResult = await atManager.requestPermissionsFromUser(context, permissions);
       granted = result.authResults.length > 0 && result.authResults[0] === 0;
     } catch (e) {
-      logger.error('申请蓝牙权限失败: ' + errorText(e));
+      logger.error('申请蓝牙权限失败：' + errorText(e));
       granted = false;
     }
   });
@@ -152,11 +152,11 @@ export async function guideToNotificationSettings(context: common.UIAbilityConte
   try {
     await notificationManager.openNotificationSettingsWithResult(context);
   } catch (e) {
-    logger.warn('打开通知设置半模态弹窗失败，回退系统设置页: ' + errorText(e));
+    logger.warn('打开通知设置半模态弹窗失败，回退系统设置页：' + errorText(e));
     try {
       await notificationManager.openNotificationSettings(context);
     } catch (e2) {
-      logger.warn('打开通知设置失败: ' + errorText(e2));
+      logger.warn('打开通知设置失败：' + errorText(e2));
     }
   }
 }
@@ -168,7 +168,7 @@ export async function guideToBluetoothPermissionSetting(context: common.Context)
     let permissions: Array<Permissions> = [BLUETOOTH_PERMISSION];
     await atManager.requestPermissionOnSetting(context, permissions);
   } catch (e) {
-    logger.warn('打开蓝牙权限设置失败: ' + errorText(e));
+    logger.warn('打开蓝牙权限设置失败：' + errorText(e));
   }
 }
 
@@ -191,6 +191,6 @@ export async function guideToAppPermissionSettings(context: common.UIAbilityCont
     };
     await context.startAbility(want);
   } catch (e) {
-    logger.warn('打开应用权限设置页失败: ' + errorText(e));
+    logger.warn('打开应用权限设置页失败：' + errorText(e));
   }
 }

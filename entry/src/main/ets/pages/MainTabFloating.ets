@@ -86,7 +86,7 @@ import { getStringSync } from '../utils/ResourceUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.GENERAL, 'HandySend:MainTabFloating', '首页');
+const logger = getLogger(LogDomains.GENERAL, 'HandySend:MainTabFloating', '主页');
 
 @Entry
 @ComponentV2
@@ -215,7 +215,7 @@ struct MainTabFloating {
         // 服务器启动失败由 AppService 记录日志
       });
     } else {
-      logger.debug('LocalSend 总开关已关闭，首页出现时不启动服务器');
+      logger.debug('LocalSend 总开关已关闭，主页出现时不启动服务器');
     }
 
     // 首帧前的 onPageShow 已按可见性尝试过一次扫描，但那时 initAppService 尚未执行；
@@ -279,7 +279,7 @@ struct MainTabFloating {
       this.applyNaviIndicatorHeight(win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR));
       win.on('avoidAreaChange', this.avoidAreaChangeCallback);
     }).catch((e: BusinessError): void => {
-      logger.warn('获取窗口失败，页签底部间距沿用回退值: ' + JSON.stringify(e));
+      logger.warn('获取窗口失败，页签底部间距沿用回退值：' + JSON.stringify(e));
     });
   }
 

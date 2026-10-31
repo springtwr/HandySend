@@ -103,12 +103,12 @@ export async function saveMediaToGallery(
       }
       await phAccessHelper.applyChanges(request);
       successCount = successCount + 1;
-      logger.debug('已保存: ' + file.fileName);
+      logger.debug('已保存：' + file.fileName);
     } catch (e) {
       failCount = failCount + 1;
       let errMsg: string = file.fileName + ': ' + String(e);
       errors.push(errMsg);
-      logger.error('保存失败: ' + errMsg);
+      logger.error('保存失败：' + errMsg);
     }
   }
 

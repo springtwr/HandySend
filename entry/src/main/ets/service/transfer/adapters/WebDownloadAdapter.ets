@@ -183,7 +183,7 @@ const adapter: SessionAdapter = {
       try {
         nativeCancelWebDownload(batchId);
       } catch (e) {
-        logger.warn('取消 Web 下载批次失败 batch=' + redactSessionToken(batchId) + '：' + String(e));
+        logger.warn('取消网页下载批次失败 batch=' + redactSessionToken(batchId) + '：' + String(e));
       }
     }
     batches.delete(batchId);

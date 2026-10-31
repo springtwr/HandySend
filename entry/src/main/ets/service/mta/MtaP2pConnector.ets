@@ -73,7 +73,7 @@ export class MtaP2pConnector {
       };
       wifiManager.on('p2pConnectionChange', this.connectionChangeCallback);
     } catch (e) {
-      logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('注册 P2P 连接变化监听失败：' + errorText(e));
     }
     try {
       this.stateChangeCallback = (state: number): void => {
@@ -83,7 +83,7 @@ export class MtaP2pConnector {
       };
       wifiManager.on('p2pStateChange', this.stateChangeCallback);
     } catch (e) {
-      logger.warn('p2pStateChange 注册失败: ' + errorText(e));
+      logger.warn('注册 P2P 状态变化监听失败：' + errorText(e));
     }
   }
 
@@ -96,7 +96,7 @@ export class MtaP2pConnector {
         this.connectionChangeCallback = undefined;
       }
     } catch (e) {
-      logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('反注册 P2P 连接变化监听失败：' + errorText(e));
     }
     try {
       let stateCallback = this.stateChangeCallback;
@@ -105,7 +105,7 @@ export class MtaP2pConnector {
         this.stateChangeCallback = undefined;
       }
     } catch (e) {
-      logger.warn('p2pStateChange 反注册失败: ' + errorText(e));
+      logger.warn('反注册 P2P 状态变化监听失败：' + errorText(e));
     }
     this.handlers = null;
   }
@@ -170,7 +170,7 @@ export class MtaP2pConnector {
       let group = await wifiManager.getCurrentGroup();
       return group.frequency > 0 ? group.frequency : 0;
     } catch (e) {
-      logger.warn('读取对端群组频点失败: ' + errorText(e));
+      logger.warn('读取对端群组频点失败：' + errorText(e));
       return 0;
     }
   }
@@ -182,7 +182,7 @@ export class MtaP2pConnector {
         this.handlers.onGroupFrequency(freq);
       }
     }).catch((e: Object): void => {
-      logger.warn('上报群组频点异常: ' + String(e));
+      logger.warn('上报群组频点异常：' + String(e));
     });
   }
 
@@ -262,7 +262,7 @@ export class MtaP2pConnector {
     try {
       return wifiManager.isConnected();
     } catch (e) {
-      logger.warn('isConnected 查询失败: ' + errorText(e));
+      logger.warn('查询 P2P 连接状态失败：' + errorText(e));
       return false;
     }
   }

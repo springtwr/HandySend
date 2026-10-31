@@ -79,11 +79,11 @@ export struct NetworkSettingsSection {
   // 将排序后的接口列表应用到弹窗状态。
   // 新出现的接口不写入白/黑名单：未列出即按类型取默认状态，无需替用户改配置。
   private applySheetInterfaces(newInterfaces: Array<NetworkInterface>): void {
-    logger.debug('刷新后接口: [' +
+    logger.debug('刷新后接口：[' +
       newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
 
     this.localInterfaces = newInterfaces;
-    logger.debug('白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
+    logger.debug('白名单：[' + this.localWhitelist.join(', ') + '] 黑名单：[' +
       this.localBlacklist.join(', ') + ']');
   }
 
@@ -326,7 +326,7 @@ export struct NetworkSettingsSection {
                         this.localBlacklist.push(name);
                       }
                     }
-                    logger.debug('白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
+                    logger.debug('白名单：[' + this.localWhitelist.join(', ') + '] 黑名单：[' +
                       this.localBlacklist.join(', ') + ']');
                   })
                   .id('settings_interface_toggle')
@@ -383,7 +383,7 @@ export struct NetworkSettingsSection {
           // 白名单/黑名单存储接口名（如 wlan0,eth0），而非精确 IP
           // 保存后自动重启 discovery，无需手动重启服务器
           logger.debug(
-            '白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+            '白名单：[' + this.localWhitelist.join(', ') + '] 黑名单：[' + this.localBlacklist.join(', ') + ']');
           this.viewModel.saveNetworkListsAndApply(this.localWhitelist.join(','), this.localBlacklist.join(','));
           this.isShowNetworkInterfaceSheet = false;
         })
@@ -780,10 +780,10 @@ export struct NetworkSettingsSection {
             this.localInterfaces = networkSettingsViewModel.sortInterfaces(this.viewModel.getLocalInterfacesList());
             let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
             let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
-            logger.debug('接口: [' +
+            logger.debug('接口：[' +
               this.localInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
             logger.debug(
-              '存储白名单: [' + savedWhitelist.join(', ') + '] 黑名单: [' + savedBlacklist.join(', ') +
+              '存储白名单：[' + savedWhitelist.join(', ') + '] 黑名单：[' + savedBlacklist.join(', ') +
                 ']');
             // 恢复保存的白/黑名单，再统一调用 applySheetInterfaces 将不在保存值中的活跃接口
             // 按默认规则纳入本地列表（wifi/ethernet → 白名单，其他 → 黑名单，空名接口跳过）。

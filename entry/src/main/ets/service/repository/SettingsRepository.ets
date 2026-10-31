@@ -494,39 +494,39 @@ export function applyLocaleToApp(lang: string): void {
 export function syncSystemLanguageIfFollowing(): void {
   // 重入守卫：正在应用语言时直接返回，不重复设置
   if (applyingLocale) {
-    logger.debug('sysLangSync: 跳过（正在应用语言，重入守卫）');
+    logger.debug('系统语言同步：跳过（正在应用语言，重入守卫）');
     return;
   }
   let currentLocale = getLocale();
   if (currentLocale !== '') {
     // 用户未选择「跟随系统」，此处不应同步，打一条说明便于比对
-    logger.debug('sysLangSync: 跳过（非跟随系统）locale=\'' + currentLocale + '\'');
+    logger.debug('系统语言同步：跳过（非跟随系统）locale=\'' + currentLocale + '\'');
     return;
   }
   try {
     let systemLang = i18n.System.getSystemLanguage();
     if (systemLang.length === 0) {
-      logger.debug('sysLangSync: 跳过（系统语言为空）systemLang=\'\'');
+      logger.debug('系统语言同步：跳过（系统语言为空）systemLang=\'\'');
       return;
     }
     // 仅用于诊断：提前取一次当前已设语言以便聚合打印（读取无副作用，判定条件不变）
     let appPreferred = i18n.System.getAppPreferredLanguage();
-    logger.debug('sysLangSync: locale=\'\' systemLang=\'' + systemLang +
+    logger.debug('系统语言同步：locale=\'\' systemLang=\'' + systemLang +
       '\' appPreferred=\'' + appPreferred + '\' lastRequested=\'' + lastRequestedLocaleBcp47 + '\'');
     // 防回环：系统语言与"最近一次请求设置的语言"相同，或与当前已设语言相同，均无需重复设置
     if (lastRequestedLocaleBcp47 === systemLang) {
-      logger.debug('sysLangSync: 跳过（与最近一次请求设置的语言相同）');
+      logger.debug('系统语言同步：跳过（与最近一次请求设置的语言相同）');
       return;
     }
     if (appPreferred === systemLang) {
-      logger.debug('sysLangSync: 跳过（与当前已设语言相同）');
+      logger.debug('系统语言同步：跳过（与当前已设语言相同）');
       return;
     }
     applyingLocale = true;
     try {
       i18n.System.setAppPreferredLanguage(systemLang);
       lastRequestedLocaleBcp47 = systemLang;
-      logger.info('sysLangSync: 已应用系统语言 \'' + systemLang + '\'');
+      logger.info('已应用系统语言：' + systemLang);
     } finally {
       applyingLocale = false;
     }
@@ -710,6 +710,6 @@ export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): 
   }
   setNetworkWhitelist(whitelistNames.join(','));
   setNetworkBlacklist(blacklistNames.join(','));
-  logger.debug('首次初始化: 白名单=[' +
+  logger.debug('首次初始化：白名单=[' +
     whitelistNames.join(', ') + '] 黑名单=[' + blacklistNames.join(', ') + ']');
 }

@@ -218,7 +218,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     let next: Array<SessionHistoryEntry> = entries;
     if (next.length > SESSION_HISTORY_MAX_ENTRIES) {
       next = trimHistory(next, SESSION_HISTORY_CAPACITY);
-      logger.info('历史批量裁剪 from=' + entries.length + ' to=' + next.length);
+      logger.debug('历史批量裁剪 from=' + entries.length + ' to=' + next.length);
     }
     this.cache = next;
     let startedAt: number = Date.now();
@@ -226,7 +226,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     let elapsed: number = Date.now() - startedAt;
     // 仅记录明显可感知的慢写入，避免每次归档都刷日志；用于判断是否还需要环形段/绝对段号
     if (elapsed >= 50) {
-      logger.info('历史落盘较慢 ms=' + elapsed + ' 条=' + next.length);
+      logger.debug('历史落盘较慢 ms=' + elapsed + ' 条=' + next.length);
     }
     historyRevision++;
   }
@@ -270,7 +270,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       historyRevision++;
     }
     if (entries.length > trimmed.length) {
-      logger.info('历史已按硬上限裁剪 from=' + entries.length + ' to=' + trimmed.length);
+      logger.debug('历史已按硬上限裁剪 from=' + entries.length + ' to=' + trimmed.length);
     }
     return trimmed;
   }
@@ -318,7 +318,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     this.writeAllSegments(trimmed);
     this.lastPersisted = trimmed.slice();
     sessionHistoryPreferencesUtil.delete(LEGACY_SESSION_HISTORY_KEY);
-    logger.info('历史已迁移为分段 count=' + trimmed.length);
+    logger.debug('历史已迁移为分段 count=' + trimmed.length);
     return trimmed;
   }
 
@@ -511,6 +511,6 @@ export function removeSessionHistoryByIds(ids: Array<string>): number {
   }
   revokeUriAccess(revokableUris).catch((): void => {
   });
-  logger.info('已移除任务历史 count=' + removed);
+  logger.info('已移除 ' + removed + ' 条任务历史');
   return removed;
 }
