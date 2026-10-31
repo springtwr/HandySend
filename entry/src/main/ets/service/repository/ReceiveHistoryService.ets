@@ -4,9 +4,9 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { ReceiveHistoryEntry } from '../../model/Types';
 import {
-  HISTORY_SEGMENT_SIZE,
   RECEIVE_HISTORY_CAPACITY,
-  RECEIVE_HISTORY_SEGMENT_COUNT
+  RECEIVE_HISTORY_SEGMENT_SIZE,
+  RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT
 } from '../../model/HistoryCapacity';
 import {
   DirtyRange,
@@ -61,8 +61,34 @@ export function initHistory(context: common.UIAbilityContext): void {
   if (repaired > 0) {
     logger.info('已修复历史文本消息标记 count=' + repaired);
   }
-  lastPersisted = history.slice();
+  let stripped: number = stripLegacyTextContent(history);
+  if (stripped > 0) {
+    // 旧字段只存在于磁盘 JSON；lastPersisted 置空使 dirtyRange 覆盖全部条目，
+    // 由一次全量回写把所有段里的字段清掉（新数据不再写入该字段）。
+    lastPersisted = [];
+    saveHistory();
+    logger.info('已清理旧版文本正文字段 count=' + stripped);
+  } else {
+    lastPersisted = history.slice();
+  }
   logger.debug('已加载 ' + history.length + ' 条记录');
+}
+
+/**
+ * 清理旧版 Web 上传文本消息写入的正文。
+ * `textContent` 已无消费者（预览/全文均按 path 读取文件本身），新数据不再写入；
+ * 但 JSON.parse 会把旧 JSON 中的字段原样保留，必须显式置 undefined，
+ * 才能在后续序列化时从偏好存储中消失。返回清理条数。
+ */
+function stripLegacyTextContent(entries: Array<ReceiveHistoryEntry>): number {
+  let stripped: number = 0;
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].textContent !== undefined) {
+      entries[i].textContent = undefined;
+      stripped++;
+    }
+  }
+  return stripped;
 }
 
 export function getHistory(): Array<ReceiveHistoryEntry> {
@@ -183,8 +209,7 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
         isMessage: old.isMessage,
         fileSize: old.fileSize,
         senderAlias: old.senderAlias,
-        timestamp: old.timestamp,
-        textContent: old.textContent
+        timestamp: old.timestamp
       };
       updated = true;
     }
@@ -210,10 +235,10 @@ function saveHistory(): void {
     return;
   }
   let segments: Array<Array<ReceiveHistoryEntry>> = planSegments(history,
-    RECEIVE_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+    RECEIVE_HISTORY_CAPACITY, RECEIVE_HISTORY_SEGMENT_SIZE);
   let range: DirtyRange | undefined = dirtyRange(lastPersisted, history);
   if (range !== undefined) {
-    let dirty: Array<number> = segmentsOfDirtyRange(range, HISTORY_SEGMENT_SIZE);
+    let dirty: Array<number> = segmentsOfDirtyRange(range, RECEIVE_HISTORY_SEGMENT_SIZE);
     for (let i = 0; i < dirty.length; i++) {
       let segIndex: number = dirty[i];
       if (segIndex < segments.length) {
@@ -222,7 +247,7 @@ function saveHistory(): void {
     }
   }
   // 段数减少（裁剪）时删除尾部残留段键
-  let previousCount: number = Math.ceil(lastPersisted.length / HISTORY_SEGMENT_SIZE);
+  let previousCount: number = Math.ceil(lastPersisted.length / RECEIVE_HISTORY_SEGMENT_SIZE);
   for (let i = segments.length; i < previousCount; i++) {
     receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
   }
@@ -237,7 +262,7 @@ function saveHistory(): void {
 function readAllSegments(): Array<ReceiveHistoryEntry> {
   let indices: Array<number> = existingSegments(HISTORY_PREFIX, (key: string): boolean => {
     return receiveHistoryPreferencesUtil.has(key);
-  }, RECEIVE_HISTORY_SEGMENT_COUNT);
+  }, RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT);
   if (indices.length === 0) {
     return migrateFromLegacyKey();
   }
@@ -269,11 +294,11 @@ function migrateFromLegacyKey(): Array<ReceiveHistoryEntry> {
     trimmed.shift();
   }
   let segments: Array<Array<ReceiveHistoryEntry>> = planSegments(trimmed,
-    RECEIVE_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+    RECEIVE_HISTORY_CAPACITY, RECEIVE_HISTORY_SEGMENT_SIZE);
   for (let i = 0; i < segments.length; i++) {
     writeSegment(i, segments[i]);
   }
-  for (let i = segments.length; i < RECEIVE_HISTORY_SEGMENT_COUNT; i++) {
+  for (let i = segments.length; i < RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT; i++) {
     receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
   }
   receiveHistoryPreferencesUtil.delete(LEGACY_HISTORY_KEY);
@@ -288,7 +313,7 @@ function writeSegment(segIndex: number, entries: Array<ReceiveHistoryEntry>): vo
 
 /** 删除全部分段键（含空档）：键不存在时静默跳过。 */
 function deleteAllSegments(): void {
-  for (let i = 0; i < RECEIVE_HISTORY_SEGMENT_COUNT; i++) {
+  for (let i = 0; i < RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT; i++) {
     receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
   }
 }

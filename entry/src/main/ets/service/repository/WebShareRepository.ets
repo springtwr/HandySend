@@ -57,7 +57,6 @@ import {
 } from '../../model/WebAddress';
 import { ensureRecvDownloadDir, ensureRecvTextDir, uniquePath } from './ReceiveTargets';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
-import { readTextOfLocation } from '../../utils/FileTextUtil';
 import { copyText } from '../../utils/ClipboardUtil';
 import { DialogService } from '../DialogService';
 import { generateWebAccessCode } from '../../utils/WebAccessCode';
@@ -1439,9 +1438,6 @@ function archiveUploadHistory(session: TransferSession): void {
       senderAlias: senderAlias,
       timestamp: Date.now()
     };
-    if (isTextMessage) {
-      entry.textContent = readTextOfLocation(f.path) ?? '';
-    }
     entries.push(entry);
   }
   if (entries.length > 0) {

@@ -31,9 +31,9 @@ import {
 } from '../../model/transfer/SessionHistory';
 import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
 import {
-  HISTORY_SEGMENT_SIZE,
   SESSION_HISTORY_CAPACITY,
-  SESSION_HISTORY_SEGMENT_COUNT
+  SESSION_HISTORY_SEGMENT_SIZE,
+  SESSION_HISTORY_STORAGE_SEGMENT_COUNT
 } from '../../model/HistoryCapacity';
 import {
   DirtyRange,
@@ -242,16 +242,21 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     // 读取即自愈：修复旧版本丢失的文本消息标记，再做去重与聚合字段重建
     let repaired: number = repairHistoryTextMessageFlags(entries, sendTextDir(), recvTextDir());
     let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(entries);
-    // 仅在清洗或修复确有改动时回写：健康数据此前每次冷启动都要全量序列化并覆写一遍，
-    // 属纯浪费。判定按引用与顺序比对——sanitizeHistory 未改动的条目保持原对象引用，
-    // 被剔除或重建聚合字段的条目才会导致不等。
-    if (repaired > 0 || !isSameEntries(entries, sanitized)) {
+    // 容量下调后旧数据可能仍超过新上限：读取时一并裁剪，使上限立即生效，
+    // 而不是等到下一次归档。裁剪/清洗确有改动时回写并清理多余段。
+    let trimmed: Array<SessionHistoryEntry> = trimHistory(sanitized, SESSION_HISTORY_CAPACITY);
+    // lastPersisted 先代表磁盘上的旧数据：writeDirtySegments 据此得到旧的段数，
+    // 才能在裁剪后删除尾部残留段（否则 old=[] 会把残留段当成不存在而跳过删除）。
+    this.lastPersisted = entries.slice();
+    if (repaired > 0 || !isSameEntries(entries, trimmed)) {
       // 清洗结果回写持久化：既有污点数据在此自动修正，后续读取恒为干净数据
-      this.writeDirtySegments(sanitized);
-      this.lastPersisted = sanitized.slice();
+      this.writeDirtySegments(trimmed);
       historyRevision++;
     }
-    return sanitized;
+    if (entries.length > trimmed.length) {
+      logger.info('历史已按容量裁剪 from=' + entries.length + ' to=' + trimmed.length);
+    }
+    return trimmed;
   }
 
   /**
@@ -262,7 +267,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
   private readAllSegments(): Array<SessionHistoryEntry> {
     let indices: Array<number> = existingSegments(SESSION_HISTORY_PREFIX, (key: string): boolean => {
       return sessionHistoryPreferencesUtil.has(key);
-    }, SESSION_HISTORY_SEGMENT_COUNT);
+    }, SESSION_HISTORY_STORAGE_SEGMENT_COUNT);
     if (indices.length === 0) {
       return this.migrateFromLegacyKey();
     }
@@ -307,10 +312,10 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
    */
   private writeDirtySegments(entries: Array<SessionHistoryEntry>): void {
     let segments: Array<Array<SessionHistoryEntry>> = planSegments(entries,
-      SESSION_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+      SESSION_HISTORY_CAPACITY, SESSION_HISTORY_SEGMENT_SIZE);
     let range: DirtyRange | undefined = dirtyRange(this.lastPersisted, entries);
     if (range !== undefined) {
-      let dirty: Array<number> = segmentsOfDirtyRange(range, HISTORY_SEGMENT_SIZE);
+      let dirty: Array<number> = segmentsOfDirtyRange(range, SESSION_HISTORY_SEGMENT_SIZE);
       for (let i = 0; i < dirty.length; i++) {
         let segIndex: number = dirty[i];
         if (segIndex < segments.length) {
@@ -319,7 +324,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       }
     }
     // 段数减少（裁剪）时删除尾部残留段键
-    let previousCount: number = Math.ceil(this.lastPersisted.length / HISTORY_SEGMENT_SIZE);
+    let previousCount: number = Math.ceil(this.lastPersisted.length / SESSION_HISTORY_SEGMENT_SIZE);
     for (let i = segments.length; i < previousCount; i++) {
       sessionHistoryPreferencesUtil.delete(segmentKey(SESSION_HISTORY_PREFIX, i));
     }
@@ -329,11 +334,12 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
   /** 全量重写所有段（迁移与无条件回写场景）。 */
   private writeAllSegments(entries: Array<SessionHistoryEntry>): void {
     let segments: Array<Array<SessionHistoryEntry>> = planSegments(entries,
-      SESSION_HISTORY_CAPACITY, HISTORY_SEGMENT_SIZE);
+      SESSION_HISTORY_CAPACITY, SESSION_HISTORY_SEGMENT_SIZE);
     for (let i = 0; i < segments.length; i++) {
       this.writeSegment(i, segments[i]);
     }
-    for (let i = segments.length; i < SESSION_HISTORY_SEGMENT_COUNT; i++) {
+    // 清理到旧布局的段数上限：迁移/降低容量时 3-7 段可能仍有旧数据
+    for (let i = segments.length; i < SESSION_HISTORY_STORAGE_SEGMENT_COUNT; i++) {
       sessionHistoryPreferencesUtil.delete(segmentKey(SESSION_HISTORY_PREFIX, i));
     }
   }
@@ -354,13 +360,14 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       logger.warn('历史段序列化失败 ' + key);
       return;
     }
-    logger.debug('历史段写入 ' + key + ' 条目=' + entries.length + ' 字节=' + json.length);
+    logger.debug('历史段写入 ' + key + ' 条目=' + entries.length + ' 字符=' + json.length);
     sessionHistoryPreferencesUtil.setString(key, json);
   }
 
   /** 删除全部分段键（含空档）：键不存在时静默跳过。 */
   private deleteAllSegments(): void {
-    for (let i = 0; i < SESSION_HISTORY_SEGMENT_COUNT; i++) {
+    // 按旧布局的段数上限清理：降低容量后 3-7 段仍可能存在，遗漏会让已清空的历史复活
+    for (let i = 0; i < SESSION_HISTORY_STORAGE_SEGMENT_COUNT; i++) {
       sessionHistoryPreferencesUtil.delete(segmentKey(SESSION_HISTORY_PREFIX, i));
     }
   }

@@ -200,7 +200,8 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
   故每次启动都不会破坏已发送文本的预览，文件只在用户主动清空任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
 - **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经 `LocalSendReceiveAdapter.updateReceiveSessionFilePath` 在会话终结前写入逐文件路径；
   发送侧由发送适配器在会话创建时携带。归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
-- **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时忽略）；`ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
+- **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时剥离并全量回写一次）；
+  `ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
   接收历史页的查看全文/复制改为经共用工具 `utils/FileTextUtil.readTextOfLocation` 读取文件（沙箱路径直读、选择器 URI 经文件描述符读取，失败返回不可用并由界面明确提示）。
 
 ## 预准备结果缓存与失效

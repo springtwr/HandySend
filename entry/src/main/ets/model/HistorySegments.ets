@@ -10,8 +10,6 @@
  * - 读取自 0 起向最大段号拼接（最旧在前）；裁剪从 0 起整段丢弃。
  */
 
-import { HISTORY_SEGMENT_SIZE } from './HistoryCapacity';
-
 /** 第 segIndex 段的键名。 */
 export function segmentKey(prefix: string, segIndex: number): string {
   return prefix + '#' + segIndex;

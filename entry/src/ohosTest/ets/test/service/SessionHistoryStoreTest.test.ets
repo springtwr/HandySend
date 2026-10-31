@@ -26,10 +26,14 @@ import {
   upsertHistory
 } from '../../../../main/ets/model/transfer/SessionHistory'
 import {
-  HISTORY_SEGMENT_SIZE,
   RECEIVE_HISTORY_CAPACITY,
+  RECEIVE_HISTORY_SEGMENT_COUNT,
+  RECEIVE_HISTORY_SEGMENT_SIZE,
+  RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT,
   SESSION_HISTORY_CAPACITY,
-  SESSION_HISTORY_SEGMENT_COUNT
+  SESSION_HISTORY_SEGMENT_COUNT,
+  SESSION_HISTORY_SEGMENT_SIZE,
+  SESSION_HISTORY_STORAGE_SEGMENT_COUNT
 } from '../../../../main/ets/model/HistoryCapacity'
 import {
   SessionCreateInput,
@@ -201,10 +205,15 @@ export default function SessionHistoryStoreTest() {
     // ── 保留容量常量：上限是持久化行为的一部分，锁定取值避免无声变更 ──
 
     it('capacity_constants_are_pinned', 0, () => {
-      expect(SESSION_HISTORY_CAPACITY).assertEqual(2000)
-      expect(RECEIVE_HISTORY_CAPACITY).assertEqual(2000)
-      expect(SESSION_HISTORY_SEGMENT_COUNT).assertEqual(8)
-      expect(HISTORY_SEGMENT_SIZE).assertEqual(250)
+      expect(SESSION_HISTORY_CAPACITY).assertEqual(750)
+      expect(RECEIVE_HISTORY_CAPACITY).assertEqual(5000)
+      expect(SESSION_HISTORY_SEGMENT_COUNT).assertEqual(3)
+      expect(SESSION_HISTORY_SEGMENT_SIZE).assertEqual(250)
+      // 读取/清理需覆盖升级前的旧 8 段，不能随容量一起降到 3
+      expect(SESSION_HISTORY_STORAGE_SEGMENT_COUNT).assertEqual(8)
+      expect(RECEIVE_HISTORY_SEGMENT_COUNT).assertEqual(20)
+      expect(RECEIVE_HISTORY_SEGMENT_SIZE).assertEqual(250)
+      expect(RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT).assertEqual(20)
       // 归档条目的 schema 版本参与持久化契约，变更需显式确认读侧兼容性
       expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(5)
     })
@@ -213,14 +222,18 @@ export default function SessionHistoryStoreTest() {
 
     it('segments_capacityIsMultipleOfSegmentSize', 0, () => {
       // 容量必须可由整段表达，否则裁剪需段内处理，破坏「只重写末段」的代价假设
-      expect(SESSION_HISTORY_CAPACITY % HISTORY_SEGMENT_SIZE).assertEqual(0)
-      expect(SESSION_HISTORY_CAPACITY / HISTORY_SEGMENT_SIZE).assertEqual(SESSION_HISTORY_SEGMENT_COUNT)
+      expect(SESSION_HISTORY_CAPACITY % SESSION_HISTORY_SEGMENT_SIZE).assertEqual(0)
+      expect(SESSION_HISTORY_CAPACITY / SESSION_HISTORY_SEGMENT_SIZE)
+        .assertEqual(SESSION_HISTORY_SEGMENT_COUNT)
+      expect(RECEIVE_HISTORY_CAPACITY % RECEIVE_HISTORY_SEGMENT_SIZE).assertEqual(0)
+      expect(RECEIVE_HISTORY_CAPACITY / RECEIVE_HISTORY_SEGMENT_SIZE)
+        .assertEqual(RECEIVE_HISTORY_SEGMENT_COUNT)
     })
 
     it('segments_survivesColdReloadAcrossSegmentBoundary', 0, () => {
       clearSessionHistory()
       // 条目数跨过段边界：强制落盘后失效内存缓存，由偏好存储重新读回
-      let total = HISTORY_SEGMENT_SIZE + 3
+      let total = SESSION_HISTORY_SEGMENT_SIZE + 3
       for (let i = 0; i < total; i++) {
         let s = createSession(terminalInput())
         finish(s.id, SessionStage.succeeded)
@@ -241,6 +254,41 @@ export default function SessionHistoryStoreTest() {
       clearSessionHistory()
     })
 
+    it('segments_loadOverNewCapacity_trimsAndDeletesLegacyTailSegments', 0, () => {
+      clearSessionHistory()
+      // 模拟升级前旧布局：4 段共 751 条（旧上限 2000/段大小 250）
+      let total: number = SESSION_HISTORY_CAPACITY + 1
+      let entries: Array<SessionHistoryEntry> = []
+      for (let i = 0; i < total; i++) {
+        entries.push(cleanEntry('cap-' + i, i + 1, [1]))
+      }
+      let oldSegmentCount: number = Math.ceil(total / SESSION_HISTORY_SEGMENT_SIZE)
+      for (let s = 0; s < oldSegmentCount; s++) {
+        let start: number = s * SESSION_HISTORY_SEGMENT_SIZE
+        let end: number = start + SESSION_HISTORY_SEGMENT_SIZE
+        if (end > entries.length) {
+          end = entries.length
+        }
+        let file: SessionHistoryFile = {
+          schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+          entries: entries.slice(start, end)
+        }
+        sessionHistoryPreferencesUtil.setString(segmentKey('transferSessionHistory', s),
+          JSON.stringify(file))
+      }
+      // 读取即按新上限裁剪：保留最近 750 条，并删除第 4 段（旧键 3）
+      resetSessionHistoryCache()
+      let loaded: Array<SessionHistoryEntry> = getSessionHistory()
+      expect(loaded.length).assertEqual(SESSION_HISTORY_CAPACITY)
+      expect(loaded[0].sessionId).assertEqual('cap-' + (total - 1))
+      expect(loaded[loaded.length - 1].sessionId).assertEqual('cap-1')
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 3))).assertFalse()
+      // 再次冷启动仍为裁剪后的结果，不会把残留段拼回来
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(SESSION_HISTORY_CAPACITY)
+      clearSessionHistory()
+    })
+
     it('segments_writesSegmentKeysNotLegacyKey', 0, () => {
       clearSessionHistory()
       let s = createSession(terminalInput())
@@ -254,7 +302,7 @@ export default function SessionHistoryStoreTest() {
 
     it('segments_clearRemovesAllSegmentKeys', 0, () => {
       clearSessionHistory()
-      let total = HISTORY_SEGMENT_SIZE + 1
+      let total = SESSION_HISTORY_SEGMENT_SIZE + 1
       for (let i = 0; i < total; i++) {
         let s = createSession(terminalInput())
         finish(s.id, SessionStage.succeeded)
@@ -262,7 +310,7 @@ export default function SessionHistoryStoreTest() {
       expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
       // 清除必须删键而非写空段：残留段键会在下次读取时拼接回来使已清空的历史重现
       clearSessionHistory()
-      for (let i = 0; i < SESSION_HISTORY_SEGMENT_COUNT; i++) {
+      for (let i = 0; i < SESSION_HISTORY_STORAGE_SEGMENT_COUNT; i++) {
         expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', i))).assertFalse()
       }
       resetSessionHistoryCache()
@@ -311,20 +359,20 @@ export default function SessionHistoryStoreTest() {
     it('segments_removeAcrossSegments_persists', 0, () => {
       clearSessionHistory()
       let ids: string[] = []
-      let total = HISTORY_SEGMENT_SIZE + 2
+      let total = SESSION_HISTORY_SEGMENT_SIZE + 2
       for (let i = 0; i < total; i++) {
         let s = createSession(terminalInput())
         finish(s.id, SessionStage.succeeded)
         ids.push(s.id)
       }
       // 删除跨越段边界的条目：变更区间覆盖多段，须全部落盘
-      expect(removeSessionHistoryByIds([ids[0], ids[HISTORY_SEGMENT_SIZE]])).assertEqual(2)
+      expect(removeSessionHistoryByIds([ids[0], ids[SESSION_HISTORY_SEGMENT_SIZE]])).assertEqual(2)
       resetSessionHistoryCache()
       let reloaded = getSessionHistory()
       expect(reloaded.length).assertEqual(total - 2)
       for (let i = 0; i < reloaded.length; i++) {
         expect(reloaded[i].sessionId === ids[0]).assertFalse()
-        expect(reloaded[i].sessionId === ids[HISTORY_SEGMENT_SIZE]).assertFalse()
+        expect(reloaded[i].sessionId === ids[SESSION_HISTORY_SEGMENT_SIZE]).assertFalse()
       }
       clearSessionHistory()
     })

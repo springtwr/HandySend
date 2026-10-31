@@ -214,6 +214,8 @@ export interface ReceiveHistoryEntry {
   fileSize: number
   senderAlias: string
   timestamp: number
+  // 旧版 Web 上传文本消息曾把正文写入此字段；新数据不再写入。
+  // 消费方一律按 path 读取文件本身，该字段仅保留供读取旧历史时识别并清理。
   textContent?: string
 }
 

@@ -7,6 +7,11 @@ import {
   segmentsOfDirtyRange,
   splitIntoSegments
 } from '../../../../main/ets/model/HistorySegments'
+import {
+  SESSION_HISTORY_CAPACITY,
+  SESSION_HISTORY_SEGMENT_COUNT,
+  SESSION_HISTORY_SEGMENT_SIZE
+} from '../../../../main/ets/model/HistoryCapacity'
 
 /** 记录键存在性，用于驱动 existingSegments（纯函数，不依赖偏好存储）。 */
 function fakeHas(existing: string[]): (key: string) => boolean {
@@ -188,10 +193,12 @@ export default function HistorySegmentsTest() {
     })
 
     it('segmentsOfDirtyRange_appendMapsToLastSegmentOnly', 0, () => {
-      // 段大小 250、容量 2000（8 段）：在末段追加只重写末段
-      let segs = segmentsOfDirtyRange({ first: 1999, last: 1999 }, 250)
+      // 任务历史当前布局：容量 750 = 250 × 3，在末段追加只重写末段
+      let lastIndex: number = SESSION_HISTORY_CAPACITY - 1
+      let segs = segmentsOfDirtyRange({ first: lastIndex, last: lastIndex },
+        SESSION_HISTORY_SEGMENT_SIZE)
       expect(segs.length).assertEqual(1)
-      expect(segs[0]).assertEqual(7)
+      expect(segs[0]).assertEqual(SESSION_HISTORY_SEGMENT_COUNT - 1)
     })
 
     it('segmentsOfDirtyRange_guardSegmentSize', 0, () => {
