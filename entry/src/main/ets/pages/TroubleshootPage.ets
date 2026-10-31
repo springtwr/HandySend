@@ -28,13 +28,14 @@ export struct TroubleshootPage {
   // 各 FAQ 条目的展开状态，默认全部折叠（与 faqItems 一一对应）
   @Local expandedItems: boolean[] = [
     false, false, false, false,
-    false, false, false, false,
-    false, false
+    false, false, false, false, false,
+    false,
+    false, false, false, false
   ];
-  // FAQ 条目数据数组：按「通用问题 / LocalSend 专属 / MTA 专属」三组排列，
+  // FAQ 条目数据数组：按「通用问题 / LocalSend 专属 / MTA 专属 / 网页专属」四组排列，
   // 每组首条的 groupTitleRes 非空，渲染时在该条之前显示分组标题
   private faqItems: FaqItem[] = [
-    // ── 通用问题（两个协议共有的症状） ──
+    // ── 通用问题（各传输方式共有的症状） ──
     {
       groupTitleRes: $r('app.string.troubleshoot_group_general'),
       titleRes: $r('app.string.troubleshoot_discovery_title'),
@@ -82,6 +83,24 @@ export struct TroubleshootPage {
       titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
       descRes: $r('app.string.troubleshoot_mta_transfer_desc'),
       hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
+    },
+    {
+      // ── 网页专属（仅网页传输机制才会有） ──
+      groupTitleRes: $r('app.string.troubleshoot_group_web'),
+      titleRes: $r('app.string.troubleshoot_web_usage_title'),
+      descRes: $r('app.string.troubleshoot_web_usage_desc')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_web_unreachable_title'),
+      descRes: $r('app.string.troubleshoot_web_unreachable_desc')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_web_encryption_title'),
+      descRes: $r('app.string.troubleshoot_web_encryption_desc')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_web_background_title'),
+      descRes: $r('app.string.troubleshoot_web_background_desc')
     },
   ];
 

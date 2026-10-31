@@ -291,7 +291,7 @@ export struct SendContentZone {
 
   build() {
     Column() {
-      // 内容卡片（页内标题行与故障排查入口已迁入外层标题栏）
+      // 内容卡片（页内标题行与常见问题入口已迁入外层标题栏）
       Column() {
         if (this.viewModel.stagedFiles.length === 0) {
           this.typePicker()
