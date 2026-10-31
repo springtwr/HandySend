@@ -2,12 +2,15 @@
  * SendContentZone.ets — 发送页内容区
  *
  * 内容类型选择 + 暂存列表：无暂存内容时展示类型选择网格，有暂存内容时展示
- * 统计/添加/清空操作行与暂存条目列表（40vp 缩略图、48vp 行高、红色圆形移除按钮）。
+ * 统计/添加/清空操作行与暂存条目列表（40vp 缩略图、48vp 行高、红色圆形移除按钮）；
+ * 已选内容后再次添加时以半模态复用同一类型选择网格。
  * 两种状态共用同一内容高度；暂存列表使用 List + Repeat 懒加载（只建可视区与预加载区的行），
  * 数百个文件不会一次性建树。
  */
 
+import { uiObserver } from '@kit.ArkUI';
 import { DesignTokens } from '../../common/DesignTokens';
+import { getSheetWidth, isWideWidth } from '../../common/Breakpoints';
 import { StagedFile } from '../../model/Types';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { getFileTypeIconResource } from '../../utils/FileTypeIconUtil';
@@ -26,6 +29,12 @@ const STAGED_LIST_CACHED_COUNT: number = 6;
 @ComponentV2
 export struct SendContentZone {
   @Require @Param viewModel: SendViewModel
+  // 系统宽度断点（随窗口尺寸变化自动刷新，添加文件面板宽度断点化用）
+  @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
+  // 「添加文件」半模态显隐：已选文件后再以与空态一致的 8 宫格选择内容类型
+  @Local isShowPickerSheet: boolean = false
+  // 面板收起后待执行的动作（系统选择器/文本对话框要在面板完全消失后再打开）
+  private pendingPickAction: (() => void) | undefined = undefined
   @Event onTextInput: () => void = () => {
   }
   @Event onPaste: () => void = () => {
@@ -40,14 +49,18 @@ export struct SendContentZone {
     Grid() {
       GridItem() {
         this.pickButton($r('sys.symbol.doc_text_fill'), $r('app.string.send_file'), 'send_pick_file', () => {
-          this.viewModel.pickFiles();
+          this.dispatchPick(() => {
+            this.viewModel.pickFiles();
+          });
         })
       }
 
       GridItem() {
         this.pickButton($r('sys.symbol.doc_plaintext_fill'), $r('app.string.send_document'), 'send_pick_document',
           () => {
-            this.viewModel.pickDocuments();
+            this.dispatchPick(() => {
+              this.viewModel.pickDocuments();
+            });
           })
       }
 
@@ -66,7 +79,9 @@ export struct SendContentZone {
             .layoutDirection(SecurityComponentLayoutDirection.VERTICAL)
             .onClick((event: ClickEvent, result: PasteButtonOnClickResult) => {
               if (result === PasteButtonOnClickResult.SUCCESS) {
-                this.onPaste();
+                this.dispatchPick(() => {
+                  this.onPaste();
+                });
               }
             })
         }
@@ -80,31 +95,41 @@ export struct SendContentZone {
 
       GridItem() {
         this.pickButton($r('sys.symbol.text_aligncenter'), $r('app.string.send_justify'), 'send_pick_justify', () => {
-          this.onTextInput();
+          this.dispatchPick(() => {
+            this.onTextInput();
+          });
         })
       }
 
       GridItem() {
         this.pickButton($r('sys.symbol.picture_fill'), $r('app.string.send_image'), 'send_pick_image', () => {
-          this.viewModel.pickImages();
+          this.dispatchPick(() => {
+            this.viewModel.pickImages();
+          });
         })
       }
 
       GridItem() {
         this.pickButton($r('sys.symbol.video_fill'), $r('app.string.send_video'), 'send_pick_video', () => {
-          this.viewModel.pickVideos();
+          this.dispatchPick(() => {
+            this.viewModel.pickVideos();
+          });
         })
       }
 
       GridItem() {
         this.pickButton($r('sys.symbol.music_fill'), $r('app.string.send_audio'), 'send_pick_audio', () => {
-          this.viewModel.pickAudio();
+          this.dispatchPick(() => {
+            this.viewModel.pickAudio();
+          });
         })
       }
 
       GridItem() {
         this.pickButton($r('sys.symbol.doc_zipper_fill'), $r('app.string.send_archive'), 'send_pick_archive', () => {
-          this.viewModel.pickArchives();
+          this.dispatchPick(() => {
+            this.viewModel.pickArchives();
+          });
         })
       }
     }
@@ -140,6 +165,42 @@ export struct SendContentZone {
       action();
     })
     .id(itemId)
+  }
+
+  // 宫格动作统一入口：面板未打开时直接执行；面板打开时先收起，
+  // 待面板完全消失（onDisappear）后再执行后续动作，避免系统选择器/对话框与面板叠层
+  private dispatchPick(action: () => void): void {
+    if (!this.isShowPickerSheet) {
+      action();
+      return;
+    }
+    this.pendingPickAction = action;
+    this.isShowPickerSheet = false;
+  }
+
+  // 面板回退动画结束后执行待办动作；用户直接关闭面板时无待办动作，不产生副作用
+  private runPendingPick(): void {
+    let action: (() => void) | undefined = this.pendingPickAction;
+    this.pendingPickAction = undefined;
+    if (action !== undefined) {
+      action();
+    }
+  }
+
+  // 「添加文件」半模态内容：复用空态的类型选择网格，已选文件后仍以相同的 8 宫格选择类型
+  @Builder
+  pickerSheet() {
+    Column() {
+      this.typePicker()
+    }
+    .width('100%')
+    .padding({
+      left: DesignTokens.space.card,
+      right: DesignTokens.space.card,
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.card
+    })
+    .id('send_add_files_sheet')
   }
 
   // 暂存列表条目：行内容（缩略图 / 文件名 / 大小 / 移除按钮）。
@@ -249,7 +310,7 @@ export struct SendContentZone {
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.accent_blue'))
         .onClick(() => {
-          this.viewModel.pickFiles();
+          this.isShowPickerSheet = true;
         })
         .id('send_add_files')
       SymbolGlyph($r('sys.symbol.xmark'))
@@ -317,5 +378,20 @@ export struct SendContentZone {
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .id('send_content_zone')
+    // 「添加文件」半模态：与项目其他面板一致的宽度/居中策略，高度按 8 宫格内容自适应
+    .bindSheet($$this.isShowPickerSheet, this.pickerSheet(), {
+      height: SheetSize.FIT_CONTENT,
+      width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+      preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
+      blurStyle: BlurStyle.Regular,
+      title: {
+        title: $r('app.string.send_add_files')
+      },
+      showClose: true,
+      // 面板完全收起后再执行所选动作：系统选择器会覆盖整页，文本输入会再开对话框
+      onDisappear: () => {
+        this.runPendingPick();
+      }
+    })
   }
 }
