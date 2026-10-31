@@ -61,6 +61,8 @@ import { readTextOfLocation } from '../../utils/FileTextUtil';
 import { copyText } from '../../utils/ClipboardUtil';
 import { DialogService } from '../DialogService';
 import { generateWebAccessCode } from '../../utils/WebAccessCode';
+import { secureRandomHex } from '../../utils/SecureRandom';
+import { redactSessionToken } from '../../utils/LogRedaction';
 import {
   WEB_DOWNLOAD_KEY,
   beginWebDownloadBatch,
@@ -341,13 +343,13 @@ interface WebServiceConfigJson {
   files: Array<WebServiceFileJson>
 }
 
-/** 生成二维码/URL 能力令牌（32 位十六进制；失败时退化为时间戳随机串）。 */
+/** 生成二维码/URL 能力令牌（32 位十六进制；UUID 失败时改用安全随机串）。 */
 function generateWebCapabilityToken(): string {
   try {
     return util.generateRandomUUID(false).replace(/-/g, '');
   } catch (e) {
-    logger.warn('生成网页访问令牌失败，改用降级随机串：' + String(e));
-    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+    logger.warn('生成网页访问令牌失败，改用安全随机串：' + String(e));
+    return secureRandomHex(16);
   }
 }
 
@@ -409,7 +411,13 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   // 任何重新启服都取消旧的延时停止，避免宽限期结束后误停新实例
   cancelScheduledWebStop();
   // 每次启动生成新的本次访问码：服务重启后旧访问码与旧二维码一起失效。
-  webAccessCode = generateWebAccessCode();
+  try {
+    webAccessCode = generateWebAccessCode();
+  } catch (e) {
+    logger.error('生成网页访问码失败：' + String(e));
+    markWebServiceUnavailable();
+    return false;
+  }
   // 网页服务独立于 LocalSend 服务器：不依赖服务器启动时的网卡刷新，
   // 自行刷新以取到本机 IP（LocalSend 关闭时本模块仍需给出可用地址）
   updateLocalInterfaces();
@@ -967,7 +975,7 @@ export function handleWebDownloadStartedTyped(event: NativeWebDownloadStartedEve
     }
   }
   beginWebDownloadBatch(event.batchId, event.ip, descriptors, textPreview);
-  logger.info('网页下载开始 batch=' + event.batchId + ' ip=' + event.ip +
+  logger.info('网页下载开始 batch=' + redactSessionToken(event.batchId) + ' ip=' + event.ip +
     ' 文件数=' + descriptors.length);
   notifyChange();
 }
@@ -996,7 +1004,7 @@ export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent):
     return;
   }
   handleWebDownloadEnded(event.batchId, event.outcome, event.error);
-  logger.info('网页下载结束 batch=' + event.batchId + ' 结果=' + event.outcome);
+  logger.info('网页下载结束 batch=' + redactSessionToken(event.batchId) + ' 结果=' + event.outcome);
   notifyChange();
 }
 
@@ -1085,7 +1093,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
     return;
   }
   let ip: string = event.ip;
-  logger.info('收到 Web 上传请求 ip=' + ip + '（token=' + token + '）');
+  logger.info('收到 Web 上传请求 ip=' + ip + '（token=' + redactSessionToken(token) + '）');
   let descriptors: Array<SessionFileDescriptor> = [];
   for (let i = 0; i < event.files.length; i++) {
     let f: NativeTransferFileInfo = event.files[i];
@@ -1107,7 +1115,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
     // 本次挂载已开启上传免确认：先登记为进行中，再按正常接受流程预置落盘目标。
     // 目标目录准备失败时 acceptWebUpload 内部会转为拒绝，不会静默落盘。
     let isNewSession: boolean = findWebUploadSession(token) === undefined;
-    logger.info('Web 上传按本次挂载授权自动接受 token=' + token);
+    logger.info('Web 上传按本次挂载授权自动接受 token=' + redactSessionToken(token));
     beginWebUploadBurst(token, false, descriptors, ip, previewText);
     // 与 LocalSend 自动接收口径一致：免确认收到文本消息时立即复制到剪贴板。
     // 只在首次登记时复制，浏览器重试 prepare 不会重复覆盖剪贴板。
@@ -1115,12 +1123,12 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
       if (copyText(previewText)) {
         DialogService.showCenterToast($r('app.string.received_text_copied_toast'));
       } else {
-        logger.warn('Web 上传文本消息写入剪贴板失败 token=' + token);
+        logger.warn('Web 上传文本消息写入剪贴板失败 token=' + redactSessionToken(token));
       }
     }
     acceptWebUpload(token);
   } else {
-    logger.debug('Web 上传进入待确认 token=' + token);
+    logger.debug('Web 上传进入待确认 token=' + redactSessionToken(token));
     beginWebUploadBurst(token, true, descriptors, ip, previewText);
   }
   notifyChange();
@@ -1212,12 +1220,12 @@ export function acceptWebUpload(token: string): void {
     try {
       nativeAcceptWebSession(token);
     } catch (e) {
-      logger.error('接受上传失败 token=' + token + '：' + e);
+      logger.error('接受上传失败 token=' + redactSessionToken(token) + '：' + e);
       declineWebUpload(token);
       return;
     }
     markWebUploadAccepted(token);
-    logger.info('Web 上传已接受 token=' + token);
+    logger.info('Web 上传已接受 token=' + redactSessionToken(token));
     notifyChange();
   }).catch((): void => {
     declineWebUpload(token);
@@ -1231,10 +1239,10 @@ export function declineWebUpload(token: string): void {
   try {
     nativeDeclineWebSession(token);
   } catch (e) {
-    logger.warn('拒绝 Web 上传失败 token=' + token + '：' + String(e));
+    logger.warn('拒绝 Web 上传失败 token=' + redactSessionToken(token) + '：' + String(e));
   }
   markWebUploadDeclined(token);
-  logger.info('Web 上传已拒绝 token=' + token);
+  logger.info('Web 上传已拒绝 token=' + redactSessionToken(token));
   notifyChange();
 }
 
@@ -1245,7 +1253,7 @@ export function expireWebUpload(token: string): void {
   }
   try {
     nativeExpireWebSession(token);
-    logger.info('Web 上传会话已终结 token=' + token);
+    logger.info('Web 上传会话已终结 token=' + redactSessionToken(token));
   } catch (_e) {
     // 决策已被处理或会话已过期：属正常竞态
   }
@@ -1305,7 +1313,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
       downloadDir = '';
     }
     if (downloadDir.length === 0) {
-      logger.error('上传落盘目录不可用 token=' + token);
+      logger.error('上传落盘目录不可用 token=' + redactSessionToken(token));
       return false;
     }
   }
@@ -1313,7 +1321,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
   // 否则服务端创建临时文件会因目录不存在而直接失败。
   let textDir: string = isTextMessage ? ensureRecvTextDir() : '';
   if (isTextMessage && textDir.length === 0) {
-    logger.error('上传文本目录不可用 token=' + token);
+    logger.error('上传文本目录不可用 token=' + redactSessionToken(token));
     return false;
   }
   interface UploadTargetJson {
@@ -1327,7 +1335,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     let f = session.files[i];
     let dir: string = isTextMessage ? textDir : downloadDir;
     if (dir.length === 0) {
-      logger.error('上传落盘目录缺失 token=' + token);
+      logger.error('上传落盘目录缺失 token=' + redactSessionToken(token));
       return false;
     }
     let fileName: string = uniquePath(dir, f.fileName);
@@ -1346,11 +1354,11 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
   try {
     applied = nativeSetWebUploadTargets(token, JSON.stringify(targets));
   } catch (e) {
-    logger.error('下发上传目标失败 token=' + token + '：' + e);
+    logger.error('下发上传目标失败 token=' + redactSessionToken(token) + '：' + e);
     return false;
   }
   if (applied !== targets.length) {
-    logger.warn('上传目标部分未生效 token=' + token + ' applied=' + applied);
+    logger.warn('上传目标部分未生效 token=' + redactSessionToken(token) + ' applied=' + applied);
     return false;
   }
   return true;
@@ -1446,6 +1454,6 @@ function archiveUploadHistory(session: TransferSession): void {
   }
   if (entries.length > 0) {
     addHistoryEntries(entries);
-    logger.info('Web 上传已归档接收历史 token=' + session.protocolSessionId);
+    logger.info('Web 上传已归档接收历史 token=' + redactSessionToken(session.protocolSessionId));
   }
 }

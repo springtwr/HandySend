@@ -5,7 +5,7 @@ import {
   isWebAccessCode
 } from '../../../../main/ets/utils/WebAccessCode'
 
-// 本次访问码的纯逻辑单测（无 UIContext/系统依赖）。
+// 访问码生成与校验的设备端单测（随机源依赖系统安全随机）。
 export default function WebAccessCodeTest() {
   describe('WebAccessCodeTest', () => {
     it('generates_six_digits', 0, () => {

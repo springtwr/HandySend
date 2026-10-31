@@ -25,6 +25,7 @@ import {
 import { MediaFileInfo } from '../../../model/Types';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
+import { redactSessionToken } from '../../../utils/LogRedaction';
 import { getMimeForFileName, isImage, isMediaMime } from '../../../utils/MimeUtils';
 import {
   appendFiles,
@@ -188,16 +189,16 @@ function scheduleIdleTimeout(ctx: BurstContext): void {
       return;
     }
     if (current.stage === SessionStage.awaitingConfirmation) {
-      logger.debug('Web 上传待确认超时 token=' + ctx.token);
+      logger.debug('Web 上传待确认超时 token=' + redactSessionToken(ctx.token));
       if (expireInvoker !== undefined) {
         expireInvoker(ctx.token);
       }
       finish(ctx.unifiedId, SessionStage.cancelled, '待确认超时', 'pending_timeout');
     } else if (ctx.knownFiles.size === 0) {
-      logger.debug('Web 上传等待对方开始超时 token=' + ctx.token);
+      logger.debug('Web 上传等待对方开始超时 token=' + redactSessionToken(ctx.token));
       finish(ctx.unifiedId, SessionStage.cancelled, '对方未上传任何文件', 'peer_no_upload');
     } else {
-      logger.debug('Web 上传空闲超时 token=' + ctx.token);
+      logger.debug('Web 上传空闲超时 token=' + redactSessionToken(ctx.token));
       finish(ctx.unifiedId, SessionStage.failed, '对端长时间无数据', 'peer_idle');
     }
     bursts.delete(ctx.token);
