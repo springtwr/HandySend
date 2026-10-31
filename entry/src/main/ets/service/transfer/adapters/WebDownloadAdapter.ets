@@ -146,8 +146,6 @@ export function handleWebDownloadEnded(batchId: string, outcome: string,
     (file.totalBytes > 0 && file.bytesSent >= file.totalBytes));
   finish(sessionId, completed ? SessionStage.partiallyFailed : SessionStage.failed,
     error !== undefined && error.length > 0 ? error : '网页下载失败');
-  logger.warn('Web 下载批次结束 batch=' + redactSessionToken(batchId) + ' outcome=' + outcome +
-    ' error=' + (error ?? ''));
 }
 
 const adapter: SessionAdapter = {

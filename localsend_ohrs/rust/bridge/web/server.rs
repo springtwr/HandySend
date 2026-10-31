@@ -74,6 +74,12 @@ const READ_BUF_SIZE: usize = 512 * 1024;
 /// 进度通道容量（块）。
 const BODY_CHANNEL_CAPACITY: usize = 16;
 
+/// 日志用短会话标识（保留前 8 位）：token 是浏览器访问凭据，不整串落日志。
+fn redact_token(token: &str) -> String {
+    let prefix: String = token.chars().take(8).collect();
+    format!("{prefix}***")
+}
+
 /// 自研 web 服务配置（与上游 `WebConfig` 解耦，不再复用它）。
 #[derive(Clone, Debug, Default)]
 pub struct WebServiceConfig {
@@ -438,7 +444,10 @@ impl WebServiceState {
     pub fn sweep_retained(&self, now: Instant) {
         lock(&self.retained).retain(|_, entry| entry.deadline > now);
         lock(&self.pending_batches).retain(|_, batch| batch.expires_at > now);
-        lock(&self.sessions).cleanup(now);
+        let expired = lock(&self.sessions).cleanup(now);
+        if !expired.is_empty() {
+            log::debug!("过期下载会话已清理 count={}", expired.len());
+        }
     }
 
     /// 惰性打扫上传侧：返回被终结的完整会话，调用方负责清理
@@ -469,15 +478,31 @@ impl WebServiceState {
                 remove_tmp_files(&session);
                 self.broadcast_session_end(&token);
                 self.emit(ProgressEvent::Finished { token }).await;
+                log::debug!(
+                    "页面关闭宽限期结束，上传会话收尾 token={} ip={}",
+                    redact_token(&session.token),
+                    session.peer_ip
+                );
             }
         }
-        for (session, _reason) in self.sweep_uploads(now) {
+        for (session, reason) in self.sweep_uploads(now) {
             self.broadcast_session_end(&session.token);
             remove_tmp_files(&session);
             self.emit(ProgressEvent::Finished {
                 token: session.token.clone(),
             })
             .await;
+            log::info!(
+                "上传会话超时结束 token={} ip={} 原因={}",
+                redact_token(&session.token),
+                session.peer_ip,
+                match reason {
+                    SessionEndReason::Declined => "对方拒绝",
+                    SessionEndReason::PendingTimeout => "等待确认超时",
+                    SessionEndReason::PeerNoDownload => "对方未开始上传",
+                    SessionEndReason::PeerIdle => "传输空闲超时",
+                }
+            );
         }
     }
 
@@ -744,11 +769,13 @@ pub async fn run_server_with_tls(
         let (stream, peer) = match listener.accept().await {
             Ok(pair) => pair,
             Err(e) => {
-                log::debug!("自研 web accept 失败: {e}");
+                log::debug!("接受连接失败: {e}");
                 continue;
             }
         };
-        log::debug!("自研 web 接收到连接: {peer}");
+        // 逐连接明细只留 trace：浏览器会并行开多条连接且 SSE 会周期性重连，
+        // debug 级会持续刷屏（默认 max_level=Debug，trace 不进入日志缓冲）。
+        log::trace!("接收到连接: {peer}");
         let acceptor = tls_acceptor.clone();
         let conn_state = Arc::clone(&state);
         tokio::spawn(async move {
@@ -758,7 +785,7 @@ pub async fn run_server_with_tls(
                         serve_io(TokioIo::new(tls_stream), conn_state, peer).await;
                     }
                     Err(e) => {
-                        log::debug!("自研 web TLS 握手失败: {e}");
+                        log::debug!("TLS 握手失败: {e}");
                     }
                 }
             } else {
@@ -787,11 +814,13 @@ where
         biased;
         _ = shutdown.wait() => {
             // 硬停止/重启：直接丢弃连接，关闭旧 TCP/SSE，避免浏览器复用旧状态连接。
-            log::debug!("自研 web 旧连接因服务停止而关闭: {peer}");
+            log::debug!("旧连接因服务停止而关闭: {peer}");
         }
         result = conn.as_mut() => {
             if let Err(e) = result {
-                log::debug!("自研 web 连接结束: {e}");
+                // 浏览器关闭页面/结束 SSE 时连接会以错误形式收尾，属正常断连：
+                // trace 记录（默认 max_level=Debug 不落缓冲），避免周期性刷屏。
+                log::trace!("连接结束: {peer} {e}");
             }
         }
     }
@@ -838,7 +867,12 @@ async fn handle(
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_string);
-            Ok(prepare_download(&query, state, peer, user_agent).await)
+            let host = req
+                .headers()
+                .get(hyper::header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            Ok(prepare_download(&query, state, peer, user_agent, host).await)
         }
         ("GET", "/web/download") => Ok(start_download(&req, &query, state, peer).await),
         ("POST", "/web/download-batch") => {
@@ -889,6 +923,14 @@ async fn login_response(
     };
     match state.login(&body.password, peer.ip(), &headers) {
         Ok(token) => {
+            log::debug!(
+                "访问码登录成功 ip={} host={}",
+                peer.ip(),
+                headers
+                    .get(hyper::header::HOST)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+            );
             let cookie = cookie_header(AUTH_COOKIE, &token, is_secure(state));
             let mut response = json_response(StatusCode::OK, "{\"ok\":true}");
             if let Ok(value) = hyper::header::HeaderValue::from_str(&cookie) {
@@ -908,7 +950,10 @@ async fn login_response(
             }
             response
         }
-        Err(_) => text_response(StatusCode::UNAUTHORIZED, "访问码错误"),
+        Err(_) => {
+            log::warn!("访问码错误 ip={}", peer.ip());
+            text_response(StatusCode::UNAUTHORIZED, "访问码错误")
+        }
     }
 }
 
@@ -939,8 +984,18 @@ fn leave_response(
         return text_response(StatusCode::BAD_REQUEST, "缺少 token");
     };
     if state.mark_page_leave(token, peer) {
+        log::debug!(
+            "页面关闭信号 token={} ip={}",
+            redact_token(token),
+            peer.ip()
+        );
         json_response(StatusCode::OK, "{\"ok\":true}")
     } else {
+        log::debug!(
+            "页面关闭信号命中未知会话 token={} ip={}",
+            redact_token(token),
+            peer.ip()
+        );
         text_response(StatusCode::NOT_FOUND, "会话已失效")
     }
 }
@@ -963,6 +1018,7 @@ fn page_response(
                     return redirect_with_cookie(path, &cookie);
                 }
                 None => {
+                    log::debug!("能力令牌无效 ip={}", peer.ip());
                     let i18n = web_page_i18n(accept_language(req));
                     return friendly_error_page(
                         req,
@@ -983,6 +1039,20 @@ fn page_response(
             );
         }
     }
+    // 页面真正渲染时记录一次：公开路由本身不打日志，扫码设备是否到达只能靠这里确认。
+    log::info!(
+        "页面打开 ip={} host={} path={} ua={}",
+        peer.ip(),
+        req.headers()
+            .get(hyper::header::HOST)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+        path,
+        req.headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+    );
     html_response(state, req, peer)
 }
 
@@ -1175,20 +1245,23 @@ async fn prepare_download(
     state: Arc<WebServiceState>,
     peer: SocketAddr,
     user_agent: Option<String>,
+    host: Option<String>,
 ) -> Response<BoxBody> {
     let now = Instant::now();
     state.sweep_all(now).await;
     // 分享停止或无可下载文件：不建会话。
     if lock(&state.caps).share_state == ShareState::Stopped {
+        log::debug!("分享已结束，拒绝新建下载会话 ip={}", peer.ip());
         return text_response(StatusCode::NOT_FOUND, "分享已结束");
     }
     if lock(&state.files).files.is_empty() {
+        log::debug!("无可下载文件，拒绝新建下载会话 ip={}", peer.ip());
         return text_response(StatusCode::NOT_FOUND, "分享无可下载文件");
     }
     // 生产环境总有能力令牌/访问码；无门禁仅测试/旧调用，直接放行并告警，
     // 不再走应用确认（确认链路已删除）。
     if !state.auth_required() && !state.capability_required() {
-        log::warn!("网页分享未启用访问门禁，测试/旧调用直接放行");
+        log::warn!("未启用访问门禁，测试/旧调用直接放行");
     }
     let peer_ip: String = peer.ip().to_string();
     if let Some(token) = query.get("token") {
@@ -1206,6 +1279,7 @@ async fn prepare_download(
                     session.last_used = now;
                 }
                 Some(_) => {
+                    log::warn!("下载会话归属校验失败 ip={}", peer_ip);
                     session_error = Some(text_response(StatusCode::FORBIDDEN, "无效 token"));
                 }
                 None => {}
@@ -1238,8 +1312,9 @@ async fn prepare_download(
         });
     }
     log::info!(
-        "网页访问 ip={} files={} ua={}",
+        "下载会话建立 ip={} host={} files={} ua={}",
         peer_ip,
+        host.as_deref().unwrap_or(""),
         file_count,
         user_agent.as_deref().unwrap_or("")
     );
@@ -1337,9 +1412,15 @@ async fn start_download(
     let ended_message: &str = &i18n.access_ended_reload;
     let updated_message: &str = &i18n.share_updated_retry;
     let Some(token) = query.get("token") else {
+        log::debug!("下载请求缺少 token ip={}", peer.ip());
         return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
     };
     let Some(file_id) = query.get("fileId") else {
+        log::debug!(
+            "下载请求缺少 fileId token={} ip={}",
+            redact_token(token),
+            peer.ip()
+        );
         return download_error_response(req, StatusCode::BAD_REQUEST, ended_message);
     };
     // 文本预览只是页面内联读取，不计入下载任务/进度，避免预览把任务写成失败。
@@ -1351,9 +1432,19 @@ async fn start_download(
     let snapshot_file = {
         let mut sessions = lock(&state.sessions);
         let Some(session) = sessions.sessions.get_mut(token) else {
+            log::debug!(
+                "下载会话不存在或已过期 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         };
         if session.peer_ip != peer.ip().to_string() {
+            log::warn!(
+                "下载会话归属校验失败 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         }
         session.last_used = now;
@@ -1371,18 +1462,33 @@ async fn start_download(
             match files.files.get(file_id) {
                 Some(entry) => entry.file.clone(),
                 None => {
-                    return download_error_response(req, StatusCode::FORBIDDEN, updated_message)
+                    log::debug!("文本预览目标不在当前文件表 file={}", file_id);
+                    return download_error_response(req, StatusCode::FORBIDDEN, updated_message);
                 }
             }
         }
-        None => return download_error_response(req, StatusCode::FORBIDDEN, updated_message),
+        None => {
+            log::debug!(
+                "下载目标不在会话快照 file={} token={}",
+                file_id,
+                redact_token(token)
+            );
+            return download_error_response(req, StatusCode::FORBIDDEN, updated_message);
+        }
     };
     let total = meta_file.size;
     // 内容源按快照定位：现表优先，保留区兜底（宽限内）。
     // `locate_source` 返回独立副本（fd 已 dup），即使随后换表也不受影响。
     let source = match state.locate_source(file_id, now) {
         Some(found) => found,
-        None => return download_error_response(req, StatusCode::GONE, updated_message),
+        None => {
+            log::debug!(
+                "内容源已不可用 file={} token={}",
+                file_id,
+                redact_token(token)
+            );
+            return download_error_response(req, StatusCode::GONE, updated_message);
+        }
     };
     // Range：起点越界回 416，其余按分片下发（200/206）。
     let range = parse_range(
@@ -1395,6 +1501,7 @@ async fn start_download(
         RangeRequest::Full => (0, total, StatusCode::OK),
         RangeRequest::Partial { start, end } => (start, end + 1, StatusCode::PARTIAL_CONTENT),
         RangeRequest::Unsatisfiable => {
+            log::debug!("分片范围超出文件大小 file={} 声明={}", file_id, total);
             let mut response = text_response(StatusCode::RANGE_NOT_SATISFIABLE, "范围超出文件大小");
             response.headers_mut().insert(
                 hyper::header::CONTENT_RANGE,
@@ -1761,19 +1868,37 @@ async fn prepare_download_batch(
     let now = Instant::now();
     state.sweep_all(now).await;
     let Some(token) = query.get("token") else {
+        log::debug!("下载批次准备缺少 token ip={}", peer.ip());
         return text_response(StatusCode::FORBIDDEN, "无效 token");
     };
     let request: DownloadBatchRequest = match serde_json::from_slice(body) {
         Ok(value) => value,
-        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体格式错误"),
+        Err(_) => {
+            log::debug!(
+                "下载批次请求体格式错误 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
+            return text_response(StatusCode::BAD_REQUEST, "请求体格式错误");
+        }
     };
     let peer_ip = peer.ip().to_string();
     let (file_ids, total_bytes) = {
         let mut sessions = lock(&state.sessions);
         let Some(session) = sessions.sessions.get_mut(token) else {
+            log::debug!(
+                "下载会话不存在或已过期 token={} ip={}",
+                redact_token(token),
+                peer_ip
+            );
             return text_response(StatusCode::FORBIDDEN, "会话已失效");
         };
         if session.peer_ip != peer_ip {
+            log::warn!(
+                "下载会话归属校验失败 token={} ip={}",
+                redact_token(token),
+                peer_ip
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         }
         session.last_used = now;
@@ -1793,12 +1918,22 @@ async fn prepare_download_batch(
             request.files
         };
         if ids.is_empty() {
+            log::debug!(
+                "下载批次未选择文件 token={} ip={}",
+                redact_token(token),
+                peer_ip
+            );
             return text_response(StatusCode::BAD_REQUEST, "未选择文件");
         }
         let mut unique: Vec<String> = Vec::with_capacity(ids.len());
         for id in ids.drain(..) {
             if !unique.contains(&id) {
                 if !session.offered_files.contains_key(&id) {
+                    log::debug!(
+                        "下载批次含会话快照外文件 file={} token={}",
+                        id,
+                        redact_token(token)
+                    );
                     return text_response(StatusCode::GONE, "分享内容已更新，请刷新");
                 }
                 unique.push(id);
@@ -1847,18 +1982,26 @@ async fn download_batch(
     let ended_message: &str = &i18n.access_ended_reload;
     let updated_message: &str = &i18n.share_updated_retry;
     let Some(batch_id) = query.get("batch") else {
+        log::debug!("批次下载缺少 batch ip={}", peer.ip());
         return download_error_response(req, StatusCode::BAD_REQUEST, ended_message);
     };
     let pending = { lock(&state.pending_batches).remove(batch_id) };
     let Some(pending) = pending else {
+        log::debug!("下载批次不存在或已过期 batch={} ip={}", batch_id, peer.ip());
         return download_error_response(req, StatusCode::GONE, updated_message);
     };
     if pending.peer_ip != peer.ip().to_string() {
+        log::warn!("下载批次归属校验失败 batch={} ip={}", batch_id, peer.ip());
         return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
     }
     let (offered, user_agent) = {
         let sessions = lock(&state.sessions);
         let Some(session) = sessions.get(&pending.token) else {
+            log::debug!(
+                "批次下载会话不存在或已过期 token={} batch={}",
+                redact_token(&pending.token),
+                batch_id
+            );
             return download_error_response(req, StatusCode::FORBIDDEN, ended_message);
         };
         let offered: Vec<OfferedFile> = if pending.all {
@@ -1874,6 +2017,7 @@ async fn download_batch(
             let mut selected: Vec<OfferedFile> = Vec::new();
             for id in &pending.file_ids {
                 let Some(item) = session.offered_files.get(id) else {
+                    log::debug!("批次内文件不在会话快照 file={} batch={}", id, batch_id);
                     return download_error_response(req, StatusCode::GONE, updated_message);
                 };
                 selected.push(item.clone());
@@ -1884,6 +2028,7 @@ async fn download_batch(
     };
     let (entries, total_len, force_zip64, batch) = {
         if offered.is_empty() {
+            log::debug!("下载批次无可下发文件 batch={}", batch_id);
             return download_error_response(req, StatusCode::GONE, updated_message);
         }
         let mut used: HashMap<String, usize> = HashMap::new();
@@ -1892,6 +2037,11 @@ async fn download_batch(
         for item in offered.into_iter() {
             let entry_name = unique_zip_name(&item.file.file_name, &mut used);
             let Some(source) = state.locate_source(&item.file_id, now) else {
+                log::debug!(
+                    "批次内容源已不可用 file={} batch={}",
+                    item.file_id,
+                    batch_id
+                );
                 return download_error_response(req, StatusCode::GONE, updated_message);
             };
             batch_files.push(adapter_file_dto(&item.file));
@@ -1913,7 +2063,7 @@ async fn download_batch(
         let layout = match zip_plan::layout(&sizes) {
             Ok(value) => value,
             Err(e) => {
-                log::error!("网页 zip 长度计算失败: {e}");
+                log::error!("zip 长度计算失败 batch={batch_id}: {e}");
                 return download_error_response(
                     req,
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -1979,6 +2129,19 @@ async fn download_batch(
             Ok(ZipWriteResult { outcome, error }) => (outcome, error),
             Err(e) => (DownloadOutcome::Failed, Some(format!("zip 任务失败: {e}"))),
         };
+        match outcome {
+            DownloadOutcome::Failed => log::error!(
+                "zip 下发失败 batch={} error={}",
+                batch_for_events.batch_id,
+                error.as_deref().unwrap_or("")
+            ),
+            DownloadOutcome::Cancelled => log::debug!(
+                "zip 下发中断 batch={} error={}",
+                batch_for_events.batch_id,
+                error.as_deref().unwrap_or("")
+            ),
+            DownloadOutcome::Succeeded => {}
+        }
         let tx = serve_state.progress_tx.clone();
         if let Some(tx) = tx {
             let _ = tx
@@ -2019,6 +2182,7 @@ async fn finish_session(
     peer: SocketAddr,
 ) -> Response<BoxBody> {
     let Some(token) = query.get("token") else {
+        log::debug!("上传完成回执缺少 token ip={}", peer.ip());
         return text_response(StatusCode::FORBIDDEN, "无效 token");
     };
     let removed_upload = {
@@ -2038,6 +2202,7 @@ async fn finish_session(
         }
     };
     if removed_upload {
+        log::debug!("收到上传完成回执 token={}", redact_token(token));
         state
             .emit(ProgressEvent::Finished {
                 token: token.clone(),
@@ -2145,9 +2310,11 @@ async fn prepare_upload(
     let now = Instant::now();
     state.sweep_all(now).await;
     if lock(&state.caps).share_state == ShareState::Stopped {
+        log::debug!("分享已结束，拒绝上传请求 ip={}", peer.ip());
         return text_response(StatusCode::NOT_FOUND, "分享已结束");
     }
     if !lock(&state.caps).upload_enabled {
+        log::debug!("上传入口未开放 ip={}", peer.ip());
         return text_response(StatusCode::NOT_FOUND, "上传未开放");
     }
     // 复用：token 有效、已接受、同 IP → 直接回表。
@@ -2159,10 +2326,20 @@ async fn prepare_upload(
                 if matches!(session.state, UploadState::Accepted) {
                     drop(uploads);
                     lock(&state.uploads).touch(token, Instant::now());
+                    log::debug!(
+                        "复用已接受的上传会话 token={} ip={}",
+                        redact_token(token),
+                        peer.ip()
+                    );
                     return upload_list_response(&state, token);
                 }
                 return token_conflict(token);
             }
+            log::warn!(
+                "上传会话归属校验失败 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         }
     }
@@ -2178,23 +2355,40 @@ async fn prepare_upload(
             })
             .map(|session| session.token.clone());
         if let Some(token) = waiting {
+            log::debug!(
+                "该地址已有待确认上传，返回原会话 token={} ip={}",
+                redact_token(&token),
+                peer.ip()
+            );
             return token_conflict(&token);
         }
     }
     // 请求体：文件清单。
     let raw = match read_body_capped(body, PREPARE_BODY_LIMIT).await {
         Ok(raw) => raw,
-        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体过大"),
+        Err(_) => {
+            log::debug!("上传请求体过大 ip={}", peer.ip());
+            return text_response(StatusCode::BAD_REQUEST, "请求体过大");
+        }
     };
     let prepared: UploadPrepareBody = match serde_json::from_slice(&raw) {
         Ok(prepared) => prepared,
-        Err(_) => return text_response(StatusCode::BAD_REQUEST, "请求体不是合法 JSON"),
+        Err(_) => {
+            log::debug!("上传请求体不是合法 JSON ip={}", peer.ip());
+            return text_response(StatusCode::BAD_REQUEST, "请求体不是合法 JSON");
+        }
     };
     if prepared.files.is_empty() || prepared.files.len() > MAX_UPLOAD_FILES {
+        log::debug!(
+            "上传文件数量非法 count={} ip={}",
+            prepared.files.len(),
+            peer.ip()
+        );
         return text_response(StatusCode::BAD_REQUEST, "文件数量非法");
     }
     for entry in prepared.files.iter() {
         if entry.id.is_empty() || sanitize_file_name(&entry.file_name).is_empty() {
+            log::debug!("上传文件名为空或非法 ip={}", peer.ip());
             return text_response(StatusCode::BAD_REQUEST, "文件名非法");
         }
     }
@@ -2203,10 +2397,7 @@ async fn prepare_upload(
     let (decision_tx, decision_rx) = oneshot::channel();
     let upload_dir = lock(&state.upload_dir).clone();
     if let Err(e) = std::fs::create_dir_all(&upload_dir) {
-        log::warn!(
-            "自研 web 创建上传目录失败 dir={} {e:?}",
-            upload_dir.display()
-        );
+        log::error!("创建上传目录失败 dir={} {e:?}", upload_dir.display());
         return text_response(StatusCode::INTERNAL_SERVER_ERROR, "上传目录不可用");
     }
     let mut files: HashMap<String, UploadFile> = HashMap::new();
@@ -2286,16 +2477,31 @@ async fn prepare_upload(
     match decision_rx.await {
         Ok(true) => {
             let _ = lock(&state.uploads).accept(&token, Instant::now());
+            log::debug!(
+                "上传请求已接受 token={} ip={}",
+                redact_token(&token),
+                peer.ip()
+            );
             upload_list_response(&state, &token)
         }
         Ok(false) => {
             if let Some(session) = lock(&state.uploads).decline(&token) {
                 remove_tmp_files(&session);
             }
+            log::debug!(
+                "上传请求被拒绝 token={} ip={}",
+                redact_token(&token),
+                peer.ip()
+            );
             text_response(StatusCode::FORBIDDEN, "对方已拒绝")
         }
         Err(_) => {
             lock(&state.uploads).expire(&token);
+            log::debug!(
+                "上传确认等待结束（会话已终结或超时） token={} ip={}",
+                redact_token(&token),
+                peer.ip()
+            );
             text_response(StatusCode::REQUEST_TIMEOUT, "等待确认超时")
         }
     }
@@ -2338,30 +2544,66 @@ async fn receive_upload(
     let now = Instant::now();
     state.sweep_all(now).await;
     let Some(token) = query.get("token") else {
+        log::debug!("上传请求缺少 token ip={}", peer.ip());
         return text_response(StatusCode::FORBIDDEN, "无效 token");
     };
     let Some(file_id) = query.get("fileId") else {
+        log::debug!(
+            "上传请求缺少 fileId token={} ip={}",
+            redact_token(token),
+            peer.ip()
+        );
         return text_response(StatusCode::BAD_REQUEST, "缺少 fileId");
     };
     // 占位：校验 + 置并发守卫（锁内短操作，IO 在锁外）。
     let (tmp_path, final_path, total, token_owned, file_id_owned) = {
         let mut uploads = lock(&state.uploads);
         let Some(session) = uploads.sessions.get_mut(token) else {
+            log::debug!(
+                "上传会话不存在或已过期 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         };
         if session.peer_ip != peer.ip().to_string() {
+            log::warn!(
+                "上传会话归属校验失败 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         }
         if !matches!(session.state, UploadState::Accepted) {
+            log::debug!(
+                "上传会话尚未接受 token={} ip={}",
+                redact_token(token),
+                peer.ip()
+            );
             return text_response(StatusCode::FORBIDDEN, "会话未接受");
         }
         let Some(entry) = session.files.get_mut(file_id) else {
+            log::debug!(
+                "上传文件不在会话清单 file={} token={}",
+                file_id,
+                redact_token(token)
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 fileId");
         };
         if entry.done {
+            log::debug!(
+                "文件已上传完成，重复请求 file={} token={}",
+                file_id,
+                redact_token(token)
+            );
             return text_response(StatusCode::CONFLICT, "文件已上传");
         }
         if entry.uploading {
+            log::debug!(
+                "文件正在上传，并发请求被拒 file={} token={}",
+                file_id,
+                redact_token(token)
+            );
             return text_response(StatusCode::CONFLICT, "文件正在上传中");
         }
         entry.uploading = true;
@@ -2395,19 +2637,35 @@ async fn receive_upload(
         let mut uploads = lock(&state.uploads);
         let Some(session) = uploads.sessions.get_mut(&token_owned) else {
             let _ = std::fs::remove_file(&tmp_path);
+            log::debug!(
+                "上传收尾时会话已结束 token={} file={}",
+                redact_token(&token_owned),
+                file_id_owned
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         };
         let Some(entry) = session.files.get_mut(&file_id_owned) else {
             let _ = std::fs::remove_file(&tmp_path);
+            log::debug!(
+                "上传收尾时文件条目已移除 token={} file={}",
+                redact_token(&token_owned),
+                file_id_owned
+            );
             return text_response(StatusCode::FORBIDDEN, "无效 fileId");
         };
         entry.uploading = false;
         session.last_activity = Instant::now();
         match outcome {
             UploadOutcome::Complete { received } => {
-                if std::fs::rename(&tmp_path, &final_path).is_err() {
+                if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
                     let _ = std::fs::remove_file(&tmp_path);
                     session.files.remove(&file_id_owned);
+                    log::error!(
+                        "上传文件落盘失败 token={} file={} path={}: {e}",
+                        redact_token(&token_owned),
+                        file_id_owned,
+                        final_path
+                    );
                     UploadFinish::Gone("落盘失败")
                 } else {
                     entry.done = true;
@@ -2489,20 +2747,14 @@ async fn stream_upload_body(
     // 下次接受上传时由 UploadStore::set_targets 安全清理。
     if let Some(parent) = tmp_path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            log::warn!(
-                "自研 web 创建上传临时目录失败 path={}: {e}",
-                parent.display()
-            );
+            log::error!("创建上传临时目录失败 path={}: {e}", parent.display());
             return UploadOutcome::BodyError;
         }
     }
     let mut file = match tokio::fs::File::create(tmp_path).await {
         Ok(file) => file,
         Err(e) => {
-            log::warn!(
-                "自研 web 创建上传临时文件失败 path={}: {e}",
-                tmp_path.display()
-            );
+            log::error!("创建上传临时文件失败 path={}: {e}", tmp_path.display());
             return UploadOutcome::BodyError;
         }
     };
@@ -2511,6 +2763,11 @@ async fn stream_upload_body(
     loop {
         // 应用侧结束任务会移除上传会话：立即停止写入并清理 `.part`。
         if !state.upload_session_active(token) {
+            log::debug!(
+                "上传会话已结束，停止写入 token={} file={}",
+                redact_token(token),
+                file_id
+            );
             return UploadOutcome::BodyError;
         }
         let chunk = match body.frame().await {
@@ -2522,12 +2779,33 @@ async fn stream_upload_body(
                     continue;
                 }
             }
-            Some(Err(_)) => return UploadOutcome::BodyError,
+            Some(Err(e)) => {
+                log::warn!(
+                    "上传请求体读取失败 token={} file={}: {e}",
+                    redact_token(token),
+                    file_id
+                );
+                return UploadOutcome::BodyError;
+            }
         };
         if received + chunk.len() as u64 > total {
+            log::warn!(
+                "上传内容超出声明大小 token={} file={} 声明={} 已收={} 本块={}",
+                redact_token(token),
+                file_id,
+                total,
+                received,
+                chunk.len()
+            );
             return UploadOutcome::Overflow;
         }
-        if file.write_all(&chunk).await.is_err() {
+        if let Err(e) = file.write_all(&chunk).await {
+            log::error!(
+                "上传写入失败 token={} file={} path={}: {e}",
+                redact_token(token),
+                file_id,
+                tmp_path.display()
+            );
             return UploadOutcome::BodyError;
         }
         received += chunk.len() as u64;
@@ -2546,6 +2824,13 @@ async fn stream_upload_body(
     if received == total {
         UploadOutcome::Complete { received }
     } else {
+        log::warn!(
+            "上传内容不足 token={} file={} 已收={} 声明={}",
+            redact_token(token),
+            file_id,
+            received,
+            total
+        );
         UploadOutcome::Short { received }
     }
 }
@@ -2774,12 +3059,6 @@ async fn serve_content(
             outcome = DownloadOutcome::Failed;
             error = Some("下发长度不符".to_string());
         }
-        log::warn!(
-            "自研 web 下发长度不符 file={} 交付={} 期望={}",
-            file_id,
-            delivered,
-            expected
-        );
     } else if end_exclusive != total {
         outcome = DownloadOutcome::Cancelled;
         error = Some("分片下载未完成完整文件".to_string());
@@ -2787,6 +3066,23 @@ async fn serve_content(
         if let Some(batch) = &batch {
             emit(&progress_tx, emit_file_done(batch)).await;
         }
+    }
+    match outcome {
+        DownloadOutcome::Failed => log::error!(
+            "下发失败 file={} 交付={} 期望={} error={}",
+            file_id,
+            delivered,
+            expected,
+            error.as_deref().unwrap_or("")
+        ),
+        DownloadOutcome::Cancelled => log::debug!(
+            "下发未完成 file={} 交付={} 期望={} error={}",
+            file_id,
+            delivered,
+            expected,
+            error.as_deref().unwrap_or("")
+        ),
+        DownloadOutcome::Succeeded => {}
     }
     if let Some(batch) = &batch {
         emit(&progress_tx, emit_ended(batch, outcome, error)).await;

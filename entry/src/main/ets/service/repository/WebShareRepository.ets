@@ -32,7 +32,8 @@ import {
   nativeDeclineWebSession,
   nativeExpireWebSession,
   nativeSweepWebSessions,
-  nativeSetWebUploadTargets
+  nativeSetWebUploadTargets,
+  nativeFlushRustLogs
 } from '../NativeBridge';
 import { getAppContext, getLocalInterfaces, notifyChange, updateLocalInterfaces } from './AppCore';
 import {
@@ -86,7 +87,7 @@ import {
   subscribeSessions
 } from '../transfer/TransferSessionRegistry';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页传输');
 
 // ── Web 分享服务状态（自研单服务：下载与上传同端口） ──
 
@@ -130,6 +131,39 @@ let webUpdating: boolean = false;
 // 停止服务后保留 stopped 页面供网页收尾的时间；超时再真正关闭监听端口
 const WEB_STOP_GRACE_MS: number = 30000;
 let webStopTimer: number = -1;
+
+// Rust 日志轮询间隔：Rust 日志缓冲只在设备发现/发送流程被排空，
+// 纯网页传输场景需自行定期写入 hilog，否则服务端日志不会落到系统日志。
+const WEB_LOG_FLUSH_MS: number = 2000;
+let webLogFlushTimer: number = -1;
+
+/** 排空 Rust 日志缓冲（经桥接统一入口按原始级别写入 hilog）。 */
+function flushRustLogs(): void {
+  try {
+    nativeFlushRustLogs();
+  } catch (_e) {
+    // 轮询失败不影响网页服务本身
+  }
+}
+
+/** 网页服务运行期间启动日志轮询。 */
+function startWebLogFlush(): void {
+  if (webLogFlushTimer >= 0) {
+    return;
+  }
+  webLogFlushTimer = setInterval((): void => {
+    flushRustLogs();
+  }, WEB_LOG_FLUSH_MS);
+}
+
+/** 网页服务停止时结束日志轮询，并做最后一次排空避免漏掉停止日志。 */
+function stopWebLogFlush(): void {
+  if (webLogFlushTimer >= 0) {
+    clearInterval(webLogFlushTimer);
+    webLogFlushTimer = -1;
+    flushRustLogs();
+  }
+}
 
 // 网页服务当前是否开放浏览器上传：决定面板是否出示上传入口
 let webUploadEnabled: boolean = false;
@@ -400,6 +434,7 @@ function markWebServiceUnavailable(): void {
   shareLinkInfo = '';
   webPortFallback = false;
   webUploadEnabled = false;
+  stopWebLogFlush();
   // 启动失败时若仍残留上一个停止态实例，也安排一次硬停止兜底
   scheduleWebStop();
   notifyChange();
@@ -449,6 +484,7 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   } else {
     logger.warn('网页服务已启动但无可用展示地址 port=' + port);
   }
+  startWebLogFlush();
   return true;
 }
 
@@ -682,6 +718,7 @@ function scheduleWebStop(): void {
     webStopTimer = -1;
     try {
       nativeStopWebService();
+      stopWebLogFlush();
     } catch (e) {
       logger.warn('延时停止网页服务失败：' + String(e));
     }
@@ -701,6 +738,7 @@ export async function stopShareLink(): Promise<void> {
       logger.warn('标记网页服务停止失败：' + String(e));
       try {
         nativeStopWebService();
+        stopWebLogFlush();
       } catch (_se) {
       }
     }
@@ -716,7 +754,7 @@ export async function stopShareLink(): Promise<void> {
   clearShareFileProfiles();
   webUploadAutoAccept = false;
   webUploadEnabled = false;
-  logger.info('网页分享已停止，服务保留一段时间供页面收尾');
+  logger.info('网页传输已停止，服务保留一段时间供页面收尾');
   notifyChange();
 }
 
@@ -947,12 +985,12 @@ function descriptorsFromDownloadEvent(files: Array<NativeTransferFileInfo>): Arr
   return result;
 }
 
-/** 网页访问：只写诊断日志；保活由 AppService 统一处理，不建任务。 */
+/** 下载会话建立（新 token）：只写诊断日志；保活由 AppService 统一处理，不建任务。 */
 export function handleWebAccessTyped(event: NativeWebAccessEvent): void {
   if (event.ip.length === 0) {
     return;
   }
-  logger.info('网页访问 ip=' + event.ip + ' 文件数=' + event.fileCount +
+  logger.info('网页下载会话建立 ip=' + event.ip + ' 文件数=' + event.fileCount +
     ' ua=' + (event.userAgent ?? ''));
 }
 
@@ -994,6 +1032,8 @@ export function handleWebDownloadFileDoneTyped(event: NativeWebDownloadFileDoneE
     return;
   }
   handleWebDownloadFileDone(event.batchId, event.fileId, event.totalBytes);
+  logger.debug('网页下载文件完成 batch=' + redactSessionToken(event.batchId) + ' file=' +
+    event.fileId + ' 字节=' + event.totalBytes);
   notifyChange();
 }
 
@@ -1003,7 +1043,16 @@ export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent):
     return;
   }
   handleWebDownloadEnded(event.batchId, event.outcome, event.error);
-  logger.info('网页下载结束 batch=' + redactSessionToken(event.batchId) + ' 结果=' + event.outcome);
+  let summary: string = '网页下载结束 batch=' + redactSessionToken(event.batchId) +
+    ' 结果=' + event.outcome;
+  if (event.error !== undefined && event.error.length > 0) {
+    summary += ' 原因=' + event.error;
+  }
+  if (event.outcome === 'failed' || event.outcome === 'partiallyFailed') {
+    logger.warn(summary);
+  } else {
+    logger.info(summary);
+  }
   notifyChange();
 }
 
@@ -1152,6 +1201,7 @@ export function handleWebUploadDoneTyped(event: NativeWebUploadDoneEvent): void 
     return;
   }
   handleWebUploadDone(token, fileId, event.path);
+  logger.debug('网页上传文件完成 token=' + redactSessionToken(token) + ' file=' + fileId);
   notifyChange();
 }
 
@@ -1176,8 +1226,10 @@ export function handleWebUploadFinished(token: string): void {
   }
   // 声明清单已全部落盘（完成回执先于状态刷新到达）：直接按成功收尾
   if (finishWebUploadIfAllDone(token)) {
+    logger.debug('网页上传服务端终结 token=' + redactSessionToken(token) + ' 结果=全部文件已落盘');
     return;
   }
+  logger.debug('网页上传服务端终结 token=' + redactSessionToken(token) + ' 结果=会话提前结束');
   let all: Array<TransferSession> = querySessions();
   for (let i = 0; i < all.length; i++) {
     let session = all[i];

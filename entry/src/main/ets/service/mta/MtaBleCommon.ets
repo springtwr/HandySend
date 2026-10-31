@@ -95,7 +95,7 @@ export function sleepMs(ms: number): Promise<void> {
 }
 
 /**
- * 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示）。
+ * 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|target|message` 前缀，按原始级别展示）。
  * appendLog 为服务侧日志追加入口，onWarn 在轮询失败时上报。
  */
 export function drainRustLog(appendLog: (source: string, message: string, level: string) => void,

@@ -146,7 +146,7 @@ export default function UtilityNativeTest() {
 
     it('flushRustLogs_empty_and_repeat_calls_do_not_throw', 0, () => {
       // 冒烟验证：先排空缓冲，对空缓冲及连续调用均不应抛异常。
-      // level|message 分割与未知级别降级依赖 Rust 侧注入的日志行，
+      // level|target|message 分割与未知级别降级依赖 Rust 侧注入的日志行，
       // ArkTS 测试无法控制缓冲内容，故此处只覆盖调用安全性。
       let threw: boolean = false
       try {

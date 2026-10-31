@@ -90,6 +90,8 @@ import { readJsonField } from '../utils/JsonGuard';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:NativeBridge', '桥接');
+// Rust 网页传输日志专用输出器：Rust target 位于 bridge::web 下的行归入网页传输模块。
+const rustWebLogger = getLogger(LogDomains.TRANSFER, 'HandySend:RustWeb', '网页传输');
 
 // 期望的原生库版本（必须与 Cargo.toml 和 oh-package.json5 一致）
 const EXPECTED_NATIVE_VERSION = '1.18.1';
@@ -391,16 +393,29 @@ export function nativeGetCurrentSendSessionId(): string {
 
 /**
  * 轮询 Rust 日志缓冲并按原始级别输出到 hilog（非 MTA 链路的统一入口）。
- * 缓冲元素带 `level|message` 前缀（首个 `|` 为分隔符），
+ * 缓冲元素为 `level|target|message`（前两个 `|` 为分隔符，target 用于按子系统归并），
  * 级别 token 与 common/LogLevels.ets 一致；无前缀的旧格式按 info 兜底。
  */
 export function nativeFlushRustLogs(): void {
   let lines: Array<string> = pollDebugLog();
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
+    // 缓冲格式 `level|target|message`：两级分隔，message 内可含 `|`
     let sep = line.indexOf('|');
     let level = sep >= 0 ? line.substring(0, sep) : 'info';
-    let message = sep >= 0 ? line.substring(sep + 1) : line;
+    let rest = sep >= 0 ? line.substring(sep + 1) : line;
+    let target = '';
+    let message = rest;
+    let targetSep = rest.indexOf('|');
+    if (targetSep >= 0) {
+      target = rest.substring(0, targetSep);
+      message = rest.substring(targetSep + 1);
+    }
+    // 网页传输子系统（Rust target 位于 bridge::web 下）归入 [网页传输]
+    if (target.includes('::bridge::web')) {
+      rustWebLogger.log(level, 'Rust: ' + message);
+      continue;
+    }
     if (level === 'error') {
       logger.error('Rust: ' + message);
     } else if (level === 'warn') {
@@ -415,7 +430,7 @@ export function nativeFlushRustLogs(): void {
 }
 
 /**
- * 带级别的 Rust 日志轮询：元素格式为 `level|message`（首个 `|` 为分隔符）。
+ * 带级别的 Rust 日志轮询：元素格式为 `level|target|message`（前两个 `|` 为分隔符）。
  * 供 MTA 链路按原始级别还原展示，替代文本启发式降级。
  */
 export function nativePollDebugLogWithLevels(): Array<string> {

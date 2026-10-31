@@ -44,10 +44,10 @@ hdc shell hilog | grep "HandySend:"
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository、ReceiveRepository、
-> ReceiveTargets、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、
-> GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、
-> TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、
-> BackgroundAttentionNotifier。
+> ReceiveTargets、SendViewModel、SendContent、WebShareRepository、RustWeb（NativeBridge
+> 内的网页传输 Rust 日志归并）、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、
+> service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel、
+> BackgroundTransferService、BackgroundAttentionNotifier。
 
 ## 日志级别规则（五级）
 
@@ -85,7 +85,8 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:EntryBackup` | `[备份]` | EntryBackupAbility.ets | 备份生命周期 |
 | `HandySend:DialogService` | `[弹窗]` | DialogService.ets | 弹窗操作 |
 | `HandySend:ReceiveHistoryService` | `[历史]` | ReceiveHistoryService.ets | 历史记录添加/清空 |
-| `HandySend:NativeBridge` | `[桥接]` | NativeBridge.ets | NAPI 事件回调/处理器异常 |
+| `HandySend:NativeBridge` | `[桥接]` | NativeBridge.ets | NAPI 事件回调/处理器异常、Rust 日志归并 |
+| `HandySend:RustWeb` | `[网页传输]` | NativeBridge.ets | Rust 网页传输子系统日志归并（按 Rust target 归入 `bridge::web`） |
 | `HandySend:NativeTypes` | `[Native 类型]` | model/NativeTypes.ets | 事件必填字段缺失丢弃告警 |
 | `HandySend:EventBus` | `[事件总线]` | utils/EventBus.ets | 事件回调异常 |
 | `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 日志导出保存失败 |
@@ -97,7 +98,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:ReceiveTargets` | `[接收目标]` | service/repository/ReceiveTargets.ets | 接收目录获取失败、直写目标准备失败 |
 | `HandySend:SendViewModel` | `[发送页]` | SendViewModel.ets | 发送状态管理 |
 | `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板、拖放接收） |
-| `HandySend:WebShareRepository` | `[网页分享]` | WebShareRepository.ets | Web 分享链接创建/停止、上传/下载事件 |
+| `HandySend:WebShareRepository` | `[网页传输]` | WebShareRepository.ets | 网页传输链接创建/停止、上传/下载事件、Rust 日志轮询（服务运行期每 2 秒排空） |
 | `HandySend:TransferRegistry` | `[会话注册表]` | service/transfer/TransferSessionRegistry.ets | 会话创建/状态迁移/终结/回收与聚合（统一会话事实源） |
 | `HandySend:SessionHistory` | `[任务历史]` | service/transfer/SessionHistoryStore.ets | 任务历史归档、FIFO 裁剪与 schema 迁移 |
 | `HandySend:SessionAdapter` | `[协议适配]` | service/transfer/adapters/*.ets | 各协议事件翻译与能力/展示描述符 |
@@ -165,8 +166,9 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 ## Rust 侧日志
 
 - Rust `log::*` 调用按四级语义校正；调试标签（`[DBG-*]` 等）已移除，由正文自述。
-- 缓冲元素格式为 `level|message`（`level ∈ error/warn/info/debug/trace`）；ArkTS 侧按首个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
-- ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`），经带级别轮询接口读取，保留原始级别。
+- 缓冲元素格式为 `level|target|message`（`level ∈ error/warn/info/debug/trace`，`target` 为 Rust 模块路径）；ArkTS 侧按前两个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
+- ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`、`[桥接] Rust: ...`），经带级别轮询接口读取，保留原始级别；轮询时机为设备发现、发送结束与网页服务运行期（每 2 秒）。
+- target 位于 `bridge::web` 下的 Rust 日志由 ArkTS 侧归入 `[网页传输]`，其余行仍按 `[桥接]` 输出。
 - MTA 相关 Rust 日志正文以 `MTA` 标识开头，供 ArkTS 侧按正文包含 `MTA` 归并到 MTA 发送/应用日志。
 - 第三方依赖（`rustls`/`tokio_rustls`/`reqwest`）的 debug/trace 日志按 target 前缀屏蔽（bridge/identity.rs `log_enabled`）
   ，仅保留其 warn/error；`log!` 宏只检查 max_level、不调用 `enabled()`，故过滤须在输出器的 `log()` 入口收口。
