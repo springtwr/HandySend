@@ -32,6 +32,7 @@ import {
 import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
 import {
   SESSION_HISTORY_CAPACITY,
+  SESSION_HISTORY_MAX_ENTRIES,
   SESSION_HISTORY_SEGMENT_SIZE,
   SESSION_HISTORY_STORAGE_SEGMENT_COUNT
 } from '../../model/HistoryCapacity';
@@ -211,10 +212,21 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
   }
 
   persist(entries: Array<SessionHistoryEntry>): void {
-    // 先更新内存权威列表，再触发落盘（FIFO 裁剪语义不变）
-    let trimmed: Array<SessionHistoryEntry> = trimHistory(entries, SESSION_HISTORY_CAPACITY);
-    this.cache = trimmed;
-    this.writeDirtySegments(trimmed);
+    // 软上限：未超过硬上限时保留全部条目，使追加只写末段；
+    // 超过硬上限时一次性裁回目标容量，把全量重写摊薄到约 250 次追加一次。
+    let next: Array<SessionHistoryEntry> = entries;
+    if (next.length > SESSION_HISTORY_MAX_ENTRIES) {
+      next = trimHistory(next, SESSION_HISTORY_CAPACITY);
+      logger.info('历史批量裁剪 from=' + entries.length + ' to=' + next.length);
+    }
+    this.cache = next;
+    let startedAt: number = Date.now();
+    this.writeDirtySegments(next);
+    let elapsed: number = Date.now() - startedAt;
+    // 仅记录可感知的慢写入，避免每次归档都刷日志；用于判断是否还需要环形段/绝对段号
+    if (elapsed >= 16) {
+      logger.info('历史落盘较慢 ms=' + elapsed + ' 条=' + next.length);
+    }
     historyRevision++;
   }
 
@@ -242,9 +254,12 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
     // 读取即自愈：修复旧版本丢失的文本消息标记，再做去重与聚合字段重建
     let repaired: number = repairHistoryTextMessageFlags(entries, sendTextDir(), recvTextDir());
     let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(entries);
-    // 容量下调后旧数据可能仍超过新上限：读取时一并裁剪，使上限立即生效，
-    // 而不是等到下一次归档。裁剪/清洗确有改动时回写并清理多余段。
-    let trimmed: Array<SessionHistoryEntry> = trimHistory(sanitized, SESSION_HISTORY_CAPACITY);
+    // 旧数据超过硬上限时读取即裁回目标容量，使上限立即生效；
+    // 未超过硬上限则保留（750-1000 条），避免冷启动把批量裁剪窗口误裁掉。
+    let trimmed: Array<SessionHistoryEntry> = sanitized;
+    if (trimmed.length > SESSION_HISTORY_MAX_ENTRIES) {
+      trimmed = trimHistory(trimmed, SESSION_HISTORY_CAPACITY);
+    }
     // lastPersisted 先代表磁盘上的旧数据：writeDirtySegments 据此得到旧的段数，
     // 才能在裁剪后删除尾部残留段（否则 old=[] 会把残留段当成不存在而跳过删除）。
     this.lastPersisted = entries.slice();
@@ -254,7 +269,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       historyRevision++;
     }
     if (entries.length > trimmed.length) {
-      logger.info('历史已按容量裁剪 from=' + entries.length + ' to=' + trimmed.length);
+      logger.info('历史已按硬上限裁剪 from=' + entries.length + ' to=' + trimmed.length);
     }
     return trimmed;
   }
@@ -311,8 +326,9 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
    * 追加（最常见的写入）变更区间落在末段，故每次只序列化一段。
    */
   private writeDirtySegments(entries: Array<SessionHistoryEntry>): void {
+    // 分段按硬上限切分：750-1000 条保留原样，追加只命中新增的末段
     let segments: Array<Array<SessionHistoryEntry>> = planSegments(entries,
-      SESSION_HISTORY_CAPACITY, SESSION_HISTORY_SEGMENT_SIZE);
+      SESSION_HISTORY_MAX_ENTRIES, SESSION_HISTORY_SEGMENT_SIZE);
     let range: DirtyRange | undefined = dirtyRange(this.lastPersisted, entries);
     if (range !== undefined) {
       let dirty: Array<number> = segmentsOfDirtyRange(range, SESSION_HISTORY_SEGMENT_SIZE);
@@ -334,7 +350,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
   /** 全量重写所有段（迁移与无条件回写场景）。 */
   private writeAllSegments(entries: Array<SessionHistoryEntry>): void {
     let segments: Array<Array<SessionHistoryEntry>> = planSegments(entries,
-      SESSION_HISTORY_CAPACITY, SESSION_HISTORY_SEGMENT_SIZE);
+      SESSION_HISTORY_MAX_ENTRIES, SESSION_HISTORY_SEGMENT_SIZE);
     for (let i = 0; i < segments.length; i++) {
       this.writeSegment(i, segments[i]);
     }

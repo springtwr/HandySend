@@ -8,8 +8,8 @@ import {
   splitIntoSegments
 } from '../../../../main/ets/model/HistorySegments'
 import {
-  SESSION_HISTORY_CAPACITY,
-  SESSION_HISTORY_SEGMENT_COUNT,
+  SESSION_HISTORY_MAX_ENTRIES,
+  SESSION_HISTORY_MAX_SEGMENT_COUNT,
   SESSION_HISTORY_SEGMENT_SIZE
 } from '../../../../main/ets/model/HistoryCapacity'
 
@@ -193,12 +193,12 @@ export default function HistorySegmentsTest() {
     })
 
     it('segmentsOfDirtyRange_appendMapsToLastSegmentOnly', 0, () => {
-      // 任务历史当前布局：容量 750 = 250 × 3，在末段追加只重写末段
-      let lastIndex: number = SESSION_HISTORY_CAPACITY - 1
+      // 任务历史硬上限：1000 = 250 × 4，在末段追加只重写末段
+      let lastIndex: number = SESSION_HISTORY_MAX_ENTRIES - 1
       let segs = segmentsOfDirtyRange({ first: lastIndex, last: lastIndex },
         SESSION_HISTORY_SEGMENT_SIZE)
       expect(segs.length).assertEqual(1)
-      expect(segs[0]).assertEqual(SESSION_HISTORY_SEGMENT_COUNT - 1)
+      expect(segs[0]).assertEqual(SESSION_HISTORY_MAX_SEGMENT_COUNT - 1)
     })
 
     it('segmentsOfDirtyRange_guardSegmentSize', 0, () => {
