@@ -354,7 +354,7 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "设置将在重启服务器后生效"
+      "value": "LocalSend 设置将在重启服务器后生效"
     },
     {
       "name": "restart_server",
@@ -870,7 +870,7 @@
     },
     {
       "name": "server_offline_warning",
-      "value": "服务未运行"
+      "value": "LocalSend 服务未运行"
     },
     {
       "name": "verify_button",
@@ -1318,7 +1318,7 @@
     },
     {
       "name": "wifi_off_lan_and_mta_warning",
-      "value": "未开启 WLAN，文件传输将无法正常使用，请开启 WLAN"
+      "value": "未开启 WLAN，局域网与互传将无法正常使用，请开启 WLAN"
     },
     {
       "name": "mta_wifi_off_standalone_warning",

@@ -354,7 +354,7 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "Settings will take effect after restarting the server"
+      "value": "LocalSend settings will take effect after restarting the server"
     },
     {
       "name": "restart_server",
@@ -870,7 +870,7 @@
     },
     {
       "name": "server_offline_warning",
-      "value": "Server is not running"
+      "value": "LocalSend service is not running"
     },
     {
       "name": "verify_button",
@@ -1318,7 +1318,7 @@
     },
     {
       "name": "wifi_off_lan_and_mta_warning",
-      "value": "WLAN is off. File transfer will not work properly. Turn on WLAN."
+      "value": "WLAN is off. LAN and MTA transfer will not work properly. Turn on WLAN."
     },
     {
       "name": "mta_wifi_off_standalone_warning",
