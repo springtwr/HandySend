@@ -54,6 +54,7 @@ import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
+import GallerySavePolicyTest from './utils/GallerySavePolicyTest.test'
 import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
 import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
 
@@ -149,6 +150,7 @@ export default function testsuite() {
   FingerprintIconsTest()
   FilePreviewPolicyTest()
   FileLocationUtilTest()
+  GallerySavePolicyTest()
   TextAlignUtilTest()
   WebAccessCodeTest()
 

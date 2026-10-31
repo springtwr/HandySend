@@ -8,7 +8,13 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { promptAction, CustomContentDialogV2, AdvancedDialogV2Button, uiObserver } from '@kit.ArkUI';
+import {
+  ComponentContent,
+  promptAction,
+  CustomContentDialogV2,
+  AdvancedDialogV2Button,
+  uiObserver
+} from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
@@ -25,11 +31,13 @@ import { SessionFileList } from '../views/transfer/SessionFileList';
 import { SessionActions } from '../views/transfer/SessionActions';
 import { SessionMetaSection } from '../views/transfer/SessionMetaSection';
 import { SessionTimeline } from '../views/transfer/SessionTimeline';
-import { VerifyPageParams } from '../model/Types';
+import { buildGallerySaveDialog, GallerySaveDialogParams } from '../views/SaveToGalleryDialog';
+import { GallerySaveResult, MediaFileInfo, VerifyPageParams } from '../model/Types';
 import { SessionFile } from '../model/transfer/TransferSession';
 import { hasDisplayText } from '../service/transfer/adapters/SessionAdapter';
-import { getServerFingerprint } from '../service/AppService';
+import { getServerFingerprint, saveMediaToGallery } from '../service/AppService';
 import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
+import { gallerySaveLocalPath, isGalleryImage } from '../utils/GallerySavePolicy';
 import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
 import { isUrl } from '../utils/IPValidator';
 import { copyText } from '../utils/ClipboardUtil';
@@ -37,6 +45,7 @@ import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import {
   FileOpenResult,
+  isFileMissing,
   normalizeFileLocation,
   openContainingFolder,
   openWithOtherApp
@@ -68,6 +77,8 @@ export struct SessionDetailPage {
   // 预览弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local filePreviewContentWidth: number = 0
   private filePreviewDialogId: number = -1
+  // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
+  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -136,6 +147,78 @@ export struct SessionDetailPage {
       .catch((_e: Object): void => {
         this.showToast($r('app.string.session_file_open_failed'));
       });
+  }
+
+  /**
+   * 保存单个媒体文件到相册：菜单点击仅作入口，实际写入需用户在弹窗内点击 SaveButton
+   * 获取临时授权（应用未申请 WRITE_IMAGEVIDEO 受限权限）。
+   */
+  private handleSaveToGallery(file: SessionFile): void {
+    let context = this.context;
+    if (context === undefined) {
+      return;
+    }
+    // 与「打开所在位置」同口径：点击时探测源文件，缺失则明确提示，不打开无意义的保存弹窗
+    if (isFileMissing(normalizeFileLocation(file.path))) {
+      this.showToast($r('app.string.history_open_file_missing'));
+      return;
+    }
+    let mediaFile: MediaFileInfo = {
+      // 保存服务按本机路径转 file URI；file:// 形式的条目先归一为本机路径
+      filePath: gallerySaveLocalPath(file.path),
+      fileName: file.fileName,
+      fileType: file.fileType,
+      isImage: isGalleryImage(file.fileType, file.fileName)
+    };
+    let params = new GallerySaveDialogParams();
+    params.mediaFiles = [mediaFile];
+    params.mediaCountText = this.buildGalleryMediaCountText(1);
+    params.onPerformSave = (files: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      let hostContext = this.context;
+      if (hostContext === undefined) {
+        let failed: GallerySaveResult = { successCount: 0, failCount: files.length, errors: ['no context'] };
+        return Promise.resolve(failed);
+      }
+      return saveMediaToGallery(hostContext, files);
+    };
+    params.onSaveComplete = (result: GallerySaveResult): void => {
+      this.showToast(result.successCount > 0 ? $r('app.string.gallery_save_success') :
+        $r('app.string.gallery_save_failed'));
+      if (result.successCount > 0) {
+        // 回写接收历史：接收历史页的文件级条目据此显示相册图标并置灰保存项
+        this.viewModel.markSavedToGallery(file);
+      }
+    };
+    params.onDismiss = (): void => {
+      this.galleryContentNode = null;
+    };
+    params.onCloseDialog = (): void => {
+      this.closeGallerySaveDialog();
+    };
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
+    this.galleryContentNode = contentNode;
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(contentNode, {
+        autoCancel: true,
+        alignment: DialogAlignment.Center
+      })
+      .catch(() => {
+        this.galleryContentNode = null;
+      });
+  }
+
+  /** 相册保存弹窗的媒体数量文案（单文件固定为 1，复用既有资源）。 */
+  private buildGalleryMediaCountText(count: number): string {
+    return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count'))
+      .replace('%d', String(count));
+  }
+
+  private closeGallerySaveDialog(): void {
+    if (this.galleryContentNode !== null) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
+      this.galleryContentNode = null;
+    }
   }
 
   /** 复制多文件条目的文本内容：读取文件本身（缺省上限截断，超限明确提示截断）。 */
@@ -428,7 +511,8 @@ export struct SessionDetailPage {
 
   /**
    * 标题栏菜单：指纹验证（次级入口，不占用底部动作区）。
-   * 「保存到相册」由设置项驱动、在接收成功后自动提示，不在本页保留入口。
+   * 「保存到相册」不设整会话入口：接收成功后由设置项驱动自动提示；单个媒体文件的保存入口
+   * 位于文件清单条目的操作菜单（按文件精确标记，见 SessionFileList）。
    * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
    * 返回箭头由组件承载，保持系统默认尺寸。
    */
@@ -701,6 +785,9 @@ export struct SessionDetailPage {
                     },
                     onCopyText: (file: SessionFile) => {
                       this.copyFileText(file);
+                    },
+                    onSaveToGallery: (file: SessionFile) => {
+                      this.handleSaveToGallery(file);
                     }
                   })
                 }

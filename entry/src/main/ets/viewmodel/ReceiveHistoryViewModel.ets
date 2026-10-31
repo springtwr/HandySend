@@ -1,5 +1,10 @@
 import { getReceiveHistory } from '../service/AppService';
-import { removeEntries, removeEntry, clearAll } from '../service/repository/ReceiveHistoryService';
+import {
+  removeEntries,
+  removeEntry,
+  clearAll,
+  updateGallerySavedStatusById
+} from '../service/repository/ReceiveHistoryService';
 import { ReceiveHistoryEntry } from '../model/Types';
 import { ReceiveHistoryItemViewModel } from './ReceiveHistoryItemViewModel';
 
@@ -59,6 +64,15 @@ export class ReceiveHistoryViewModel {
     // 记录被清空后退出多选模式，避免遗留空白选择态
     if (this.historyItems.length === 0) {
       this.selectionMode = false;
+    }
+  }
+
+  /** 标记某条接收历史已保存到相册：按条目 id 精确回写并落盘（保存成功后调用）。 */
+  markSavedToGallery(id: string): void {
+    updateGallerySavedStatusById(id, true);
+    let item: ReceiveHistoryItemViewModel | undefined = this.findItem(id);
+    if (item !== undefined) {
+      item.savedToGallery = true;
     }
   }
 

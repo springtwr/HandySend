@@ -42,6 +42,8 @@ import { isTextFile } from '../utils/MimeUtils';
 import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { sendTextDir } from '../service/repository/SendRepository';
 import { recvTextDir } from '../service/repository/ReceiveTargets';
+import { updateGallerySavedStatusByPath } from '../service/repository/ReceiveHistoryService';
+import { isPathSavedToGallery } from '../utils/GallerySavePolicy';
 import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
 import {
   TextPreviewVerdict,
@@ -711,6 +713,16 @@ export class SessionDetailViewModel {
     }
     let recvDir: string = recvTextDir();
     return recvDir.length > 0 && file.path.startsWith(recvDir);
+  }
+
+  /** 文件是否已保存到相册（按接收历史的相册标记与路径匹配；不做相册副本存在性检测）。 */
+  isSavedToGallery(file: SessionFile): boolean {
+    return isPathSavedToGallery(file.path);
+  }
+
+  /** 标记文件已保存到相册：按路径回写接收历史，使任务详情与接收历史两处状态同源。 */
+  markSavedToGallery(file: SessionFile): void {
+    updateGallerySavedStatusByPath(file.path, true);
   }
 
   /** 按需读取某文件的文本内容（多文件时的点击预览）；失败返回 undefined 表示不可用。 */

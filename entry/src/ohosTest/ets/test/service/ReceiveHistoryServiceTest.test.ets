@@ -7,7 +7,9 @@ import {
   getHistory,
   initHistory,
   repairTextMessageFlags,
-  updateGallerySavedStatus
+  updateGallerySavedStatus,
+  updateGallerySavedStatusById,
+  updateGallerySavedStatusByPath
 } from '../../../../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
 import { RECEIVE_HISTORY_CAPACITY } from '../../../../main/ets/model/HistoryCapacity'
@@ -212,6 +214,34 @@ export default function ReceiveHistoryServiceTest() {
       expect(getHistory()[0].savedToGallery).assertTrue()
       expect(getHistory()[1].savedToGallery).assertTrue()
       expect(getHistory()[2].savedToGallery).assertFalse()
+    })
+
+    it('updateGallerySavedStatusById_marks_only_target_entry', 0, () => {
+      clearAll()
+      addEntries([makeEntry('single_1_0', 'a.jpg'), makeEntry('single_1_1', 'b.jpg')])
+      updateGallerySavedStatusById('single_1_1', true)
+      // 单文件保存只标记对应条目，同会话未保存的文件不被误标
+      expect(getHistory()[0].savedToGallery).assertFalse()
+      expect(getHistory()[1].savedToGallery).assertTrue()
+    })
+
+    it('updateGallerySavedStatusByPath_marks_matching_entries', 0, () => {
+      clearAll()
+      let a: ReceiveHistoryEntry = makeEntry('path_1_0', 'a.jpg')
+      a.path = '/data/storage/el2/base/files/Download/a.jpg'
+      let b: ReceiveHistoryEntry = makeEntry('path_1_1', 'b.jpg')
+      b.path = '/data/storage/el2/base/files/Download/b.jpg'
+      addEntries([a, b])
+      updateGallerySavedStatusByPath('/data/storage/el2/base/files/Download/a.jpg', true)
+      expect(getHistory()[0].savedToGallery).assertTrue()
+      expect(getHistory()[1].savedToGallery).assertFalse()
+    })
+
+    it('updateGallerySavedStatusById_unknown_id_no_effect', 0, () => {
+      clearAll()
+      addEntries([makeEntry('ghost_1_0', 'a.jpg')])
+      updateGallerySavedStatusById('ghost-unknown', true)
+      expect(getHistory()[0].savedToGallery).assertFalse()
     })
 
     it('updateGallerySavedStatus_persistsAcrossReload', 0, () => {

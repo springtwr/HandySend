@@ -17,6 +17,7 @@ import {
   segmentsOfDirtyRange
 } from '../../model/HistorySegments';
 import { receiveHistoryPreferencesUtil } from '../../utils/PreferencesUtil';
+import { normalizeFileLocation } from '../../utils/FileLocationUtil';
 import { recvTextDir } from './ReceiveTargets';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:ReceiveHistoryService', '历史');
@@ -193,30 +194,77 @@ function deleteEntryFile(entry: ReceiveHistoryEntry): void {
   }
 }
 
-// 更新历史记录的 savedToGallery 标记（相册保存成功后调用）
+// 写时复制而非原地修改：落盘按对象引用比对变更区间，原地修改引用不变会被误判为无变化而跳过落盘
+function copyEntryWithGalleryStatus(entry: ReceiveHistoryEntry, saved: boolean): ReceiveHistoryEntry {
+  return {
+    id: entry.id,
+    fileName: entry.fileName,
+    fileType: entry.fileType,
+    path: entry.path,
+    savedToGallery: saved,
+    isMessage: entry.isMessage,
+    fileSize: entry.fileSize,
+    senderAlias: entry.senderAlias,
+    timestamp: entry.timestamp
+  };
+}
+
+// 按会话前缀更新历史记录的 savedToGallery 标记（整会话媒体自动保存成功后调用）
 export function updateGallerySavedStatus(sessionId: string, saved: boolean): void {
   let updated: boolean = false;
   for (let i = 0; i < history.length; i++) {
     if (history[i].id.startsWith(sessionId + '_')) {
-      // 写时复制而非原地修改：落盘按对象引用比对变更区间，原地修改引用不变会被误判为无变化而跳过落盘
-      let old: ReceiveHistoryEntry = history[i];
-      history[i] = {
-        id: old.id,
-        fileName: old.fileName,
-        fileType: old.fileType,
-        path: old.path,
-        savedToGallery: saved,
-        isMessage: old.isMessage,
-        fileSize: old.fileSize,
-        senderAlias: old.senderAlias,
-        timestamp: old.timestamp
-      };
+      history[i] = copyEntryWithGalleryStatus(history[i], saved);
       updated = true;
     }
   }
   if (updated) {
     saveHistory();
     logger.debug('sessionId=' + sessionId.substring(0, 8) + ' saved=' + saved);
+  }
+}
+
+// 按条目 id 精确更新 savedToGallery 标记（单文件菜单保存成功后调用）：
+// 不能复用按会话前缀的批量更新，否则同会话中未保存的其他文件也会被误标。
+export function updateGallerySavedStatusById(id: string, saved: boolean): void {
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].id !== id) {
+      continue;
+    }
+    history[i] = copyEntryWithGalleryStatus(history[i], saved);
+    saveHistory();
+    logger.debug('id=' + id + ' saved=' + saved);
+    return;
+  }
+}
+
+// 按文件路径精确更新 savedToGallery 标记（任务详情页单文件保存成功后调用）：
+// 同一文件可能对应多条接收历史，按路径命中全部更新；路径形式不一致时经定位归一再比较。
+export function updateGallerySavedStatusByPath(path: string, saved: boolean): void {
+  if (path.length === 0) {
+    return;
+  }
+  let target: string = normalizeFileLocation(path).localPath;
+  let updated: boolean = false;
+  for (let i = 0; i < history.length; i++) {
+    let entry: ReceiveHistoryEntry = history[i];
+    if (entry.path.length === 0) {
+      continue;
+    }
+    let matched: boolean = entry.path === path;
+    if (!matched && target.length > 0) {
+      let entryPath: string = normalizeFileLocation(entry.path).localPath;
+      matched = entryPath.length > 0 && entryPath === target;
+    }
+    if (!matched) {
+      continue;
+    }
+    history[i] = copyEntryWithGalleryStatus(entry, saved);
+    updated = true;
+  }
+  if (updated) {
+    saveHistory();
+    logger.debug('path=' + path + ' saved=' + saved);
   }
 }
 

@@ -6,16 +6,17 @@
  * 条目直接排布于外层文件卡片容器内（不套独立色块），相邻条目之间以分隔线区隔。
  * 直接读取可观测视图模型的实时清单（进度 / 阶段随 `@Trace` 字段刷新）。
  * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，仅列文件与状态。
- * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开），
+ * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册），
  * 不再按文件类型隐式绑定点击行为。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
-import { SessionFile } from '../../model/transfer/TransferSession';
+import { SessionFile, SessionFileStage } from '../../model/transfer/TransferSession';
 import { SessionDetailViewModel } from '../../viewmodel/SessionDetailViewModel';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
 import { isTextFile } from '../../utils/MimeUtils';
 import { isGalleryLocation } from '../../utils/FileLocationUtil';
+import { isSaveToGalleryCandidate } from '../../utils/GallerySavePolicy';
 import { isTextPreviewable, needsOverLimitHint } from '../../utils/FilePreviewPolicy';
 import { FileEntryMenuItems, FileEntryMenuOptions } from '../../components/FileEntryActions';
 import { FileEntryThumb } from '../../components/FileEntryThumb';
@@ -39,6 +40,9 @@ export struct SessionFileList {
   }
   @Event onCopyText: (file: SessionFile) => void = (_file: SessionFile) => {
   }
+  // 保存到相册（仅接收方向的图片 / 视频条目提供）
+  @Event onSaveToGallery: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
 
   private percentOf(file: SessionFile): number {
     if (file.totalBytes <= 0) {
@@ -57,6 +61,12 @@ export struct SessionFileList {
     let sandboxText: boolean = this.viewModel.isSandboxTextFile(file);
     // 超阈值同样可截断预览（前 128KB 并挂截断说明），故预览可用性覆盖超限情形
     let overLimit: boolean = needsOverLimitHint(isText, file.path, file.totalBytes);
+    // 保存到相册只对接收方向已落盘的媒体文件提供：发送方向的文件可能是用户自己的图库或
+    // DCIM 文件，保存语义弱且易产生重复副本；未完成文件不提供，避免保存不完整内容
+    let saveCandidate: boolean = !this.viewModel.isOutbound() &&
+      file.stage === SessionFileStage.completed &&
+      isSaveToGalleryCandidate(file.path, file.fileType, file.fileName);
+    let savedToGallery: boolean = saveCandidate && this.viewModel.isSavedToGallery(file);
     return {
       showPreviewItem: isText,
       canPreviewText: isTextPreviewable(isText, file.path, file.totalBytes) || overLimit,
@@ -67,6 +77,8 @@ export struct SessionFileList {
       // 复制为用户显式动作，不受预览阈值限制：超大文本同样可复制（读取上限截断，超限明确提示截断）
       showCopyItem: isText,
       canCopyText: isText && hasLocation,
+      showSaveToGallery: saveCandidate,
+      canSaveToGallery: saveCandidate && !savedToGallery,
       onPreviewText: (): void => {
         this.onPreviewFile(file);
       },
@@ -78,6 +90,9 @@ export struct SessionFileList {
       },
       onCopyText: (): void => {
         this.onCopyText(file);
+      },
+      onSaveToGallery: (): void => {
+        this.onSaveToGallery(file);
       }
     };
   }

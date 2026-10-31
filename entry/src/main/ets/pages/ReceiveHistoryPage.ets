@@ -1,5 +1,12 @@
 import { common } from '@kit.AbilityKit';
-import { TipsDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
+import {
+  ComponentContent,
+  TipsDialogV2,
+  CustomContentDialogV2,
+  AdvancedDialogV2Button,
+  promptAction,
+  uiObserver
+} from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
@@ -13,13 +20,18 @@ import { EmptyState } from '../components/EmptyState';
 import { FileEntryMenuItems, FileEntryMenuOptions } from '../components/FileEntryActions';
 import { FileEntryThumb } from '../components/FileEntryThumb';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
+import { GallerySaveResult, MediaFileInfo } from '../model/Types';
+import { saveMediaToGallery } from '../service/AppService';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
 import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
 import { formatSizeDetailed } from '../utils/FormatUtil';
+import { gallerySaveLocalPath, isGalleryImage, isSaveToGalleryCandidate } from '../utils/GallerySavePolicy';
+import { buildGallerySaveDialog, GallerySaveDialogParams } from '../views/SaveToGalleryDialog';
 import {
   FileOpenResult,
+  isFileMissing,
   isGalleryLocation,
   normalizeFileLocation,
   openContainingFolder,
@@ -42,6 +54,8 @@ export struct ReceiveHistoryPage {
   @Local deleteDialogCheck: boolean = false
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
+  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 文本消息完整内容弹窗：打开时暂存当前条目的完整文本，关闭时清空
   @Local fullTextDialogContent: string = ''
   // 全文弹窗内容不可用（文件缺失/读取失败）：弹窗内给出明确提示
@@ -297,6 +311,78 @@ export struct ReceiveHistoryPage {
       });
   }
 
+  /**
+   * 保存单个媒体文件到相册：菜单点击仅作入口，实际写入需用户在弹窗内点击 SaveButton
+   * 获取临时授权（应用未申请 WRITE_IMAGEVIDEO 受限权限）。
+   */
+  private handleSaveToGallery(item: ReceiveHistoryItemViewModel): void {
+    let hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return;
+    }
+    // 与「打开所在位置」同口径：点击时探测源文件，缺失则明确提示，不打开无意义的保存弹窗
+    if (isFileMissing(normalizeFileLocation(item.path))) {
+      this.showMessage($r('app.string.history_open_file_missing'));
+      return;
+    }
+    let mediaFile: MediaFileInfo = {
+      // 保存服务按本机路径转 file URI；file:// 形式的条目先归一为本机路径
+      filePath: gallerySaveLocalPath(item.path),
+      fileName: item.fileName,
+      fileType: item.fileType,
+      isImage: isGalleryImage(item.fileType, item.fileName)
+    };
+    let params = new GallerySaveDialogParams();
+    params.mediaFiles = [mediaFile];
+    params.mediaCountText = this.buildGalleryMediaCountText(1);
+    params.onPerformSave = (files: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      let context = this.getUIContext().getHostContext();
+      if (context === undefined) {
+        let failed: GallerySaveResult = { successCount: 0, failCount: files.length, errors: ['no context'] };
+        return Promise.resolve(failed);
+      }
+      return saveMediaToGallery(context as common.UIAbilityContext, files);
+    };
+    params.onSaveComplete = (result: GallerySaveResult): void => {
+      this.showMessage(result.successCount > 0 ? $r('app.string.gallery_save_success') :
+        $r('app.string.gallery_save_failed'));
+      if (result.successCount > 0) {
+        // 按条目精确回写：同会话中未保存的其他文件不被误标，相册图标随即出现
+        this.viewModel.markSavedToGallery(item.id);
+      }
+    };
+    params.onDismiss = (): void => {
+      this.galleryContentNode = null;
+    };
+    params.onCloseDialog = (): void => {
+      this.closeGallerySaveDialog();
+    };
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
+    this.galleryContentNode = contentNode;
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(contentNode, {
+        autoCancel: true,
+        alignment: DialogAlignment.Center
+      })
+      .catch(() => {
+        this.galleryContentNode = null;
+      });
+  }
+
+  /** 相册保存弹窗的媒体数量文案（单文件固定为 1，复用既有资源）。 */
+  private buildGalleryMediaCountText(count: number): string {
+    return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count'))
+      .replace('%d', String(count));
+  }
+
+  private closeGallerySaveDialog(): void {
+    if (this.galleryContentNode !== null) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
+      this.galleryContentNode = null;
+    }
+  }
+
   // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）；
   // 超过读取上限时仅复制前部内容，并明确提示截断
   private copyItemText(item: ReceiveHistoryItemViewModel): void {
@@ -464,9 +550,11 @@ export struct ReceiveHistoryPage {
       DesignTokens.font.bodyM, this.fullTextDialogContentWidth);
   }
 
-  // 条目操作菜单选项：公共三项（预览全文 / 打开所在位置 / 用其他应用打开）的可用性与说明
-  // 由公共能力判定，与详情页条目同口径。
+  // 条目操作菜单选项：公共项（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册）
+  // 的可用性与说明由公共能力判定，与详情页条目同口径。
   private menuOptionsFor(item: ReceiveHistoryItemViewModel): FileEntryMenuOptions {
+    // 保存到相册只对图片 / 视频且不在图库中的条目提供；已保存过的条目保留该项但置灰
+    let saveCandidate: boolean = isSaveToGalleryCandidate(item.path, item.fileType, item.fileName);
     return {
       showPreviewItem: item.isTextEntry,
       // 超阈值同样可截断预览（前 128KB 并挂截断说明），故预览可用性覆盖超限情形
@@ -475,6 +563,8 @@ export struct ReceiveHistoryPage {
       // 「用其他应用打开」走应用文件分享机制，沙箱自有文件属可分享目录，不受影响
       canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path) && !item.isSandboxText,
       canOpenWithApp: item.canOpenContainingFolder,
+      showSaveToGallery: saveCandidate,
+      canSaveToGallery: saveCandidate && !item.savedToGallery,
       onPreviewText: (): void => {
         this.requestFullText(item);
       },
@@ -483,6 +573,9 @@ export struct ReceiveHistoryPage {
       },
       onOpenWithApp: (): void => {
         this.handleOpenWithApp(item);
+      },
+      onSaveToGallery: (): void => {
+        this.handleSaveToGallery(item);
       }
     };
   }
