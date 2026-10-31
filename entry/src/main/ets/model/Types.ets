@@ -133,6 +133,17 @@ export interface SendFileItem {
   hash?: string
   // 源文件修改时间（Unix 毫秒，可缺省）；用于接收端还原文件时间
   lastModified?: number
+  // 暂存阶段已打开的只读源句柄：发送与校验和据此 dup，网页分享直接借用，避免重复 open
+  sourceFd?: number
+}
+
+/**
+ * 已读到的源文件元数据（大小 + 修改时间）：
+ * 暂存阶段补全后随发送准备一并传入，避免准备层为同一批文件再次逐项 open/stat。
+ */
+export interface SourceFileMeta {
+  size: number
+  lastModified: number
 }
 
 export interface LogEntry {
@@ -149,9 +160,11 @@ export interface StagedFile {
   isManualText?: boolean
   // 手输文本是否已随某次发送发起（已发起 = 其持久文件不再随暂存列表清理删除）
   persisted?: boolean
-  // 源文件修改时间（Unix 毫秒，可缺省）：在暂存副本生成前捕获，
+  // 源文件修改时间（Unix 毫秒，可缺省）：暂存时由异步补全读取原文件属性，
   // 随发送文件 JSON 传递，供接收端还原文件时间
   lastModified?: number
+  // 文件字节数（异步补全，缺省表示尚未读取）
+  size?: number
   // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（显示类型图标）
   previewPixelMap?: image.PixelMap
 }

@@ -1093,6 +1093,10 @@
       "value": "File has been moved or deleted"
     },
     {
+      "name": "history_open_file_access_denied",
+      "value": "File is temporarily unavailable. Please try again later"
+    },
+    {
       "name": "history_delete_title",
       "value": "Delete record?"
     },
@@ -1995,6 +1999,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "No app available to open this file"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "%d more files, tap to load"
     },
     {
       "name": "session_file_open_failed",

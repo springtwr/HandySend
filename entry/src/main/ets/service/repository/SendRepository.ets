@@ -4,6 +4,7 @@ import {
   DiscoveredDevice,
   TransferProgress,
   SendFileItem,
+  SourceFileMeta,
   StagedFile,
   SendSessionStatus,
   SendSessionState
@@ -34,6 +35,7 @@ import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { isServerRunning, restartServer } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
+import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { LogContext } from '../../common/LogFormat';
 import { LogDomains } from '../../common/LogDomains';
@@ -344,18 +346,25 @@ export async function sendToDevice(
     protocol: actualProtocol
   };
   // 记录发送文件信息（元数据），供发送方向进度事件补齐 totalBytes/filePath。
-  // 内容 fd 不在准备期持有：每次 nativeSendFiles 调用前临时打开（见下方重试循环）。
+  // 内容 fd 不在本层长期持有：每次 nativeSendFiles 调用前取用（优先复用条目携带的暂存句柄，
+  // 缺失或校验不一致时按路径打开，见下方重试循环）。
+  let totalBytes: number = 0;
+  let hashedCount: number = 0;
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
-    let hashVal: string | undefined = f.hash;
-    logger.debug('sendToDevice 文件[' + i + ']: id=' + f.fileId + ' path=' + f.filePath +
-      ' size=' + f.size + ' sha256=' + (hashVal !== undefined ? hashVal.substring(0, 16) + '...' : '（无）'));
+    totalBytes = totalBytes + f.size;
+    if (f.hash !== undefined && f.hash.length > 0) {
+      hashedCount++;
+    }
     registerSendFileInfo({
       fileId: f.fileId,
       size: f.size,
       filePath: f.filePath
     });
   }
+  // 只输出一行汇总：逐文件日志在数百个文件时会单独占满日志缓冲，淹没真正有用的记录
+  logger.debug('发送清单 数量=' + files.length + ' 总字节=' + totalBytes + ' 已带校验和=' + hashedCount,
+    sendCtx);
   logger.debug(actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
   // 这里弹出输入框让用户输入 PIN 后带 pin 重试；用户取消则按 401 错误结束。
@@ -373,10 +382,49 @@ export async function sendToDevice(
       // 返回后，Rust 已关闭全部传入 fd，重试必须重新打开
       let nativeFiles: Array<NativeFileToSend> = [];
       let opened: Array<fs.File> = [];
+      let handles: Array<fs.File | undefined> = [];
+      for (let i = 0; i < files.length; i++) {
+        handles.push(undefined);
+      }
       try {
+        // 受限并发打开：串行打开数百个选择器/媒体库来源的文件会让对端迟迟收不到发送请求
+        let openStartMs: number = Date.now();
+        let reusedCount: number = 0;
+        let openedCount: number = 0;
+        let dupFailedCount: number = 0;
+        let noFdCount: number = 0;
+        await forEachConcurrently(files.length, async (index: number): Promise<void> => {
+          let f: SendFileItem = files[index];
+          // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）
+          if (f.sourceFd !== undefined) {
+            try {
+              let duped: fs.File = fs.dup(f.sourceFd);
+              // 句柄可能在“暂存句柄关闭→操作系统复用该 fd 编号”后被别的文件占用：
+              // 用条目已知大小校验，不一致则丢弃并回退按路径打开，避免发错文件
+              if (fs.statSync(duped.fd).size === f.size) {
+                handles[index] = duped;
+                reusedCount++;
+                return;
+              }
+              fs.closeSync(duped);
+            } catch (_dupErr) {
+            }
+            dupFailedCount++;
+          } else {
+            noFdCount++;
+          }
+          handles[index] = await fs.open(f.filePath, fs.OpenMode.READ_ONLY);
+          openedCount++;
+        });
+        logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' + files.length +
+          ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount + ' dup失败=' + dupFailedCount +
+          ' 无句柄=' + noFdCount, sendCtx);
         for (let i = 0; i < files.length; i++) {
           let f = files[i];
-          let file = fs.openSync(f.filePath, fs.OpenMode.READ_ONLY);
+          let file: fs.File | undefined = handles[i];
+          if (file === undefined) {
+            throw new Error('源文件句柄缺失：' + f.filePath);
+          }
           opened.push(file);
           nativeFiles.push({
             fileId: f.fileId,
@@ -391,19 +439,28 @@ export async function sendToDevice(
           });
         }
       } catch (openErr) {
-        // 任一源文件打开失败（如授权失效）：关闭已打开句柄，按整体失败返回
-        for (let k = 0; k < opened.length; k++) {
+        // 任一源文件打开失败（如授权失效）：关闭已打开句柄，按整体失败返回。
+        // 并发打开时在途任务仍可能成功返回句柄，故以 handles 全量为准关闭
+        for (let k = 0; k < handles.length; k++) {
+          let handle: fs.File | undefined = handles[k];
+          if (handle === undefined) {
+            continue;
+          }
           try {
-            fs.closeSync(opened[k]);
+            fs.closeSync(handle);
           } catch (_ce) {
           }
+          handles[k] = undefined;
         }
+        opened = [];
         logger.error('打开源文件失败：' + openErr, sendCtx);
         notifyChange();
         return { success: false, error: { kind: 'other', message: String(openErr) } };
       }
       pendingFileHandles = opened;
+      let roundTripStartMs: number = Date.now();
       result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
+      logger.debug('发送请求往返耗时=' + (Date.now() - roundTripStartMs) + 'ms success=' + result.success, sendCtx);
       // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
       pendingFileHandles = [];
       if (result.success) {
@@ -589,11 +646,15 @@ function extractFileName(uri: string): string {
  * @param uris 待准备条目的源定位列表
  * @param manualTextUris 可选的「手动文本来源」源定位列表：命中该列表的条目
  *   读取文本内容填入 preview，供接收端识别为文本消息；未传入时不补设任何 preview
+ * @param knownMeta 可选的「已读到的源文件元数据」：命中者直接复用，不再为同一文件 open/stat
+ * @param knownFds 可选的「已打开的源文件句柄」：命中者随条目下传，发送时以 dup 复用
  * @returns 发送条目列表（准备失败的条目被跳过）
  */
 export async function prepareSendFiles(
   uris: Array<string>,
-  manualTextUris?: Array<string>
+  manualTextUris?: Array<string>,
+  knownMeta?: Map<string, SourceFileMeta>,
+  knownFds?: Map<string, number>
 ): Promise<Array<SendFileItem>> {
   // 手动文本来源集合：命中者补设 preview（承载文本消息内容）。
   // 未传入该列表时集合为空，行为与本特性之前完全一致。
@@ -604,54 +665,98 @@ export async function prepareSendFiles(
     }
   }
   let items: Array<SendFileItem> = [];
+  // 受限并发读取元数据：串行打开选择器 URI 时，文件数达到数十个后整体耗时会明显拉长，
+  // 而发送需要等到全部条目就绪才能发起；完成后按下标落位，顺序与入参一致
+  let slots: Array<SendFileItem | undefined> = [];
   for (let i = 0; i < uris.length; i++) {
+    slots.push(undefined);
+  }
+  let prepareStartMs: number = Date.now();
+  await forEachConcurrently(uris.length, async (index: number): Promise<void> => {
     try {
-      let uri = uris[i];
-      let rawName = extractFileName(uri);
-      if (rawName === '' || rawName.length > 200) {
-        rawName = 'file_' + Date.now();
-      }
-      // 净化文件名，确保其符合当前平台规范
-      rawName = nativeSanitizeFileName(rawName);
-      // filePath 直接承载源定位（picker URI 或沙箱路径），不复制文件到沙箱；
-      // 发送时由 sendToDevice 打开 fd 直读源文件；此处仅 open+stat 取真实大小/修改时间后立即关闭
-      let file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-      let size: number;
-      let lastModified: number;
-      try {
-        let stat = fs.statSync(file.fd);
-        size = stat.size;
-        // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
-        lastModified = Math.floor(stat.mtime * 1000);
-      } finally {
-        fs.closeSync(file);
-      }
-      // preview 承载文本消息内容：仅对手动输入文本条目补设，
-      // 文件选择器选取的 txt 文件不带 preview，否则接收端会误判为文本消息、
-      // 网页分享也会错误显示文本预览。
-      // 文本临时文件缺失/不可读时 preview 留空，不影响条目有效性（按文本文件发送）。
-      let preview: string | undefined = undefined;
-      if (manualTextSourceUris.has(uri)) {
-        try {
-          preview = fs.readTextSync(uri);
-        } catch (e) {
-          logger.warn('读取手动文本预览失败：' + e);
-        }
-      }
-      items.push({
-        fileId: 'send_' + i + '_' + Date.now(),
-        filePath: uri,
-        fileName: rawName,
-        fileType: mimeGetMimeForFileName(rawName),
-        size: size,
-        preview: preview,
-        lastModified: lastModified
-      });
+      slots[index] = await buildSendFileItem(uris[index], index, manualTextSourceUris, knownMeta, knownFds);
     } catch (e) {
+      // 单个文件不可用（授权失效/已删除等）时跳过该条目，不影响其余文件
       logger.warn('准备文件失败：' + e);
     }
+  });
+  logger.debug('准备文件元数据耗时=' + (Date.now() - prepareStartMs) + 'ms 文件数=' + uris.length);
+  let withFdCount: number = 0;
+  for (let i = 0; i < slots.length; i++) {
+    let item: SendFileItem | undefined = slots[i];
+    if (item !== undefined) {
+      items.push(item);
+      if (item.sourceFd !== undefined) {
+        withFdCount++;
+      }
+    }
   }
+  logger.debug('准备条目带句柄=' + withFdCount + ' 文件数=' + items.length);
   return items;
+}
+
+/**
+ * 构造单个发送文件条目：解析并净化文件名，取真实大小/修改时间，
+ * 手动文本条目另补设 preview（供接收端识别文本消息内容）。
+ * knownMeta 命中时直接复用已读到的元数据，跳过为同一文件再次 open/stat。
+ */
+async function buildSendFileItem(uri: string, index: number,
+  manualTextSourceUris: Set<string>, knownMeta?: Map<string, SourceFileMeta>,
+  knownFds?: Map<string, number>): Promise<SendFileItem> {
+  let rawName = extractFileName(uri);
+  if (rawName === '' || rawName.length > 200) {
+    rawName = 'file_' + Date.now();
+  }
+  // 净化文件名，确保其符合当前平台规范
+  rawName = nativeSanitizeFileName(rawName);
+  let size: number;
+  let lastModified: number;
+  let known: SourceFileMeta | undefined = knownMeta !== undefined ? knownMeta.get(uri) : undefined;
+  if (known !== undefined) {
+    // 暂存阶段已按同一来源（已打开句柄）读过：直接复用，省掉一次 open/stat 往返
+    size = known.size;
+    lastModified = known.lastModified;
+  } else {
+    // filePath 直接承载源定位（picker URI 或沙箱路径），不复制文件到沙箱；
+    // 发送时由 sendToDevice 复用暂存句柄（或按需打开）直读源文件；
+    // 此处仅在缺少已知元数据时 open+stat 取真实大小/修改时间后立即关闭
+    let file = await fs.open(uri, fs.OpenMode.READ_ONLY);
+    try {
+      let stat = fs.statSync(file.fd);
+      size = stat.size;
+      // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
+      lastModified = Math.floor(stat.mtime * 1000);
+    } finally {
+      fs.closeSync(file);
+    }
+  }
+  // preview 承载文本消息内容：仅对手动输入文本条目补设，
+  // 文件选择器选取的 txt 文件不带 preview，否则接收端会误判为文本消息、
+  // 网页分享也会错误显示文本预览。
+  // 文本临时文件缺失/不可读时 preview 留空，不影响条目有效性（按文本文件发送）。
+  let preview: string | undefined = undefined;
+  if (manualTextSourceUris.has(uri)) {
+    try {
+      preview = fs.readTextSync(uri);
+    } catch (e) {
+      logger.warn('读取手动文本预览失败：' + e);
+    }
+  }
+  let item: SendFileItem = {
+    fileId: 'send_' + index + '_' + Date.now(),
+    filePath: uri,
+    fileName: rawName,
+    fileType: mimeGetMimeForFileName(rawName),
+    size: size,
+    preview: preview,
+    lastModified: lastModified
+  };
+  // 暂存阶段已打开过的句柄：随条目下传，发送时 dup 复用（避免同一文件被再次 open）
+  let knownFd: number | undefined = knownFds !== undefined ? knownFds.get(uri) : undefined;
+  if (knownFd !== undefined) {
+    item.sourceFd = knownFd;
+  }
+  return item;
 }
 
 // 带 context 的清理变体：供冷启动（EntryAbility.onCreate）清扫
@@ -805,7 +910,10 @@ function filesForSession(files: Array<SendFileItem>): Array<SendFileItem> {
       size: f.size,
       preview: f.preview,
       hash: f.hash,
-      lastModified: f.lastModified
+      lastModified: f.lastModified,
+      // 必须透传暂存阶段保留的源句柄：会话条目也是发送入参，
+      // 丢失后 sendToDevice 会为每个文件重新 open（媒体库来源可达秒级）
+      sourceFd: f.sourceFd
     });
   }
   return result;

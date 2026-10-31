@@ -1093,6 +1093,10 @@
       "value": "檔案已被移動或刪除"
     },
     {
+      "name": "history_open_file_access_denied",
+      "value": "檔案暫不可用，請稍後重試"
+    },
+    {
       "name": "history_delete_title",
       "value": "刪除記錄？"
     },
@@ -1995,6 +1999,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "找不到可開啟此檔案的應用程式"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "還有 %d 個檔案，點擊載入更多"
     },
     {
       "name": "session_file_open_failed",

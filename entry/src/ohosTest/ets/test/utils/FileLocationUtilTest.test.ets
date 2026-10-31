@@ -15,7 +15,7 @@ import {
 // 图库资源标识样例（与官方媒体文件 URI 形式一致：file://media/Photo/<ID>/<真实文件名>/<displayName>）
 const GALLERY_IMAGE_URI: string = 'file://media/Photo/111/IMG_1234567890_123/A.jpg'
 const GALLERY_VIDEO_URI: string = 'file://media/Photo/222/VID_1234567890_321/B.mp4'
-// 媒体库音频标识（AudioViewPicker 来源）：本特性明确不纳入图库处理
+// 媒体库音频标识（媒体库来源）：本特性明确不纳入图库处理
 const MEDIA_AUDIO_URI: string = 'file://media/Audio/1/AUD_1234567890_1/C.mp3'
 // 文档类资源标识（DocumentViewPicker 来源）
 const DOC_URI: string = 'file://docs/storage/Users/currentUser/Documents/note.txt'
@@ -130,6 +130,7 @@ export default function FileLocationUtilTest() {
       // 结果态集合完整且取值稳定：调用方据此给出明确提示，不静默
       expect(FileOpenResult.success).assertEqual('success')
       expect(FileOpenResult.fileMissing).assertEqual('fileMissing')
+      expect(FileOpenResult.accessDenied).assertEqual('accessDenied')
       expect(FileOpenResult.unavailable).assertEqual('unavailable')
       expect(FileOpenResult.noApp).assertEqual('noApp')
       expect(FileOpenResult.failed).assertEqual('failed')

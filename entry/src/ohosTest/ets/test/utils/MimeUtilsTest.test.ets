@@ -82,6 +82,10 @@ export default function MimeUtilsTest() {
     it('getMimeForExt_audio_category', 0, () => {
       expect(getMimeForExt('mp3')).assertEqual('audio/mpeg')
       expect(getMimeForExt('flac')).assertEqual('audio/flac')
+      expect(getMimeForExt('alac')).assertEqual('audio/x-alac')
+      expect(getMimeForExt('aiff')).assertEqual('audio/aiff')
+      expect(getMimeForExt('dsf')).assertEqual('audio/x-dsf')
+      expect(getMimeForExt('dff')).assertEqual('audio/x-dff')
     })
 
     it('getMimeForExt_archive_category', 0, () => {

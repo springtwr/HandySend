@@ -46,6 +46,7 @@ import {
 import { removeSendTextFiles, sendTextDir } from '../repository/SendRepository';
 import { recvTextDir } from '../repository/ReceiveTargets';
 import { isTextFile } from '../../utils/MimeUtils';
+import { revokeUriAccess } from '../../utils/UriPermission';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionHistory', '任务历史');
 
@@ -342,8 +343,19 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
       entries: entries
     };
-    sessionHistoryPreferencesUtil.setObject<SessionHistoryFile>(
-      segmentKey(SESSION_HISTORY_PREFIX, segIndex), file);
+    let key: string = segmentKey(SESSION_HISTORY_PREFIX, segIndex);
+    // 只序列化一次并直接写字符串：原实现经 setObject 再序列化一次，大段时是纯浪费。
+    // 同时记录段落大小：偏好存储建议保持轻量（官方建议 ≤50MB），大文件数会话会让单段膨胀，
+    // 写入的同步序列化会阻塞主线程，需要按实测数据决定是否截断明细
+    let json: string = '';
+    try {
+      json = JSON.stringify(file);
+    } catch (_e) {
+      logger.warn('历史段序列化失败 ' + key);
+      return;
+    }
+    logger.debug('历史段写入 ' + key + ' 条目=' + entries.length + ' 字节=' + json.length);
+    sessionHistoryPreferencesUtil.setString(key, json);
   }
 
   /** 删除全部分段键（含空档）：键不存在时静默跳过。 */
@@ -410,11 +422,29 @@ function removeSelfBuiltFilesOf(entries: Array<SessionHistoryEntry>): void {
   }
 }
 
+/** 收集条目引用的 file:// 定位，供撤销持久化授权使用。 */
+function collectUriPaths(entries: Array<SessionHistoryEntry>): Array<string> {
+  let uris: Array<string> = [];
+  for (let i = 0; i < entries.length; i++) {
+    let files: Array<SessionHistoryFileEntry> = entries[i].files;
+    for (let k = 0; k < files.length; k++) {
+      let path: string = files[k].path ?? '';
+      if (path.startsWith('file://')) {
+        uris.push(path);
+      }
+    }
+  }
+  return uris;
+}
+
 /** 清空任务历史：清空记录并清理这些记录对应的应用自建文件。 */
 export function clearSessionHistory(): void {
   let removedEntries: Array<SessionHistoryEntry> = sessionHistoryStore.load();
   sessionHistoryStore.clear();
   removeSelfBuiltFilesOf(removedEntries);
+  // 撤销这些条目对应的持久化授权，避免系统侧授权记录随历史无限累积
+  revokeUriAccess(collectUriPaths(removedEntries)).catch((): void => {
+  });
   logger.info('任务历史已清空');
 }
 
@@ -444,6 +474,18 @@ export function removeSessionHistoryByIds(ids: Array<string>): number {
   sessionHistoryStore.persist(remaining);
   sessionHistoryPreferencesUtil.flushNow();
   removeSelfBuiltFilesOf(removedEntries);
+  // 仅撤销不再被其余历史条目引用的授权：同一文件可能出现在多条记录中，
+  // 过早撤销会让其余记录在临时授权过期后失去访问能力
+  let retainedUris: Set<string> = new Set(collectUriPaths(remaining));
+  let revokableUris: Array<string> = [];
+  let removedUris: Array<string> = collectUriPaths(removedEntries);
+  for (let i = 0; i < removedUris.length; i++) {
+    if (!retainedUris.has(removedUris[i])) {
+      revokableUris.push(removedUris[i]);
+    }
+  }
+  revokeUriAccess(revokableUris).catch((): void => {
+  });
   logger.info('已移除任务历史 count=' + removed);
   return removed;
 }

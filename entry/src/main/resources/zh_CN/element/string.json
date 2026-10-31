@@ -1093,6 +1093,10 @@
       "value": "文件已被移动或删除"
     },
     {
+      "name": "history_open_file_access_denied",
+      "value": "文件暂不可用，请稍后重试"
+    },
+    {
       "name": "history_delete_title",
       "value": "删除记录？"
     },
@@ -1995,6 +1999,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "未找到可打开该文件的应用"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "还有 %d 个文件，点击加载更多"
     },
     {
       "name": "session_file_open_failed",

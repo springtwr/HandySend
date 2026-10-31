@@ -2,18 +2,25 @@
  * FileEntryThumb.ets — 类型图标 / 图片与视频缩略区（跨页公用组件）
  *
  * 按条目定位、类型与文件名解析展示物：
- * - 图片：异步确认文件存在后以对外 URI（file://）交 Image 渲染；
- * - 视频：异步生成缩略图（AVImageGenerator）后渲染；
- * - 其余类型或解析 / 生成失败：回退类型图标（与发送页暂存列表、接收历史同源）。
- * 条目出现时懒加载一次，渲染期不读盘；同一条目不重复加载。
+ * - 图片：自行 open 句柄并用 ImageSource 按展示尺寸解码成 PixelMap（失败回退类型图标）；
+ * - 视频：按需异步生成缩略图（AVImageGenerator）后渲染；
+ * - 其余类型或解码失败：回退类型图标（与发送页暂存列表、接收历史同源）。
+ * 加载时机：条目滚入可视区时加载；详情页首屏之后若干行可按 preloadDelay 提前排队解码，
+ * 避免滚动时逐张冒出。详情页可能一次建出数百行，全部同时解码会带来明显的内存与耗时压力。
+ * 不落盘任何缩略图缓存（大批量传图时缓存会显著增加应用占用空间）。
  */
 
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { image } from '@kit.ImageKit';
+import { getLogger } from '../utils/Logger';
+import { LogDomains } from '../common/LogDomains';
 import { DesignTokens } from '../common/DesignTokens';
 import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
 import { normalizeFileLocation } from '../utils/FileLocationUtil';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
+import { ensureUriAccess } from '../utils/UriPermission';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:FileEntryThumb', '缩略图');
 
 @ComponentV2
 export struct FileEntryThumb {
@@ -29,12 +36,19 @@ export struct FileEntryThumb {
   @Param thumbSize: number = DesignTokens.size.iconLg
   /** 展示圆角（vp） */
   @Param cornerRadius: number = DesignTokens.radius.sm
-  // 图片缩略图 URI（file://）：条目出现后异步解析缓存；未就绪 / 非图片 / 文件缺失时为空串
-  @Local previewUri: string = ''
-  // 视频缩略图：条目出现后异步生成；未就绪 / 生成失败时为 undefined
+  /**
+   * 预加载延时（毫秒）：>=0 时在组件出现后延时加载（不要求已滚入可视区）。
+   * 详情页据此把首屏之后若干行的缩略图提前排队解码，滚动时不再"逐张冒出"。
+   */
+  @Param preloadDelay: number = -1
+  // 缩略图：条目滚入可视区后加载；未就绪 / 加载失败时为 undefined（显示类型图标）
   @Local previewPixelMap: image.PixelMap | undefined = undefined
-  // 防重复加载标记：同一条目只加载一次
+  // 防重复加载标记：同一条目只加载一次；加载失败时复位，下次滚入可视区重试
   private requested: boolean = false
+  // 加载失败标记：为真时直接显示类型图标（图片/视频加载中显示占位块，避免图标→图片的突兀切换）
+  @Local loadFailed: boolean = false
+  // 预加载定时器（组件销毁时清理）
+  private preloadTimer: number = -1
 
   /**
    * 定位变化（如接收侧在会话终结前才回填文件路径）：丢弃旧结果并重新按需加载，
@@ -42,8 +56,6 @@ export struct FileEntryThumb {
    */
   @Monitor('path')
   onPathChanged(): void {
-    this.previewUri = '';
-    // 覆盖前释放旧缩略图显存，避免常驻泄漏
     if (this.previewPixelMap !== undefined) {
       try {
         this.previewPixelMap.release();
@@ -55,8 +67,25 @@ export struct FileEntryThumb {
     this.loadThumbnail();
   }
 
+  /** 组件出现：预加载行按延时排队解码，其余行仍由可视区触发。 */
+  aboutToAppear(): void {
+    if (this.preloadDelay < 0) {
+      return;
+    }
+    this.preloadTimer = setTimeout((): void => {
+      this.preloadTimer = -1;
+      if (this.previewPixelMap === undefined) {
+        this.loadThumbnail();
+      }
+    }, this.preloadDelay);
+  }
+
   /** 组件卸载时释放缩略图显存。 */
   aboutToDisappear(): void {
+    if (this.preloadTimer >= 0) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = -1;
+    }
     if (this.previewPixelMap !== undefined) {
       try {
         this.previewPixelMap.release();
@@ -66,92 +95,98 @@ export struct FileEntryThumb {
     }
   }
 
-  /** 条目出现时按需加载一次（渲染期不读盘；非图片 / 视频或路径为空直接回退图标）。 */
+  /** 滚入可视区时按需加载一次；已出图或已发起过请求时跳过。 */
+  private onVisibleChanged(isVisible: boolean): void {
+    if (!isVisible) {
+      // 离开可视区不保留"已请求"标记：再次进入时允许对未出图的条目重试
+      this.requested = false;
+      return;
+    }
+    if (this.previewPixelMap !== undefined) {
+      return;
+    }
+    // 重新可见时允许重试一次（此前可能因授权未激活等原因失败）
+    this.loadFailed = false;
+    this.loadThumbnail();
+  }
+
+  /** 按类型加载缩略图（渲染期不读盘）。 */
   private loadThumbnail(): void {
     if (this.requested || this.path.length === 0) {
       return;
     }
     this.requested = true;
-    if (this.fileType.startsWith('image/')) {
-      this.loadImageThumbnail();
-      return;
-    }
     if (this.fileType.startsWith('video/')) {
       this.loadVideoThumbnail();
-    }
-  }
-
-  /**
-   * 图片：异步确认文件存在后使用对外 URI 直接渲染；文件缺失 / 异常时保持空串回退类型图标。
-   *
-   * 存在性校验按输入形式（`this.path`）优先路由，原因：条目定位有两种来源——接收侧 / 公共目录的
-   * 本机绝对路径，以及发送侧文件选择器返回的 `file://` URI；而文件属性查询接口的参数是应用沙箱
-   * 路径，选择器来源文件的换算路径本应用通常无直接访问权，单一按路径校验会使发送侧图片静默回退
-   * 类型图标。故输入为 `file://` 时先按 URI 打开取文件描述符属性（与发送链路同一方式），失败再
-   * 回退本机路径；输入为绝对路径时先按路径（保持既有行为与顺序），失败再回退 URI。任一方式校验
-   * 通过即以 URI 交 Image 渲染。
-   */
-  private loadImageThumbnail(): void {
-    let location = normalizeFileLocation(this.path);
-    if (!location.locatable || location.uri.length === 0) {
       return;
     }
-    this.verifyByInputForm(location.localPath, location.uri).then((exists: boolean): void => {
-      if (exists) {
-        this.previewUri = location.uri;
-      }
-    }).catch((_e: Object): void => {
-      // 文件已移动 / 删除等异常——保持空串回退类型图标
-    });
+    this.loadImageThumbnail();
   }
 
   /**
-   * 存在性校验：按输入形式优先路由，失败回退另一种方式；任一方式通过即视为存在。
-   * 输入为 `file://` 时先按 URI，否则先按本机路径（保持既有行为与顺序）。
+   * 图片：自行打开句柄并用 ImageSource 解码成指定尺寸的 PixelMap。
+   *
+   * 不把 `file://media/...` 直接交给 Image 渲染：该路径失败时组件侧拿不到错误码；
+   * 自行 open + ImageSource 可读取真实错误，并按 desiredSize 解码（内存可控）。
    */
-  private async verifyByInputForm(localPath: string, uri: string): Promise<boolean> {
-    if (this.path.startsWith('file://')) {
-      if (await this.verifyByUri(uri)) {
-        return true;
-      }
-      return this.verifyByLocalPath(localPath);
+  private async loadImageThumbnail(): Promise<void> {
+    let location = normalizeFileLocation(this.path);
+    if (!location.locatable || location.uri.length === 0) {
+      this.requested = false;
+      return;
     }
-    if (await this.verifyByLocalPath(localPath)) {
-      return true;
-    }
-    return this.verifyByUri(uri);
-  }
-
-  /**
-   * 按 URI 打开后经文件描述符取属性校验是否为普通文件；正常路径与异常路径都关闭已打开的文件对象，
-   * 不泄漏文件描述符。
-   */
-  private async verifyByUri(uri: string): Promise<boolean> {
+    let side: number = Math.round(this.thumbSize * 2);
     let file: fs.File | undefined = undefined;
+    let source: image.ImageSource | undefined = undefined;
     try {
-      file = await fs.open(uri, fs.OpenMode.READ_ONLY);
-      let stat: fs.Stat = await fs.stat(file.fd);
-      return stat.isFile();
+      // 访问前激活持久化授权：临时授权可能已超过有效期（与进程是否重启无关）
+      await ensureUriAccess(location.uri);
+      file = await fs.open(location.uri, fs.OpenMode.READ_ONLY);
+      source = image.createImageSource(file.fd);
+      let info: image.ImageInfo = source.getImageInfoSync(0);
+      let targetWidth: number = side;
+      let targetHeight: number = side;
+      if (info.size.width > 0 && info.size.height > 0) {
+        let scale: number = Math.min(side / info.size.width, side / info.size.height);
+        targetWidth = Math.max(1, Math.round(info.size.width * scale));
+        targetHeight = Math.max(1, Math.round(info.size.height * scale));
+      }
+      let options: image.DecodingOptions = {
+        desiredSize: { width: targetWidth, height: targetHeight }
+      };
+      let pixelMap: image.PixelMap = await source.createPixelMap(options);
+      this.loadFailed = false;
+      this.replacePreviewPixelMap(pixelMap);
     } catch (e) {
-      // 打开 / 取属性失败视为该方式校验不通过
-      return false;
+      // 失败不锁存：显示类型图标，下次滚入可视区重试（授权激活后即可恢复）
+      this.requested = false;
+      this.loadFailed = true;
+      logger.debug('缩略图解码失败 uri=' + this.path.substring(0, 24) + '… 原因=' + String(e));
     } finally {
+      if (source !== undefined) {
+        try {
+          await source.release();
+        } catch (_ce) {
+        }
+      }
       if (file !== undefined) {
         try {
-          await fs.close(file);
+          fs.closeSync(file);
         } catch (_closeErr) {
         }
       }
     }
   }
 
-  /** 按本机路径校验是否为普通文件（保持既有 fs.stat 行为）。 */
-  private verifyByLocalPath(localPath: string): Promise<boolean> {
-    return fs.stat(localPath).then((stat: fs.Stat): boolean => {
-      return stat.isFile();
-    }).catch((_e: Object): boolean => {
-      return false;
-    });
+  /** 覆盖缩略图前释放旧 PixelMap 显存。 */
+  private replacePreviewPixelMap(pixelMap: image.PixelMap): void {
+    if (this.previewPixelMap !== undefined) {
+      try {
+        this.previewPixelMap.release();
+      } catch (_e) {
+      }
+    }
+    this.previewPixelMap = pixelMap;
   }
 
   /**
@@ -167,34 +202,40 @@ export struct FileEntryThumb {
       if (pixelMap === undefined) {
         // 忙时丢弃/取消/失败不锁存，下次出现时重试
         this.requested = false;
+        this.loadFailed = true;
         return;
       }
-      if (this.previewPixelMap !== undefined) {
-        try {
-          this.previewPixelMap.release();
-        } catch (_e) {
-        }
-      }
-      this.previewPixelMap = pixelMap;
+      this.loadFailed = false;
+      this.replacePreviewPixelMap(pixelMap);
     }).catch((_e: Object): void => {
       this.requested = false;
+      this.loadFailed = true;
     });
+  }
+
+  /** 是否为「图片 / 视频且尚未出图、也未曾失败」的加载中状态。 */
+  private isMediaLoading(): boolean {
+    if (this.loadFailed) {
+      return false;
+    }
+    return this.fileType.startsWith('image/') || this.fileType.startsWith('video/');
   }
 
   build() {
     Row() {
-      if (this.previewUri.length > 0) {
-        Image(this.previewUri)
-          .width(this.thumbSize)
-          .height(this.thumbSize)
-          .objectFit(ImageFit.Cover)
-          .borderRadius(this.cornerRadius)
-      } else if (this.previewPixelMap !== undefined) {
+      if (this.previewPixelMap !== undefined) {
         Image(this.previewPixelMap)
           .width(this.thumbSize)
           .height(this.thumbSize)
           .objectFit(ImageFit.Cover)
           .borderRadius(this.cornerRadius)
+      } else if (this.isMediaLoading()) {
+        // 加载中的图片 / 视频：先占位，避免类型图标一闪再换成图片的突兀感
+        Column()
+          .width(this.thumbSize)
+          .height(this.thumbSize)
+          .borderRadius(this.cornerRadius)
+          .backgroundColor($r('app.color.border_light'))
       } else {
         Image(getFileTypeIconResource(this.isMessage, this.fileName, this.fileType))
           .width(this.thumbSize)
@@ -205,8 +246,8 @@ export struct FileEntryThumb {
     .height(this.thumbSize)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .onAppear(() => {
-      this.loadThumbnail();
+    .onVisibleAreaChange([0.0, 0.1], (_isExpanding: boolean, currentRatio: number): void => {
+      this.onVisibleChanged(currentRatio > 0);
     })
   }
 }

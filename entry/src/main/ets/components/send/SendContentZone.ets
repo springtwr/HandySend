@@ -3,18 +3,25 @@
  *
  * 内容类型选择 + 暂存列表：无暂存内容时展示类型选择网格，有暂存内容时展示
  * 统计/添加/清空操作行与暂存条目列表（40vp 缩略图、48vp 行高、红色圆形移除按钮）。
- * 两种状态共用同一内容高度，列表自身滚动且不撑高页面。
+ * 两种状态共用同一内容高度；暂存列表使用 List + Repeat 懒加载（只建可视区与预加载区的行），
+ * 数百个文件不会一次性建树。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
 import { StagedFile } from '../../model/Types';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
-import { formatSizeDetailed } from '../../utils/FormatUtil';
 import { getFileTypeIconResource } from '../../utils/FileTypeIconUtil';
 
 // 内容区两种状态（类型选择网格 / 暂存列表）共用的内容高度：
 // 两者高度一致，切换状态时卡片高度不跳变
 const CONTENT_ZONE_HEIGHT: number = 170;
+
+// 入场动画错峰条数上限：超过该下标的条目不再累加延迟，
+// 避免一次性选中大量文件时末条要等很久才出现
+const MAX_STAGGERED_ITEM_COUNT: number = 6;
+
+// 暂存列表预加载行数：配合 Repeat 懒加载，只保留可视区上下各若干行
+const STAGED_LIST_CACHED_COUNT: number = 6;
 
 @ComponentV2
 export struct SendContentZone {
@@ -135,99 +142,98 @@ export struct SendContentZone {
     .id(itemId)
   }
 
+  // 暂存列表条目：行内容（缩略图 / 文件名 / 大小 / 移除按钮）。
+  // 列表本身由 stagedSection 中的 List 承载（配合 Repeat 懒加载，只建可视区的行）
   @Builder
-  stagedList() {
-    Column({ space: DesignTokens.space.mini }) {
-      Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
-        Row({ space: DesignTokens.space.sm }) {
-          // 缩略图 40vp（行高 48）：图片源直显，视频用异步生成的缩略图，其余回退类型图标
-          if (ri.item.isImage) {
-            Image(ri.item.uri)
-              .width(DesignTokens.size.iconLg)
-              .height(DesignTokens.size.iconLg)
-              .borderRadius(DesignTokens.radius.sm)
-              .objectFit(ImageFit.Cover)
-              .autoResize(true)
-          } else if (ri.item.previewPixelMap !== undefined) {
-            Image(ri.item.previewPixelMap)
-              .width(DesignTokens.size.iconLg)
-              .height(DesignTokens.size.iconLg)
-              .borderRadius(DesignTokens.radius.sm)
-              .objectFit(ImageFit.Cover)
-          } else {
-            // 文本消息（isManualText 标记）显示消息图标，与接收历史列表一致；
-            // 普通 .txt 文件不带该标记，仍按 MIME 显示文本文件图标
-            Image(getFileTypeIconResource(ri.item.isManualText === true, ri.item.fileName, ri.item.fileType))
-              .width(DesignTokens.size.iconLg)
-              .height(DesignTokens.size.iconLg)
+  stagedRow(ri: RepeatItem<StagedFile>) {
+    Row({ space: DesignTokens.space.sm }) {
+      // 缩略图 40vp（行高 48）：图片源直显，视频用异步生成的缩略图，其余回退类型图标
+      if (ri.item.isImage) {
+        Image(ri.item.uri)
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+          .borderRadius(DesignTokens.radius.sm)
+          .objectFit(ImageFit.Cover)
+          .autoResize(true)
+      } else if (ri.item.previewPixelMap !== undefined) {
+        Image(ri.item.previewPixelMap)
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+          .borderRadius(DesignTokens.radius.sm)
+          .objectFit(ImageFit.Cover)
+      } else {
+        // 文本消息（isManualText 标记）显示消息图标，与接收历史列表一致；
+        // 普通 .txt 文件不带该标记，仍按 MIME 显示文本文件图标
+        Image(getFileTypeIconResource(ri.item.isManualText === true, ri.item.fileName, ri.item.fileType))
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+      }
+
+      // 文件名（flex 自适应宽度，单行截断）。
+      // 文本消息条目不展示沙箱文件名（内部实现细节）：改用带序号的“文本”标签，多条时可分辨；
+      // 文本消息条目可点击进入编辑；普通文件点击无操作（编辑能力仅面向 isManualText 标记的条目）
+      Text(ri.item.isManualText === true ? $r('app.string.staged_text_title', ri.index + 1) : ri.item.fileName)
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+        .onClick(() => {
+          // 仅文本消息条目上抛编辑事件；普通文件（含 .txt）点击保持原行为（无操作）
+          if (ri.item.isManualText === true) {
+            this.onEditText(ri.index);
           }
-
-          // 文件名（flex 自适应宽度，单行截断）。
-          // 文本消息条目不展示沙箱文件名（内部实现细节）：改用带序号的“文本”标签，多条时可分辨；
-          // 文本消息条目可点击进入编辑；普通文件点击无操作（编辑能力仅面向 isManualText 标记的条目）
-          Text(ri.item.isManualText === true ? $r('app.string.staged_text_title', ri.index + 1) : ri.item.fileName)
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-            .onClick(() => {
-              // 仅文本消息条目上抛编辑事件；普通文件（含 .txt）点击保持原行为（无操作）
-              if (ri.item.isManualText === true) {
-                this.onEditText(ri.index);
-              }
-            })
-            .id('send_staged_file_edit')
-
-          // 暂存文件真实大小（statSync 结果，随暂存项缓存）
-          Text(formatSizeDetailed(this.viewModel.getStagedFileSize(ri.index)))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-            .margin({ left: DesignTokens.space.xxs })
-
-          // 红底圆形移除按钮（热区 48vp）
-          Row() {
-            SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(DesignTokens.font.iconXs)
-              .fontColor([$r('app.color.text_on_color')])
-          }
-          .width(DesignTokens.size.iconXs)
-          .height(DesignTokens.size.iconXs)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .backgroundColor($r('app.color.danger_red'))
-          .borderRadius(DesignTokens.radius.max)
-          .responseRegion({
-            x: -16,
-            y: -16,
-            width: 48,
-            height: 48
-          })
-          .onClick(() => {
-            this.viewModel.removeStagedFile(ri.index);
-          })
-          .id('send_staged_file_remove')
-        }
-        .width('100%')
-        .height(48)
-        .alignItems(VerticalAlign.Center)
-        .onAppear(() => {
-          // 视频缩略图懒生成（方法内部有类型与去重防护，非视频直接返回）
-          this.viewModel.loadVideoPreview(ri.index);
         })
-        .transition(
-          TransitionEffect.OPACITY
-            .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
-            .animation({
-              duration: 300,
-              curve: Curve.FastOutSlowIn,
-              delay: ri.index * DesignTokens.animation.listAppearDelay
-            })
-        )
-        .id('send_staged_file_item')
-      }).key((item: StagedFile) => item.uri + (item.previewPixelMap !== undefined ? '#p' : ''))
+        .id('send_staged_file_edit')
+
+      // 暂存文件真实大小（异步补全；未就绪时显示占位）
+      Text(this.viewModel.getStagedFileSizeText(ri.index))
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ left: DesignTokens.space.xxs })
+
+      // 红底圆形移除按钮（热区 48vp）
+      Row() {
+        SymbolGlyph($r('sys.symbol.xmark'))
+          .fontSize(DesignTokens.font.iconXs)
+          .fontColor([$r('app.color.text_on_color')])
+      }
+      .width(DesignTokens.size.iconXs)
+      .height(DesignTokens.size.iconXs)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.danger_red'))
+      .borderRadius(DesignTokens.radius.max)
+      .responseRegion({
+        x: -16,
+        y: -16,
+        width: 48,
+        height: 48
+      })
+      .onClick(() => {
+        this.viewModel.removeStagedFile(ri.index);
+      })
+      .id('send_staged_file_remove')
     }
     .width('100%')
+    .height(48)
+    .alignItems(VerticalAlign.Center)
+    .onAppear(() => {
+      // 视频缩略图懒生成（方法内部有类型与去重防护，非视频直接返回）
+      this.viewModel.loadVideoPreview(ri.index);
+    })
+    .transition(
+      TransitionEffect.OPACITY
+        .combine(TransitionEffect.scale({ x: 0.8, y: 0.8 }))
+        .animation({
+          duration: 300,
+          curve: Curve.FastOutSlowIn,
+          // 仅首屏若干条错峰入场：延迟按实际下标线性递增时，批量选入的文件越多末条越晚出现
+          // （缩略图到达导致条目按 key 重建时也会重复这段等待）
+          delay: Math.min(ri.index, MAX_STAGGERED_ITEM_COUNT) * DesignTokens.animation.listAppearDelay
+        })
+    )
+    .id('send_staged_file_item')
   }
 
   @Builder
@@ -263,14 +269,21 @@ export struct SendContentZone {
     .width('100%')
     .alignItems(VerticalAlign.Center)
 
-    Scroll() {
-      this.stagedList()
+    // 暂存列表自身与空态类型网格同高：仅一个文件时也不出现高度跳变。
+    // List 自身即滚动容器（配合 Repeat 的 virtualScroll 懒加载），不再外套 Scroll
+    List({ space: DesignTokens.space.mini }) {
+      Repeat(this.viewModel.stagedFiles).each((ri: RepeatItem<StagedFile>) => {
+        ListItem() {
+          this.stagedRow(ri)
+        }
+      })
+        .key((item: StagedFile) => item.uri + (item.previewPixelMap !== undefined ? '#p' : '') +
+          (item.size !== undefined ? '#s' : ''))
+        .virtualScroll({ totalCount: this.viewModel.stagedFiles.length })
     }
-    .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
-    .align(Alignment.Top)
-    // 暂存列表自身与空态类型网格同高：仅一个文件时也不出现高度跳变
+    .cachedCount(STAGED_LIST_CACHED_COUNT)
     .constraintSize({ minHeight: CONTENT_ZONE_HEIGHT, maxHeight: CONTENT_ZONE_HEIGHT })
     .width('100%')
     .margin({ top: DesignTokens.space.tiny })

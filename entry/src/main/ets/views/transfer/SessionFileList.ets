@@ -22,6 +22,10 @@ import { FileEntryThumb } from '../../components/FileEntryThumb';
 import { SingleLineValueRow } from '../../components/SingleLineValueRow';
 import { sessionFileStageBgColor, sessionFileStageColor, sessionFileStageLabel } from './SessionStatusBadge';
 
+/** 首屏之后预加载缩略图的行数与错峰间隔：滚动时缩略图已就绪，不再逐张冒出 */
+const THUMB_PRELOAD_ROWS: number = 12;
+const THUMB_PRELOAD_STEP_MS: number = 90;
+
 @ComponentV2
 export struct SessionFileList {
   // 可观测视图模型：渲染中直接读取实时文件清单（实时态与历史态同一入口）
@@ -100,7 +104,7 @@ export struct SessionFileList {
 
   build() {
     Column() {
-      Repeat(this.viewModel.detailFiles())
+      Repeat(this.viewModel.detailFilesForDisplay())
         .each((ri: RepeatItem<SessionFile>) => {
           Column() {
             // 相邻条目之间的分隔线（首条不加；粗细与卡片边框一致）
@@ -115,6 +119,8 @@ export struct SessionFileList {
               // 左侧类型图标 / 图片与视频缩略区（按需懒加载，失败回退类型图标）
               FileEntryThumb({
                 path: ri.item.path.length > 0 ? ri.item.path : this.thumbPathOf(ri),
+                // 首屏后若干行错峰预加载：滚动到时缩略图已就绪（其余行仍按可视区加载）
+                preloadDelay: ri.index < THUMB_PRELOAD_ROWS ? ri.index * THUMB_PRELOAD_STEP_MS : -1,
                 fileType: ri.item.fileType,
                 fileName: ri.item.fileName
               })
@@ -187,6 +193,23 @@ export struct SessionFileList {
           .id('session_detail_file_item')
         })
         .key((item: SessionFile) => item.fileId + '#' + item.occurrence)
+
+      // 「加载更多」：大文件数会话不再一次性建出全部行，只按需追加，
+      // 控制建行与图片解码的瞬时开销（数百行全建会造成长时间卡顿与内存压力）
+      if (this.viewModel.hasMoreDetailFiles()) {
+        Row() {
+          Text($r('app.string.session_detail_load_more', this.viewModel.remainingDetailFiles()))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.accent_blue'))
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
+        .onClick(() => {
+          this.viewModel.loadMoreDetailFiles();
+        })
+        .id('session_detail_load_more')
+      }
     }
     .width('100%')
     .id('session_detail_file_list')
