@@ -60,7 +60,8 @@ import {
 import { isAppForeground } from '../service/repository/AppCore';
 import { NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import {
-  isSaveToGallery, getLocalSendEnabled, getMtaEnabled
+  isSaveToGallery, getLocalSendEnabled, getMtaEnabled,
+  getWebSendAllowed, getNotifiedProtocolSignature, setNotifiedProtocolSignature
 } from '../service/repository/SettingsRepository';
 import {
   querySessions, getSession, subscribeSessions, unsubscribeSessions, declineSession
@@ -82,6 +83,7 @@ import { GallerySaveResult, MediaFileInfo } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
+import { shouldShowPartialProtocolDisabledHint } from '../viewmodel/SendViewModel';
 import { getStringSync } from '../utils/ResourceUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -123,8 +125,10 @@ struct MainTabFloating {
   @Local private isTabHidden: boolean = false
   // 当前激活的主页 Tab 索引（默认发送页 0）：驱动标题栏文案与结束端菜单
   @Local currentTabIndex: number = 0
-  // 「两个协议均禁用」提示卡的关闭状态：本次会话内有效、不持久化（双关解除后复位）
+  // 「部分/全部传输方式已关闭」提示卡的关闭状态：本次会话内有效、不持久化（协议开关变化后复位）
   @Local protocolHintDismissed: boolean = false
+  // 本次启动是否允许显示「部分传输方式已关闭」提示：同一关闭状态只提示一次（见启动评估方法）
+  @Local partialProtocolHintVisible: boolean = false
   // 本机信息半模态显隐
   @Local private isShowLocalDeviceSheet: boolean = false
   // 本机信息半模态当前是否处于网络接口页：由宿主持有，供系统返回键先退回信息页
@@ -156,11 +160,24 @@ struct MainTabFloating {
   private galleryPromptCallback: () => void = (): void => {
   }
 
-  // 设置变化回调：两个开关不再同时关闭时复位提示关闭状态，
-  // 使用户下次再进入「双关死路」时仍能看到提示（本次会话内关闭状态不持久化）。
+  // 最近一次协议开关签名（LocalSend / 互传 / 网页总开关）：仅在开关实际变化时复位协议提示的关闭状态。
+  // 数据总线还会因设备发现等普通刷新触发回调；若按当前开关值无条件复位，
+  // 部分关闭场景下提示会被反复复活、无法关闭。
+  private protocolToggleSignature: string = ''
+  // 设置变化回调：协议开关实际变化时复位提示关闭状态，使提示内容随开关更新
+  //（部分关闭提示的已展示签名持久化，同一状态只在下次启动提示一次）。
   private settingsChangedCallback: () => void = (): void => {
-    if (getLocalSendEnabled() || getMtaEnabled()) {
+    let signature: string =
+      `${getLocalSendEnabled()}|${getMtaEnabled()}|${getWebSendAllowed()}`;
+    if (signature !== this.protocolToggleSignature) {
+      this.protocolToggleSignature = signature;
       this.protocolHintDismissed = false;
+      // 关闭状态已变化：本次会话不再沿用上次启动的提示显隐，下次启动重新评估并提示一次
+      this.partialProtocolHintVisible = false;
+      // 两种方式都开启时清除已提示记录：之后再次关闭应重新提示一次
+      if (getLocalSendEnabled() && getMtaEnabled()) {
+        setNotifiedProtocolSignature('');
+      }
     }
   }
 
@@ -194,6 +211,36 @@ struct MainTabFloating {
   }
 
   /**
+   * 启动时评估「部分传输方式已关闭」提示：持久化已提示的关闭状态签名，
+   * 同一状态只在状态变化后的首次启动提示一次；之后即使重启也不再提示，
+   * 避免对特意关闭某种方式的用户反复打扰。
+   */
+  private evaluateProtocolHintOnStartup(): void {
+    let localSendEnabled: boolean = getLocalSendEnabled();
+    let mtaEnabled: boolean = getMtaEnabled();
+    let webSendEnabled: boolean = getWebSendAllowed();
+    let enabledSignature: string = `${localSendEnabled}|${mtaEnabled}`;
+    this.protocolToggleSignature = `${enabledSignature}|${webSendEnabled}`;
+    // 两种方式都开启时清除已提示记录：之后再次关闭属于新的状态变化，应重新提示一次
+    if (localSendEnabled && mtaEnabled) {
+      if (getNotifiedProtocolSignature().length > 0) {
+        setNotifiedProtocolSignature('');
+      }
+      this.partialProtocolHintVisible = false;
+      return;
+    }
+    let shouldShow: boolean = shouldShowPartialProtocolDisabledHint(localSendEnabled, mtaEnabled,
+      webSendEnabled, false);
+    if (shouldShow && enabledSignature !== getNotifiedProtocolSignature()) {
+      this.partialProtocolHintVisible = true;
+      // 展示即记录：即使本次未手动关闭，后续启动也不再重复提示
+      setNotifiedProtocolSignature(enabledSignature);
+    } else {
+      this.partialProtocolHintVisible = false;
+    }
+  }
+
+  /**
    * 首帧之后一次性执行的重量级初始化：应用服务、接收服务器、视图模型订阅与页签滚动绑定。
    * 由 onPageShow 首次触发（一次性守卫），执行完毕置真首帧内容就绪标志，
    * 三处页签的重量级内容随之构建。保持原 aboutToAppear 内的相互顺序：
@@ -205,6 +252,8 @@ struct MainTabFloating {
     }
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     initAppService(context);
+    // 设置加载完成后、内容构建前评估协议提示显隐（同一关闭状态只提示一次）
+    this.evaluateProtocolHintOnStartup();
     // 网页服务独立于 LocalSend 服务器：按其方向开关在启动流程中自行恢复
     restoreWebService().catch((_e: Error) => {
       // 恢复失败由 AppService 记录日志
@@ -1087,6 +1136,7 @@ struct MainTabFloating {
               this.pathStack.pushPathByName(name, param);
             },
             protocolHintDismissed: this.protocolHintDismissed,
+            partialProtocolHintVisible: this.partialProtocolHintVisible,
             onDismissProtocolHint: () => {
               this.protocolHintDismissed = true;
             },

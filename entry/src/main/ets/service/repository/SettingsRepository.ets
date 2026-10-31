@@ -33,6 +33,7 @@ import {
   KEY_MTA_RECEIVE_ENABLED,
   KEY_MTA_SIMULATED_BRAND,
   KEY_MTA_CONNECTION_WARNINGS,
+  KEY_PROTOCOL_HINT_SIGNATURE,
   KEY_BACKGROUND_RECEIVE
 } from '../../utils/PreferencesUtil';
 import { AutoConfirmMode, NetworkInterface } from '../../model/Types';
@@ -277,6 +278,19 @@ export function setWebReceiveAllowed(enabled: boolean): void {
 
 export function getWebReceiveAllowed(): boolean {
   return webReceiveAllowed;
+}
+
+// ── 协议提示状态（非用户设置：记录已提示过的关闭状态签名）──
+
+/** 已提示过的 LocalSend/互传关闭状态签名；为空表示尚未提示。 */
+export function getNotifiedProtocolSignature(): string {
+  return preferencesRepo.getString(KEY_PROTOCOL_HINT_SIGNATURE, '');
+}
+
+export function setNotifiedProtocolSignature(signature: string): void {
+  preferencesRepo.setString(KEY_PROTOCOL_HINT_SIGNATURE, signature);
+  // 提示签名需跨重启保持：立即落盘，避免提示展示后马上退出导致下次启动重复提示
+  preferencesRepo.flushNow();
 }
 
 // ── 网页独立安全项：加密 / PIN / 端口 / 网卡 ──

@@ -3,7 +3,7 @@ import {
   registerSource,
   getSource,
   listSources,
-  filterSeenSources,
+  filterEnabledDeviceSources,
   clearSources
 } from '../../../../main/ets/service/transfer/DeviceSourceRegistry'
 import {
@@ -26,7 +26,8 @@ import {
 } from '../../../../main/ets/model/transfer/Registries'
 import { DiscoveredDevice } from '../../../../main/ets/model/Types'
 
-function source(key: string, order: number): DeviceSourceDescriptor {
+function source(key: string, order: number, enabled: boolean = true,
+  deviceSource: boolean = true): DeviceSourceDescriptor {
   return {
     key: key,
     label: key,
@@ -34,6 +35,8 @@ function source(key: string, order: number): DeviceSourceDescriptor {
     icon: $r('app.media.ic_tab_send'),
     order: order,
     favoritable: true,
+    deviceSource: deviceSource,
+    enabled: (): boolean => enabled,
     emptyState: { text: 'empty', hint: 'hint', hintVisible: () => false },
     discoveryProvider: (): Array<DiscoveredDevice> => []
   }
@@ -75,15 +78,20 @@ export default function RegistriesTest() {
       clearSources()
     })
 
-    it('sources_filterSeenOnly', 0, () => {
+    it('sources_filterEnabledDeviceSources', 0, () => {
       clearSources()
       registerSource(source('localsend', 10))
-      registerSource(source('mta', 20))
-      let seen = filterSeenSources(listSources(), ['mta'])
-      expect(seen.length).assertEqual(1)
-      expect(seen[0].key).assertEqual('mta')
-      // 从未发现过的来源不出现
-      expect(filterSeenSources(listSources(), []).length).assertEqual(0)
+      registerSource(source('mta', 20, false))
+      registerSource(source('web', 30, true, false))
+      // 关闭的协议与非设备来源均不出现
+      let visible = filterEnabledDeviceSources(listSources())
+      expect(visible.length).assertEqual(1)
+      expect(visible[0].key).assertEqual('localsend')
+      // 两个设备来源均开启时全部展示（不依赖是否曾发现设备）
+      let both = filterEnabledDeviceSources([source('localsend', 10), source('mta', 20)])
+      expect(both.length).assertEqual(2)
+      expect(both[0].key).assertEqual('localsend')
+      expect(both[1].key).assertEqual('mta')
       clearSources()
     })
 

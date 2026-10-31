@@ -1429,6 +1429,10 @@
       "value": "退出"
     },
     {
+      "name": "send_partial_protocols_disabled_hint",
+      "value": "%s 已关闭，相关设备与入口不会显示。"
+    },
+    {
       "name": "send_all_protocols_disabled_hint",
       "value": "所有传输方式均已关闭，应用将无法正常使用，请到设置中开启至少一种传输方式"
     },

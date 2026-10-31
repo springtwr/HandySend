@@ -11,7 +11,7 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { EmptyState } from '../EmptyState';
 import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
 import { DiscoveredDevice } from '../../model/Types';
-import { filterSeenSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
+import { filterEnabledDeviceSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../../views/DeviceListItem';
@@ -29,15 +29,16 @@ export struct SendTargetZone {
   // 点击网页图标：直接进入统一的「网页传输」面板
   @Event onOpenWeb: () => void = () => {
   }
-  // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态，
-  // 父级若按「键」存选中，则在可见来源集合增长/重排后同一下标指向不同来源
-  //（冷启动常见：先发现互传设备→集合只有[互传]，之后局域网设备出现→集合变为
-  // [LocalSend,互传]），会出现「页签停在一个来源、列表却按另一个来源取数」的不一致。
-  // 故统一按下标持有选中态、由下标派生来源，两侧由构造保证一致。
-  @Local private selectedSourceIndexValue: number = 0
-  // 官方分段标签选项集合：集合引用保持稳定，仅在可见来源集合变化时就地重建
+  // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态。
+  // -1 表示自动：从未手动选择时优先显示首个有设备的来源；用户点击标签后固定为该下标，
+  // 之后即使该来源设备归零也保持（便于查看来源空态与排查引导）。
+  @Local private selectedSourceIndexValue: number = -1
+  // 官方分段标签选项集合：集合引用保持稳定，仅在协议开关变化时就地重建
   // （官方标注 items 为只读 @Param，整体替换在组件侧不被保证生效）
   @Local private sourceItemsValue: SegmentButtonV2Items = new SegmentButtonV2Items([])
+  // 当前已启用来源数：作为 @Local 参与条件渲染，保证协议开关变化时标签栏显隐被重新求值
+  //（visibleSources 读取的协议开关不是响应式状态，仅靠 sourceItemsValue 更新不足以重算外层 if）
+  @Local private enabledSourceCount: number = 0
   // 已构建选项对应的来源键签名（变化时才重建集合）
   private sourceKeySignature: string = ''
 
@@ -45,21 +46,23 @@ export struct SendTargetZone {
     this.syncSourceItems();
   }
 
-  /** 可见来源集合变化时重建分段标签选项（会话内仅随「曾发现过设备的来源」增长）。 */
-  @Monitor('viewModel.seenSourceKeys')
-  onSeenSourcesChanged(): void {
+  /** 协议开关变化时重建分段标签选项（来源集合按开关常显，不随发现结果变化）。 */
+  @Monitor('viewModel.localSendEnabled', 'viewModel.mtaEnabled')
+  onSourceToggleChanged(): void {
     this.syncSourceItems();
   }
 
   private syncSourceItems(): void {
     let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    this.enabledSourceCount = sources.length;
     let signature: string = '';
     for (let i = 0; i < sources.length; i++) {
       signature = signature + sources[i].key + '|';
     }
-    // 集合变化后按下标夹取选中态：集合缩小时下标越界即回到首个来源，
-    // 保证下标始终有效（列表与页签由同一下标派生）
-    this.selectedSourceIndexValue = this.clampSourceIndex(this.selectedSourceIndexValue, sources.length);
+    // 手动下标越界时回退到首个来源；-1（自动模式）保持不变，由 selectedSourceIndex 决定展示哪个来源
+    if (this.selectedSourceIndexValue >= sources.length) {
+      this.selectedSourceIndexValue = 0;
+    }
     if (signature === this.sourceKeySignature) {
       return;
     }
@@ -71,17 +74,9 @@ export struct SendTargetZone {
     this.sourceItemsValue = new SegmentButtonV2Items(options);
   }
 
-  /** 下标夹取到 [0, count)（count 为 0 时归 0；越界归 0，即回退到首个来源） */
-  private clampSourceIndex(index: number, count: number): number {
-    if (count <= 0 || index < 0 || index >= count) {
-      return 0;
-    }
-    return index;
-  }
-
-  /** 可见来源：仅「本次发送页会话曾发现过设备」的来源（注册表顺序）。 */
+  /** 可见来源：协议开关开启的设备来源（注册表顺序），与是否发现设备无关。 */
   private visibleSources(): Array<DeviceSourceDescriptor> {
-    return filterSeenSources(listSources(), this.viewModel.seenSourceKeys);
+    return filterEnabledDeviceSources(listSources());
   }
 
   /** 当前选中来源（按选中下标派生；集合为空时返回 undefined）。 */
@@ -93,9 +88,24 @@ export struct SendTargetZone {
     return sources[this.selectedSourceIndex()];
   }
 
-  /** 当前选中来源在分段标签中的下标（夹取到有效范围，恒与页签选中下标一致）。 */
+  /**
+   * 当前选中来源下标：手动选择（>=0）优先；自动模式（-1）选首个有设备的来源，
+   * 都无设备时回退首个。标签隐藏时仍按同一口径派生当前来源。
+   */
   private selectedSourceIndex(): number {
-    return this.clampSourceIndex(this.selectedSourceIndexValue, this.visibleSources().length);
+    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    if (sources.length === 0) {
+      return 0;
+    }
+    if (this.selectedSourceIndexValue >= 0 && this.selectedSourceIndexValue < sources.length) {
+      return this.selectedSourceIndexValue;
+    }
+    for (let i = 0; i < sources.length; i++) {
+      if (this.devicesOf(sources[i]).length > 0) {
+        return i;
+      }
+    }
+    return 0;
   }
 
   /**
@@ -125,8 +135,36 @@ export struct SendTargetZone {
     return this.devicesOf(descriptor);
   }
 
-  /** 副标题引导文案：随当前选中来源切换，来源缺失时回退总空态文案。 */
+  /** 任一可见来源是否存在设备：决定标签栏是否出现、是否回退总空态。 */
+  private hasAnyDevice(): boolean {
+    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    for (let i = 0; i < sources.length; i++) {
+      if (this.devicesOf(sources[i]).length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 来源数 ≥2 且至少一个有设备时才显示标签栏；全部为空时回退总空态，不展示空标签。 */
+  private shouldShowSourceTabs(): boolean {
+    return this.enabledSourceCount >= 2 && this.hasAnyDevice();
+  }
+
+  /**
+   * 是否回退总空态：无任何已启用来源，或两个及以上来源全部无设备。
+   * 仅一个来源时保留该来源自己的空态与引导（比总空态更具体）。
+   */
+  private showCombinedEmptyState(): boolean {
+    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    return sources.length === 0 || (sources.length >= 2 && !this.hasAnyDevice());
+  }
+
+  /** 副标题：有设备时随当前来源切换；回退总空态时用总空态文案。 */
   private currentSubtitle(): ResourceStr {
+    if (this.showCombinedEmptyState()) {
+      return $r('app.string.send_no_source_subtitle');
+    }
     let descriptor = this.currentSource();
     return descriptor !== undefined ? descriptor.subtitle : $r('app.string.send_no_source_subtitle');
   }
@@ -162,7 +200,7 @@ export struct SendTargetZone {
       items: this.sourceItemsValue,
       selectedIndex: this.selectedSourceIndex(),
       $selectedIndex: (index: number) => {
-        // 直接持有下标：与官方组件同口径，避免「键 ↔ 下标」两套表示在集合变化后失配
+        // 用户点击后固定为具体下标、退出自动选择；集合变化时由 syncSourceItems 夹取
         this.selectedSourceIndexValue = index;
       },
       enableStateAnimation: true
@@ -225,8 +263,8 @@ export struct SendTargetZone {
 
   @Builder
   deviceSection() {
-    if (this.currentSource() === undefined) {
-      // 未发现任何来源设备：总空态的主文案不绑定单一协议；
+    if (this.showCombinedEmptyState()) {
+      // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
       // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启。
       // 与设备列表空态取同一内容区下限，避免两处空态在同一个卡片里高度跳变
       EmptyState({
@@ -309,8 +347,8 @@ export struct SendTargetZone {
       .alignItems(VerticalAlign.Center)
       .justifyContent(FlexAlign.End)
 
-      // ── 来源标签（仅在可见来源数 ≥2 时展示） ──
-      if (this.visibleSources().length >= 2) {
+      // ── 来源标签（已启用来源 ≥2 且至少一个有设备时展示；全空时回退总空态） ──
+      if (this.shouldShowSourceTabs()) {
         this.sourceTabs()
       }
 

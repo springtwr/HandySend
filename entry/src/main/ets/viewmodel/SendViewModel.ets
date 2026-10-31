@@ -74,7 +74,7 @@ import {
 } from '../service/repository/FavoritesService';
 import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../model/mta/MtaMainModels';
 import { MtaBluetoothStatus } from '../model/mta/MtaDiscoveryModels';
-import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
+import { partitionDevicesByType, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
 import { generateVideoThumbnail, cancelVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { readJsonString } from '../utils/JsonGuard';
@@ -199,28 +199,25 @@ export function filterFavoritesByProtocolToggles(favorites: Array<FavoriteDevice
 }
 
 /**
- * 协议总开关来源键过滤（纯函数，可独立测试）：
- * 从「曾发现过设备的来源」集合中移除被禁用协议对应的来源键（目标区来源标签随之消失）。
+ * 「部分传输方式已关闭」提示卡显隐判定（纯函数，可独立测试）：
+ * 仅针对 LocalSend / 互传联盟（网页传输默认关闭且面板内自带开启入口，不单独提示）；
+ * 至少一个关闭且并非所有方式都关闭，且用户未在本次会话内关闭过该提示时显示。
  */
-export function filterSeenSourceKeysByProtocolToggles(seen: Array<string>,
-  localSendEnabled: boolean, mtaEnabled: boolean): Array<string> {
-  let result: Array<string> = [];
-  for (let i = 0; i < seen.length; i++) {
-    let key: string = seen[i];
-    if (key === SOURCE_KEY_LOCAL_SEND && !localSendEnabled) {
-      continue;
-    }
-    if (key === SOURCE_KEY_MTA && !mtaEnabled) {
-      continue;
-    }
-    result.push(key);
+export function shouldShowPartialProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
+  webSendEnabled: boolean, dismissed: boolean): boolean {
+  if (dismissed) {
+    return false;
   }
-  return result;
+  if (localSendEnabled && mtaEnabled) {
+    return false;
+  }
+  // 全部方式关闭由「所有传输方式均已关闭」提示负责
+  return localSendEnabled || mtaEnabled || webSendEnabled;
 }
 
 /**
  * 「所有传输方式均禁用」提示卡显隐判定（纯函数，可独立测试）：
- * 单一方式禁用时不提示；仅 LocalSend、互传联盟与网页传输总开关都关闭、
+ * 仅 LocalSend、互传联盟与网页传输总开关都关闭、
  * 且用户未在本次会话内关闭过该提示时显示。
  */
 export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
@@ -242,9 +239,6 @@ export class SendViewModel {
   /** 上次构建设备项时的内容签名（未变则不重建条目对象，避免扫描高频通知反复重绑列表节点） */
   private localItemsSignature: string = ''
   private mtaItemsSignature: string = ''
-  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
-  // 一旦置真即在 refresh() 中保持（不主动复位），作为设备类型标签出现与否的唯一依据。
-  @Trace public hasSeenMtaDevice: boolean = false
   // 本机蓝牙开关状态（三态）：确认关闭时才清空/隐藏互传分组，不可确定时保持上一稳定展示态
   @Trace public mtaBluetoothStatus: MtaBluetoothStatus = MtaBluetoothStatus.UNKNOWN
   // 本机蓝牙「上一稳定态」镜像：仅在三态为已开启/确认关闭时更新，不可确定时保持不变，
@@ -269,8 +263,6 @@ export class SendViewModel {
   @Trace public webReceiveAllowed: boolean = true
   // 刷新按钮旋转角（发送页目标区刷新反馈）
   @Trace public refreshAngle: number = 0
-  // 本次发送页会话曾发现过设备的来源键（来源标签出现判定依据，会话内保持可见）
-  @Trace public seenSourceKeys: Array<string> = []
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public isScanning: boolean = false
   // 统一刷新按钮的加载态：覆盖 LocalSend 扫描与 MTA 手动刷新窗口
@@ -465,10 +457,6 @@ export class SendViewModel {
       }
       this.mtaDeviceItemViewModels = mtaViewModels;
     }
-    // 一旦发现互传设备即置真，此后本次发送页会话内标签持续可见（即使互传设备数归 0）
-    if (hasAnyMtaDevice(allDevices)) {
-      this.hasSeenMtaDevice = true;
-    }
     // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
     this.serverReady = isServerRunning();
@@ -492,8 +480,6 @@ export class SendViewModel {
       this.localSendEnabled);
     // 收藏自定义别名回填附近列表（与面板口径一致）
     this.applyFavoriteAliases();
-    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
-    this.updateSeenSourceKeys();
     // 统一刷新状态：MTA 手动刷新窗口随仓储变更通知同步，两个来源都结束后恢复按钮
     this.isMtaRefreshing = isMtaManualRefreshInFlight();
     this.tryFinishRefresh();
@@ -523,24 +509,6 @@ export class SendViewModel {
       parts.push(`${senderId}|${bleAddress}|${d.alias}|${brandId}|${brandName}|${is5Ghz}|${d.protocol}`);
     }
     return parts.join('\n');
-  }
-
-  /**
-   * 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。
-   * 协议总开关关闭的来源不累积，并从集合中移除已累积键（目标区来源标签随之消失）。
-   */
-  private updateSeenSourceKeys(): void {
-    let seen: Array<string> = filterSeenSourceKeysByProtocolToggles(this.seenSourceKeys,
-      this.localSendEnabled, this.mtaEnabled);
-    if (this.localSendEnabled && this.localDeviceItemViewModels.length > 0 &&
-      seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
-      seen.push(SOURCE_KEY_LOCAL_SEND);
-    }
-    if (this.mtaEnabled && (this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
-      seen.indexOf(SOURCE_KEY_MTA) < 0) {
-      seen.push(SOURCE_KEY_MTA);
-    }
-    this.seenSourceKeys = seen;
   }
 
   /**

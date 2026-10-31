@@ -20,7 +20,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 文件 | 职责 |
 |------|------|
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
-| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化） |
+| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化）、协议部分关闭提示的已展示签名 |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
 | `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、<br>Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
@@ -94,7 +94,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
 | `TransferMethodRegistry.ets` | 传输方式注册表（网页传输/指定 IP，按「网页」与「其它方式」分组） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |
-| `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，空发现数据源使其不成为发送页来源标签） |
+| `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，`deviceSource=false` 使其不成为发送页来源标签） |
 | `adapters/SessionAdapter.ets` | 适配器契约（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、资源释放）与适配器注册表；可选成员见注 9 |
 | `adapters/LocalSendSendAdapter.ets` | LocalSend 发送：会话创建/进度/终态/取消/重试 |
 | `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/cancelReceived/prepareUploadAborted → 终态；待确认超时终结与资源清理 |

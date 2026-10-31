@@ -73,6 +73,9 @@ export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';
 
 export const KEY_MTA_CONNECTION_WARNINGS: string = 'mtaConnectionWarnings';
 
+// 已提示过的协议关闭状态签名（非用户设置：用于「部分传输方式已关闭」提示只提示一次）
+export const KEY_PROTOCOL_HINT_SIGNATURE: string = 'protocolHintSignature';
+
 // 允许后台接收：无传输任务时退后台保留 5 分钟服务窗口
 export const KEY_BACKGROUND_RECEIVE: string = 'backgroundReceiveEnabled';
 

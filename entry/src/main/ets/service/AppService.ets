@@ -374,7 +374,7 @@ export { getSessionHistory,
   buildHistoryEntry } from './transfer/SessionHistoryStore';
 
 // 设备来源 / 传输方式 / 设置分组注册表
-export { registerSource, getSource, listSources, filterSeenSources } from './transfer/DeviceSourceRegistry';
+export { registerSource, getSource, listSources, filterEnabledDeviceSources } from './transfer/DeviceSourceRegistry';
 
 export { registerMethod, getMethod, listMethods, listMethodsByGroup } from './transfer/TransferMethodRegistry';
 

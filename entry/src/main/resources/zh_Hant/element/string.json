@@ -1429,6 +1429,10 @@
       "value": "退出"
     },
     {
+      "name": "send_partial_protocols_disabled_hint",
+      "value": "%s 已關閉，相關裝置與入口不會顯示。"
+    },
+    {
       "name": "send_all_protocols_disabled_hint",
       "value": "所有傳輸方式均已關閉，應用程式將無法正常使用，請至設定中開啟至少一種傳輸方式"
     },

@@ -119,6 +119,8 @@ export function registerStubProtocol(): void {
     icon: $r('app.media.ic_tab_send'),
     order: 90,
     favoritable: false,
+    deviceSource: true,
+    enabled: (): boolean => true,
     emptyState: {
       text: $r('app.string.stub_source_empty'),
       hint: $r('app.string.stub_source_empty_hint'),

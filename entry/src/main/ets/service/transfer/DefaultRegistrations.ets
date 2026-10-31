@@ -19,7 +19,7 @@ import { getDiscoveredDevices } from '../repository/DiscoveryRepository';
 import { getMtaDiscoveredDevices, getMtaBluetoothStatus } from '../repository/MtaRepository';
 import { MtaBluetoothStatus } from '../../model/mta/MtaDiscoveryModels';
 import { isMtaDevice } from '../../model/mta/MtaMainModels';
-import { getLocalSendEnabled } from '../repository/SettingsRepository';
+import { getLocalSendEnabled, getMtaEnabled } from '../repository/SettingsRepository';
 
 // ── 方式动作分发（由发送页注入真实副作用：弹窗/导航/分享链接） ──
 
@@ -64,6 +64,8 @@ export function registerDefaultSources(): void {
     icon: $r('app.media.ic_tab_send'),
     order: 10,
     favoritable: true,
+    deviceSource: true,
+    enabled: (): boolean => getLocalSendEnabled(),
     emptyState: {
       text: $r('app.string.no_devices_found'),
       hint: $r('app.string.discovery_empty_hint_localsend'),
@@ -80,6 +82,8 @@ export function registerDefaultSources(): void {
     icon: $r('app.media.ic_tab_receive'),
     order: 20,
     favoritable: false,
+    deviceSource: true,
+    enabled: (): boolean => getMtaEnabled(),
     emptyState: {
       text: $r('app.string.mta_devices_empty'),
       // 仅在「确认关闭」时切换为开启蓝牙提示；不可确定/已开启均按普通空态展示
@@ -103,6 +107,8 @@ export function registerDefaultSources(): void {
     icon: $r('app.media.ic_tab_send'),
     order: 30,
     favoritable: false,
+    deviceSource: false,
+    enabled: (): boolean => false,
     emptyState: {
       text: $r('app.string.no_devices_found'),
       hint: $r('app.string.no_devices_found'),

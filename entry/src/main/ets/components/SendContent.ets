@@ -25,6 +25,7 @@ import {
   SendViewModel,
   SendInitiateResult,
   FavoriteSendResult,
+  shouldShowPartialProtocolDisabledHint,
   shouldShowProtocolDisabledHint
 } from '../viewmodel/SendViewModel';
 import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
@@ -55,8 +56,11 @@ export struct SendContent {
   @Event onNavigateTo: (name: string, param: Object | undefined) => void =
     (_name: string, _param: Object | undefined) => {
     }
-  // 「两个协议均禁用」提示卡的关闭状态：由页面宿主持有并下传（跨 TabContent 重建保持，不持久化）
+  // 协议状态提示卡的关闭状态（部分关闭与全部关闭提示共用）：由页面宿主持有并下传
+  // （跨 TabContent 重建保持，不持久化，重启应用后重新提示）
   @Param protocolHintDismissed: boolean = false
+  // 本次启动是否允许显示「部分传输方式已关闭」提示（同一关闭状态只提示一次）
+  @Param partialProtocolHintVisible: boolean = false
   // 关闭该提示（本次会话内不再显示）
   @Event onDismissProtocolHint: () => void = () => {
   }
@@ -177,6 +181,21 @@ export struct SendContent {
       return $r('app.string.mta_bluetooth_off_warning');
     }
     return undefined;
+  }
+
+  // 部分关闭提示文案：动态列出已关闭的传输方式（网页传输默认关闭且面板内自带开启入口，
+  // 不列入本提示；全部关闭时由「所有传输方式均已关闭」提示负责）
+  private partialProtocolHintText(): string {
+    let names: Array<string> = [];
+    if (!this.viewModel.localSendEnabled) {
+      names.push(getStringSync(this.getUIContext(), $r('app.string.localsend_enabled_label')));
+    }
+    if (!this.viewModel.mtaEnabled) {
+      names.push(getStringSync(this.getUIContext(), $r('app.string.mta_enabled_label')));
+    }
+    let template: string = getStringSync(this.getUIContext(),
+      $r('app.string.send_partial_protocols_disabled_hint'));
+    return template.replace('%s', names.join(' / '));
   }
 
   handlePasteData(text: string): void {
@@ -812,7 +831,8 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
-          // 「两个协议均禁用」中性提示卡：单一协议禁用不提示，仅当已无任何可用路径时才说明。
+          // 「所有传输方式均已关闭」中性提示卡：全部关闭且无任何可用路径时说明；
+          // 仅部分方式关闭时由下方「部分传输方式已关闭」提示卡负责。
           // 主动禁用不是故障，故取中性/信息语义色（非警示橙），并提供「去设置」入口与关闭入口。
           if (shouldShowProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
             this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
@@ -846,6 +866,51 @@ export struct SendContent {
                   this.onDismissProtocolHint();
                 })
                 .id('send_protocol_hint_dismiss')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .margin({ top: DesignTokens.space.md })
+            .alignItems(VerticalAlign.Center)
+          }
+
+          // 「部分传输方式已关闭」中性提示卡：同一关闭状态只在状态变化后的首次启动提示一次，
+          // 避免对特意关闭某种方式的用户反复打扰；可关闭、本次会话内有效。
+          if (this.partialProtocolHintVisible &&
+            shouldShowPartialProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
+              this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
+            Row({ space: DesignTokens.space.sm }) {
+              Text(this.partialProtocolHintText())
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+
+              Button($r('app.string.send_protocol_hint_settings'))
+                .fontSize(DesignTokens.font.bodyS)
+                .height(DesignTokens.size.inlineButton)
+                .fontColor($r('app.color.text_on_color'))
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
+                .onClick(() => {
+                  this.onOpenSettings();
+                })
+                .id('send_partial_protocol_hint_settings_btn')
+
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.text_secondary')])
+                .responseRegion({
+                  x: -14,
+                  y: -14,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.onDismissProtocolHint();
+                })
+                .id('send_partial_protocol_hint_dismiss')
             }
             .width('100%')
             .padding(DesignTokens.space.md)

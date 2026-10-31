@@ -29,6 +29,10 @@ export interface DeviceSourceDescriptor {
   order: number
   // 是否参与收藏体系（MTA 等非 LocalSend 来源不参与）
   favoritable: boolean
+  // 是否作为发送页设备来源参与展示（网页来源仅用于会话来源标签，设为 false）
+  deviceSource: boolean
+  // 来源当前是否启用（协议总开关，关闭时发送页不展示该来源）
+  enabled: () => boolean
   emptyState: SourceEmptyStateDescriptor
   // 该来源的发现数据源（发送页目标区通用渲染）
   discoveryProvider: () => Array<DiscoveredDevice>
