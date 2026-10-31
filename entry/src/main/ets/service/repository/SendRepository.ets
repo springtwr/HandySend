@@ -327,7 +327,7 @@ export async function sendToDevice(
   if (actualProtocol === null) {
     let errorMsg = localizedText($r('app.string.protocol_mismatch_error'),
       'Protocol mismatch: receiver does not support HTTPS').replace('%s', device.alias);
-    logger.error('协议不匹配 local=https remote=http，已拒绝',
+    logger.warn('协议不匹配 local=https remote=http，已拒绝',
       { direction: 'send', targetAlias: device.alias, protocol: 'https' });
     return { success: false, error: { kind: 'other', message: errorMsg } };
   }
@@ -363,7 +363,7 @@ export async function sendToDevice(
     });
   }
   // 只输出一行汇总：逐文件日志在数百个文件时会单独占满日志缓冲，淹没真正有用的记录
-  logger.debug('发送清单 数量=' + files.length + ' 总字节=' + totalBytes + ' 已带校验和=' + hashedCount,
+  logger.debug('发送清单 文件数=' + files.length + ' 总字节=' + totalBytes + ' 已带校验和=' + hashedCount,
     sendCtx);
   logger.debug(actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
@@ -578,7 +578,7 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   // 204：接收端仅取走预览未接收文件，文本消息内容已随预览送达
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 204 &&
     isSingleTextMessageSend(files)) {
-    logger.debug('单条文本消息已送达（204 = 仅预览送达）',
+    logger.debug('单条文本消息已送达（HTTP 204，仅预览送达）',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
@@ -586,13 +586,13 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   // 403：接收端查看了文本消息预览后拒绝接收文件，内容已送达
   if (result.error !== undefined && result.error.kind === 'statusCode' && result.error.status === 403 &&
     isSingleTextMessageSend(files)) {
-    logger.debug('单条文本消息对方已查看但拒绝（403）', { sessionId: result.sessionId, direction: 'send' });
+    logger.debug('单条文本消息接收方已查看但拒绝（403）', { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
   }
   // partialFailure：整批仅此一条文本消息时，未接收文件不构成发送失败
   if (result.error !== undefined && result.error.kind === 'partialFailure' && isSingleTextMessageSend(files)) {
-    logger.debug('单条文本消息已送达（partialFailure = 仅预览）',
+    logger.debug('单条文本消息已送达（部分失败，仅预览）',
       { sessionId: result.sessionId, direction: 'send' });
     notifyChange();
     return { success: true, sessionId: sid };
@@ -602,7 +602,7 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
     errorMsg = result.error.message;
   }
   if (result.error !== undefined && result.error.kind === 'statusCode') {
-    logger.error('发送被拒绝：HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
+    logger.info('发送被拒绝：HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
   } else {
     logger.error('发送失败：' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
   }
@@ -1014,7 +1014,7 @@ export function createSendSession(sessionId: string, targetIp: string,
   // 该 id 若存在挂起的延迟清理（同 id 重建场景），取消以免新会话被误删
   cancelSessionCleanup(sessionId);
   // 发起发送诊断：协议会话 ID 在创建时尚未就绪（由 prepare-upload 握手后回填）
-  logger.info('发起发送 对端=' + targetAlias + '(' + targetIp + ') 文件数=' + files.length +
+  logger.debug('发起发送 对端=' + targetAlias + '(' + targetIp + ') 文件数=' + files.length +
     ' 协议会话标识=尚未就绪 统一会话=' + unifiedSessionId);
   notifyChange();
   return unifiedSessionId;
@@ -1103,7 +1103,7 @@ export function updateSendSessionStatus(sessionId: string, status: SendSessionSt
       let terminalErrorCode: string = status === SendSessionStatus.finished ? '' : status;
       // 发送终态诊断：结果 + 错误码（同一会话仅在首次进入终态时记录一条）
       if (!wasTerminal) {
-        logger.info('发送终态 结果=' + status + ' 错误码=' + terminalErrorCode +
+        logger.debug('发送终态 结果=' + status + ' 错误码=' + terminalErrorCode +
           ' 统一会话=' + state.unifiedSessionId);
       }
       finishLocalSend(state.unifiedSessionId, status === SendSessionStatus.finished, errorMessage,

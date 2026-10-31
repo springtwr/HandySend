@@ -155,7 +155,7 @@ pub fn get_protocol_version() -> String {
     localsend::model::discovery::PROTOCOL_VERSION_V2.to_string()
 }
 
-/// 排空并返回调试日志缓冲。元素格式为 `level|message`（旧格式无前缀时由调用方按 info 兜底）。
+/// 排空并返回调试日志缓冲。元素格式为 `level|target|message`（无前缀时由调用方按 info 兜底）。
 #[napi]
 pub fn poll_debug_log() -> Vec<String> {
     identity::drain_rust_log_buf_with_levels()

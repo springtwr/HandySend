@@ -367,11 +367,11 @@ export class SettingsViewModel {
   private applyLocalSendEnabled(on: boolean): void {
     if (on) {
       startServer().catch((e: Error) => {
-        logger.error('LocalSend 开启后启动服务器失败: ' + errorText(e));
+        logger.error('LocalSend 开启后启动服务器失败：' + errorText(e));
       });
     } else {
       stopServer().catch((e: Error) => {
-        logger.error('LocalSend 关闭后停止服务器失败: ' + errorText(e));
+        logger.warn('LocalSend 关闭后停止服务器失败：' + errorText(e));
       });
     }
   }
@@ -393,7 +393,7 @@ export class SettingsViewModel {
   // 关闭且有活跃上传（含待确认）时先二次确认，确认后写入、生效并逐会话中断
   setWebReceiveAllowedValue(on: boolean): void {
     if (on && !this.webSendAllowed) {
-      logger.warn('网页传输总开关未开启，忽略允许上传');
+      logger.debug('网页传输总开关未开启，忽略允许上传');
       return;
     }
     this.setProtocolToggleValue(on, WEB_RECEIVE_SESSION_KEYS, $r('app.string.web_receive_label'),
@@ -458,9 +458,9 @@ export class SettingsViewModel {
     if (active.length === 0) {
       apply();
       restartWebService().catch((e: Error) => {
-        logger.error('网页设置变更后重启服务失败: ' + errorText(e));
+        logger.error('网页设置变更后重启服务失败：' + errorText(e));
       });
-      logger.info('网页服务设置已应用: ' + label);
+      logger.info('网页服务设置已应用：' + label);
       return;
     }
     DialogService.showWebServiceRestartConfirmDialog(buildSessionDetailLines(active),
@@ -469,12 +469,12 @@ export class SettingsViewModel {
           apply();
           vm.cancelSessions(active);
           restartWebService().catch((e: Error) => {
-            logger.error('网页设置变更后重启服务失败: ' + errorText(e));
+            logger.error('网页设置变更后重启服务失败：' + errorText(e));
           });
-          logger.info('网页服务设置已应用: ' + label + '，中断会话数=' + active.length);
+          logger.info('网页服务设置已应用：' + label + '，已中断 ' + active.length + ' 个任务');
         } else {
           revert();
-          logger.info('网页服务设置变更已取消: ' + label);
+          logger.info('网页服务设置变更已取消：' + label);
         }
       });
   }
@@ -504,7 +504,7 @@ export class SettingsViewModel {
     if (on) {
       write(true);
       apply(true);
-      logger.info('协议开关已开启: ' + label);
+      logger.info('协议开关已开启：' + label);
       return;
     }
     let vm = this;
@@ -514,15 +514,15 @@ export class SettingsViewModel {
         apply(false);
         vm.cancelSessions(active);
         if (active.length === 0) {
-          logger.info('协议开关已关闭（无活跃传输）: ' + label);
+          logger.info('协议开关已关闭（无活跃传输）：' + label);
         } else {
-          logger.info('协议开关已关闭（用户确认）: ' + label + '，中断会话数=' + active.length);
+          logger.info('协议开关已关闭（用户确认）：' + label + '，已中断 ' + active.length + ' 个任务');
         }
       },
       () => {
         // 取消：开关保持原值（true），写回以驱动绑定 Toggle 回弹
         write(true);
-        logger.info('协议开关关闭已取消: ' + label);
+        logger.info('协议开关关闭已取消：' + label);
       });
   }
 
@@ -535,7 +535,7 @@ export class SettingsViewModel {
     try {
       return ctx.resourceManager.getStringSync(res.id);
     } catch (e) {
-      logger.warn('解析资源文本失败: ' + errorText(e));
+      logger.warn('解析资源文本失败：' + errorText(e));
       return '';
     }
   }
@@ -614,7 +614,7 @@ export class SettingsViewModel {
       }
       this.notificationGranted = granted;
     } catch (e) {
-      logger.warn('通知权限申请流程异常: ' + errorText(e));
+      logger.warn('通知权限申请流程异常：' + errorText(e));
     }
   }
 
@@ -639,7 +639,7 @@ export class SettingsViewModel {
       }
       this.bluetoothGranted = granted;
     } catch (e) {
-      logger.warn('蓝牙权限申请流程异常: ' + errorText(e));
+      logger.warn('蓝牙权限申请流程异常：' + errorText(e));
     }
   }
 
@@ -672,7 +672,7 @@ export class SettingsViewModel {
 
   // 保存网络白/黑名单并立即重启 discovery（不需要重启服务器）
   saveNetworkListsAndApply(whitelist: string, blacklist: string): void {
-    logger.debug('白名单: \'' + whitelist + '\' 黑名单: \'' + blacklist + '\'');
+    logger.debug('白名单：\'' + whitelist + '\' 黑名单：\'' + blacklist + '\'');
     this.networkWhitelist = whitelist;
     this.networkBlacklist = blacklist;
     setNetworkWhitelist(whitelist);

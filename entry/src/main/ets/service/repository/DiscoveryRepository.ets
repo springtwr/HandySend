@@ -56,7 +56,7 @@ export function getMulticastError(): string {
 // 将发现流程之外确认的设备加入原生发现存储；失败统一告警（发现未运行时为常见态）
 function addDeviceToNativeDiscovery(device: NativeDiscoveredDevice, source: string): void {
   nativeDiscoveryAddDevice(device).catch((e: Error) => {
-    logger.warn(`添加${source}设备到发现失败：` + e.message);
+    logger.debug(`添加${source}设备到发现失败（发现未运行时属常见态）：` + e.message);
   });
 }
 
@@ -72,7 +72,7 @@ function logMulticastErrorIfChanged(): void {
     return;
   }
   lastMulticastError = current;
-  logger.warn('组播错误: ' + current);
+  logger.warn('组播错误：' + current);
 }
 
 // ── 事件处理器（由 handleNativeEvent 路由） ──
@@ -366,13 +366,13 @@ function runStagedDiscover(): void {
   nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, graceMs).then(async () => {
     let elapsed = Date.now() - t0;
     flushRustLogs();
-    logger.debug('discover_staged 完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
+    logger.debug('分阶段设备发现完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
       ' 此时列表=' + discoveredDevices.length + ' 台');
     // 备用协议子网扫描兜底：主协议（如 http）无法探测仅支持另一种协议的设备
     // （标准 LocalSend 默认 https，HandySend 用 http 时子网扫描探测不到 https-only 设备）。
     // 仅当主协议扫描未确认任何新设备时执行，避免无条件双倍扫描。
     if (!hasConfirmedSince(scanStartTime)) {
-      logger.debug('主协议无新确认，备用协议子网扫描兜底: ' + altProtocol);
+      logger.debug('主协议无新确认，备用协议子网扫描兜底：' + altProtocol);
       for (let i = 0; i < interfaceIps.length; i++) {
         try {
           await nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol);
@@ -389,7 +389,7 @@ function runStagedDiscover(): void {
     let elapsed = Date.now() - t0;
     flushRustLogs();
     // 扫描失败/网络异常：保持设备列表不变（不清空），仅记录日志
-    logger.warn('discover_staged 失败（耗时=' + elapsed + 'ms）: ' + e.message);
+    logger.warn('分阶段设备发现失败（耗时=' + elapsed + 'ms）：' + e.message);
     finishScan();
   });
 }
@@ -431,7 +431,7 @@ function removeUnconfirmedDevices(scanStartTime: number): void {
     }
   }
   if (removed.length > 0) {
-    logger.debug('移除 ' + removed.length + ' 台未确认（离线）设备: [' + removed.join(', ') + ']');
+    logger.debug('移除 ' + removed.length + ' 台未确认（离线）设备：[' + removed.join(', ') + ']');
   }
   discoveredDevices = confirmed;
 }
@@ -514,12 +514,12 @@ export async function connectByIp(targetIp: string, targetPort: number): Promise
       };
       addDeviceToNativeDiscovery(nativeDev, 'connect-by-ip');
       if (i > 0) {
-        logger.info('手动 IP 连接已用备用协议成功：' + protocol);
+        logger.debug('手动 IP 连接已用备用协议成功：' + protocol);
       }
       return dev;
     } catch (e) {
       lastError = String(e);
-      logger.warn('手动 IP 连接（' + protocol + '）失败：' + e);
+      logger.debug('手动 IP 连接（' + protocol + '）失败：' + e);
     }
   }
   logger.warn('手动 IP 连接全部协议均失败：' + lastError);

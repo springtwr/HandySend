@@ -161,7 +161,7 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
         nativeCancelHash(cancelId).catch((_cancelErr: Object): void => {
         });
       }
-      logger.warn('校验和[' + i + '] 失败: path=' + files[i].filePath + ' error=' + String(e),
+      logger.warn('校验和[' + i + '] 失败：path=' + files[i].filePath + ' error=' + String(e),
         { fileId: files[i].fileId });
     } finally {
       // 该文件运行态结束：注销并清空适配器的准备取消登记

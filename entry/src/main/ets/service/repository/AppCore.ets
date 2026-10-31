@@ -174,7 +174,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
         }
       }
     } catch (e) {
-      logger.warn('获取 connection API 网络列表失败: ' + JSON.stringify(e));
+      logger.warn('获取 connection API 网络列表失败：' + JSON.stringify(e));
     }
 
     // 交叉匹配：Rust 接口名 ↔ ConnectionProperties.interfaceName

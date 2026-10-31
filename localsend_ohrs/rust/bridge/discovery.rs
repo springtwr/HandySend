@@ -208,7 +208,7 @@ pub async fn discovery_discover_staged(
     if known_channels.len() != channels.len() {
         // 非法通道静默跳过难以排查，计数告警
         log::warn!(
-            "发现通道非法跳过: {}/{}",
+            "发现通道非法跳过：{}/{}",
             channels.len() - known_channels.len(),
             channels.len()
         );
@@ -223,7 +223,7 @@ pub async fn discovery_discover_staged(
         .collect();
     if interface_ips.len() != total_ips {
         log::warn!(
-            "接口 IP 非法跳过: {}/{}",
+            "接口 IP 非法跳过：{}/{}",
             total_ips - interface_ips.len(),
             total_ips
         );

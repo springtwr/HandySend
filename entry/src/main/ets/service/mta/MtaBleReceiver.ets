@@ -331,7 +331,7 @@ export class MtaBleReceiver {
           try {
             server.close();
           } catch (closeErr) {
-            logger.warn('GATT Server 关闭失败: ' + errorText(closeErr));
+            logger.warn('GATT 服务端关闭失败：' + errorText(closeErr));
           }
         }
         reject(errorText(e));
@@ -357,7 +357,7 @@ export class MtaBleReceiver {
     try {
       server.sendResponse(resp);
     } catch (e) {
-      logger.warn('sendResponse(读) 失败: ' + errorText(e));
+      logger.warn('蓝牙读请求响应失败：' + errorText(e));
     }
   }
 
@@ -400,7 +400,7 @@ export class MtaBleReceiver {
       try {
         server.sendResponse(resp);
       } catch (e) {
-        logger.warn('sendResponse(写) 失败: ' + errorText(e));
+        logger.warn('蓝牙写请求响应失败：' + errorText(e));
       }
     }
   }

@@ -31,7 +31,7 @@ export class DialogService {
 
   private static getPromptAction(): PromptAction | null {
     if (DialogService.ctx === null) {
-      logger.error('UIContext 未初始化，请先调用 DialogService.init()');
+      logger.error('界面上下文未初始化，请先调用 DialogService.init()');
       return null;
     }
     return DialogService.ctx.getPromptAction();

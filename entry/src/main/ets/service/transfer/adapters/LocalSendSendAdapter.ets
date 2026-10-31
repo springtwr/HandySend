@@ -227,7 +227,7 @@ const adapter: SessionAdapter = {
     // 取不到协议标识说明发送链路已不在活动状态：不下发并留痕，绝不回退到内部业务编号。
     let target = decideCancelTarget(nativeGetCurrentSendSessionId());
     if (target.length === 0) {
-      logger.warn('取消下发跳过：未取得协议标识（发送链路可能已不在活动状态） 统一会话=' + sessionId);
+      logger.debug('取消下发跳过：未取得协议标识（发送链路可能已不在活动状态） 统一会话=' + sessionId);
       return;
     }
     logger.debug('取消下发目标 协议标识=' + target + ' 统一会话=' + sessionId);
@@ -244,9 +244,9 @@ const adapter: SessionAdapter = {
       protocol: ctx.device.protocol
     };
     nativeCancelTransfer(cancelTarget, target).then((): void => {
-      logger.debug('远端取消下发完成 协议标识=' + target);
+      logger.debug('对端取消下发完成 协议标识=' + target);
     }).catch((e: Object): void => {
-      logger.warn('远端取消下发失败 协议标识=' + target + ' 原因=' + String(e));
+      logger.warn('对端取消下发失败 协议标识=' + target + ' 原因=' + String(e));
     });
   },
   retry: (sessionId: string): void => {

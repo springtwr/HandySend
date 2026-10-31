@@ -32,7 +32,8 @@ import {
   nativeDeclineWebSession,
   nativeExpireWebSession,
   nativeSweepWebSessions,
-  nativeSetWebUploadTargets
+  nativeSetWebUploadTargets,
+  nativeFlushRustLogs
 } from '../NativeBridge';
 import { getAppContext, getLocalInterfaces, notifyChange, updateLocalInterfaces } from './AppCore';
 import {
@@ -86,7 +87,7 @@ import {
   subscribeSessions
 } from '../transfer/TransferSessionRegistry';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页分享');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页传输');
 
 // ── Web 分享服务状态（自研单服务：下载与上传同端口） ──
 
@@ -110,7 +111,7 @@ let webUploadAutoAccept: boolean = false;
 /** 设置本次挂载的上传免确认（仅当前分享有效）。 */
 export function setWebUploadAutoAccept(enabled: boolean): void {
   webUploadAutoAccept = enabled;
-  logger.info('本次挂载的上传免确认=' + enabled);
+  logger.debug('本次挂载的上传免确认=' + enabled);
   notifyChange();
 }
 
@@ -130,6 +131,39 @@ let webUpdating: boolean = false;
 // 停止服务后保留 stopped 页面供网页收尾的时间；超时再真正关闭监听端口
 const WEB_STOP_GRACE_MS: number = 30000;
 let webStopTimer: number = -1;
+
+// Rust 日志轮询间隔：Rust 日志缓冲只在设备发现/发送流程被排空，
+// 纯网页传输场景需自行定期写入 hilog，否则服务端日志不会落到系统日志。
+const WEB_LOG_FLUSH_MS: number = 2000;
+let webLogFlushTimer: number = -1;
+
+/** 排空 Rust 日志缓冲（经桥接统一入口按原始级别写入 hilog）。 */
+function flushRustLogs(): void {
+  try {
+    nativeFlushRustLogs();
+  } catch (_e) {
+    // 轮询失败不影响网页服务本身
+  }
+}
+
+/** 网页服务运行期间启动日志轮询。 */
+function startWebLogFlush(): void {
+  if (webLogFlushTimer >= 0) {
+    return;
+  }
+  webLogFlushTimer = setInterval((): void => {
+    flushRustLogs();
+  }, WEB_LOG_FLUSH_MS);
+}
+
+/** 网页服务停止时结束日志轮询，并做最后一次排空避免漏掉停止日志。 */
+function stopWebLogFlush(): void {
+  if (webLogFlushTimer >= 0) {
+    clearInterval(webLogFlushTimer);
+    webLogFlushTimer = -1;
+    flushRustLogs();
+  }
+}
 
 // 网页服务当前是否开放浏览器上传：决定面板是否出示上传入口
 let webUploadEnabled: boolean = false;
@@ -400,6 +434,7 @@ function markWebServiceUnavailable(): void {
   shareLinkInfo = '';
   webPortFallback = false;
   webUploadEnabled = false;
+  stopWebLogFlush();
   // 启动失败时若仍残留上一个停止态实例，也安排一次硬停止兜底
   scheduleWebStop();
   notifyChange();
@@ -445,10 +480,12 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   webServiceConfiguredPort = getWebPort();
   refreshWebAddress();
   if (shareLinkInfo.length > 0) {
-    logger.info('网页服务已启动：' + redactWebToken(shareLinkInfo));
+    logger.info('网页服务已启动');
+    logger.debug('网页服务地址：' + redactWebToken(shareLinkInfo));
   } else {
     logger.warn('网页服务已启动但无可用展示地址 port=' + port);
   }
+  startWebLogFlush();
   return true;
 }
 
@@ -552,12 +589,12 @@ function webServiceConfigMatches(): boolean {
  */
 export async function createShareLink(files: Array<SendFileItem>, restartService: boolean = false): Promise<void> {
   if (!getWebSendAllowed()) {
-    logger.warn('网页传输总开关未开启，忽略分享挂载');
+    logger.debug('网页传输总开关未开启，忽略分享挂载');
     return;
   }
   let appContext = getAppContext();
   if (appContext === undefined) {
-    logger.error('AppService 未初始化');
+    logger.error('应用服务未初始化');
     return;
   }
   // fd-direct：文件表只登记 fd，Rust 每次下载自行 dup 副本、不取得所有权。
@@ -633,7 +670,7 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
       closeShareFileHandles();
       shareFileHandles = openedHandles;
       refreshWebAddress();
-      logger.info('分享文件已就地挂载，当前可下载 ' + files.length + ' 个');
+      logger.info('分享文件已就绪，当前可下载 ' + files.length + ' 个文件');
       return;
     }
   }
@@ -682,6 +719,7 @@ function scheduleWebStop(): void {
     webStopTimer = -1;
     try {
       nativeStopWebService();
+      stopWebLogFlush();
     } catch (e) {
       logger.warn('延时停止网页服务失败：' + String(e));
     }
@@ -701,6 +739,7 @@ export async function stopShareLink(): Promise<void> {
       logger.warn('标记网页服务停止失败：' + String(e));
       try {
         nativeStopWebService();
+        stopWebLogFlush();
       } catch (_se) {
       }
     }
@@ -716,7 +755,7 @@ export async function stopShareLink(): Promise<void> {
   clearShareFileProfiles();
   webUploadAutoAccept = false;
   webUploadEnabled = false;
-  logger.info('网页分享已停止，服务保留一段时间供页面收尾');
+  logger.info('网页传输已停止');
   notifyChange();
 }
 
@@ -736,7 +775,7 @@ export async function startWebUpload(): Promise<void> {
       nativeSetWebServiceUploadEnabled(true);
       webUploadEnabled = true;
     } catch (e) {
-      logger.error('打开浏览器上传失败：' + e);
+      logger.error('打开网页上传入口失败：' + e);
     }
     notifyChange();
     return;
@@ -773,7 +812,7 @@ export async function unmountShare(): Promise<void> {
       await stopShareLink();
       return;
     }
-    logger.info('分享文件已撤下，服务按方向开关继续运行');
+    logger.info('分享文件已撤下');
   } catch (e) {
     logger.error('撤下分享文件失败：' + e);
   }
@@ -796,9 +835,9 @@ export async function disableWebUpload(): Promise<void> {
       await stopShareLink();
       return;
     }
-    logger.info('浏览器上传已关闭，网页发送继续提供');
+    logger.info('网页上传入口已关闭');
   } catch (e) {
-    logger.error('关闭浏览器上传失败：' + e);
+    logger.error('关闭网页上传入口失败：' + e);
   }
   notifyChange();
 }
@@ -881,7 +920,7 @@ export async function updateShareFiles(files: Array<SendFileItem>): Promise<void
     closeShareFileHandles();
     shareFileHandles = openedHandles;
     registerShareFileProfiles(files, shareFileHandles);
-    logger.info('分享文件已更新，当前可下载 ' + count + ' 个');
+    logger.info('分享文件已更新，当前可下载 ' + count + ' 个文件');
   } catch (e) {
     // 换表失败：先把服务端文件表恢复为旧分享（此时新句柄仍有效，
     // 部分生效的新条目会由原生保留区自行 dup），再关闭本次打开的句柄
@@ -947,12 +986,12 @@ function descriptorsFromDownloadEvent(files: Array<NativeTransferFileInfo>): Arr
   return result;
 }
 
-/** 网页访问：只写诊断日志；保活由 AppService 统一处理，不建任务。 */
+/** 下载会话建立（新 token）：只写诊断日志；保活由 AppService 统一处理，不建任务。 */
 export function handleWebAccessTyped(event: NativeWebAccessEvent): void {
   if (event.ip.length === 0) {
     return;
   }
-  logger.info('网页访问 ip=' + event.ip + ' 文件数=' + event.fileCount +
+  logger.debug('网页下载会话建立 ip=' + event.ip + ' 文件数=' + event.fileCount +
     ' ua=' + (event.userAgent ?? ''));
 }
 
@@ -974,8 +1013,8 @@ export function handleWebDownloadStartedTyped(event: NativeWebDownloadStartedEve
     }
   }
   beginWebDownloadBatch(event.batchId, event.ip, descriptors, textPreview);
-  logger.info('网页下载开始 batch=' + redactSessionToken(event.batchId) + ' ip=' + event.ip +
-    ' 文件数=' + descriptors.length);
+  logger.info('网页下载开始，共 ' + descriptors.length + ' 个文件');
+  logger.debug('网页下载批次=' + redactSessionToken(event.batchId) + ' ip=' + event.ip);
   notifyChange();
 }
 
@@ -994,6 +1033,8 @@ export function handleWebDownloadFileDoneTyped(event: NativeWebDownloadFileDoneE
     return;
   }
   handleWebDownloadFileDone(event.batchId, event.fileId, event.totalBytes);
+  logger.debug('网页下载文件完成 batch=' + redactSessionToken(event.batchId) + ' file=' +
+    event.fileId + ' 字节=' + event.totalBytes);
   notifyChange();
 }
 
@@ -1003,7 +1044,16 @@ export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent):
     return;
   }
   handleWebDownloadEnded(event.batchId, event.outcome, event.error);
-  logger.info('网页下载结束 batch=' + redactSessionToken(event.batchId) + ' 结果=' + event.outcome);
+  let summary: string = '网页下载结束';
+  if (event.error !== undefined && event.error.length > 0) {
+    summary += ' 原因=' + event.error;
+  }
+  logger.debug('网页下载结果=' + event.outcome);
+  if (event.outcome === 'failed' || event.outcome === 'partiallyFailed') {
+    logger.warn(summary);
+  } else {
+    logger.info(summary);
+  }
   notifyChange();
 }
 
@@ -1014,17 +1064,17 @@ export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent):
 export function applyWebSendAllowed(enabled: boolean): void {
   if (!enabled) {
     stopShareLink().catch((e: Error) => {
-      logger.error('网页传输关闭后停止服务失败: ' + String(e));
+      logger.warn('网页传输关闭后停止服务失败：' + String(e));
     });
     return;
   }
   if (sharePort <= 0) {
     startWebServiceLocked(getWebReceiveAllowed()).catch((e: Error) => {
-      logger.error('网页传输开启后拉起服务失败: ' + String(e));
+      logger.error('网页传输开启后拉起服务失败：' + String(e));
     });
   } else if (getWebReceiveAllowed() && !webUploadEnabled) {
     startWebUpload().catch((e: Error) => {
-      logger.error('网页传输开启后补开上传入口失败: ' + String(e));
+      logger.error('网页传输开启后补开上传入口失败：' + String(e));
     });
   }
 }
@@ -1039,11 +1089,11 @@ export function applyWebReceiveAllowed(enabled: boolean): void {
   }
   if (enabled) {
     ensureWebUpload().catch((e: Error) => {
-      logger.error('允许上传开启后确保上传入口失败: ' + String(e));
+      logger.error('允许上传开启后确保上传入口失败：' + String(e));
     });
   } else {
     disableWebUpload().catch((e: Error) => {
-      logger.error('允许上传关闭后关闭上传入口失败: ' + String(e));
+      logger.error('允许上传关闭后关闭上传入口失败：' + String(e));
     });
   }
 }
@@ -1088,11 +1138,12 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
   ensureUploadArchiveSubscribed();
   let token: string = event.token;
   if (token.length === 0) {
-    logger.warn('WebPrepareUpload 事件 token 为空，已忽略');
+    logger.warn('网页上传请求缺少 token，已忽略');
     return;
   }
   let ip: string = event.ip;
-  logger.info('收到 Web 上传请求 ip=' + ip + '（token=' + redactSessionToken(token) + '）');
+  logger.info('收到网页上传请求');
+  logger.debug('网页上传请求 ip=' + ip + ' token=' + redactSessionToken(token));
   let descriptors: Array<SessionFileDescriptor> = [];
   for (let i = 0; i < event.files.length; i++) {
     let f: NativeTransferFileInfo = event.files[i];
@@ -1114,7 +1165,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
     // 本次挂载已开启上传免确认：先登记为进行中，再按正常接受流程预置落盘目标。
     // 目标目录准备失败时 acceptWebUpload 内部会转为拒绝，不会静默落盘。
     let isNewSession: boolean = findWebUploadSession(token) === undefined;
-    logger.info('Web 上传按本次挂载授权自动接受 token=' + redactSessionToken(token));
+    logger.info('网页上传按本次挂载授权自动接受');
     beginWebUploadBurst(token, false, descriptors, ip, previewText);
     // 与 LocalSend 自动接收口径一致：免确认收到文本消息时立即复制到剪贴板。
     // 只在首次登记时复制，浏览器重试 prepare 不会重复覆盖剪贴板。
@@ -1122,12 +1173,12 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
       if (copyText(previewText)) {
         DialogService.showCenterToast($r('app.string.received_text_copied_toast'));
       } else {
-        logger.warn('Web 上传文本消息写入剪贴板失败 token=' + redactSessionToken(token));
+        logger.warn('网页上传文本消息写入剪贴板失败');
       }
     }
     acceptWebUpload(token);
   } else {
-    logger.debug('Web 上传进入待确认 token=' + redactSessionToken(token));
+    logger.debug('网页上传进入待确认 token=' + redactSessionToken(token));
     beginWebUploadBurst(token, true, descriptors, ip, previewText);
   }
   notifyChange();
@@ -1152,6 +1203,7 @@ export function handleWebUploadDoneTyped(event: NativeWebUploadDoneEvent): void 
     return;
   }
   handleWebUploadDone(token, fileId, event.path);
+  logger.debug('网页上传文件完成 token=' + redactSessionToken(token) + ' file=' + fileId);
   notifyChange();
 }
 
@@ -1176,8 +1228,10 @@ export function handleWebUploadFinished(token: string): void {
   }
   // 声明清单已全部落盘（完成回执先于状态刷新到达）：直接按成功收尾
   if (finishWebUploadIfAllDone(token)) {
+    logger.debug('网页上传服务端终结 token=' + redactSessionToken(token) + ' 结果=全部文件已落盘');
     return;
   }
+  logger.debug('网页上传服务端终结 token=' + redactSessionToken(token) + ' 结果=会话提前结束');
   let all: Array<TransferSession> = querySessions();
   for (let i = 0; i < all.length; i++) {
     let session = all[i];
@@ -1224,7 +1278,7 @@ export function acceptWebUpload(token: string): void {
       return;
     }
     markWebUploadAccepted(token);
-    logger.info('Web 上传已接受 token=' + redactSessionToken(token));
+    logger.info('网页上传已接受');
     notifyChange();
   }).catch((): void => {
     declineWebUpload(token);
@@ -1238,10 +1292,10 @@ export function declineWebUpload(token: string): void {
   try {
     nativeDeclineWebSession(token);
   } catch (e) {
-    logger.warn('拒绝 Web 上传失败 token=' + redactSessionToken(token) + '：' + String(e));
+    logger.warn('拒绝网页上传失败：' + String(e));
   }
   markWebUploadDeclined(token);
-  logger.info('Web 上传已拒绝 token=' + redactSessionToken(token));
+  logger.info('网页上传已拒绝');
   notifyChange();
 }
 
@@ -1252,7 +1306,7 @@ export function expireWebUpload(token: string): void {
   }
   try {
     nativeExpireWebSession(token);
-    logger.info('Web 上传会话已终结 token=' + redactSessionToken(token));
+    logger.info('网页上传已结束');
   } catch (_e) {
     // 决策已被处理或会话已过期：属正常竞态
   }
@@ -1357,7 +1411,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     return false;
   }
   if (applied !== targets.length) {
-    logger.warn('上传目标部分未生效 token=' + redactSessionToken(token) + ' applied=' + applied);
+    logger.warn('上传目标部分未生效 applied=' + applied);
     return false;
   }
   return true;
@@ -1450,6 +1504,6 @@ function archiveUploadHistory(session: TransferSession): void {
   }
   if (entries.length > 0) {
     addHistoryEntries(entries);
-    logger.info('Web 上传已归档接收历史 token=' + redactSessionToken(session.protocolSessionId));
+    logger.debug('网页上传已归档接收历史 token=' + redactSessionToken(session.protocolSessionId));
   }
 }

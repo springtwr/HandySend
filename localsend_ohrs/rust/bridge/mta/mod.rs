@@ -199,7 +199,7 @@ fn running_lock() -> std::sync::MutexGuard<'static, Option<RunningServer>> {
     match RUNNING.lock() {
         Ok(guard) => guard,
         Err(poisoned) => {
-            log::error!("RUNNING 锁中毒，恢复访问以避免服务器失控");
+            log::error!("MTA RUNNING 锁中毒，恢复访问以避免服务器失控");
             poisoned.into_inner()
         }
     }
@@ -286,7 +286,10 @@ pub async fn start_server(
     let listener = match tokio::net::TcpListener::bind((bind_ip, config.port)).await {
         Ok(listener) => listener,
         Err(e) => {
-            log::warn!("绑定 {bind_ip}:{} 失败（{e}），回退 0.0.0.0", config.port);
+            log::warn!(
+                "MTA 绑定 {bind_ip}:{} 失败（{e}），回退 0.0.0.0",
+                config.port
+            );
             tokio::net::TcpListener::bind(("0.0.0.0", config.port))
                 .await
                 .map_err(|e| {
@@ -386,7 +389,8 @@ pub async fn start_server(
     // 5) 通知服务器已启动
     send_event(&event_tx, BridgeEvent::MtaServerStarted { port }).await;
 
-    log::info!("MTA 服务器已启动 port={port} 文件数={file_count} 源总字节={total_size}");
+    log::info!("MTA 服务器已启动");
+    log::debug!("MTA 服务器参数 port={port} 文件数={file_count} 源总字节={total_size}");
     Ok(port)
 }
 
@@ -403,7 +407,8 @@ pub fn stop_server() {
         server.cancel.cancel();
         server.abort.abort();
         close_unconsumed_send_fds(&server.ctx);
-        log::info!("MTA 服务器已停止 port={}", server.port);
+        log::info!("MTA 服务器已停止");
+        log::debug!("MTA 服务器已停止 port={}", server.port);
     }
 }
 

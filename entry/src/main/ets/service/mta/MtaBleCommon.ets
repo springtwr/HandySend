@@ -22,7 +22,7 @@ import { requestBluetoothPermission } from '../PermissionService';
 import { preferencesRepo } from '../repository/PreferencesRepo';
 import { MtaConstants } from './MtaConstants';
 
-const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleCommon', '互传BLE');
+const logger = getLogger(LogDomains.MTA, 'HandySend:MtaBleCommon', '互传蓝牙');
 
 /**
  * 注册蓝牙开关事件并返回回调引用（反注册时必须按引用精确移除：
@@ -39,7 +39,7 @@ export function registerBluetoothStateEvent(
     access.on('stateChange', callback);
     return callback;
   } catch (e) {
-    logger.warn('stateChange 注册失败: ' + errorText(e));
+    logger.warn('注册蓝牙状态变化监听失败：' + errorText(e));
     return undefined;
   }
 }
@@ -54,7 +54,7 @@ export function unregisterBluetoothStateEvent(
   try {
     access.off('stateChange', callback);
   } catch (e) {
-    logger.warn('stateChange 反注册失败: ' + errorText(e));
+    logger.warn('反注册蓝牙状态变化监听失败：' + errorText(e));
   }
 }
 
@@ -95,7 +95,7 @@ export function sleepMs(ms: number): Promise<void> {
 }
 
 /**
- * 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|message` 前缀，按原始级别展示）。
+ * 排空 Rust 日志缓冲并追加 MTA 相关行（解析 `level|target|message` 前缀，按原始级别展示）。
  * appendLog 为服务侧日志追加入口，onWarn 在轮询失败时上报。
  */
 export function drainRustLog(appendLog: (source: string, message: string, level: string) => void,

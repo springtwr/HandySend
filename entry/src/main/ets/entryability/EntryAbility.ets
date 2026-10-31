@@ -215,7 +215,7 @@ export default class EntryAbility extends UIAbility {
       try {
         commonEventManager.subscribe(subscriber, (err: BusinessError) => {
           if (err) {
-            logger.warn('系统语言变化事件回调异常: ' + JSON.stringify(err));
+            logger.warn('系统语言变化事件回调异常：' + JSON.stringify(err));
             return;
           }
           logger.debug('收到系统语言/地区变化事件，同步「跟随系统」语言');
@@ -223,11 +223,11 @@ export default class EntryAbility extends UIAbility {
         });
         logger.debug('已订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
       } catch (e) {
-        logger.warn('订阅系统语言变化公共事件失败，跟随系统在非前后台切换场景下将无法同步: ' +
+        logger.warn('订阅系统语言变化公共事件失败，跟随系统在非前后台切换场景下将无法同步：' +
           JSON.stringify(e));
       }
     }).catch((e: BusinessError) => {
-      logger.warn('创建系统语言变化事件订阅者失败，跟随系统在非前后台切换场景下将无法同步: ' +
+      logger.warn('创建系统语言变化事件订阅者失败，跟随系统在非前后台切换场景下将无法同步：' +
         JSON.stringify(e));
     });
   }
@@ -241,7 +241,7 @@ export default class EntryAbility extends UIAbility {
       commonEventManager.unsubscribe(this.localeSubscriber);
       logger.debug('已退订系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
     } catch (e) {
-      logger.warn('退订系统语言变化公共事件异常: ' + JSON.stringify(e));
+      logger.warn('退订系统语言变化公共事件异常：' + JSON.stringify(e));
     }
     this.localeSubscriber = null;
   }
@@ -353,7 +353,7 @@ export default class EntryAbility extends UIAbility {
 
     windowStage.loadContent(targetPage, (err) => {
       if (err.code) {
-        logger.error('页面内容加载失败，原因: ' + JSON.stringify(err));
+        logger.error('页面内容加载失败，原因：' + JSON.stringify(err));
         return;
       }
       logger.debug('页面内容加载成功');
@@ -389,11 +389,11 @@ export default class EntryAbility extends UIAbility {
             });
             logger.debug('MaterialIcons 字体已注册');
           } catch (e) {
-            logger.error('清理缓存目录/注册字体失败，原因: ' + JSON.stringify(e));
+            logger.warn('清理缓存目录/注册字体失败，原因：' + JSON.stringify(e));
           }
         }, 0);
       } catch (e) {
-        logger.error('初始化窗口/DialogService 失败，原因: ' + JSON.stringify(e));
+        logger.error('初始化窗口/DialogService 失败，原因：' + JSON.stringify(e));
       }
       // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
       // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突；
@@ -438,7 +438,7 @@ export default class EntryAbility extends UIAbility {
       try {
         commonEventManager.subscribe(subscriber, (err: BusinessError) => {
           if (err) {
-            logger.warn('隐私签署结果事件回调异常: ' + JSON.stringify(err));
+            logger.warn('隐私签署结果事件回调异常：' + JSON.stringify(err));
             return;
           }
           if (isPrivacyAgreed()) {
@@ -450,10 +450,10 @@ export default class EntryAbility extends UIAbility {
         });
         logger.debug('已订阅隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
       } catch (e) {
-        logger.warn('订阅隐私签署结果公共事件失败: ' + JSON.stringify(e));
+        logger.warn('订阅隐私签署结果公共事件失败：' + JSON.stringify(e));
       }
     }).catch((e: BusinessError) => {
-      logger.warn('创建隐私签署结果公共事件订阅者失败: ' + JSON.stringify(e));
+      logger.warn('创建隐私签署结果公共事件订阅者失败：' + JSON.stringify(e));
     });
   }
 
@@ -473,7 +473,7 @@ export default class EntryAbility extends UIAbility {
         startMtaReceiveIfEnabled(ctx);
       }
     }).catch((e: BusinessError): void => {
-      logger.warn('启动权限申请异常: ' + JSON.stringify(e));
+      logger.warn('启动权限申请异常：' + JSON.stringify(e));
     });
   }
 
@@ -486,7 +486,7 @@ export default class EntryAbility extends UIAbility {
       commonEventManager.unsubscribe(this.privacySubscriber);
       logger.debug('已退订隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
     } catch (e) {
-      logger.warn('退订隐私签署结果公共事件异常: ' + JSON.stringify(e));
+      logger.warn('退订隐私签署结果公共事件异常：' + JSON.stringify(e));
     }
     this.privacySubscriber = null;
   }
@@ -502,22 +502,22 @@ export default class EntryAbility extends UIAbility {
     try {
       windowStage.on('windowStageClose', () => {
         if (!hasActiveSessions()) {
-          logger.debug('windowStageClose: 无活跃传输，正常退出');
+          logger.debug('窗口关闭：无活跃传输，正常退出');
           return false;
         }
-        logger.debug('windowStageClose: 存在活跃传输，弹出确认弹窗');
+        logger.debug('窗口关闭：存在活跃传输，弹出确认弹窗');
         DialogService.showCloseConfirmDialog((keepRunning: boolean) => {
           if (!keepRunning) {
-            logger.debug('windowStageClose: 用户选择退出，正在终止应用');
+            logger.debug('窗口关闭：用户选择退出，正在终止应用');
             this.context.terminateSelf().catch((_e: BusinessError) => {
             });
           }
         });
         return true;
       });
-      logger.debug('windowStageClose 关闭拦截已注册（PC/2in1）');
+      logger.debug('窗口关闭拦截已注册（PC/2in1）');
     } catch (e) {
-      logger.warn('注册 windowStageClose 拦截失败: ' + JSON.stringify(e));
+      logger.warn('注册窗口关闭拦截失败：' + JSON.stringify(e));
     }
   }
 
@@ -537,10 +537,10 @@ export default class EntryAbility extends UIAbility {
       }).then((_limits: window.WindowLimits) => {
         logger.debug('桌面窗口最小尺寸已生效（最小 480x640vp）');
       }).catch((_e: BusinessError) => {
-        logger.warn('设置桌面窗口最小尺寸失败: ' + JSON.stringify(_e));
+        logger.warn('设置桌面窗口最小尺寸失败：' + JSON.stringify(_e));
       });
     } catch (e) {
-      logger.warn('设置桌面窗口最小尺寸失败: ' + JSON.stringify(e));
+      logger.warn('设置桌面窗口最小尺寸失败：' + JSON.stringify(e));
     }
   }
 
@@ -586,7 +586,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
-    logger.debug('Ability 配置更新（onConfigurationUpdate）: colorMode=' + JSON.stringify(newConfig.colorMode));
+    logger.debug('Ability 配置更新（onConfigurationUpdate）：colorMode=' + JSON.stringify(newConfig.colorMode));
     // 深浅色模式切换时同步更新窗口背景色，避免避让区露出与页面不匹配的底色
     this.applyWindowBackgroundColor();
     // 注意：此处不再同步「跟随系统」语言——设置应用语言会触发本回调，若在此再次设置
@@ -607,7 +607,7 @@ export default class EntryAbility extends UIAbility {
       this.mainWindow.setWindowBackgroundColor(hexColor);
       logger.debug('窗口背景色已设置为 ' + hexColor);
     } catch (e) {
-      logger.warn('设置窗口背景色失败: ' + JSON.stringify(e));
+      logger.warn('设置窗口背景色失败：' + JSON.stringify(e));
     }
   }
 }

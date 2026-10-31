@@ -282,8 +282,8 @@ export class MtaSendService {
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
     this.startRustLogPolling();
-    this.appendLog('服务', `MTA 发送页就绪，发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`,
-      LogLevels.INFO);
+    this.appendLog('服务', 'MTA 发送页就绪', LogLevels.INFO);
+    this.appendLog('服务', `发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`, LogLevels.DEBUG);
   }
 
   /** 注入会话终态监听（完成/失败/取消时触发一次）；传 null 清除 */
@@ -322,7 +322,7 @@ export class MtaSendService {
       this.notifySessionEnd();
     }, (e: Object): void => {
       // 兜底：停止流程自身已吞异常，正常不会走到这里；仍保证终态监听被通知一次
-      logger.warn('停止发送伴随外设异常: ' + String(e));
+      logger.warn('停止发送伴随外设异常：' + String(e));
       this.notifySessionEnd();
     });
   }
@@ -398,14 +398,14 @@ export class MtaSendService {
       this.appendLog('扫描', detail, LogLevels.DEBUG);
     };
     this.bleHandlers.onBluetoothStateChange = (stateText: string): void => {
-      this.appendLog('蓝牙', `开关状态变化: ${stateText}`, LogLevels.DEBUG);
+      this.appendLog('蓝牙', `开关状态变化：${stateText}`, LogLevels.DEBUG);
     };
     this.bleHandlers.onGattConnectionChange = (stateText: string): void => {
-      this.appendLog('GATT', `连接状态: ${stateText}`, LogLevels.DEBUG);
+      this.appendLog('GATT', `连接状态：${stateText}`, LogLevels.DEBUG);
       this.recordPeerLinkChange(stateText);
     };
     this.bleHandlers.onMtuChange = (mtu: number): void => {
-      this.appendLog('GATT', `MTU 协商完成: ${mtu}`, LogLevels.DEBUG);
+      this.appendLog('GATT', `MTU 协商完成：${mtu}`, LogLevels.DEBUG);
     };
     this.bleHandlers.onRemoteDeviceInfo = (info: DeviceInfoJson): void => {
       this.appendLog('GATT', `读回对端 DeviceInfo：key=${info.key.length} 字符 mac=${info.mac}`, LogLevels.DEBUG);
@@ -461,8 +461,7 @@ export class MtaSendService {
       } else if (stateText === '已断开') {
         this.companionBehavior.disconnectCount++;
       }
-      this.appendLog('伴随外设', `对端连接状态=${stateText} 客户端=${clientDeviceId}`,
-        stateText === '已连接' ? LogLevels.INFO : LogLevels.DEBUG);
+      this.appendLog('伴随外设', `对端连接状态=${stateText} 客户端=${clientDeviceId}`, LogLevels.DEBUG);
     };
     this.companionHandlers.onGattReadRequest = (clientDeviceId: string, offset: number): void => {
       this.companionBehavior.readCount++;
@@ -481,7 +480,7 @@ export class MtaSendService {
       this.companionBehavior.p2pInfoReceived = true;
       this.appendLog('伴随外设',
         `对端写入 P2pInfo（仅记录，不接入接收会话）客户端=${deviceId} 长度=${payloadText.length}`,
-        LogLevels.INFO);
+        LogLevels.DEBUG);
     };
   }
 
@@ -510,13 +509,12 @@ export class MtaSendService {
         await this.stopCompanionPeripheral();
         return;
       }
+      this.appendLog('伴随外设', '发送伴随外设已启动（广播 + GATT 服务端），供对端反连', LogLevels.DEBUG);
       this.appendLog('伴随外设',
-        `发送伴随外设已启动（广播 + GATT Server），供对端反连；外设 senderId=${peripheral.getSenderIdHex()}` +
-          ` DeviceInfo=${deviceInfoJson}`,
-        LogLevels.INFO);
+        `外设 senderId=${peripheral.getSenderIdHex()} DeviceInfo=${deviceInfoJson}`, LogLevels.DEBUG);
       this.appendLog('伴随外设', `广播预览：${preview.split('\n').join('；')}`, LogLevels.DEBUG);
     } catch (e) {
-      this.appendLog('伴随外设', '启动发送伴随外设失败（不影响发送）: ' + String(e), LogLevels.WARN);
+      this.appendLog('伴随外设', '启动发送伴随外设失败（不影响发送）：' + String(e), LogLevels.WARN);
       await this.stopCompanionPeripheral();
     }
   }
@@ -554,12 +552,12 @@ export class MtaSendService {
     try {
       await peripheral.stopAdvertising();
     } catch (e) {
-      this.appendLog('伴随外设', '停止伴随外设广播失败: ' + String(e), LogLevels.ERROR);
+      this.appendLog('伴随外设', '停止伴随外设广播失败：' + String(e), LogLevels.WARN);
     }
     try {
       await peripheral.stopGattServer();
     } catch (e) {
-      this.appendLog('伴随外设', '停止伴随外设 GATT Server 失败: ' + String(e), LogLevels.ERROR);
+      this.appendLog('伴随外设', '停止伴随外设 GATT 服务端失败：' + String(e), LogLevels.WARN);
     }
     peripheral.unregisterEvents();
     this.logCompanionPeerBehaviorSummary();
@@ -567,7 +565,7 @@ export class MtaSendService {
 
   /** 汇总输出发送伴随外设上的对端行为（连接/断开/读/写/是否收到 P2pInfo） */
   private logCompanionPeerBehaviorSummary(): void {
-    this.appendLog('伴随外设', formatCompanionPeerBehaviorSummary(this.companionBehavior), LogLevels.INFO);
+    this.appendLog('伴随外设', formatCompanionPeerBehaviorSummary(this.companionBehavior), LogLevels.DEBUG);
   }
 
   // ── 发送流程 ──
@@ -643,8 +641,8 @@ export class MtaSendService {
       this.appendLog('服务',
         `大文件传输（总大小=${session.totalBytes}字节），可能因超时/断连/对端拒收而失败`, LogLevels.WARN);
     }
-    this.appendLog('服务', `开始发送到 ${device.deviceName} (${device.bleAddress})，任务=${session.taskId}`,
-      LogLevels.INFO);
+    this.appendLog('服务', `开始发送到 ${device.deviceName}`, LogLevels.INFO);
+    this.appendLog('服务', `发送目标=${device.bleAddress} 任务=${session.taskId}`, LogLevels.DEBUG);
 
     if (await this.checkSessionAborted()) {
       return;
@@ -714,7 +712,7 @@ export class MtaSendService {
       try {
         await this.ble.connectGattClient(address);
       } catch (e) {
-        this.appendLog('GATT', `第 ${attempt} 次连接发起失败: ${String(e)}`, LogLevels.WARN);
+        this.appendLog('GATT', `第 ${attempt} 次连接发起失败：${String(e)}`, LogLevels.DEBUG);
         continue;
       }
       connected = await this.ble.waitGattConnected(MtaConstants.GATT_CONNECT_TIMEOUT_MS);
@@ -728,14 +726,14 @@ export class MtaSendService {
       try {
         await this.ble.disconnectGattClient();
       } catch (e) {
-        this.appendLog('GATT', '重连前释放 GATT 失败: ' + String(e), LogLevels.DEBUG);
+        this.appendLog('GATT', '重连前释放 GATT 失败：' + String(e), LogLevels.DEBUG);
       }
     }
     if (!connected) {
       await this.failSend('GATT 连接超时');
       return;
     }
-    this.appendLog('GATT', '已连接对端 GATT Server', LogLevels.INFO);
+    this.appendLog('GATT', '已连接对端 GATT 服务端', LogLevels.DEBUG);
     this.appendLog('计时', `GATT 连接耗时=${Date.now() - gattConnectStartMs}ms`, LogLevels.DEBUG);
     this.linkTiming.mark('GATT连接', Date.now());
 
@@ -834,7 +832,7 @@ export class MtaSendService {
     this.notifyState();
     this.appendLog('P2P',
       `建组完成 ssid=${session.groupSsid} mac=${session.localMac} goIp=${session.goIp} ` +
-        `频点=${session.groupFrequency}MHz(${bandLabelFromFrequency(session.groupFrequency)})`, LogLevels.INFO);
+        `频点=${session.groupFrequency}MHz(${bandLabelFromFrequency(session.groupFrequency)})`, LogLevels.DEBUG);
     this.linkTiming.mark('组网就绪', Date.now());
 
     // 6) 取并行启动的本地传输服务端口（直读 fd 与预览生成已在并行任务内完成）
@@ -853,7 +851,7 @@ export class MtaSendService {
     this.state.serverRunning = true;
     this.notifyState();
     this.appendLog('服务器',
-      `TLS 服务器已启动 bindIp=${MtaConstants.DEFAULT_BIND_IP} port=${session.port}`, LogLevels.INFO);
+      `TLS 服务器已启动 bindIp=${MtaConstants.DEFAULT_BIND_IP} port=${session.port}`, LogLevels.DEBUG);
     this.linkTiming.mark('本地服务就绪', Date.now());
 
     // 7) 写回 P2pInfo（对端提供公钥则加密，否则明文；携带群组频点 freq）
@@ -971,7 +969,7 @@ export class MtaSendService {
         try {
           await this.p2p.removeGroup();
         } catch (e) {
-          this.appendLog('P2P', '建组前清理旧组失败: ' + String(e), LogLevels.DEBUG);
+          this.appendLog('P2P', '建组前清理旧组失败：' + String(e), LogLevels.DEBUG);
         }
         let residualCleared = await this.p2p.waitGroupAbsent(
           Math.min(MtaConstants.GROUP_RESIDUAL_CLEAR_TIMEOUT_MS, candidateDeadlineMs - Date.now()));
@@ -995,7 +993,7 @@ export class MtaSendService {
         } catch (e) {
           this.appendLog('P2P',
             `建组请求失败 goBand=${goBand}(${bandText}) goFreq=${freqText}` +
-              `（候选 ${i + 1}/${candidateBands.length}）: ${String(e)}`,
+              `（候选 ${i + 1}/${candidateBands.length}）：${String(e)}`,
             LogLevels.WARN);
           break;
         }
@@ -1004,7 +1002,7 @@ export class MtaSendService {
           try {
             await this.p2p.removeGroup();
           } catch (e) {
-            this.appendLog('P2P', '会话终止后清理并行建组失败: ' + String(e), LogLevels.DEBUG);
+            this.appendLog('P2P', '会话终止后清理并行建组失败：' + String(e), LogLevels.DEBUG);
           }
           return result;
         }
@@ -1069,7 +1067,7 @@ export class MtaSendService {
       try {
         await this.p2p.removeGroup();
       } catch (e) {
-        this.appendLog('P2P', '会话终止后清理并行建组失败: ' + String(e), LogLevels.DEBUG);
+        this.appendLog('P2P', '会话终止后清理并行建组失败：' + String(e), LogLevels.DEBUG);
       }
       result.info = null;
       result.localMac = '';
@@ -1127,7 +1125,7 @@ export class MtaSendService {
       prep.thumbnailReady = this.thumbnailTempPath.length > 0;
       this.appendLog('服务器',
         `TLS 服务器已启动 bindIp=${MtaConstants.DEFAULT_BIND_IP} port=${port}（本地准备与凭据交换并行）`,
-        LogLevels.INFO);
+        LogLevels.DEBUG);
       this.appendLog('计时', `启动本地服务器耗时=${Date.now() - serverStartMs}ms（含预览生成）`, LogLevels.DEBUG);
       return port;
     } catch (e) {
@@ -1146,7 +1144,7 @@ export class MtaSendService {
     try {
       await nativeMtaStopServer();
     } catch (e) {
-      this.appendLog('服务器', '回收迟到启动的服务器失败: ' + String(e), LogLevels.DEBUG);
+      this.appendLog('服务器', '回收迟到启动的服务器失败：' + String(e), LogLevels.DEBUG);
     }
     this.state.serverRunning = false;
   }
@@ -1257,9 +1255,9 @@ export class MtaSendService {
       config.thumbnailHeight = size.height;
       this.thumbnailTempPath = targetPath;
       this.appendLog('缩略图',
-        `已生成 ${size.width}x${size.height} 预览缩略图 耗时=${Date.now() - startMs}ms`, LogLevels.INFO);
+        `已生成 ${size.width}x${size.height} 预览缩略图 耗时=${Date.now() - startMs}ms`, LogLevels.DEBUG);
     } catch (e) {
-      this.appendLog('缩略图', '生成异常，本次不提供预览缩略图: ' + String(e), LogLevels.WARN);
+      this.appendLog('缩略图', '生成异常，本次不提供预览缩略图：' + String(e), LogLevels.WARN);
     }
   }
 
@@ -1271,7 +1269,7 @@ export class MtaSendService {
     try {
       fs.unlinkSync(this.thumbnailTempPath);
     } catch (e) {
-      logger.warn('删除发送缩略图暂存文件失败: ' + String(e));
+      logger.warn('删除发送缩略图暂存文件失败：' + String(e));
     }
     this.thumbnailTempPath = '';
   }
@@ -1405,7 +1403,7 @@ export class MtaSendService {
       try {
         fs.closeSync(files[i]);
       } catch (e) {
-        logger.warn('关闭发送直读 fd 失败: ' + String(e));
+        logger.warn('关闭发送直读 fd 失败：' + String(e));
       }
     }
   }
@@ -1466,7 +1464,8 @@ export class MtaSendService {
     }
     switch (event.type) {
       case 'mtaServerStarted':
-        this.appendLog('服务器', `服务器已启动 port=${event.port}`, LogLevels.INFO);
+        this.appendLog('服务器', '服务器已启动', LogLevels.INFO);
+        this.appendLog('服务器', `服务器 port=${event.port}`, LogLevels.DEBUG);
         break;
       case 'mtaWsConnected':
         this.wsConnectedSeen = true;
@@ -1487,14 +1486,16 @@ export class MtaSendService {
       case 'mtaVersionNegotiated':
         this.setStage(MtaSenderStage.NEGOTIATED);
         this.linkTiming.mark('版本协商', Date.now());
-        this.appendLog('WS', `版本协商完成 version=${event.version}`, LogLevels.INFO);
+        this.appendLog('WS', '版本协商完成', LogLevels.INFO);
+        this.appendLog('WS', `版本=${event.version}`, LogLevels.DEBUG);
         break;
       case 'mtaSendRequestSent':
         this.setStage(MtaSenderStage.WAITING_PEER_CONFIRM);
         this.requestSentMs = Date.now();
         // 请求已送达：武装"等待对端开始接收"的有界窗口，对端既未开始下载也未回送状态时给出可读结果
         this.startPeerAcceptTimeout();
-        this.appendLog('WS', `已发送 sendRequest（任务=${event.taskId}）`, LogLevels.INFO);
+        this.appendLog('WS', '已发送接收请求', LogLevels.INFO);
+        this.appendLog('WS', `接收请求任务=${event.taskId}`, LogLevels.DEBUG);
         break;
       case 'mtaRejectSent':
         // 取消状态已写入对端连接：结算取消通知等待（记为已通知对端）
@@ -1509,7 +1510,8 @@ export class MtaSendService {
         this.resetTransferStallWatchdog();
         // 记录下载开始时刻，供发送完成时输出传输阶段耗时
         this.downloadStartedMs = Date.now();
-        this.appendLog('下载', `对端开始下载 ZIP（任务=${event.taskId}）`, LogLevels.INFO);
+        this.appendLog('下载', '对端开始下载', LogLevels.INFO);
+        this.appendLog('下载', `下载任务=${event.taskId}`, LogLevels.DEBUG);
         if (this.requestSentMs > 0) {
           this.appendLog('计时',
             `sendRequest→对端开始下载耗时=${Date.now() - this.requestSentMs}ms`, LogLevels.DEBUG);
@@ -1564,14 +1566,15 @@ export class MtaSendService {
     // 终态已达成：清除传输看门狗，已完成结果不被迟到的失败/取消信号覆盖
     this.clearTransferStallWatchdog();
     this.setStage(MtaSenderStage.COMPLETED);
-    this.appendLog('服务', `发送完成（任务=${taskId}）`, LogLevels.INFO);
+    this.appendLog('服务', '发送完成', LogLevels.INFO);
+    this.appendLog('服务', `发送任务=${taskId}`, LogLevels.DEBUG);
     this.logPeerResultOnce('完成');
     this.logTransferDuration();
     this.endSession();
     // 终态即断连：立即停止发送服务器（断开 WS 连接）并释放无线资源，使对端尽快清忙，
     // 连续发送不再被「对端忙」拦下；释放为一次性幂等，重复触发安全
     this.releaseSendResources().catch((e: Object): void => {
-      this.appendLog('服务', '完成后清理异常: ' + String(e), LogLevels.ERROR);
+      this.appendLog('服务', '完成后清理异常：' + String(e), LogLevels.WARN);
     });
   }
 
@@ -1648,7 +1651,7 @@ export class MtaSendService {
     }
     this.setError(reason);
     this.setStage(MtaSenderStage.REJECTED);
-    this.appendLog('服务', `对方拒绝接收：${reason}`, LogLevels.WARN);
+    this.appendLog('服务', `对方拒绝接收：${reason}`, LogLevels.INFO);
     this.logPeerJoinSummary();
     this.logPeerLinkSummary();
     this.logPeerInfoRecheckSummary();
@@ -1681,18 +1684,18 @@ export class MtaSendService {
     try {
       await nativeMtaStopServer();
     } catch (e) {
-      this.appendLog('服务器', '停止服务器失败: ' + String(e), LogLevels.ERROR);
+      this.appendLog('服务器', '停止服务器失败：' + String(e), LogLevels.WARN);
     }
     this.state.serverRunning = false;
     try {
       await this.ble.disconnectGattClient();
     } catch (e) {
-      this.appendLog('GATT', '断开 GATT 失败: ' + String(e), LogLevels.ERROR);
+      this.appendLog('GATT', '断开 GATT 失败：' + String(e), LogLevels.WARN);
     }
     try {
       await this.p2p.removeGroup();
     } catch (e) {
-      this.appendLog('P2P', '删除群组失败: ' + String(e), LogLevels.ERROR);
+      this.appendLog('P2P', '删除群组失败：' + String(e), LogLevels.WARN);
     }
     this.state.groupCreated = false;
     this.notifyState();
@@ -1712,11 +1715,11 @@ export class MtaSendService {
     // 会话进行中才可取消：已终结的会话（完成/部分成功/失败）保持原终态，
     // 不得把 FAILED 等终态覆盖为「已取消」
     if (!this.sessionActive) {
-      this.appendLog('服务', '当前无进行中的发送，无需取消', LogLevels.INFO);
+      this.appendLog('服务', '当前无进行中的发送，无需取消', LogLevels.DEBUG);
       return;
     }
     if (this.cancelWaitResolve !== null) {
-      this.appendLog('服务', '已在等待通知对方取消，忽略重复取消', LogLevels.INFO);
+      this.appendLog('服务', '已在等待通知对方取消，忽略重复取消', LogLevels.DEBUG);
       return;
     }
     let cancelStartMs = Date.now();
@@ -1733,13 +1736,13 @@ export class MtaSendService {
       } catch (e) {
         // 登记意图失败即无法回送取消状态：按未通知直接收尾，不进入等待
         registered = false;
-        this.appendLog('服务', '登记回送取消意图失败: ' + String(e), LogLevels.ERROR);
+        this.appendLog('服务', '登记回送取消意图失败：' + String(e), LogLevels.WARN);
       }
       if (registered) {
         notified = await this.waitCancelNotify();
       }
     } else {
-      this.appendLog('服务', '对端尚未取得连接凭据，无法通知取消，直接收尾', LogLevels.WARN);
+      this.appendLog('服务', '对端尚未取得连接凭据，无需通知取消，直接收尾', LogLevels.INFO);
     }
     this.logPeerJoinSummary();
     this.logPeerLinkSummary();
@@ -1749,7 +1752,8 @@ export class MtaSendService {
     this.setError(notified ? MTA_CANCELLED_TEXT : MTA_CANCEL_NOTIFY_FAILED_TEXT);
     this.setStage(MtaSenderStage.CANCELLED);
     await this.releaseSendResources();
-    this.appendLog('服务', `已取消本次发送并释放资源 耗时=${Date.now() - cancelStartMs}ms`, LogLevels.INFO);
+    this.appendLog('服务', '已取消本次发送并释放资源', LogLevels.INFO);
+    this.appendLog('计时', `取消耗时=${Date.now() - cancelStartMs}ms`, LogLevels.DEBUG);
   }
 
   /**
@@ -1783,7 +1787,8 @@ export class MtaSendService {
     }
     let costMs = this.cancelWaitStartMs > 0 ? Date.now() - this.cancelWaitStartMs : 0;
     let outcome = notified ? '已通知对端取消' : '未能通知对端取消';
-    this.appendLog('服务', `${outcome}（${source}，等待=${costMs}ms）`, notified ? LogLevels.INFO : LogLevels.WARN);
+    this.appendLog('服务', outcome, notified ? LogLevels.INFO : LogLevels.WARN);
+    this.appendLog('计时', `${source} 等待=${costMs}ms`, LogLevels.DEBUG);
     resolve(notified);
   }
 
@@ -1948,7 +1953,7 @@ export class MtaSendService {
         this.failSend(MTA_PEER_ABANDONED_TEXT);
       }
     }).catch((e: Object): void => {
-      logger.warn('查询群组客户端数失败: ' + String(e));
+      logger.warn('查询群组客户端数失败：' + String(e));
     });
   }
 
@@ -1961,7 +1966,7 @@ export class MtaSendService {
     this.appendLog('P2P',
       `对端入组观测汇总：曾观测到对端入组=${this.peerJoinedGroupSeen ? '是' : '否'}` +
         ` 最大客户端数=${this.maxGroupClientCount} 群组信息不可得次数=${this.groupClientReadFailCount}`,
-      LogLevels.INFO);
+      LogLevels.DEBUG);
   }
 
   /**
@@ -1984,7 +1989,7 @@ export class MtaSendService {
       this.peerLinkConnected = false;
       this.peerLinkDroppedAfterWrite = true;
       this.peerLinkEventsAfterWrite.push(`断开(+${Date.now() - this.p2pInfoWrittenMs}ms)`);
-      this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路断开', LogLevels.INFO);
+      this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路断开', LogLevels.DEBUG);
       return;
     }
     if (connected && !this.peerLinkConnected) {
@@ -1992,7 +1997,7 @@ export class MtaSendService {
       if (this.peerLinkDroppedAfterWrite) {
         this.peerLinkReconnectedAfterWrite = true;
         this.peerLinkEventsAfterWrite.push(`重连(+${Date.now() - this.p2pInfoWrittenMs}ms)`);
-        this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路重连', LogLevels.INFO);
+        this.appendLog('GATT', '写回 P2pInfo 后对端蓝牙链路重连', LogLevels.DEBUG);
       }
     }
   }
@@ -2014,7 +2019,7 @@ export class MtaSendService {
     let eventsText = this.peerLinkEventsAfterWrite.length > 0 ?
       this.peerLinkEventsAfterWrite.join('、') : '无';
     this.appendLog('GATT',
-      `写回 P2pInfo 后对端蓝牙链路变化=${changeText}（事件=${eventsText}）`, LogLevels.INFO);
+      `写回 P2pInfo 后对端蓝牙链路变化=${changeText}（事件=${eventsText}）`, LogLevels.DEBUG);
   }
 
   /**
@@ -2023,7 +2028,7 @@ export class MtaSendService {
    */
   private startPeerInfoRecheckInBackground(firstRaw: string, firstState: number, seq: number): void {
     this.recheckPeerInfoAfterWrite(firstRaw, firstState, seq).catch((e: Object): void => {
-      logger.warn('写回后复读诊断异常: ' + String(e));
+      logger.warn('写回后复读诊断异常：' + String(e));
     });
   }
 
@@ -2060,7 +2065,7 @@ export class MtaSendService {
       `写回后复读对端公开信息：成功 内容变化=${result.contentChanged ? '是' : '否'}` +
         ` state=${firstState}→${recheckState} → ${result.conclusion}` +
         `（耗时=${Date.now() - recheckStartMs}ms）`,
-      result.stateChanged || result.contentChanged ? LogLevels.INFO : LogLevels.WARN);
+      result.stateChanged || result.contentChanged ? LogLevels.DEBUG : LogLevels.WARN);
   }
 
   /** 为写回后复读诊断加窗口上限：超窗即放弃采集，不长期占用 GATT 客户端 */
@@ -2104,13 +2109,13 @@ export class MtaSendService {
     if (!result.success) {
       this.appendLog('GATT',
         `写回后复读对端公开信息汇总：失败（${result.failureReason}）→ ${result.conclusion}`,
-        LogLevels.INFO);
+        LogLevels.WARN);
       return;
     }
     this.appendLog('GATT',
       `写回后复读对端公开信息汇总：成功 内容变化=${result.contentChanged ? '是' : '否'}` +
         ` state=${result.firstState}→${result.recheckState} → ${result.conclusion}`,
-      LogLevels.INFO);
+      LogLevels.DEBUG);
   }
 
   /**
@@ -2125,7 +2130,7 @@ export class MtaSendService {
     let judgeText = this.p2pWriteUsedNoResponse ?
       '无写回执，是否被处理由端到端信号（对端反连本机外设/入组/回连传输通道）判定' :
       '已收到对端写回调';
-    this.appendLog('GATT', `写回 P2pInfo 汇总：写方式=${modeText} ${judgeText}`, LogLevels.INFO);
+    this.appendLog('GATT', `写回 P2pInfo 汇总：写方式=${modeText} ${judgeText}`, LogLevels.DEBUG);
   }
 
   // ── 资源释放 ──

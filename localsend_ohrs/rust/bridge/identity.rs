@@ -110,7 +110,7 @@ pub fn init_with_persisted_identity(
                 Ok(v) => v,
                 Err(e) => {
                     // 读写失败直接返回错误（不得静默重建身份，否则指纹漂移），按操作失败记录
-                    log::error!("身份加载失败: {e:#}");
+                    log::error!("身份加载失败：{e:#}");
                     return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
                 }
             },
@@ -308,7 +308,7 @@ pub fn get_network_interfaces() -> Vec<NetworkInterfaceInfo> {
             })
             .collect(),
         Err(e) => {
-            log::warn!("获取网络接口失败: {e}");
+            log::warn!("获取网络接口失败：{e}");
             Vec::new()
         }
     }
@@ -468,7 +468,7 @@ pub fn cancel_hash(state: &Mutex<BridgeState>, cancel_id: &str) -> Result<(), Br
 // ── 日志 ──────────────────────────────────────────────────────────────
 
 /// Rust 日志静态缓冲（logger 写入，poll 读取排空）。
-/// 缓冲元素格式为 `level|message`（首个 `|` 为分隔符），供 ArkTS 侧还原原始级别。
+/// 缓冲元素格式为 `level|target|message`（前两个 `|` 为分隔符），供 ArkTS 侧还原原始级别与来源子系统。
 static RUST_LOG_BUF: std::sync::Mutex<std::collections::VecDeque<String>> =
     std::sync::Mutex::new(std::collections::VecDeque::new());
 
@@ -502,9 +502,9 @@ pub fn log_level_token(level: log::Level) -> &'static str {
     }
 }
 
-/// 构造缓冲区记录（`level|message`）。
-fn format_log_entry(level: log::Level, msg: &str) -> String {
-    format!("{}|{}", log_level_token(level), msg)
+/// 构造缓冲区记录（`level|target|message`）。
+fn format_log_entry(level: log::Level, target: &str, msg: &str) -> String {
+    format!("{}|{}|{}", log_level_token(level), target, msg)
 }
 
 /// 第三方 TLS / HTTP 客户端的日志 target 前缀。
@@ -523,7 +523,7 @@ fn log_enabled(target: &str, level: log::Level) -> bool {
     !noisy || level <= log::Level::Info
 }
 
-/// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|message`。
+/// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|target|message`。
 pub fn drain_rust_log_buf_with_levels() -> Vec<String> {
     let mut buf = lock(&RUST_LOG_BUF);
     buf.drain(..).collect()
@@ -560,8 +560,12 @@ mod hilog_impl {
                 return;
             }
             let msg = format!("{}", record.args());
-            // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
-            super::push_log_entry(super::format_log_entry(record.level(), &msg));
+            // 写入 level 与 target 前缀：target 供 ArkTS 侧按子系统归并到对应模块标签。
+            super::push_log_entry(super::format_log_entry(
+                record.level(),
+                record.target(),
+                &msg,
+            ));
             let level: c_int = match record.level() {
                 log::Level::Error => 3,
                 log::Level::Warn => 2,
@@ -601,9 +605,10 @@ pub fn init_hilog_logger() {
             if !crate::bridge::identity::log_enabled(record.target(), record.level()) {
                 return;
             }
-            // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
+            // 写入 level 与 target 前缀：target 供 ArkTS 侧按子系统归并到对应模块标签
             push_log_entry(format_log_entry(
                 record.level(),
+                record.target(),
                 &format!("{}", record.args()),
             ));
         }
@@ -972,17 +977,26 @@ mod tests {
 
     #[test]
     fn log_entry_carries_level_prefix() {
-        assert_eq!(format_log_entry(log::Level::Error, "boom"), "error|boom");
         assert_eq!(
-            format_log_entry(log::Level::Warn, "careful"),
-            "warn|careful"
+            format_log_entry(log::Level::Error, "crate::mod", "boom"),
+            "error|crate::mod|boom"
         );
-        assert_eq!(format_log_entry(log::Level::Info, "ok"), "info|ok");
         assert_eq!(
-            format_log_entry(log::Level::Debug, "detail"),
-            "debug|detail"
+            format_log_entry(log::Level::Warn, "crate::mod", "careful"),
+            "warn|crate::mod|careful"
         );
-        assert_eq!(format_log_entry(log::Level::Trace, "bye"), "trace|bye");
+        assert_eq!(
+            format_log_entry(log::Level::Info, "crate::mod", "ok"),
+            "info|crate::mod|ok"
+        );
+        assert_eq!(
+            format_log_entry(log::Level::Debug, "crate::mod", "detail"),
+            "debug|crate::mod|detail"
+        );
+        assert_eq!(
+            format_log_entry(log::Level::Trace, "crate::mod", "bye"),
+            "trace|crate::mod|bye"
+        );
     }
 
     #[test]

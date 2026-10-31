@@ -64,7 +64,7 @@ function resolveNetworkBlacklist(): Array<string> | undefined {
     }
   }
   if (result.length > 0) {
-    logger.debug('黑名单: [' + blacklistedNames.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
+    logger.debug('黑名单：[' + blacklistedNames.join(', ') + '] -> IP 列表：[' + result.join(', ') + ']');
     return result;
   }
   return undefined;
@@ -121,7 +121,7 @@ function computeDiscoveryWhitelist(): Array<string> {
     interfaces
   );
   logger.debug(
-    '接口列表: ' + interfaces.map((iface) =>
+    '接口列表：' + interfaces.map((iface) =>
     iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
       ' -> whitelist([' + (whitelistedNames !== undefined ? whitelistedNames.join(', ') : '') +
       ']): [' + result.join(', ') + ']');
@@ -348,7 +348,7 @@ export async function restartDiscovery(): Promise<void> {
     lastDiscoverySignature = signature;
     logger.debug('Discovery 已用新网络接口重启');
   } catch (e) {
-    logger.error('Discovery 重启失败：' + e);
+    logger.error('设备发现重启失败：' + e);
   }
 
   // 立即通知 UI 更新警告状态（allInterfacesDisabled/noWifiWarning 可能已变化）
@@ -415,7 +415,7 @@ async function doRestartServer(): Promise<void> {
   try {
     refreshMtaReceiveIdentity();
   } catch (e) {
-    logger.warn('同步 MTA 接收对外身份失败: ' + String(e));
+    logger.warn('同步 MTA 接收对外身份失败：' + String(e));
   }
 }
 
@@ -424,12 +424,12 @@ async function doRestartServer(): Promise<void> {
 export async function startLocalServer(): Promise<string> {
   // LocalSend 总开关关闭时不启动服务器（含设备发现与网页分享，两者依赖服务器）
   if (!getLocalSendEnabled()) {
-    logger.info('LocalSend 已关闭，跳过服务器启动');
+    logger.debug('LocalSend 已关闭，跳过服务器启动');
     return '';
   }
   let appContext = getAppContext();
   if (appContext === undefined) {
-    logger.error('AppService 未初始化');
+    logger.error('应用服务未初始化');
     return '';
   }
 
@@ -485,7 +485,8 @@ export async function startLocalServer(): Promise<string> {
   serverRunning = true;
   // 服务器以当前设置运行——无需重启
   clearServerNeedsRestart();
-  logger.info('服务器已启动 fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
+  logger.info('服务器已启动');
+  logger.debug('服务器 fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
 
   // 启动 Rust 核心发现
   try {
@@ -498,7 +499,7 @@ export async function startLocalServer(): Promise<string> {
     lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
     logger.debug('Rust 发现已启动');
   } catch (e) {
-    logger.error('Discovery 启动失败：' + e);
+    logger.error('设备发现启动失败：' + e);
   }
   // 启动扫描：discover_staged 是唯一入口
   // （内部：announce + 收藏设备探测 + 宽限期后的条件子网扫描）
@@ -525,7 +526,7 @@ export async function stopLocalServer(): Promise<void> {
   } catch (e) {
     // 停止失败仍继续清理本地状态（保持两侧一致性由下次启动收口），
     // 但必须留痕：Rust 侧服务器可能仍在运行占用端口，否则无从排查
-    logger.error('nativeStopServer 停止失败：' + String(e));
+    logger.warn('停止原生服务器失败：' + String(e));
   }
   serverRunning = false;
   setServerFingerprint('');

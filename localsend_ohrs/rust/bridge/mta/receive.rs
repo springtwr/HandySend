@@ -306,7 +306,8 @@ pub async fn receive_download(
                 true,
             )
             .await;
-            log::info!(
+            log::info!("MTA 接收完成，共 {} 个条目", entries.len());
+            log::debug!(
                 "MTA 接收完成 taskId={task_id} 条目数={} 解压字节={received} 网络字节={network_bytes}",
                 entries.len()
             );
@@ -472,7 +473,7 @@ impl ZipEntryHandler for FileEntryHandler<'_> {
 
         if info.modified_unix_ms > 0 {
             if let Err(e) = set_modified_time(&path, info.modified_unix_ms) {
-                log::warn!("还原文件修改时间失败 {}: {e}", path.display());
+                log::warn!("MTA 还原文件修改时间失败 {}: {e}", path.display());
             }
         }
 

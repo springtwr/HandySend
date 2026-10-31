@@ -130,8 +130,8 @@ export function getLocalDeviceInfo(): LocalDeviceInfo {
   let signature = allNames + '|' + filteredNames + '|' + primaryIp;
   if (signature !== lastLoggedInterfaceSignature) {
     lastLoggedInterfaceSignature = signature;
-    logger.debug('全部: [' + allNames +
-      '] 过滤后: [' + filteredNames +
+    logger.debug('全部：[' + allNames +
+      '] 过滤后：[' + filteredNames +
       '] primaryIp=' + primaryIp);
   }
   return info;

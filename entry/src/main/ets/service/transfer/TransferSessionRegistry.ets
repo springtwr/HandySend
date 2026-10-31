@@ -382,7 +382,7 @@ export function createSession(input: SessionCreateInput): TransferSession {
   if (session.stage !== SessionStage.awaitingConfirmation) {
     pushTimeline(session, SessionEventKind.started);
   }
-  logger.info(`会话创建 id=${session.id} 协议=${session.protocolKey} 方向=${session.dataFlow}` +
+  logger.debug(`会话创建 id=${session.id} 协议=${session.protocolKey} 方向=${session.dataFlow}` +
     ` 阶段=${session.stage} 文件数=${session.files.length}`);
   notifyChange();
   return session;
@@ -668,7 +668,7 @@ export function setStage(sessionId: string, stage: SessionStage, errorMessage?: 
   }
   // 生命周期诊断只记录阶段跃迁（进度与文案更新属高频事件，不记录）
   if (session.stage !== stage) {
-    logger.info(`阶段推进 id=${session.id} 协议=${session.protocolKey} 阶段=${session.stage}→${stage}`);
+    logger.debug(`阶段推进 id=${session.id} 协议=${session.protocolKey} 阶段=${session.stage}→${stage}`);
   }
   session.stage = stage;
   // 阶段推进即进展：刷新发送会话活动基准
@@ -693,7 +693,7 @@ export function confirmSession(sessionId: string): void {
   if (adapter !== undefined && !adapter.getCapabilities().needsConfirm) {
     return;
   }
-  logger.info(`阶段推进 id=${session.id} 协议=${session.protocolKey}` +
+  logger.debug(`阶段推进 id=${session.id} 协议=${session.protocolKey}` +
     ` 阶段=${session.stage}→${SessionStage.active}`);
   session.stage = SessionStage.active;
   touchActivity(session);
@@ -720,6 +720,24 @@ export function declineSession(sessionId: string): void {
     adapter.decline(sessionId);
   }
   finish(sessionId, SessionStage.declined);
+}
+
+/** 终态结果的中文短标签（用于 info 级日志，避免把枚举 token 写入对外日志）。 */
+function outcomeText(outcome: SessionStage): string {
+  switch (outcome) {
+    case SessionStage.succeeded:
+      return '成功';
+    case SessionStage.partiallyFailed:
+      return '部分完成';
+    case SessionStage.failed:
+      return '失败';
+    case SessionStage.cancelled:
+      return '已取消';
+    case SessionStage.declined:
+      return '已拒绝';
+    default:
+      return '已结束';
+  }
 }
 
 /**
@@ -802,7 +820,8 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
       ` 方向=${session.dataFlow} 文件数=${session.files.length}`);
   }
   archiveSession(session);
-  logger.info(`会话终结 id=${sessionId} 协议=${session.protocolKey} 结果=${outcome}` +
+  logger.info('会话终结：' + outcomeText(outcome));
+  logger.debug(`会话终结 id=${sessionId} 协议=${session.protocolKey} 结果=${outcome}` +
     ` 错误码=${session.errorCode} 文件数=${session.files.length}`);
   scheduleReclaim(sessionId);
   notifyChange();

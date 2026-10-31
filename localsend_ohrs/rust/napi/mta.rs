@@ -74,7 +74,7 @@ pub async fn native_mta_fetch_thumbnail(
     {
         Ok(path) => Ok(path),
         Err(error) => {
-            log::debug!("MTA 缩略图拉取失败: {error:#}");
+            log::debug!("MTA 缩略图拉取失败：{error:#}");
             Ok(String::new())
         }
     }

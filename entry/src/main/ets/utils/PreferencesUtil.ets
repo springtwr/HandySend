@@ -96,7 +96,7 @@ export class PreferencesUtil {
     try {
       this.pref = preferences.getPreferencesSync(context, { name: this.storeName });
     } catch (e) {
-      logger.error('PreferencesUtil 初始化失败：' + JSON.stringify(e));
+      logger.error('偏好存储初始化失败：' + JSON.stringify(e));
     }
   }
 
@@ -235,7 +235,7 @@ export class PreferencesUtil {
       if (this.pref !== null) {
         // 防抖刷盘为 fire-and-forget：捕获 rejection 避免未处理的 Promise 异常
         this.pref.flush().catch((e: Object): void => {
-          logger.warn('偏好刷盘失败: ' + String(e));
+          logger.warn('偏好刷盘失败：' + String(e));
         });
       }
     }, FLUSH_DELAY_MS);

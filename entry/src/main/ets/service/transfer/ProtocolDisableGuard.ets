@@ -24,7 +24,7 @@ function resolveResourceText(res: Resource): string {
   try {
     return ctx.resourceManager.getStringSync(res.id);
   } catch (e) {
-    logger.warn('解析资源文本失败: ' + String(e));
+    logger.warn('解析资源文本失败：' + String(e));
     return '';
   }
 }

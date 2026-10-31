@@ -28,7 +28,7 @@ import { copyText } from '../utils/ClipboardUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ShareLinkViewModel', '网页接入');
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ShareLinkViewModel', '网页传输');
 
 /**
  * ShareLinkViewModel
@@ -163,7 +163,7 @@ export class ShareLinkViewModel {
     // 网页方向允许开关经既有 changeBus 同步（开关 setter 已 notifyChange）
     let sendDisabled: boolean = !getWebSendAllowed();
     if (sendDisabled !== this.sendDisabled) {
-      logger.info('网页传输总开关变化，面板禁用态=' + sendDisabled);
+      logger.debug('网页传输总开关变化，面板禁用态=' + sendDisabled);
     }
     this.sendDisabled = sendDisabled;
     this.uploadAllowed = getWebReceiveAllowed();

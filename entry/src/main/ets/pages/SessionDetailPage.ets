@@ -475,7 +475,7 @@ export struct SessionDetailPage {
       return;
     }
     context.openLink(url).catch((e: Object): void => {
-      logger.error('打开文本链接失败: ' + String(e));
+      logger.warn('打开文本链接失败：' + String(e));
     });
   }
 

@@ -123,7 +123,7 @@ async fn bind_listener(preferred: u16) -> anyhow::Result<tokio::net::TcpListener
     if preferred > 0 {
         match tokio::net::TcpListener::bind(("0.0.0.0", preferred)).await {
             Ok(listener) => return Ok(listener),
-            Err(e) => log::warn!("自研 web 首选端口被占用 port={preferred}: {e}"),
+            Err(e) => log::warn!("首选端口被占用 port={preferred}: {e}"),
         }
     }
     tokio::net::TcpListener::bind("0.0.0.0:0")
@@ -202,6 +202,10 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     }
     let mut table = SharedFileTable::empty();
     table.replace(files);
+    let file_count: usize = table.files.len();
+    let has_access_code: bool = config.pin.as_deref().is_some_and(|pin| !pin.is_empty());
+    let upload_enabled: bool = config.upload_enabled;
+    let use_https: bool = config.use_https;
     let (progress_tx, progress_rx) = mpsc::channel::<ProgressEvent>(64);
     let (file_events, _) = tokio::sync::broadcast::channel::<FileTableChange>(16);
     let (session_events, _) = tokio::sync::broadcast::channel::<String>(16);
@@ -283,6 +287,11 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
     runtime.server_task = Some(server_task);
     runtime.forward_task = Some(forward_task);
     runtime.sweep_task = Some(sweep_task);
+    log::info!("网页服务已启动");
+    log::debug!(
+        "网页服务参数 port={port} https={use_https} files={file_count} upload={upload_enabled} 访问码={}",
+        if has_access_code { "开" } else { "关" }
+    );
     Ok(port)
 }
 
@@ -293,7 +302,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
 pub fn mark_stopped() {
     if let Some(state) = current_state() {
         state.mark_stopped();
-        log::info!("网页分享已进入停止态，等待页面收尾");
+        log::info!("已进入停止态，等待页面收尾");
     }
 }
 
@@ -316,6 +325,9 @@ async fn stop_internal_async() {
     };
     // 先关闭所有已建立连接：浏览器复用旧 keep-alive 连接时会落到新服务上，
     // 不会继续读到旧（停止态）快照。
+    if state.is_some() {
+        log::info!("服务已停止");
+    }
     if let Some(state) = state {
         state.shutdown.trigger();
     }
@@ -343,6 +355,9 @@ fn stop_internal() {
             runtime.sweep_task.take(),
         )
     };
+    if state.is_some() {
+        log::info!("服务已停止");
+    }
     if let Some(state) = state {
         state.shutdown.trigger();
     }
@@ -418,6 +433,7 @@ pub fn update_files(files_json: &str) -> anyhow::Result<u32> {
     let count = files.len() as u32;
     *lock(&state.file_order) = file_order;
     state.update_files(files);
+    log::debug!("文件表已更新 files={count}");
     Ok(count)
 }
 
@@ -428,6 +444,7 @@ pub fn set_upload_enabled(enabled: bool) -> anyhow::Result<()> {
     if let Some(tx) = &state.caps_events {
         let _ = tx.send(());
     }
+    log::debug!("上传入口已切换 enabled={enabled}");
     Ok(())
 }
 
@@ -478,6 +495,7 @@ pub fn set_upload_targets(token: &str, targets_json: &str) -> anyhow::Result<u32
     let state = current_state().ok_or_else(|| anyhow::anyhow!("网页服务未运行"))?;
     let pairs: Vec<(String, String)> = targets.into_iter().map(|t| (t.file_id, t.path)).collect();
     let applied = lock(&state.uploads).set_targets(token, &pairs);
+    log::debug!("上传落盘目标已设置 applied={applied} total={}", pairs.len());
     Ok(applied as u32)
 }
 
@@ -489,6 +507,7 @@ pub fn cancel_download(batch_id: &str) -> anyhow::Result<()> {
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("下载批次不存在或已结束: {batch_id}"))?;
     flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    log::debug!("下载批次已取消 batch={batch_id}");
     Ok(())
 }
 

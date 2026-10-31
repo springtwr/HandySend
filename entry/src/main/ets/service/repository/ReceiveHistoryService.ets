@@ -59,7 +59,7 @@ export function initHistory(context: common.UIAbilityContext): void {
   history = readAllSegments();
   let repaired: number = repairTextMessageFlags(history, recvTextDir());
   if (repaired > 0) {
-    logger.info('已修复历史文本消息标记 count=' + repaired);
+    logger.debug('已修复历史文本消息标记 count=' + repaired);
   }
   let stripped: number = stripLegacyTextContent(history);
   if (stripped > 0) {
@@ -67,7 +67,7 @@ export function initHistory(context: common.UIAbilityContext): void {
     // 由一次全量回写把所有段里的字段清掉（新数据不再写入该字段）。
     lastPersisted = [];
     saveHistory();
-    logger.info('已清理旧版文本正文字段 count=' + stripped);
+    logger.debug('已清理旧版文本正文字段 count=' + stripped);
   } else {
     lastPersisted = history.slice();
   }
@@ -302,7 +302,7 @@ function migrateFromLegacyKey(): Array<ReceiveHistoryEntry> {
     receiveHistoryPreferencesUtil.delete(segmentKey(HISTORY_PREFIX, i));
   }
   receiveHistoryPreferencesUtil.delete(LEGACY_HISTORY_KEY);
-  logger.info('历史已迁移为分段存储 count=' + trimmed.length);
+  logger.debug('历史已迁移为分段存储 count=' + trimmed.length);
   return trimmed;
 }
 
