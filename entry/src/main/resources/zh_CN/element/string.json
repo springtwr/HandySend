@@ -2285,16 +2285,8 @@
       "value": "后台临时保活，5 分钟后自动关闭"
     },
     {
-      "name": "bg_transfer_title_background",
-      "value": "后台运行中"
-    },
-    {
-      "name": "bg_transfer_content_background",
-      "value": "关闭通知会立即结束所有后台任务"
-    },
-    {
       "name": "bg_transfer_title_keepalive",
-      "value": "后台保活中"
+      "value": "后台运行中"
     },
     {
       "name": "bg_transfer_content_keepalive",

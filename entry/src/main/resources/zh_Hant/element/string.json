@@ -2285,16 +2285,8 @@
       "value": "背景臨時保活，5 分鐘後自動關閉"
     },
     {
-      "name": "bg_transfer_title_background",
-      "value": "背景執行中"
-    },
-    {
-      "name": "bg_transfer_content_background",
-      "value": "關閉通知會立即結束所有背景任務"
-    },
-    {
       "name": "bg_transfer_title_keepalive",
-      "value": "背景保活中"
+      "value": "背景執行中"
     },
     {
       "name": "bg_transfer_content_keepalive",

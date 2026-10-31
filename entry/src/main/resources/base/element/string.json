@@ -2285,16 +2285,8 @@
       "value": "Kept alive in the background; closes automatically after 5 minutes."
     },
     {
-      "name": "bg_transfer_title_background",
-      "value": "Running in background"
-    },
-    {
-      "name": "bg_transfer_content_background",
-      "value": "Closing this notification ends all background tasks immediately"
-    },
-    {
       "name": "bg_transfer_title_keepalive",
-      "value": "Background hold"
+      "value": "Running in background"
     },
     {
       "name": "bg_transfer_content_keepalive",
