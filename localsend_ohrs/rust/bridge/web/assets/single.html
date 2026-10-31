@@ -364,6 +364,12 @@ body {
   word-break: break-word;
 }
 
+/* 警告语义：请求失败、网络错误、发送失败/中断、确认超时等 */
+.status-banner[data-tone="warning"] {
+  background: var(--harmony-warning-bg);
+  color: var(--harmony-warning);
+}
+
 .status-banner:empty {
   display: none;
 }
@@ -620,12 +626,12 @@ button.status-retry {
 
 .hint-banner {
   margin: 0 0 12px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   border-radius: 16px;
   background: var(--harmony-warning-bg);
   color: var(--harmony-warning);
-  font-size: 13px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* 下载文件统一收在一张卡片内，和发送卡片保持同一种容器风格 */
@@ -1443,36 +1449,33 @@ html[data-auth="open"] #gate {
     themeDark: '深色',
     language: '语言',
     loading: '加载中…',
-    stoppedNote: '分享已结束，请让发送方重新开启后刷新本页。',
+    stoppedNote: '分享已结束，请让发送方重新开启后刷新页面。',
     downloadTitle: '下载',
     uploadTitle: '发送',
     noDownloadHint: '暂无可下载文件，请等待发送方添加。',
-    uploadOffHint: '对方未开启网页上传功能',
+    uploadOffHint: '对方未开启网页上传功能。',
     startReceive: '开启接收',
     pickFirst: '先去选文件',
     waitingConfirm: '等待对方确认中…（请让对方打开应用确认）',
     rejected: '对方已拒绝请求。',
-    confirmTimeoutRetry: '对方未及时确认，请让对方打开应用后刷新本页重试。',
-    shareEndedRetry: '分享已结束或暂无可下载文件，请刷新重试。',
-    requestFailedRetry: '请求失败，请刷新重试。',
+    confirmTimeoutRetry: '对方未及时确认，请让对方打开应用后刷新页面重试。',
+    shareEndedRetry: '分享已结束，请刷新页面重试。',
+    requestFailedRetry: '请求失败，请刷新页面重试。',
     networkErrorRetry: '网络错误，请检查连接后重试。',
     retry: '重试',
-    uploadDone: '上传完成。',
-    selectFirst: '请先选择要发送的文件。',
+    uploadDone: '发送完成。',
     uploadFailedRetry: '发送失败，请重试。',
-    uploadInterrupted: '网络错误，发送中断。',
+    uploadInterrupted: '网络错误，发送已中断。',
     pinTitle: '请输入访问码',
     pinConfirm: '确定',
     pinError: '访问码错误。',
     authSubtitle: '请输入发送方面板上显示的 6 位访问码。',
     authPlaceholder: '访问码',
     authEnter: '进入',
-    authTooMany: '尝试次数过多，请稍后再试。',
     authTooManyCountdown: '尝试次数过多，请等待 %d 秒后重试。',
     accessEndedReload: '本次网页访问已结束，请刷新页面重新访问。',
     download: '下载',
     downloadAll: '全部下载',
-    downloadAllUnsupported: '当前浏览器不支持自动批量下载，请逐个点击下载。',
     selectAll: '全选',
     deselectAll: '取消全选',
     downloadSelected: '下载所选（%d）',
@@ -1493,7 +1496,7 @@ html[data-auth="open"] #gate {
     textSend: '发送文本',
     previewLoading: '预览加载中…',
     previewUnavailable: '预览不可用。',
-    shareUpdatedRetry: '分享内容已更新，请刷新重试。',
+    shareUpdatedRetry: '分享内容已更新，请刷新页面重试。',
     httpsHint: '当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。'
   };
 
@@ -1507,37 +1510,48 @@ html[data-auth="open"] #gate {
   function $(id) { return document.getElementById(id); }
   function show(id) { $(id).classList.remove('hidden'); }
   function hide(id) { $(id).classList.add('hidden'); }
-  function setStatus(text) {
+  function setStatusTone(element, tone) {
+    if (tone) {
+      element.setAttribute('data-tone', tone);
+    } else {
+      element.removeAttribute('data-tone');
+    }
+  }
+
+  function setStatus(text, tone) {
     $('status').innerText = text || '';
+    setStatusTone($('status'), tone);
     statusLoading = false;
     if (!text) {
       hide('status-retry');
     }
   }
 
-  function setDownloadStatus(text) {
+  function setDownloadStatus(text, tone) {
     $('download-status').innerText = text || '';
+    setStatusTone($('download-status'), tone);
     if (!text) {
       hide('download-status-retry');
     }
   }
 
-  function setUploadStatus(text) {
+  function setUploadStatus(text, tone) {
     $('upload-status').innerText = text || '';
+    setStatusTone($('upload-status'), tone);
     if (!text) {
       hide('upload-status-retry');
     }
   }
 
-  function setSegmentStatus(segment, text) {
+  function setSegmentStatus(segment, text, tone) {
     if (segment === 'download') {
-      setDownloadStatus(text);
+      setDownloadStatus(text, tone);
       if (text && activeTab !== 'download') { markTabDot('download'); }
     } else if (segment === 'upload') {
-      setUploadStatus(text);
+      setUploadStatus(text, tone);
       if (text && activeTab !== 'upload') { markTabDot('upload'); }
     } else {
-      setStatus(text);
+      setStatus(text, tone);
     }
   }
 
@@ -1567,7 +1581,7 @@ html[data-auth="open"] #gate {
 
   // 下载失败后的显式重试：不随 caps 轮询自动重复弹确认。
   function showStatusRetry(text) {
-    setDownloadStatus(text);
+    setDownloadStatus(text, 'warning');
     $('download-status-retry').innerText = t('retry');
     $('download-status-retry').onclick = function () {
       hide('download-status-retry');
@@ -2039,7 +2053,7 @@ html[data-auth="open"] #gate {
       }
       if (!response.ok) {
         if (!silent) {
-          setStatus(t('requestFailedRetry') + '（' + response.status + '）');
+          setStatus(t('requestFailedRetry') + '（' + response.status + '）', 'warning');
         }
         return null;
       }
@@ -2050,7 +2064,7 @@ html[data-auth="open"] #gate {
       }
     }).catch(function () {
       if (!silent) {
-        setStatus(t('networkErrorRetry'));
+        setStatus(t('networkErrorRetry'), 'warning');
       }
     });
   }
@@ -2288,7 +2302,7 @@ html[data-auth="open"] #gate {
       $('upload-btn').disabled = true;
       $('upload-picker').disabled = true;
       $('text-input').disabled = true;
-      setSegmentStatus('upload', t('accessEndedReload'));
+      setSegmentStatus('upload', t('accessEndedReload'), 'warning');
     }
   }
 
@@ -3074,7 +3088,7 @@ html[data-auth="open"] #gate {
     var hasFiles = selectedFiles.length > 0;
     var hasText = text.length > 0;
     if (!hasFiles && !hasText) {
-      setSegmentStatus('upload', t('nothingToSend'));
+      setSegmentStatus('upload', t('nothingToSend'), 'warning');
       return;
     }
     var files = selectedFiles.slice();
@@ -3132,7 +3146,7 @@ html[data-auth="open"] #gate {
         // 保持 uploading；登录后由 pendingUpload 恢复
         return;
       }
-      setSegmentStatus('upload', t('networkErrorRetry'));
+      setSegmentStatus('upload', t('networkErrorRetry'), 'warning');
       scheduleUploadRetry(dtos, files, 5);
     }).then(function () {
       uploadPreparing = false;
@@ -3166,7 +3180,7 @@ html[data-auth="open"] #gate {
   function failUpload(statusKey) {
     clearUploadRetry();
     if (statusKey) {
-      setSegmentStatus('upload', t(statusKey));
+      setSegmentStatus('upload', t(statusKey), 'warning');
     }
     setUploading(false);
     pendingUpload = null;
@@ -3196,7 +3210,7 @@ html[data-auth="open"] #gate {
       return undefined;
     }
     if (!response.ok) {
-      setSegmentStatus('upload', t('requestFailedRetry') + '（' + response.status + '）');
+      setSegmentStatus('upload', t('requestFailedRetry') + '（' + response.status + '）', 'warning');
       failUpload();
       return undefined;
     }
@@ -3246,30 +3260,30 @@ html[data-auth="open"] #gate {
         return;
       }
       if (xhr.status === 413) {
-        setSegmentStatus('upload', t('uploadFailedRetry') + '（413）');
+        setSegmentStatus('upload', t('uploadFailedRetry') + '（413）', 'warning');
         failUpload();
         return;
       }
       // 单文件失败允许原地重试一次，避免整批重新建会话
       if (attempt < 1) {
-        setSegmentStatus('upload', t('uploadInterrupted'));
+        setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
         setTimeout(function () {
           uploadNext(index, ids, files, token, attempt + 1);
         }, 1500);
         return;
       }
-      setSegmentStatus('upload', t('uploadFailedRetry') + '（' + xhr.status + '）');
+      setSegmentStatus('upload', t('uploadFailedRetry') + '（' + xhr.status + '）', 'warning');
       failUpload();
     };
     xhr.onerror = function () {
       if (attempt < 1) {
-        setSegmentStatus('upload', t('uploadInterrupted'));
+        setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
         setTimeout(function () {
           uploadNext(index, ids, files, token, attempt + 1);
         }, 1500);
         return;
       }
-      setSegmentStatus('upload', t('uploadInterrupted'));
+      setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
       failUpload();
     };
     xhr.send(file);
