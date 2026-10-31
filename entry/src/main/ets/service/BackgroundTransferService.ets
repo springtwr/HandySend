@@ -44,7 +44,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:BackgroundTransferServi
 const PUBLISH_INTERVAL_MS = 1000;
 // 空闲保活时长（毫秒）：网页服务或 LocalSend 服务器运行且无传输时保留 5 分钟
 const WEB_KEEPALIVE_MS = 5 * 60 * 1000;
-// 保活心跳间隔（毫秒）：每 30 秒更新一次进度；5 分钟后直接停止，不发 100%
+// 保活心跳间隔（毫秒）：每 30 秒更新一次进度；5 分钟后发 100% 并立即结束
 const WEB_KEEPALIVE_HEARTBEAT_MS = 30 * 1000;
 // 终态普通通知 id（与后台关注通知 10001、长时任务通知 id 区分）
 const TERMINAL_NOTICE_ID = 10002;
@@ -207,8 +207,8 @@ function webKeepalivePercent(nowMs: number): number {
 }
 
 /**
- * 结束保活：直接停止保活长时任务，通知随任务取消消失。
- * 不发布 100% 帧，避免触发系统完成提醒。
+ * 结束保活：先发布 100% 结束帧，随即停止保活长时任务，通知随任务取消消失。
+ * 与传输任务一致：发完 100% 立即结束通知不会触发系统完成提醒。
  */
 function finishWebKeepalive(): void {
   if (webKeepaliveFinishing) {
@@ -228,11 +228,21 @@ function finishWebKeepalive(): void {
   stopWebKeepaliveHeartbeat();
   cancelWebKeepaliveTimer();
   webKeepaliveUntil = 0;
-  stopKeepaliveTaskInternal();
+  // 停止放在发布完成之后：发布链中的帧会按代次失效，先停会丢掉这帧 100%
+  let gen: number = keepaliveStartGeneration;
+  let stopKeepalive = (): void => {
+    // 期间已被新窗口接手（回前台后再次进入后台）：不停止新任务
+    if (gen !== keepaliveStartGeneration) {
+      return;
+    }
+    stopKeepaliveTaskInternal();
+  };
+  publishFrame(LongTaskKind.keepalive, getString($r('app.string.bg_transfer_title_keepalive').id),
+    getString($r('app.string.bg_transfer_content_keepalive').id), 100).then(stopKeepalive, stopKeepalive);
 }
 
 /**
- * 启动保活心跳：每 30 秒更新一次进度；到期直接停止保活任务。
+ * 启动保活心跳：每 30 秒更新一次进度；到期发布 100% 后立即停止保活任务。
  */
 function startWebKeepaliveHeartbeat(): void {
   if (webKeepaliveHeartbeatTimer >= 0) {
@@ -539,7 +549,7 @@ function publishTerminal(overall: OverallSnapshot): void {
 
 /**
  * 保活任务到期检查：固定 5 分钟，与传输任务完全独立。
- * 到期直接停止保活任务，不影响仍在进行的传输。
+ * 到期发布 100% 结束帧后停止保活任务，不影响仍在进行的传输。
  */
 function scheduleWebKeepaliveStop(): void {
   cancelWebKeepaliveTimer();
