@@ -105,19 +105,26 @@ export struct ShareLinkPage {
   }
 
   /**
-   * 警告横幅（纯文字、无可点击元素）。
+   * 警告横幅（图标 + 文案，与全局警告横幅同款）。
    * 面板内同一时刻最多只展示一条：调用方按优先级互斥展示。
    */
   @Builder
-  buildWarningBanner(text: ResourceStr, centered: boolean = false) {
-    Text(text)
-      .fontSize(DesignTokens.font.bodyS)
-      .fontColor($r('app.color.warning_orange'))
-      .textAlign(centered ? TextAlign.Center : TextAlign.Start)
-      .width('100%')
-      .padding(DesignTokens.space.md)
-      .backgroundColor($r('app.color.warning_bg'))
-      .borderRadius(DesignTokens.radius.md)
+  buildWarningBanner(text: ResourceStr) {
+    Row({ space: DesignTokens.space.sm }) {
+      SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+        .fontSize(DesignTokens.font.iconInline)
+        .fontColor([$r('app.color.warning_orange')])
+
+      Text(text)
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.warning_orange'))
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .backgroundColor($r('app.color.warning_bg'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
   }
 
   /** 本次挂载的上传免确认开关。 */
@@ -205,7 +212,7 @@ export struct ShareLinkPage {
       this.buildWarningBanner(this.portFallbackText())
     } else if (!this.viewModel.sendDisabled && this.isSendRunning()) {
       if (this.viewModel.shouldShowNoFileWarning()) {
-        this.buildWarningBanner($r('app.string.web_access_no_file_warning'), true)
+        this.buildWarningBanner($r('app.string.web_access_no_file_warning'))
       } else if (this.viewModel.showHttpsHint) {
         this.buildWarningBanner($r('app.string.web_share_https_hint'))
       }

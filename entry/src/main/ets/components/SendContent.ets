@@ -803,7 +803,11 @@ export struct SendContent {
       Scroll(this.scroller) {
         Column() {
           if (this.viewModel.localSendEnabled && !this.viewModel.serverReady) {
-            Row() {
+            Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.warning_orange')])
+
               Text($r('app.string.server_offline_warning'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.warning_orange'))
@@ -837,6 +841,10 @@ export struct SendContent {
           if (shouldShowProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
             this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
             Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.info_circle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.accent_blue_text')])
+
               Text($r('app.string.send_all_protocols_disabled_hint'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_secondary'))
@@ -882,6 +890,10 @@ export struct SendContent {
             shouldShowPartialProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
               this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
             Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.info_circle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.accent_blue_text')])
+
               Text(this.partialProtocolHintText())
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_secondary'))
@@ -923,7 +935,11 @@ export struct SendContent {
 
           // 服务器重启警告横幅（LocalSend 总开关关闭时不显示：服务器已停，重启提示无意义）
           if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
-            Row() {
+            Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.warning_orange')])
+
               Text($r('app.string.server_needs_restart'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.warning_orange'))
@@ -963,9 +979,9 @@ export struct SendContent {
           // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠
           // （未连接局域网与未开启 WLAN 在互传场景下是同一件事，故合并为同一条提示）
           if (this.getConnectionWarningText() !== undefined) {
-            Row({ space: DesignTokens.space.tiny }) {
+            Row({ space: DesignTokens.space.sm }) {
               SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-                .fontSize(DesignTokens.font.bodyM)
+                .fontSize(DesignTokens.font.iconInline)
                 .fontColor([$r('app.color.warning_orange')])
               Text(this.getConnectionWarningText())
                 .fontSize(DesignTokens.font.bodyM)

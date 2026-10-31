@@ -354,11 +354,11 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "LocalSend 设置将在重启服务器后生效"
+      "value": "LocalSend 设置已修改，重启服务后生效"
     },
     {
       "name": "restart_server",
-      "value": "重启"
+      "value": "重启服务"
     },
     {
       "name": "localsend_enabled_label",
@@ -382,7 +382,7 @@
     },
     {
       "name": "start_server",
-      "value": "启动"
+      "value": "启动服务"
     },
     {
       "name": "stop_server",
@@ -642,7 +642,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "未连接局域网，其他设备可能无法发现此设备"
+      "value": "未连接局域网，LocalSend 设备可能无法发现本机"
     },
     {
       "name": "diagnostic_logs_title",
@@ -1034,11 +1034,11 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "加密连接使用自签名证书，可能被浏览器本身或广告拦截扩展拦截。若下载失败，请关闭加密传输，或禁用扩展后重试。"
+      "value": "加密连接使用自签名证书，可能被浏览器或广告拦截扩展拦截，若下载失败，请关闭加密传输或禁用相关扩展后重试"
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有网络接口已关闭，LocalSend 将无法正常使用。请到 设置 > LocalSend > 高级设置 > 网络接口 中打开可用接口"
+      "value": "所有网络接口均已关闭，LocalSend 无法使用，请到 设置 > LocalSend > 高级设置 > 网络接口 中开启"
     },
     {
       "name": "network_interface_desc",
@@ -1314,23 +1314,23 @@
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "蓝牙未开启，互传设备将无法被发现，请开启蓝牙"
+      "value": "蓝牙未开启，互传无法使用，请开启蓝牙"
     },
     {
       "name": "wifi_off_lan_and_mta_warning",
-      "value": "未开启 WLAN，局域网与互传将无法正常使用，请开启 WLAN"
+      "value": "WLAN 未开启，LocalSend 与互传无法使用，请开启 WLAN"
     },
     {
       "name": "mta_wifi_off_standalone_warning",
-      "value": "未开启 WLAN，与互传联盟设备的发现与传输可能失败，请开启 WLAN"
+      "value": "WLAN 未开启，互传无法使用，请开启 WLAN"
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "互传功能需要开启 WLAN，未开启时设备可被发现但无法传输，请开启 WLAN"
+      "value": "WLAN 未开启，互传设备可被发现但无法传输，请开启 WLAN"
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "蓝牙和 WLAN 均未开启，互传设备将无法被发现或传输，请开启后重试"
+      "value": "蓝牙与 WLAN 均未开启，互传无法使用，请开启后重试"
     },
     {
       "name": "nearby_devices_subtitle_mta",
@@ -1430,11 +1430,11 @@
     },
     {
       "name": "send_partial_protocols_disabled_hint",
-      "value": "%s 已关闭，相关设备与入口不会显示。"
+      "value": "%s 已关闭，相关设备与入口将不会显示"
     },
     {
       "name": "send_all_protocols_disabled_hint",
-      "value": "所有传输方式均已关闭，应用将无法正常使用，请到设置中开启至少一种传输方式"
+      "value": "所有传输方式均已关闭，应用无法使用，请到设置中开启至少一种传输方式"
     },
     {
       "name": "send_protocol_hint_settings",
@@ -2170,7 +2170,7 @@
     },
     {
       "name": "web_access_no_file_warning",
-      "value": "没有选择要发送的文件"
+      "value": "尚未选择要发送的文件"
     },
     {
       "name": "web_send_desc",
@@ -2242,7 +2242,7 @@
     },
     {
       "name": "web_port_fallback_warning",
-      "value": "端口 %d 被占用，已使用 %d；可在网页设置中更换端口。"
+      "value": "端口 %d 被占用，已改用 %d，可在网页设置中更换端口"
     },
     {
       "name": "web_port_fallback_value",

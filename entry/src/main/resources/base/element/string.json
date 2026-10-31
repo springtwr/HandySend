@@ -354,11 +354,11 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "LocalSend settings will take effect after restarting the server"
+      "value": "LocalSend settings have changed. Restart the service to apply them."
     },
     {
       "name": "restart_server",
-      "value": "Restart"
+      "value": "Restart service"
     },
     {
       "name": "localsend_enabled_label",
@@ -382,7 +382,7 @@
     },
     {
       "name": "start_server",
-      "value": "Start"
+      "value": "Start service"
     },
     {
       "name": "stop_server",
@@ -642,7 +642,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "No LAN connection. Other devices may not discover this device"
+      "value": "Not connected to a LAN. LocalSend devices may not discover this device."
     },
     {
       "name": "diagnostic_logs_title",
@@ -1034,11 +1034,11 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "The encrypted connection uses a self-signed certificate and may be blocked by the browser itself or by ad-blocking extensions. If a download fails, turn off encrypted transfer, or disable the extension and retry."
+      "value": "The encrypted connection uses a self-signed certificate and may be blocked by browsers or ad blockers. If downloads fail, turn off encrypted transfer or disable related extensions and try again."
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "All network interfaces are off. LocalSend will not work properly. Enable available interfaces in Settings > LocalSend > Advanced Settings > Network Interfaces."
+      "value": "All network interfaces are off. LocalSend cannot work. Enable one in Settings > LocalSend > Advanced Settings > Network Interfaces."
     },
     {
       "name": "network_interface_desc",
@@ -1314,23 +1314,23 @@
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "Bluetooth is off. MTA devices cannot be discovered. Turn on Bluetooth."
+      "value": "Bluetooth is off. MTA cannot be used. Turn on Bluetooth."
     },
     {
       "name": "wifi_off_lan_and_mta_warning",
-      "value": "WLAN is off. LAN and MTA transfer will not work properly. Turn on WLAN."
+      "value": "WLAN is off. LocalSend and MTA cannot be used. Turn on WLAN."
     },
     {
       "name": "mta_wifi_off_standalone_warning",
-      "value": "WLAN is off. Discovery and transfer with MTA devices may fail. Turn on WLAN."
+      "value": "WLAN is off. MTA cannot be used. Turn on WLAN."
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "MTA requires Wi-Fi. Without it, devices can be discovered but transfers will fail. Turn on Wi-Fi."
+      "value": "WLAN is off. MTA devices can be discovered but cannot transfer. Turn on WLAN."
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "Bluetooth and Wi-Fi are both off. MTA devices cannot be discovered, and transfers will fail. Turn them on and try again."
+      "value": "Bluetooth and WLAN are both off. MTA cannot be used. Turn them on and try again."
     },
     {
       "name": "nearby_devices_subtitle_mta",
@@ -1430,11 +1430,11 @@
     },
     {
       "name": "send_partial_protocols_disabled_hint",
-      "value": "%s disabled. Related devices and entries will not be shown."
+      "value": "%s is disabled. Related devices and entries will not be shown."
     },
     {
       "name": "send_all_protocols_disabled_hint",
-      "value": "All transfer methods are off. The app cannot work properly. Enable at least one transfer method in Settings."
+      "value": "All transfer methods are off. The app cannot be used. Enable at least one transfer method in Settings."
     },
     {
       "name": "send_protocol_hint_settings",
@@ -2170,7 +2170,7 @@
     },
     {
       "name": "web_access_no_file_warning",
-      "value": "No files selected for sharing."
+      "value": "No file selected to send."
     },
     {
       "name": "web_send_desc",
@@ -2242,7 +2242,7 @@
     },
     {
       "name": "web_port_fallback_warning",
-      "value": "Port %d is in use; using %d. You can change it in Web settings."
+      "value": "Port %d is in use; using %d instead. You can change it in Web settings."
     },
     {
       "name": "web_port_fallback_value",

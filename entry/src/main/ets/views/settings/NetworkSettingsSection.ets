@@ -433,7 +433,11 @@ export struct NetworkSettingsSection {
     Column() {
       // LocalSend 总开关关闭时不显示重启横幅（服务器已停，重启提示无意义）
       if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
-        Row() {
+        Row({ space: DesignTokens.space.sm }) {
+          SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+            .fontSize(DesignTokens.font.iconInline)
+            .fontColor([$r('app.color.warning_orange')])
+
           Text($r('app.string.server_needs_restart'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.warning_orange'))
@@ -447,7 +451,7 @@ export struct NetworkSettingsSection {
           }
           Button($r('app.string.restart_server'))
             .fontSize(DesignTokens.font.bodyS)
-            .height(28)
+            .height(DesignTokens.size.inlineButton)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))
             .borderRadius(DesignTokens.radius.max)
@@ -468,9 +472,9 @@ export struct NetworkSettingsSection {
       // 网络警告横幅（LocalSend 总开关开启、服务器运行中时显示）
       // 没有网络连接优先级高于接口关闭；LocalSend 总开关显式联动，与发送页同口径
       if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {
-        Row({ space: DesignTokens.space.tiny }) {
+        Row({ space: DesignTokens.space.sm }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-            .fontSize(DesignTokens.font.bodyM)
+            .fontSize(DesignTokens.font.iconInline)
             .fontColor([$r('app.color.warning_orange')])
           Text($r('app.string.no_wifi_warning'))
             .fontSize(DesignTokens.font.bodyM)
@@ -485,9 +489,9 @@ export struct NetworkSettingsSection {
         .margin({ top: DesignTokens.space.md })
       } else if (this.viewModel.localSendEnabled && this.viewModel.allInterfacesDisabled &&
         this.viewModel.serverReady) {
-        Row({ space: DesignTokens.space.tiny }) {
+        Row({ space: DesignTokens.space.sm }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-            .fontSize(DesignTokens.font.bodyM)
+            .fontSize(DesignTokens.font.iconInline)
             .fontColor([$r('app.color.warning_orange')])
           Text($r('app.string.all_interfaces_disabled_warning'))
             .fontSize(DesignTokens.font.bodyM)

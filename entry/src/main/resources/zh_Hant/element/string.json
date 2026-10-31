@@ -354,11 +354,11 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "LocalSend 設定將在重啟伺服器後生效"
+      "value": "LocalSend 設定已修改，重啟服務後生效"
     },
     {
       "name": "restart_server",
-      "value": "重啟"
+      "value": "重啟服務"
     },
     {
       "name": "localsend_enabled_label",
@@ -382,7 +382,7 @@
     },
     {
       "name": "start_server",
-      "value": "啟動"
+      "value": "啟動服務"
     },
     {
       "name": "stop_server",
@@ -642,7 +642,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "未連接區域網，其他裝置可能無法發現此裝置"
+      "value": "未連接區域網，LocalSend 裝置可能無法發現本機"
     },
     {
       "name": "diagnostic_logs_title",
@@ -1034,11 +1034,11 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "加密連線使用自簽憑證，可能被瀏覽器本身或廣告攔截擴充功能攔截。若下載失敗，請關閉加密傳輸，或停用擴充功能後重試。"
+      "value": "加密連線使用自簽憑證，可能被瀏覽器或廣告攔截擴充功能攔截，若下載失敗，請關閉加密傳輸或停用相關擴充功能後重試"
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有網路介面已關閉，LocalSend 將無法正常使用。請到 設定 > LocalSend > 進階設定 > 網路介面 中開啟可用介面"
+      "value": "所有網路介面均已關閉，LocalSend 無法使用，請到 設定 > LocalSend > 進階設定 > 網路介面 中開啟"
     },
     {
       "name": "network_interface_desc",
@@ -1314,23 +1314,23 @@
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "藍牙未開啟，互傳裝置將無法被發現，請開啟藍牙"
+      "value": "藍牙未開啟，互傳無法使用，請開啟藍牙"
     },
     {
       "name": "wifi_off_lan_and_mta_warning",
-      "value": "未開啟 WLAN，區域網路與互傳將無法正常使用，請開啟 WLAN"
+      "value": "WLAN 未開啟，LocalSend 與互傳無法使用，請開啟 WLAN"
     },
     {
       "name": "mta_wifi_off_standalone_warning",
-      "value": "未開啟 WLAN，與互傳聯盟裝置的探索與傳輸可能失敗，請開啟 WLAN"
+      "value": "WLAN 未開啟，互傳無法使用，請開啟 WLAN"
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "互傳功能需要開啟 WLAN，未開啟時裝置可被發現但無法傳輸，請開啟 WLAN"
+      "value": "WLAN 未開啟，互傳裝置可被發現但無法傳輸，請開啟 WLAN"
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "藍牙和 WLAN 均未開啟，互傳裝置將無法被發現或傳輸，請開啟後重試"
+      "value": "藍牙與 WLAN 均未開啟，互傳無法使用，請開啟後重試"
     },
     {
       "name": "nearby_devices_subtitle_mta",
@@ -1430,11 +1430,11 @@
     },
     {
       "name": "send_partial_protocols_disabled_hint",
-      "value": "%s 已關閉，相關裝置與入口不會顯示。"
+      "value": "%s 已關閉，相關裝置與入口將不會顯示"
     },
     {
       "name": "send_all_protocols_disabled_hint",
-      "value": "所有傳輸方式均已關閉，應用程式將無法正常使用，請至設定中開啟至少一種傳輸方式"
+      "value": "所有傳輸方式均已關閉，應用程式無法使用，請至設定中開啟至少一種傳輸方式"
     },
     {
       "name": "send_protocol_hint_settings",
@@ -2242,7 +2242,7 @@
     },
     {
       "name": "web_port_fallback_warning",
-      "value": "連接埠 %d 被佔用，已使用 %d；可在網頁設定中更換連接埠。"
+      "value": "連接埠 %d 被佔用，已改用 %d，可在網頁設定中更換連接埠"
     },
     {
       "name": "web_port_fallback_value",
