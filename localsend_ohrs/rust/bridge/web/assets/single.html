@@ -791,6 +791,14 @@ button.status-retry {
   min-height: 40px;
 }
 
+/* 桌面端拖拽提示：仅支持鼠标拖拽的平台展示 */
+.drag-hint {
+  margin: -4px 0 0;
+  color: var(--harmony-font-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 /* 原生 input 仅作文件选择入口，视觉由 label 承担 */
 .file-input {
   position: absolute;
@@ -977,6 +985,46 @@ button.status-retry {
 .text-input:focus-visible {
   outline: 2px solid var(--harmony-brand);
   outline-offset: 0;
+}
+
+/* ========== 拖拽上传提示 ========== */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.drop-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(360px, 100%);
+  padding: 36px 24px;
+  border: 2px dashed var(--harmony-brand);
+  border-radius: var(--radius-card);
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-brand);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  text-align: center;
+  box-shadow: var(--menu-shadow);
+}
+
+.drop-overlay__card svg {
+  width: 40px;
+  height: 40px;
+}
+
+.drop-overlay__card p {
+  margin: 0;
 }
 
 /* ========== 分享已结束 ========== */
@@ -1297,6 +1345,7 @@ html[data-auth="open"] #gate {
             <span id="file-count-chip" class="count-chip hidden" aria-hidden="true"></span>
             <button id="clear-btn" class="btn btn--small btn--quiet clear-btn hidden" type="button"></button>
           </div>
+          <p id="drag-hint" class="drag-hint hidden"></p>
           <div id="upload-progress" class="progress-list"></div>
           <div class="divider" aria-hidden="true"></div>
           <textarea id="text-input" class="text-input" rows="3"></textarea>
@@ -1312,6 +1361,18 @@ html[data-auth="open"] #gate {
 
   <footer class="footer">Powered by LocalSend</footer>
   </div>
+
+<!-- 拖拽文件到页面任意位置：仅在上传入口可用时拦截浏览器默认打开行为 -->
+<div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
+  <div class="drop-overlay__card">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 16V4M7 9l5-5 5 5"></path>
+      <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path>
+    </svg>
+    <p id="drop-hint"></p>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -1357,6 +1418,8 @@ html[data-auth="open"] #gate {
   var listReloadPending = false;
   var listUpdatedTimer = -1;
   var selectedDownloadFiles = {};
+  // 文本预览缓存（文件标识 → 源内容），重绘列表时直接复用，避免占位与正文来回切换造成跳动
+  var previewCache = {};
   var preparedBatchId = '';
   var preparedSignature = '';
   var batchPrepareTimer = -1;
@@ -1422,6 +1485,8 @@ html[data-auth="open"] #gate {
     chooseFile: '选择文件',
     clear: '清空',
     remove: '移除',
+    dropHint: '松开鼠标即可添加文件',
+    dragHint: '也可以直接将文件拖入页面添加',
     nothingToSend: '请选择文件或输入文本。',
     sendText: '发送文本',
     textPlaceholder: '输入要发送的文本',
@@ -1696,6 +1761,9 @@ html[data-auth="open"] #gate {
     $('upload-picker').setAttribute('aria-label', t('chooseFile'));
     $('pick-label').innerText = t('chooseFile');
     $('clear-btn').innerText = t('clear');
+    $('drop-hint').innerText = t('dropHint');
+    $('drag-hint').innerText = t('dragHint');
+    $('drag-hint').classList.toggle('hidden', !supportsFileDrag());
     $('download-empty-text').innerText = t('noDownloadHint');
     $('upload-empty-text').innerText = t('uploadOffHint');
     $('text-input').placeholder = t('textPlaceholder');
@@ -1947,6 +2015,9 @@ html[data-auth="open"] #gate {
     preparedBatchId = '';
     preparedSignature = '';
     // 展示表已清空：版本基线一并失效，后续由 prepare/caps 重建。
+    // 服务重启后 revision 从 0 重新计数，必须清掉旧服务的版本，否则新服务的
+    // 首个变化（版本号更低）会被当作陈旧事件丢弃，只能等轮询兜底。
+    lastRevision = -1;
     listRevision = -1;
     sessionRevision = -1;
     listLoaded = false;
@@ -2168,6 +2239,7 @@ html[data-auth="open"] #gate {
   }
 
   function stopRealtime() {
+    hideDropOverlay();
     if (fileEvents !== null) {
       fileEvents.close();
       fileEvents = null;
@@ -2411,19 +2483,38 @@ html[data-auth="open"] #gate {
     $('download-selected-btn').disabled = ids.length === 0;
   }
 
-  /** 文本预览块：标题栏提供「全选 / 复制」，正文可聚焦后按 Ctrl/Cmd+A 只选中本块。 */
-  function textPreviewHtml(idx, content, loading) {
+  /**
+   * 只同步勾选态与操作区，不重建列表。
+   * 重建会让文本预览重新拉取并改变行高，导致全选时列表跳动。
+   */
+  function applySelectionToDom() {
+    var boxes = document.querySelectorAll('#file-list [data-select-id]');
+    for (var i = 0; i < boxes.length; i++) {
+      var id = boxes[i].getAttribute('data-select-id');
+      boxes[i].checked = selectedDownloadFiles[id] === true;
+    }
+    updateDownloadActions();
+  }
+
+  /** 文本预览块：标题栏提供「复制」，正文可聚焦后按 Ctrl/Cmd+A 只选中本块。 */
+  function textPreviewHtml(fileId, content) {
     return '<div class="text-preview">' +
       '<div class="text-preview-head">' +
       '<span class="text-preview-label">' + esc(t('textPreviewLabel')) + '</span>' +
       '<span class="text-preview-tools">' +
-      '<button type="button" class="text-preview-action" data-text-action="copy" data-idx="' + idx + '">' +
-      esc(t('copy')) + '</button>' +
+      '<button type="button" class="text-preview-action" data-text-action="copy" data-preview-id="' +
+      esc(fileId) + '">' + esc(t('copy')) + '</button>' +
       '</span>' +
       '</div>' +
-      '<div class="text-preview-body" id="preview-' + idx + '" tabindex="0" role="region" aria-label="' +
-      esc(t('textPreviewLabel')) + '">' + content + '</div>' +
+      '<div class="text-preview-body" id="preview-' + esc(fileId) +
+      '" tabindex="0" role="region" aria-label="' + esc(t('textPreviewLabel')) + '">' +
+      content + '</div>' +
       '</div>';
+  }
+
+  /** 预览缓存的有效性键：文件名或大小变化时重新拉取。 */
+  function previewSourceKey(file) {
+    return file.fileName + '|' + file.size;
   }
 
   function renderFileList(files, sessionToken) {
@@ -2449,17 +2540,25 @@ html[data-auth="open"] #gate {
         esc(t('download')) + '</a>' +
         '</div>';
       if (file.preview) {
-        html += textPreviewHtml(i, esc(file.preview), false);
+        html += textPreviewHtml(keys[i], esc(file.preview));
       } else if (file.fileName.slice(-4).toLowerCase() === '.txt') {
-        html += textPreviewHtml(i, esc(t('previewLoading')), true);
-        loadTextPreview(keys[i], sessionToken, i);
+        var cached = previewCache[keys[i]];
+        if (cached !== undefined && cached.source === previewSourceKey(file)) {
+          html += textPreviewHtml(keys[i], esc(cached.text));
+        } else {
+          html += textPreviewHtml(keys[i], esc(t('previewLoading')));
+          loadTextPreview(keys[i], sessionToken);
+        }
       }
       html += '</div>';
     }
-    // 清理不存在的勾选
+    // 清理不存在的勾选与预览缓存
     var selectedKeys = Object.keys(selectedDownloadFiles);
     for (var j = 0; j < selectedKeys.length; j++) {
       if (!valid[selectedKeys[j]]) { delete selectedDownloadFiles[selectedKeys[j]]; }
+    }
+    for (var cachedId in previewCache) {
+      if (!valid[cachedId]) { delete previewCache[cachedId]; }
     }
     var scrollY = window.scrollY || 0;
     $('file-list').innerHTML = html;
@@ -2632,7 +2731,7 @@ html[data-auth="open"] #gate {
         selectedDownloadFiles[keys[i]] = true;
       }
     }
-    renderFileList(filesData, dlToken);
+    applySelectionToDom();
     onSelectionChanged();
   });
 
@@ -2668,7 +2767,7 @@ html[data-auth="open"] #gate {
   $('file-list').addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('[data-text-action="copy"]') : null;
     if (!btn) { return; }
-    copyPreview(btn.getAttribute('data-idx'), btn);
+    copyPreview(btn.getAttribute('data-preview-id'), btn);
   });
 
   // 预览正文聚焦时 Ctrl/Cmd+A 只选中本块，不再选中整个网页文本。
@@ -2741,8 +2840,8 @@ html[data-auth="open"] #gate {
   }
 
   /** 复制某条预览的完整内容（不截断；正文最多展示 180px 高度，但内容仍完整）。 */
-  function copyPreview(idx, btn) {
-    var el = document.getElementById('preview-' + idx);
+  function copyPreview(fileId, btn) {
+    var el = document.getElementById('preview-' + fileId);
     if (!el) {
       return;
     }
@@ -2750,18 +2849,24 @@ html[data-auth="open"] #gate {
   }
 
   // 文本预览：Range 取前 128KB，不下完整文件。
-  function loadTextPreview(fileId, sessionToken, idx) {
+  // 结果按文件缓存，勾选或列表更新重绘时直接复用，避免预览区先显示占位再撑开。
+  function loadTextPreview(fileId, sessionToken) {
+    var source = filesData[fileId];
+    var sourceKey = source !== undefined ? previewSourceKey(source) : '';
     fetch(BASE + '/web/download?token=' + encodeURIComponent(sessionToken) +
       '&fileId=' + encodeURIComponent(fileId) + '&preview=1',
       { headers: { 'Range': 'bytes=0-131071' } }).then(function (response) {
       if (!response.ok) { throw new Error('preview'); }
       return response.text();
     }).then(function (text) {
-      var el = document.getElementById('preview-' + idx);
+      previewCache[fileId] = { source: sourceKey, text: text };
+      var el = document.getElementById('preview-' + fileId);
       if (el) { el.innerText = text; }
     }).catch(function () {
-      var el = document.getElementById('preview-' + idx);
-      if (el) { el.innerText = t('previewUnavailable'); }
+      var text = t('previewUnavailable');
+      previewCache[fileId] = { source: sourceKey, text: text };
+      var el = document.getElementById('preview-' + fileId);
+      if (el) { el.innerText = text; }
     });
   }
 
@@ -2811,9 +2916,11 @@ html[data-auth="open"] #gate {
     return [file.name, file.size, file.lastModified, file.type].join('|');
   }
 
-  // 追加选择：再次点“选择文件”不会清空已有列表，仅补充新文件。
-  $('upload-picker').addEventListener('change', function (e) {
-    var picked = Array.prototype.slice.call(e.target.files);
+  // 追加选择：再次点“选择文件”或拖拽文件都不会清空已有列表，仅补充新文件。
+  function appendSelectedFiles(picked) {
+    if (uploading) {
+      return;
+    }
     var seen = {};
     for (var i = 0; i < selectedFiles.length; i++) {
       seen[fileKey(selectedFiles[i])] = true;
@@ -2825,10 +2932,91 @@ html[data-auth="open"] #gate {
         selectedFiles.push(picked[j]);
       }
     }
-    e.target.value = '';
     updateSelectedUi();
     renderUploadProgress();
+  }
+
+  $('upload-picker').addEventListener('change', function (e) {
+    appendSelectedFiles(Array.prototype.slice.call(e.target.files));
+    e.target.value = '';
   });
+
+  // ========== 拖拽上传 ==========
+  // 拖拽深度计数：dragenter/dragleave 会在子元素间反复触发，按进出层数显隐遮罩。
+  var dropDepth = 0;
+
+  /** 支持悬停 + 精细指针（鼠标/触控板）且具备文件拖拽能力时，才展示拖入提示。 */
+  function supportsFileDrag() {
+    return typeof DataTransfer !== 'undefined' && !!window.matchMedia &&
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  }
+
+  function dragHasFiles(e) {
+    return e.dataTransfer !== null && e.dataTransfer !== undefined &&
+      Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0;
+  }
+
+  function canDropFiles() {
+    return !isLocked && tabAvailable.upload && !uploading;
+  }
+
+  function showDropOverlay() {
+    $('drop-overlay').classList.remove('hidden');
+  }
+
+  function hideDropOverlay() {
+    dropDepth = 0;
+    $('drop-overlay').classList.add('hidden');
+  }
+
+  document.addEventListener('dragenter', function (e) {
+    if (!canDropFiles() || !dragHasFiles(e)) {
+      return;
+    }
+    e.preventDefault();
+    dropDepth++;
+    showDropOverlay();
+  });
+
+  document.addEventListener('dragover', function (e) {
+    if (!canDropFiles() || !dragHasFiles(e)) {
+      return;
+    }
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  document.addEventListener('dragleave', function (e) {
+    if (!canDropFiles()) {
+      return;
+    }
+    dropDepth = Math.max(0, dropDepth - 1);
+    // 拖出窗口时浏览器可能只在当前节点触发一次 dragleave，按坐标兜底收起遮罩
+    var outside = e.clientX <= 0 || e.clientY <= 0 ||
+      e.clientX >= window.innerWidth || e.clientY >= window.innerHeight;
+    if (dropDepth === 0 || outside) {
+      hideDropOverlay();
+    }
+  });
+
+  document.addEventListener('drop', function (e) {
+    if (!canDropFiles() || !dragHasFiles(e)) {
+      return;
+    }
+    e.preventDefault();
+    var files = Array.prototype.slice.call(e.dataTransfer.files || []);
+    hideDropOverlay();
+    if (files.length === 0) {
+      return;
+    }
+    appendSelectedFiles(files);
+    activateTab('upload');
+    setStatus('');
+  });
+
+  document.addEventListener('dragend', hideDropOverlay);
 
   $('clear-btn').addEventListener('click', function () {
     if (uploading) {

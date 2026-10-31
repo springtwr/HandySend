@@ -440,6 +440,14 @@ async fn test_single_page_and_unknown_path() {
     assert!(body.contains("data-section=\"upload\""), "单页应含上传段");
     assert!(body.contains("/caps"), "单页应按 caps 条件渲染");
     assert!(body.contains("id=\"upload-picker\""), "单页应含上传入口");
+    assert!(
+        body.contains("id=\"drop-overlay\""),
+        "单页应支持拖拽文件上传"
+    );
+    assert!(
+        body.contains("id=\"drag-hint\"") && body.contains("supportsFileDrag"),
+        "桌面端应在选择文件入口提示可拖入文件"
+    );
     assert!(body.contains("prepare-upload"), "单页应含上传建会话逻辑");
     assert!(
         body.contains("handysend_dl_token"),
@@ -456,12 +464,24 @@ async fn test_single_page_and_unknown_path() {
         "全选应与下载所选同排"
     );
     assert!(
+        body.contains("applySelectionToDom"),
+        "全选应原位更新勾选，不重建列表"
+    );
+    assert!(
+        body.contains("previewCache"),
+        "文本预览应缓存，重绘时不重新拉取"
+    );
+    assert!(
         body.contains("#download-status:not(:empty)"),
         "下载通知与操作区之间应保留间距"
     );
     assert!(
         body.contains("syncCapsPolling") && body.contains("checkEventsHealth"),
         "单页应具备 SSE 断线重建与兜底轮询"
+    );
+    assert!(
+        body.contains("lastRevision = -1"),
+        "登录/服务重启后应重置文件表版本基线，避免新服务的首个变化被丢弃"
     );
     assert!(
         body.contains("shareUpdatedRetry"),

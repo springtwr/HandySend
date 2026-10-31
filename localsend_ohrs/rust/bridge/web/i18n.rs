@@ -62,6 +62,8 @@ pub struct WebPageI18n {
     pub choose_file: String,
     pub clear: String,
     pub remove: String,
+    pub drop_hint: String,
+    pub drag_hint: String,
     pub nothing_to_send: String,
     pub send_text: String,
     pub text_placeholder: String,
@@ -138,6 +140,8 @@ fn simplified() -> WebPageI18n {
         choose_file: "选择文件".to_string(),
         clear: "清空".to_string(),
         remove: "移除".to_string(),
+        drop_hint: "松开鼠标即可添加文件".to_string(),
+        drag_hint: "也可以直接将文件拖入页面添加".to_string(),
         nothing_to_send: "请选择文件或输入文本。".to_string(),
         send_text: "发送文本".to_string(),
         text_placeholder: "输入要发送的文本".to_string(),
@@ -205,6 +209,8 @@ fn traditional() -> WebPageI18n {
         choose_file: "選擇檔案".to_string(),
         clear: "清除".to_string(),
         remove: "移除".to_string(),
+        drop_hint: "放開滑鼠即可加入檔案".to_string(),
+        drag_hint: "也可以直接將檔案拖入頁面加入".to_string(),
         nothing_to_send: "請選擇檔案或輸入文字。".to_string(),
         send_text: "傳送文字".to_string(),
         text_placeholder: "輸入要傳送的文字".to_string(),
@@ -273,6 +279,8 @@ fn english() -> WebPageI18n {
         choose_file: "Choose files".to_string(),
         clear: "Clear".to_string(),
         remove: "Remove".to_string(),
+        drop_hint: "Release to add files".to_string(),
+        drag_hint: "You can also drag files into this page".to_string(),
         nothing_to_send: "Choose files or type a message.".to_string(),
         send_text: "Send text".to_string(),
         text_placeholder: "Type the message to send".to_string(),
@@ -313,6 +321,11 @@ mod tests {
         assert_eq!(json["textPreviewLabel"], serde_json::json!("Preview"));
         assert_eq!(json["copy"], serde_json::json!("Copy"));
         assert_eq!(json["copied"], serde_json::json!("Copied"));
+        assert_eq!(json["dropHint"], serde_json::json!("Release to add files"));
+        assert_eq!(
+            json["dragHint"],
+            serde_json::json!("You can also drag files into this page")
+        );
         assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
         assert!(json["httpsHint"].as_str().unwrap().len() > 0);
         assert!(json["accessLinkRequired"].as_str().unwrap().len() > 0);
