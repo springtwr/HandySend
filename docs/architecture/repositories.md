@@ -45,8 +45,9 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > 逻辑会话标识唯一（时间戳 + 单调计数），并为其派生会话内唯一的文件标识，
 > `beginLocalSendSession` 返回的统一标识记入会话状态，进度与终态一律按该统一标识归属
 > （不做按逻辑标识的首匹配查找）；成功/失败/异常/取消各路径均保证终态落地。发送零拷贝：
-> prepareSendFiles 不落沙箱副本，sendToDevice 每次发送前 openSync 源文件并携带 fd
-> （fd-direct）；文本消息准备：prepareSendFiles 对命中「手动文本来源」入参的条目读取文本
+> prepareSendFiles 不落沙箱副本，暂存阶段已打开的源句柄随条目下传，sendToDevice 发送前
+> 优先 dup 该句柄（缺失或校验不一致时按路径异步打开）并携带 fd（fd-direct）；
+> 文本消息准备：prepareSendFiles 对命中「手动文本来源」入参的条目读取文本
 > 内容填入 preview（见「文本消息准备」）。
 >
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、

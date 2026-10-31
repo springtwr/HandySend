@@ -947,7 +947,7 @@ struct MainTabFloating {
 
   /**
    * 标题栏结束端菜单随页签变化：发送=本机信息/故障排查/诊断日志（全部收进「更多」溢出菜单）；
-   * 任务=文件历史/清空任务历史。
+   * 任务=文件接收历史/清空任务历史。
    * 设置页无入口，显式下发空菜单（而非省略菜单字段），确保切页签后不残留上一页签的「更多」入口。
    */
   private currentTabMenu(): HdsNavigationMenuContentOptions {

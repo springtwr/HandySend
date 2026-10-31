@@ -22,6 +22,7 @@ import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getMimeForFileName } from './MimeUtils';
 import { getLogger } from './Logger';
+import { ensureUriAccess } from './UriPermission';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:FileLocation', '文件定位');
@@ -41,6 +42,12 @@ const MEDIA_PHOTO_PREFIX: string = 'file://media/Photo/';
 
 /** 文件不存在错误码（文件或目录不存在）。 */
 const ERR_NO_SUCH_FILE: number = 13900002;
+
+/** 无访问权限错误码：临时授权过期且未做持久化授权时，打开媒体库 / 选择器标识会命中。 */
+const ERR_PERMISSION_DENIED: number = 13900012;
+
+/** 操作不被允许错误码（同样按授权缺失处理）。 */
+const ERR_OPERATION_NOT_PERMITTED: number = 13900001;
 
 /** 隐式 Want 未匹配到任何应用时的错误码。 */
 const ERR_ABILITY_NOT_EXIST: number = 16000001;
@@ -65,12 +72,25 @@ export enum FileOpenResult {
   success = 'success',
   /** 文件已被移动 / 删除 */
   fileMissing = 'fileMissing',
+  /**
+   * 访问授权已失效：文件仍在原处，但应用已没有读取权限。
+   * 典型来源：文档 / 音频等选择器标识的临时授权超过有效期（与进程是否重启无关）
+   * 且该 URI 未做过持久化授权；图库标识无法区分「不存在」与「无授权」，按缺失收口。
+   */
+  accessDenied = 'accessDenied',
   /** 定位不可用（空定位或解析失败，含授权无法转授） */
   unavailable = 'unavailable',
   /** 系统未找到可处理该文件的应用 */
   noApp = 'noApp',
   /** 调起失败（含用户取消） */
   failed = 'failed'
+}
+
+/** 定位探测结果（内部使用，供存在性与授权两类判定共用一次探测）。 */
+enum FileProbe {
+  readable = 'readable',
+  missing = 'missing',
+  denied = 'denied'
 }
 
 /** 不可定位结果（保留原串仅用于诊断，不参与打开）。 */
@@ -125,20 +145,27 @@ export function isGalleryLocation(path: string): boolean {
 }
 
 /**
- * 图库资源是否可用：按资源标识（URI）打开并读取文件属性校验，正常 / 异常路径都关闭文件对象，
- * 不换算本机路径（媒体库标识为虚拟路径，换算后做普通文件操作会产生非预期结果）。
+ * 按对外 URI 探测（图库标识与选择器 URI 共用）：打开后经文件描述符取属性校验，
+ * 正常 / 异常路径都关闭文件对象，不换算本机路径（换算后的路径本应用通常无访问权，
+ * 用它判定存在性会把可正常打开的文件误判为缺失）。
+ * 失败时按错误码区分「文件确实不存在」「授权已失效」与其他异常。
  */
-function galleryResourceExists(uri: string): boolean {
+function probeByUri(uri: string, gallery: boolean = false): FileProbe {
   if (uri.length === 0) {
-    return false;
+    return FileProbe.missing;
   }
   let file: fs.File | undefined = undefined;
   try {
     file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-    return fs.statSync(file.fd).isFile();
+    return fs.statSync(file.fd).isFile() ? FileProbe.readable : FileProbe.missing;
   } catch (e) {
-    logger.warn('图库资源校验失败 uri=' + uri + ' 原因=' + String(e));
-    return false;
+    logger.warn('文件定位探测失败 uri=' + uri + ' 原因=' + String(e));
+    if (gallery) {
+      // 媒体库对「资源不存在」与「无访问授权」返回同类错误，无法区分；
+      // 图库标识只需回答「能否打开」，失败即按缺失收口（与原行为一致）
+      return FileProbe.missing;
+    }
+    return probeErrorOf(e);
   } finally {
     if (file !== undefined) {
       try {
@@ -150,26 +177,64 @@ function galleryResourceExists(uri: string): boolean {
 }
 
 /**
- * 文件是否确定缺失：不可定位视为缺失；
- * 图库来源按资源标识（URI）打开校验，其余来源按本机路径做存在性检查；
- * 仅「文件不存在」错误码判定为缺失，其余异常按存在处理（交由打开动作给出真实结果）。
+ * 探测失败的错误码归类：仅「文件不存在」判为缺失，权限类错误判为授权失效，
+ * 其余异常按可读处理（交由打开动作给出真实结果）。
  */
-export function isFileMissing(location: FileLocation): boolean {
+function probeErrorOf(e: Object): FileProbe {
+  let code: number = (e as BusinessError).code;
+  if (code === ERR_NO_SUCH_FILE) {
+    return FileProbe.missing;
+  }
+  if (code === ERR_PERMISSION_DENIED || code === ERR_OPERATION_NOT_PERMITTED) {
+    return FileProbe.denied;
+  }
+  return FileProbe.readable;
+}
+
+/**
+ * 定位探测：不可定位视为缺失。
+ * 图库标识与选择器 URI 一律按对外 URI 打开校验（与「用其他应用打开」同一方式）——
+ * 由 URI 换算出的本机路径本应用通常没有访问权，用它对选择器来源文件判定存在性
+ * 会把可正常打开的文件误判为缺失；仅在 URI 探测为非缺失结论、且存在本机路径时，
+ * 才用本机路径做补充判定（沙箱文件即属此类）。
+ * 存在性与授权两类判定共用本函数的结果，避免重复读盘。
+ */
+function probeFile(location: FileLocation): FileProbe {
   if (!location.locatable) {
-    return true;
+    return FileProbe.missing;
   }
   if (location.isGalleryResource) {
-    return !galleryResourceExists(location.uri);
+    return probeByUri(location.uri, true);
   }
-  if (location.localPath.length === 0) {
-    return true;
+  let byUri: FileProbe = location.uri.length > 0 ? probeByUri(location.uri) : FileProbe.missing;
+  if (byUri === FileProbe.readable) {
+    return FileProbe.readable;
   }
-  try {
-    return !fs.accessSync(location.localPath);
-  } catch (e) {
-    let err = e as BusinessError;
-    return err.code === ERR_NO_SUCH_FILE;
+  // URI 打不开不等于文件不可用：接收文件等公共目录路径按本机路径可读，
+  // 两路结论合并后判定（任一路可读即可读；否则任一路无权限即视为无权限）
+  let byPath: FileProbe = FileProbe.missing;
+  if (location.localPath.length > 0) {
+    try {
+      byPath = fs.accessSync(location.localPath) ? FileProbe.readable : FileProbe.missing;
+    } catch (e) {
+      byPath = probeErrorOf(e);
+    }
   }
+  if (byPath === FileProbe.readable) {
+    return FileProbe.readable;
+  }
+  if (byUri === FileProbe.denied || byPath === FileProbe.denied) {
+    return FileProbe.denied;
+  }
+  return FileProbe.missing;
+}
+
+/**
+ * 文件是否确定缺失：按定位探测结果判定。
+ * 仅确认「文件不存在」（或不可定位）时返回真；权限类与其他异常交由打开动作给出真实结果。
+ */
+export function isFileMissing(location: FileLocation): boolean {
+  return probeFile(location) === FileProbe.missing;
 }
 
 /** MIME 解析：条目类型可用时优先；缺失或为通用二进制时按文件名扩展名推导。 */
@@ -183,13 +248,28 @@ function resolveOpenMime(fileType: string, fileName: string): string {
 /**
  * 打开文件所在目录（经系统文件管理器）：不可定位或文件缺失时不执行打开。
  */
+/**
+ * 探测重试：媒体库 / 文件框架的授权在进程启动初期可能尚未就绪，
+ * 此时按 URI 打开会返回 Operation not permitted，稍后重试即可成功。
+ * 仅在判定为「无权限」时重试，物理缺失（ENOENT）不重试。
+ */
+async function probeWithAccess(location: FileLocation): Promise<FileProbe> {
+  // 先激活持久化授权：Picker 的临时授权只在一定时间内有效（与进程是否重启无关）
+  await ensureUriAccess(location.uri);
+  return probeFile(location);
+}
+
 export async function openContainingFolder(context: common.UIAbilityContext,
   location: FileLocation): Promise<FileOpenResult> {
   if (!location.locatable || location.uri.length === 0) {
     return FileOpenResult.unavailable;
   }
-  if (isFileMissing(location)) {
+  let probe: FileProbe = await probeWithAccess(location);
+  if (probe === FileProbe.missing) {
     return FileOpenResult.fileMissing;
+  }
+  if (probe === FileProbe.denied) {
+    return FileOpenResult.accessDenied;
   }
   let options: OpenLinkOptions = {
     parameters: {
@@ -215,8 +295,12 @@ export async function openWithOtherApp(context: common.UIAbilityContext, locatio
   if (!location.locatable || location.uri.length === 0) {
     return FileOpenResult.unavailable;
   }
-  if (isFileMissing(location)) {
+  let probe: FileProbe = await probeWithAccess(location);
+  if (probe === FileProbe.missing) {
     return FileOpenResult.fileMissing;
+  }
+  if (probe === FileProbe.denied) {
+    return FileOpenResult.accessDenied;
   }
   let mime: string = resolveOpenMime(fileType, fileName);
   let want: Want = {

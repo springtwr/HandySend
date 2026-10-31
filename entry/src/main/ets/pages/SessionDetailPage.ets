@@ -95,6 +95,9 @@ export struct SessionDetailPage {
     if (result === FileOpenResult.fileMissing) {
       return $r('app.string.history_open_file_missing');
     }
+    if (result === FileOpenResult.accessDenied) {
+      return $r('app.string.history_open_file_access_denied');
+    }
     if (result === FileOpenResult.noApp) {
       return $r('app.string.session_file_open_no_app');
     }

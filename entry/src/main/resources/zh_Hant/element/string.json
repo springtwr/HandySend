@@ -321,10 +321,6 @@
       "value": "向你傳送檔案時要求對方輸入 PIN 碼，留空則停用"
     },
     {
-      "name": "save_to_history_label",
-      "value": "儲存到歷史"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "儲存到相簿"
     },
@@ -426,7 +422,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "接收歷史"
+      "value": "檔案接收歷史"
     },
     {
       "name": "receive_history_empty",
@@ -683,10 +679,6 @@
     {
       "name": "link_share_button",
       "value": "用網頁接收"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "歷史"
     },
     {
       "name": "receive_details_title",
@@ -1091,6 +1083,10 @@
     {
       "name": "history_open_file_missing",
       "value": "檔案已被移動或刪除"
+    },
+    {
+      "name": "history_open_file_access_denied",
+      "value": "檔案暫不可用，請稍後重試"
     },
     {
       "name": "history_delete_title",
@@ -1610,7 +1606,7 @@
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "檔案歷史"
+      "value": "檔案接收歷史"
     },
     {
       "name": "session_detail_title",
@@ -1995,6 +1991,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "找不到可開啟此檔案的應用程式"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "還有 %d 個檔案，點擊載入更多"
     },
     {
       "name": "session_file_open_failed",

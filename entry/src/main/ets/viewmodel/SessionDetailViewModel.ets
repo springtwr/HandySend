@@ -313,6 +313,11 @@ function historyFileToSessionFile(entry: SessionHistoryFileEntry): SessionFile {
 const DISPLAY_SYNC_INTERVAL: number = 1000;
 const SPEED_STALE_MS: number = 3000;
 
+// 详情页文件清单的分页展示：首屏只建前若干行，用户点击「加载更多」再追加一批。
+// 会话文件数量可达数百，全量建行会在进入页面时集中阻塞。
+const DETAIL_FILES_INITIAL: number = 40;
+const DETAIL_FILES_BATCH: number = 60;
+
 @ObservedV2
 export class SessionDetailViewModel {
   @Trace public session: TransferSession | undefined = undefined
@@ -340,6 +345,9 @@ export class SessionDetailViewModel {
   // 实时速度（B/s，0 表示不可用）与预计剩余秒数（-1 表示不可用）
   @Trace public speed: number = 0
   @Trace public etaSeconds: number = -1
+  // 文件清单已渲染的行数：首屏只建前若干行，其余由用户点击「加载更多」继续追加，
+  // 避免数百行一次性建树并同时发起图片解码（会长时间卡顿并触发内存压力）
+  @Trace public visibleFileCount: number = DETAIL_FILES_INITIAL
   private sessionId: string = ''
   private subscribed: boolean = false
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
@@ -365,6 +373,7 @@ export class SessionDetailViewModel {
     this.previewUnavailable = false;
     this.previewOverLimit = false;
     this.sourceLabel = '';
+    this.visibleFileCount = DETAIL_FILES_INITIAL;
     if (!this.subscribed) {
       this.changeCallback = (): void => {
         this.refresh();
@@ -375,6 +384,7 @@ export class SessionDetailViewModel {
     this.refresh();
   }
 
+  /** 卸载清理：退订会话变化通知。 */
   unload(): void {
     if (this.subscribed) {
       unsubscribeSessions(this.changeCallback);
@@ -408,6 +418,36 @@ export class SessionDetailViewModel {
   /** 当前展示的逐文件清单（实时会话或历史条目）。 */
   detailFiles(): Array<SessionFile> {
     return this.session !== undefined ? this.files : this.historyFiles;
+  }
+
+  /**
+   * 文件清单的当前展示切片：只返回前 visibleFileCount 行（分页展示）。
+   * 完整清单仍由 detailFiles() 提供（预览判定、总数统计等口径不受影响）。
+   */
+  detailFilesForDisplay(): Array<SessionFile> {
+    let files: Array<SessionFile> = this.detailFiles();
+    if (files.length <= this.visibleFileCount) {
+      return files;
+    }
+    return files.slice(0, this.visibleFileCount);
+  }
+
+  /** 是否还有未展示的文件行（供文件清单底部「加载更多」入口判定）。 */
+  hasMoreDetailFiles(): boolean {
+    return this.visibleFileCount < this.detailFiles().length;
+  }
+
+  /** 未展示的文件行数。 */
+  remainingDetailFiles(): number {
+    let remaining: number = this.detailFiles().length - this.visibleFileCount;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  /** 追加一批文件行（用户点击「加载更多」触发；一次只加一屏左右，控制建行与解码开销）。 */
+  loadMoreDetailFiles(): void {
+    let total: number = this.detailFiles().length;
+    let next: number = this.visibleFileCount + DETAIL_FILES_BATCH;
+    this.visibleFileCount = next > total ? total : next;
   }
 
   /** 当前展示的时间线（实时会话或历史条目）。 */

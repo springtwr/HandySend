@@ -109,13 +109,31 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     // 哈希是否已移交 Rust：仅移交后 Rust 负责令牌收尾；此前失败由本层取消令牌
     let hashStarted: boolean = false;
     try {
-      // fd-direct：源文件为 picker URI/沙箱路径，先建取消令牌再 openSync 拿 fd 交给 Rust 流式哈希。
-      // 句柄归属：openSync 成功后该 fd 的所有权即移交 Rust（由 Rust 在计算完成或取消后关闭），
-      // 本层任何路径（成功/失败/取消）都不再 close，避免双关；openSync 本身抛错时无句柄可关。
+      // fd-direct：源文件为 picker URI/沙箱路径，先建取消令牌再异步 open 拿 fd 交给 Rust 流式哈希。
+      // 句柄归属：open 成功后该 fd 的所有权即移交 Rust（由 Rust 在计算完成或取消后关闭），
+      // 本层任何路径（成功/失败/取消）都不再 close，避免双关；open 本身抛错时无句柄可关。
       // 令牌先建：建令牌抛错时尚未打开句柄，无泄漏。
       let token = nativeCreateCancelToken();
       cancelId = token.id;
-      let file = fs.openSync(files[i].filePath, fs.OpenMode.READ_ONLY);
+      // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）
+      let file: fs.File | undefined = undefined;
+      let knownFd: number | undefined = files[i].sourceFd;
+      if (knownFd !== undefined) {
+        try {
+          let duped: fs.File = fs.dup(knownFd);
+          // 与发送链路同一校验：句柄编号可能已被其他文件复用，大小不一致则回退按路径打开
+          if (fs.statSync(duped.fd).size === files[i].size) {
+            file = duped;
+          } else {
+            fs.closeSync(duped);
+          }
+        } catch (_dupErr) {
+          file = undefined;
+        }
+      }
+      if (file === undefined) {
+        file = await fs.open(files[i].filePath, fs.OpenMode.READ_ONLY);
+      }
       if (options !== undefined) {
         activeRuns.set(cancelId, {
           runTotalBytes: pendingTotalBytes,

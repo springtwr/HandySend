@@ -1,6 +1,7 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { getLogger } from '../../utils/Logger';
+import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, ReceiveHistoryEntry } from '../../model/Types';
 import {
@@ -148,10 +149,20 @@ export function isWebUploadEnabled(): boolean {
 }
 
 // 当前分享打开的源文件句柄集合：模块级持有 fs.File 引用，阻止 GC 回收
-// 对象时 fd 被自动关闭（否则 Rust 侧将持有失效 fd）。fd 所有权归本层——
-// Rust 每次下载仅 dup 副本消费、从不关闭原始 fd；本层在停止/替换分享、
-// 创建失败时统一 closeSync 关闭。
-let shareFileHandles: Array<fs.File> = [];
+// 句柄引用分为自有与借用：自有句柄必须持有 fs.File 对象（否则对象被回收时 fd 会被自动关闭），
+// 由本层在停止/替换分享、创建失败时统一关闭；借用句柄归暂存区所有，本层只登记、不关闭。
+// Rust 每次下载仅 dup 副本消费、从不关闭原始 fd。
+interface ShareHandleRef {
+  fd: number
+  /** 是否为本层打开（负责关闭）；借用暂存区句柄时为 false，关闭由暂存区负责 */
+  owned: boolean
+  /** 自有句柄必须持有 fs.File 对象，否则对象被回收时 fd 会被自动关闭 */
+  file?: fs.File
+}
+
+// 分享文件表使用的句柄引用：优先借用暂存区已打开的句柄（Rust 下载时自行 dup，不取得所有权），
+// 避免同一批文件为分享与发送各开一份；借用句柄的关闭由暂存区在其生命周期结束时负责。
+let shareFileHandles: Array<ShareHandleRef> = [];
 
 // 当前分享的源文件档案（fileId → 文件信息）：分享创建成功后写入，
 // 待确认会话创建时据此登记完整文件清单；停止分享时清空。
@@ -185,7 +196,7 @@ interface WebFileJson {
 }
 
 /** 登记本次分享的源文件档案（分享创建成功后调用）。 */
-function registerShareFileProfiles(files: Array<SendFileItem>, handles: Array<fs.File>): void {
+function registerShareFileProfiles(files: Array<SendFileItem>, handles: Array<ShareHandleRef>): void {
   let next: Record<string, ShareFileProfile> = {};
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
@@ -227,6 +238,26 @@ function buildWebFilesJson(): string {
   return JSON.stringify(entries);
 }
 
+/** 网页分享是否处于挂载状态（文件表非空且服务在运行）。 */
+export function isShareActive(): boolean {
+  return sharePort > 0 && Object.keys(shareFileProfiles).length > 0;
+}
+
+/**
+ * 某来源定位是否仍在当前分享文件表中。
+ * 分享表借用了暂存区句柄：只要仍在表中，暂存区就不能关闭对应句柄（原生层可能随时读取）。
+ */
+export function isSharingPath(path: string): boolean {
+  let ids: Array<string> = Object.keys(shareFileProfiles);
+  for (let i = 0; i < ids.length; i++) {
+    let profile = shareFileProfiles[ids[i]];
+    if (profile !== undefined && profile.path === path) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * 清空分享源文件档案（停止分享时调用）。
  */
@@ -235,15 +266,33 @@ function clearShareFileProfiles(): void {
 }
 
 /**
+ * 关闭单个句柄引用：仅关闭本层打开（owned）的句柄；借用的暂存区句柄由暂存区负责关闭。
+ */
+function closeOwnedRef(ref: ShareHandleRef | undefined): void {
+  if (ref === undefined || !ref.owned) {
+    return;
+  }
+  try {
+    fs.closeSync(ref.fd);
+  } catch (_ce) {
+  }
+}
+
+/**
  * 关闭当前分享持有的全部源文件句柄并清空。
  * 调用时机由调用方保证：须在服务器已停止接受该分享的下载请求之后
  * （stopShareLink 的 native 调用返回后，或创建新分享替换旧分享时），
  * 避免"句柄关闭后仍被下载读取"的竞态。
+ * 借用自暂存区的句柄不在本层关闭（由暂存区在其生命周期结束时处理）。
  */
 function closeShareFileHandles(): void {
   for (let i = 0; i < shareFileHandles.length; i++) {
+    if (!shareFileHandles[i].owned) {
+      // 借用的暂存区句柄不在本层关闭：暂存区在分享表不再引用后自行关闭
+      continue;
+    }
     try {
-      fs.closeSync(shareFileHandles[i]);
+      fs.closeSync(shareFileHandles[i].fd);
     } catch (_ce) {
     }
   }
@@ -504,20 +553,46 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
     logger.error('AppService 未初始化');
     return;
   }
-  // fd-direct：为每个源文件打开读 fd 一并交给 Rust；本层持有 fs.File
-  // 对象至分享结束（Rust 每次下载 dup 副本直读，原始 fd 由本层关闭）
-  let openedHandles: Array<fs.File> = [];
+  // fd-direct：文件表只登记 fd，Rust 每次下载自行 dup 副本、不取得所有权。
+  // 因此优先【借用】暂存区已打开的句柄（不额外占用 fd，也不重复 open）；
+  // 没有暂存句柄时才由本层打开并负责关闭。
+  let openedHandles: Array<ShareHandleRef> = [];
+  let openSlots: Array<ShareHandleRef | undefined> = [];
+  for (let i = 0; i < files.length; i++) {
+    openSlots.push(undefined);
+  }
   try {
-    for (let i = 0; i < files.length; i++) {
-      let file = fs.openSync(files[i].filePath, fs.OpenMode.READ_ONLY);
-      openedHandles.push(file);
+    await forEachConcurrently(files.length, async (index: number): Promise<void> => {
+      let item: SendFileItem = files[index];
+      if (item.sourceFd !== undefined) {
+        // 借用前校验句柄仍对应该文件（句柄可能已关闭、编号被其他文件复用）
+        try {
+          if (fs.statSync(item.sourceFd).size === item.size) {
+            let borrowed: ShareHandleRef = { fd: item.sourceFd, owned: false };
+            openSlots[index] = borrowed;
+            return;
+          }
+        } catch (_statErr) {
+        }
+      }
+      let file: fs.File = await fs.open(item.filePath, fs.OpenMode.READ_ONLY);
+      let owned: ShareHandleRef = { fd: file.fd, owned: true, file: file };
+      openSlots[index] = owned;
+    });
+    for (let i = 0; i < openSlots.length; i++) {
+      let ref: ShareHandleRef | undefined = openSlots[i];
+      if (ref === undefined) {
+        throw new Error('源文件句柄缺失：' + files[i].filePath);
+      }
+      openedHandles.push(ref);
+      openSlots[i] = undefined;
     }
   } catch (e) {
+    for (let k = 0; k < openSlots.length; k++) {
+      closeOwnedRef(openSlots[k]);
+    }
     for (let k = 0; k < openedHandles.length; k++) {
-      try {
-        fs.closeSync(openedHandles[k]);
-      } catch (_ce) {
-      }
+      closeOwnedRef(openedHandles[k]);
     }
     logger.error('打开源文件失败：' + e);
     notifyChange();
@@ -558,7 +633,7 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
 
   // 先登记新档案再启动：启动配置据此组装文件表
   let previousProfiles: Record<string, ShareFileProfile> = shareFileProfiles;
-  let previousHandles: Array<fs.File> = shareFileHandles;
+  let previousHandles: Array<ShareHandleRef> = shareFileHandles;
   registerShareFileProfiles(files, openedHandles);
   let uploadEnabled: boolean = webUploadEnabled || getWebReceiveAllowed();
   let started: boolean = await startWebServiceLocked(uploadEnabled);
@@ -566,10 +641,7 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
     // 启动失败：恢复旧档案，关闭本次打开的句柄（旧句柄未动，无需恢复）
     shareFileProfiles = previousProfiles;
     for (let k = 0; k < openedHandles.length; k++) {
-      try {
-        fs.closeSync(openedHandles[k]);
-      } catch (_ce) {
-      }
+      closeOwnedRef(openedHandles[k]);
     }
     // 重建流程在尝试绑定前会先停旧实例；启动失败时尽力按旧档案把服务补起来，
     // 避免已挂载的分享因一次设置变更而静默消失。
@@ -583,10 +655,7 @@ export async function createShareLink(files: Array<SendFileItem>, restartService
   }
   // 启动成功：关闭旧分享句柄并移交新句柄长期持有
   for (let i = 0; i < previousHandles.length; i++) {
-    try {
-      fs.closeSync(previousHandles[i]);
-    } catch (_ce) {
-    }
+    closeOwnedRef(previousHandles[i]);
   }
   shareFileHandles = openedHandles;
 }
@@ -766,11 +835,37 @@ export async function updateShareFiles(files: Array<SendFileItem>): Promise<void
   }
   webUpdating = true;
   reuseShareFileIds(files);
-  let openedHandles: Array<fs.File> = [];
+  let openedHandles: Array<ShareHandleRef> = [];
+  let openSlots: Array<ShareHandleRef | undefined> = [];
+  for (let i = 0; i < files.length; i++) {
+    openSlots.push(undefined);
+  }
   try {
-    for (let i = 0; i < files.length; i++) {
-      let file = fs.openSync(files[i].filePath, fs.OpenMode.READ_ONLY);
-      openedHandles.push(file);
+    // 换表同样优先借用暂存区句柄，不额外占用 fd，也不重复 open
+    await forEachConcurrently(files.length, async (index: number): Promise<void> => {
+      let item: SendFileItem = files[index];
+      if (item.sourceFd !== undefined) {
+        // 借用前校验句柄仍对应该文件（句柄可能已关闭、编号被其他文件复用）
+        try {
+          if (fs.statSync(item.sourceFd).size === item.size) {
+            let borrowed: ShareHandleRef = { fd: item.sourceFd, owned: false };
+            openSlots[index] = borrowed;
+            return;
+          }
+        } catch (_statErr) {
+        }
+      }
+      let file: fs.File = await fs.open(item.filePath, fs.OpenMode.READ_ONLY);
+      let owned: ShareHandleRef = { fd: file.fd, owned: true, file: file };
+      openSlots[index] = owned;
+    });
+    for (let i = 0; i < openSlots.length; i++) {
+      let ref: ShareHandleRef | undefined = openSlots[i];
+      if (ref === undefined) {
+        throw new Error('源文件句柄缺失：' + files[i].filePath);
+      }
+      openedHandles.push(ref);
+      openSlots[i] = undefined;
     }
     let count: number = nativeUpdateWebServiceFiles(buildWebFilesJsonFor(files, openedHandles));
     if (count !== files.length) {
@@ -787,11 +882,11 @@ export async function updateShareFiles(files: Array<SendFileItem>): Promise<void
       nativeUpdateWebServiceFiles(buildWebFilesJson());
     } catch (_re) {
     }
+    for (let k = 0; k < openSlots.length; k++) {
+      closeOwnedRef(openSlots[k]);
+    }
     for (let k = 0; k < openedHandles.length; k++) {
-      try {
-        fs.closeSync(openedHandles[k]);
-      } catch (_ce) {
-      }
+      closeOwnedRef(openedHandles[k]);
     }
     logger.error('更新分享文件失败：' + e);
   } finally {
@@ -801,7 +896,7 @@ export async function updateShareFiles(files: Array<SendFileItem>): Promise<void
 }
 
 /** 以给定清单与句柄组装原生层文件表 JSON（供换表时使用已就绪的新句柄）。 */
-function buildWebFilesJsonFor(files: Array<SendFileItem>, handles: Array<fs.File>): string {
+function buildWebFilesJsonFor(files: Array<SendFileItem>, handles: Array<ShareHandleRef>): string {
   let entries: Array<WebFileJson> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];

@@ -321,10 +321,6 @@
       "value": "向你发送文件时要求对方输入 PIN 码，留空则禁用"
     },
     {
-      "name": "save_to_history_label",
-      "value": "保存到历史"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "保存到相册"
     },
@@ -426,7 +422,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "接收历史"
+      "value": "文件接收历史"
     },
     {
       "name": "receive_history_empty",
@@ -683,10 +679,6 @@
     {
       "name": "link_share_button",
       "value": "用网页接收"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "历史"
     },
     {
       "name": "receive_details_title",
@@ -1091,6 +1083,10 @@
     {
       "name": "history_open_file_missing",
       "value": "文件已被移动或删除"
+    },
+    {
+      "name": "history_open_file_access_denied",
+      "value": "文件暂不可用，请稍后重试"
     },
     {
       "name": "history_delete_title",
@@ -1610,7 +1606,7 @@
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "文件历史"
+      "value": "文件接收历史"
     },
     {
       "name": "session_detail_title",
@@ -1995,6 +1991,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "未找到可打开该文件的应用"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "还有 %d 个文件，点击加载更多"
     },
     {
       "name": "session_file_open_failed",

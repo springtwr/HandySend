@@ -85,6 +85,7 @@ import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { sendTextDir, sendThumbnailDir } from '../repository/SendRepository';
 import { getLogger } from '../../utils/Logger';
+import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { formatSpeed } from '../../utils/FormatUtil';
 import { isLargeTransfer } from '../../utils/LargeTransferUtil';
 import { resolveSendCompletedProgress } from '../../utils/MtaProgressUtil';
@@ -1092,7 +1093,7 @@ export class MtaSendService {
     let sendFiles: Array<MtaSendFile>;
     let stageStartMs = Date.now();
     try {
-      sendFiles = this.openSendFds(effectiveFiles);
+      sendFiles = await this.openSendFds(effectiveFiles);
       // 实际大小/修改时间取自已打开句柄（与将发送字节同源），重算会话总字节（进度分母与 Rust 一致）
       session.totalBytes = totalFileBytes(sendFiles);
       session.files = sendFiles;
@@ -1340,35 +1341,56 @@ export class MtaSendService {
   }
 
   /**
-   * 打开发送直读 fd：逐文件以 `fs.openSync(uri, READ_ONLY)` 打开读取入口（fdSend），
+   * 打开发送直读 fd：逐文件以异步 `fs.open(uri, READ_ONLY)` 打开读取入口（fdSend），
    * 并以 `fs.statSync(fd)` 取**该已打开句柄**的实际大小与修改时间——使对外声明的尺寸
    * 与将要实际发送的字节同源（来源 URI 的属性可能与句柄内容不一致，会导致对端声明
    * 尺寸与实际载荷不符、载荷被截断）。任一文件任一步骤失败都会关闭本次已打开的全部 fd
    * 并抛可读错误；成功时 fd 暂存于 `pendingSendFileHandles`，由 `startServer` 在移交点转交 Rust。
    * 不向 cacheDir 复制所选文件（文本会话的临时文件由 writeSharedTextFile 单独处理）。
    */
-  private openSendFds(files: Array<MtaSendFile>): Array<MtaSendFile> {
+  private async openSendFds(files: Array<MtaSendFile>): Promise<Array<MtaSendFile>> {
     let opened: Array<fs.File> = [];
     let out: Array<MtaSendFile> = [];
+    let slots: Array<MtaSendFile | undefined> = [];
+    for (let i = 0; i < files.length; i++) {
+      slots.push(undefined);
+    }
     try {
-      for (let i = 0; i < files.length; i++) {
-        let source = files[i];
-        let fdSendFile = fs.openSync(source.uri, fs.OpenMode.READ_ONLY);
-        opened.push(fdSendFile);
-        // 尺寸与修改时间取自刚打开的句柄属性：与后续实际读取的字节同源
-        let stat = fs.statSync(fdSendFile.fd);
-        let item = new MtaSendFile();
-        item.uri = source.uri;
-        item.displayName = source.displayName;
-        item.sizeBytes = stat.size;
-        item.entryName = buildEntryName(i, source.displayName);
-        // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
-        item.lastModified = Math.floor(stat.mtime * 1000);
-        item.fdSend = fdSendFile.fd;
+      // 受限并发打开：串行打开数百个文件会明显推迟与对端的确认交互
+      await forEachConcurrently(files.length, async (index: number): Promise<void> => {
+        let source = files[index];
+        let fdSendFile = await fs.open(source.uri, fs.OpenMode.READ_ONLY);
+        try {
+          // 尺寸与修改时间取自刚打开的句柄属性：与后续实际读取的字节同源
+          let stat = fs.statSync(fdSendFile.fd);
+          let item = new MtaSendFile();
+          item.uri = source.uri;
+          item.displayName = source.displayName;
+          item.sizeBytes = stat.size;
+          item.entryName = buildEntryName(index, source.displayName);
+          // fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
+          item.lastModified = Math.floor(stat.mtime * 1000);
+          item.fdSend = fdSendFile.fd;
+          opened.push(fdSendFile);
+          slots[index] = item;
+        } catch (statErr) {
+          // 句柄已打开但取属性失败：由本层关闭，避免泄漏
+          try {
+            fs.closeSync(fdSendFile);
+          } catch (_ce) {
+          }
+          throw new Error(String(statErr));
+        }
+      });
+      for (let i = 0; i < slots.length; i++) {
+        let item: MtaSendFile | undefined = slots[i];
+        if (item === undefined) {
+          throw new Error('发送文件句柄缺失：' + files[i].displayName);
+        }
         out.push(item);
       }
     } catch (e) {
-      // 任一步骤失败：关闭本次已打开的全部 fd（含当前文件已打开的部分），上抛时不泄漏
+      // 任一步骤失败：关闭本次已打开的全部 fd（含并发在途已成功打开的部分），上抛时不泄漏
       this.closeOpenedFiles(opened);
       let failedName = out.length < files.length ? files[out.length].displayName : '';
       throw new Error(`打开文件直读 fd 失败 ${failedName}: ${String(e)}`);
