@@ -861,6 +861,14 @@
       "value": "新增檔案"
     },
     {
+      "name": "send_no_source_title",
+      "value": "暫未發現附近裝置"
+    },
+    {
+      "name": "send_no_source_subtitle",
+      "value": "請確認網路與藍牙已開啟"
+    },
+    {
       "name": "server_offline_warning",
       "value": "服務未執行"
     },

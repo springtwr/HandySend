@@ -2,7 +2,8 @@
  * EmptyState.ets — 公共空态
  *
  * 统一承载「列表/内容为空」的提示：主标题与副提示的字号、颜色、间距与水平居中由本组件固定，
- * 调用点只传文案与开关（是否套卡片、是否占满可用高度并垂直居中、内容区最小高度），不再各自内联样式。
+ * 调用点只传文案、开关（是否套卡片、是否占满可用高度并垂直居中、内容区最小高度）
+ * 与可选的操作入口，不再各自内联样式。
  *
  * 卡片按该页条目形态跟随：条目是卡片的页面由调用点开启 useCard，条目非卡片的页面与已被卡片包裹的
  * 空态保持关闭，避免出现第二层卡片与双重内边距。卡片左右内边距与条目文字对齐（16vp），上下内边距取
@@ -19,6 +20,13 @@ export struct EmptyState {
   @Param hintText: ResourceStr | undefined = undefined
   /** 副提示语义色（可缺省，缺省取三级文字色） */
   @Param hintColor: ResourceColor | undefined = undefined
+  /** 操作入口文案（可缺省，缺省时不渲染操作入口） */
+  @Param actionText: ResourceStr | undefined = undefined
+  /** 操作入口图标（可缺省，缺省时不渲染图标） */
+  @Param actionIcon: Resource | undefined = undefined
+  /** 操作入口点击回调 */
+  @Event onAction: () => void = () => {
+  }
   /** 是否套用与同页条目同款的卡片（列表行级空态开启） */
   @Param useCard: boolean = false
   /** 是否占满可用高度并垂直居中（整页空态开启） */
@@ -57,6 +65,39 @@ export struct EmptyState {
             .fontColor(this.hintColor ?? $r('app.color.text_tertiary'))
             .width('100%')
             .textAlign(TextAlign.Center)
+        }
+
+        // 可选操作入口：浅蓝底胶囊 + 蓝色图标文字，与页面内的次级按钮同款；
+        // 视觉高度 32vp，响应区纵向扩展到 48vp 以满足热区规范
+        if (this.actionText !== undefined) {
+          Button() {
+            Row({ space: DesignTokens.space.xxs }) {
+              if (this.actionIcon !== undefined) {
+                SymbolGlyph(this.actionIcon)
+                  .fontSize(DesignTokens.font.subtitleM)
+                  .fontColor([$r('app.color.ip_blue_text')])
+              }
+              Text(this.actionText)
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.ip_blue_text'))
+            }
+            .alignItems(VerticalAlign.Center)
+            .justifyContent(FlexAlign.Center)
+          }
+          .height(32)
+          .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+          .backgroundColor($r('app.color.accent_blue_bg'))
+          .borderRadius(DesignTokens.radius.max)
+          .margin({ top: DesignTokens.space.xxs })
+          .responseRegion({
+            x: 0,
+            y: -8,
+            width: '100%',
+            height: 48
+          })
+          .onClick(() => {
+            this.onAction();
+          })
         }
       }
       .width('100%')

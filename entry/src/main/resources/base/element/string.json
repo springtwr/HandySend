@@ -861,6 +861,14 @@
       "value": "Add"
     },
     {
+      "name": "send_no_source_title",
+      "value": "No nearby devices yet"
+    },
+    {
+      "name": "send_no_source_subtitle",
+      "value": "Make sure network and Bluetooth are on"
+    },
+    {
       "name": "server_offline_warning",
       "value": "Server is not running"
     },

@@ -125,10 +125,10 @@ export struct SendTargetZone {
     return this.devicesOf(descriptor);
   }
 
-  /** 副标题引导文案：随当前选中来源切换，来源缺失时回退局域网文案。 */
+  /** 副标题引导文案：随当前选中来源切换，来源缺失时回退总空态文案。 */
   private currentSubtitle(): ResourceStr {
     let descriptor = this.currentSource();
-    return descriptor !== undefined ? descriptor.subtitle : $r('app.string.nearby_devices_subtitle');
+    return descriptor !== undefined ? descriptor.subtitle : $r('app.string.send_no_source_subtitle');
   }
 
   /** 空态文案：来源描述符提供，缺失时回退默认空态。 */
@@ -226,10 +226,16 @@ export struct SendTargetZone {
   @Builder
   deviceSection() {
     if (this.currentSource() === undefined) {
-      // 未发现任何来源设备：默认空态（文案与局域网空态一致），位于「设备卡片」内不带卡片；
+      // 未发现任何来源设备：总空态的主文案不绑定单一协议；
+      // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启。
       // 与设备列表空态取同一内容区下限，避免两处空态在同一个卡片里高度跳变
       EmptyState({
-        mainText: $r('app.string.no_devices_found'),
+        mainText: $r('app.string.send_no_source_title'),
+        actionText: $r('app.string.discovery_source_web'),
+        actionIcon: $r('sys.symbol.worldclock'),
+        onAction: () => {
+          this.onOpenWeb();
+        },
         minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
       })
         .id('send_no_source')

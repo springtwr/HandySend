@@ -861,6 +861,14 @@
       "value": "添加文件"
     },
     {
+      "name": "send_no_source_title",
+      "value": "暂未发现附近设备"
+    },
+    {
+      "name": "send_no_source_subtitle",
+      "value": "请确认网络与蓝牙已开启"
+    },
+    {
       "name": "server_offline_warning",
       "value": "服务未运行"
     },
