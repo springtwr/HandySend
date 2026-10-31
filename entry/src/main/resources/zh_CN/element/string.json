@@ -474,7 +474,7 @@
     },
     {
       "name": "troubleshoot_title",
-      "value": "故障排查"
+      "value": "常见问题"
     },
     {
       "name": "troubleshoot_group_general",
@@ -487,6 +487,10 @@
     {
       "name": "troubleshoot_group_mta",
       "value": "MTA（互传联盟）"
+    },
+    {
+      "name": "troubleshoot_group_web",
+      "value": "网页"
     },
     {
       "name": "troubleshoot_firewall_title",
@@ -502,11 +506,11 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "【LocalSend】确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend，且双方使用的端口一致。\n【MTA】只有在周围有互传联盟成员设备并打开其品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）时，互传设备列表才会显示。"
+      "value": "【LocalSend】\n① 两台设备连接同一 Wi-Fi 网络；\n② 双方都在运行 LocalSend 或兼容应用；\n③ 双方使用相同的端口。\n\n【MTA】\n① 本机开启蓝牙与 WLAN（无需连接网络）；\n② 周围有已开启品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）的互传联盟设备；\n③ 互传设备仅在发送页可见时扫描，切走页签或退到后台后会暂停。"
     },
     {
       "name": "troubleshoot_discovery_service_hint",
-      "value": "iOS 或安卓上的 LocalSend 有时虽然是打开状态，但服务实际未能启动。若无法发现设备，请清理后台并重新打开应用。"
+      "value": "iOS 或安卓上的 LocalSend 有时虽然显示为打开状态，但服务并未真正启动。\n若无法发现设备，请清理后台并重新打开应用。"
     },
     {
       "name": "troubleshoot_connection_title",
@@ -514,7 +518,7 @@
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "检查目标设备是否运行以及 IP 地址是否正确，确保 VPN 未干扰局域网访问。"
+      "value": "检查目标设备是否正在运行、IP 地址是否正确。\n确保 VPN 未干扰局域网访问。"
     },
     {
       "name": "troubleshoot_protocol_title",
@@ -522,7 +526,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在「设置 → LocalSend → 高级设置 → 加密传输」中确保双方的加密选项一致。"
+      "value": "两端设备的加密设置必须兼容才能正常通信。\n如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。\n请在「设置 → LocalSend → 高级设置 → 加密传输」中确保双方的加密选项一致。"
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -530,7 +534,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "同时启用多个网络接口（如以太网+Wi-Fi 或双 Wi-Fi）可能导致设备发现异常，因为广播可能走错接口。建议关闭多余的网络接口，或在「设置 → LocalSend → 高级设置 → 网络接口」中选择正确的接口。"
+      "value": "同时启用多个网络接口（如以太网 + Wi-Fi 或双 Wi-Fi）可能导致设备发现异常：广播可能走错接口。\n建议关闭多余的网络接口，或在「设置 → LocalSend → 高级设置 → 网络接口」中选择正确的接口。"
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -538,7 +542,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "【LocalSend】传输中断可能因接收端锁屏、切后台或网络波动导致。建议传输时保持应用在前台并确保网络稳定，失败后可重新发送。\n【MTA】互传传输需本机蓝牙与 WLAN 均保持开启，并保持接收端应用在前台；传输期间切换网络或退到后台都可能中断，失败后可重新发送。"
+      "value": "【LocalSend】\n· 退到后台或锁屏时，进行中的传输会由后台长时任务保护并继续；\n· 请勿关闭传输通知或强行结束应用，否则传输会中断；\n· 网络波动或对端退出应用也可能导致失败，失败后可重新发送。\n\n【MTA】\n· 本机蓝牙与 WLAN 均需保持开启；\n· 接收端应保持应用在前台，退到后台会停止接收服务，无法发起新的互传接收；\n· 传输期间切换网络或网络波动可能导致中断，失败后可重新发送。"
     },
     {
       "name": "troubleshoot_remote_title",
@@ -546,7 +550,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "便捷快传默认在同一局域网内工作。如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网，然后在「设置 → LocalSend → 高级设置 → 网络接口」中开启工具对应的网络接口即可。"
+      "value": "便捷快传默认在同一局域网内工作。\n如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网：\n① 在「设置 → LocalSend → 高级设置 → 网络接口」中开启工具对应的网络接口；\n② 网页传输还需在「设置 → 网页传输 → 高级设置 → 网络接口」中允许该接口，并选择对应地址。"
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -554,7 +558,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "【LocalSend】如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。\n【MTA】互传设备以蓝牙标识区分，对端蓝牙标识变化时可能短暂出现重复，未再收到广播的设备会自动移除；也可点击刷新按钮重新扫描以立即恢复。"
+      "value": "【LocalSend】\n如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。\n点击刷新按钮刷新设备列表即可恢复正常显示。\n\n【MTA】\n互传设备以蓝牙标识区分，对端蓝牙标识变化时可能短暂出现重复，未再收到广播的设备会自动移除。\n也可点击刷新按钮重新扫描，立即清除重复条目。"
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -562,11 +566,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "互传联盟（MTA）目前尚未经过各品牌设备的完备测试，若传输失败，请按以下步骤采集日志并反馈：\n① 点击发送页右上角的「更多」菜单（⋯），选择「诊断日志」；\n② 在日志页开启「详细日志（DEBUG）」开关；\n③ 重新执行一次 MTA 传输以复现问题；\n④ 在日志页将日志保存（导出）为文件；\n⑤ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
+      "value": "互传联盟（MTA）目前尚未经过各品牌设备的完备测试。\n若传输失败，请按以下步骤采集日志并反馈：\n① 点击发送页右上角的「更多」菜单（⋯），选择「诊断日志」；\n② 在日志页开启「详细日志（DEBUG）」开关；\n③ 重新执行一次 MTA 传输以复现问题；\n④ 在日志页将日志保存（导出）为文件；\n⑤ 进入「设置 → 更多 → 反馈」，选择「邮箱」或「代码仓库」提交问题，并附上刚导出的日志文件。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「详细日志（DEBUG）」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
+      "value": "「详细日志（DEBUG）」开关在重启应用后会自动关闭。\n请在开启后直接复现问题，期间不要重启应用。"
     },
     {
       "name": "troubleshoot_offline_title",
@@ -574,7 +578,39 @@
     },
     {
       "name": "troubleshoot_offline_desc",
-      "value": "设备离线后不会立即从「附近设备」中消失。局域网（LocalSend）设备停止广播后，需要经过一轮刷新确认才会被移除；互传联盟（MTA）设备依靠 BLE 广播判断在线状态，约 30 秒内未再收到广播即自动从列表移除，设备重新上线则会实时出现。为节省电量，互传设备的发现扫描仅在发送页可见期间进行。"
+      "value": "设备离线后不会立即从「附近设备」中消失。\n· 局域网（LocalSend）设备停止广播后，需要经过一轮刷新确认才会被移除；\n· 互传联盟（MTA）设备依靠 BLE 广播判断在线状态，约 30 秒未再收到广播即自动移除，重新上线则会实时出现。\n为节省电量，互传设备的发现扫描仅在发送页可见期间进行。"
+    },
+    {
+      "name": "troubleshoot_web_usage_title",
+      "value": "如何使用网页传输"
+    },
+    {
+      "name": "troubleshoot_web_usage_desc",
+      "value": "① 在发送页暂存文件后，点击「网页」图标进入网页传输面板；\n② 对方扫码，或在浏览器中打开面板展示的地址并输入 6 位访问码，即可下载，无需安装应用。\n\n面板地址仅在同一局域网内可访问；网页上传需在「设置 → 网页传输」中开启「允许上传」。"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_title",
+      "value": "网页地址打不开或访问码无效"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_desc",
+      "value": "网页地址仅在同一局域网内可访问，且只对本次分享有效。\n· 停止网页传输、重启网页服务或重启应用后，本次访问码会失效；\n· 端口回退或网络变化时地址也可能改变；\n· 需要对方重新扫码，或按面板当前展示的地址与访问码进入。\n\n若仍无法打开，请检查：\n· 双方是否在同一网络；\n· 对方输入的是否为面板展示的完整地址（默认端口 53310，被占用时会自动换用临时端口）；\n· 路由器是否开启了访客网络隔离或防火墙拦截。"
+    },
+    {
+      "name": "troubleshoot_web_encryption_title",
+      "value": "网页传输为什么默认不加密"
+    },
+    {
+      "name": "troubleshoot_web_encryption_desc",
+      "value": "网页加密传输默认关闭，且与 LocalSend 的加密设置相互独立。\n如需加密，可在「设置 → 网页传输 → 高级设置 → 加密传输」中开启。\n开启后使用自签名证书，可能被浏览器或广告拦截扩展拦截。\n若下载失败，可暂时关闭加密传输，或禁用相关扩展后重试。"
+    },
+    {
+      "name": "troubleshoot_web_background_title",
+      "value": "退到后台后网页无法访问"
+    },
+    {
+      "name": "troubleshoot_web_background_desc",
+      "value": "网页服务随应用运行。\n开启「设置 → 通用 → 允许后台接收」后，没有传输任务时应用会在后台保留约 5 分钟，期间仍可访问网页。\n超时后或手动停止网页传输，网页将无法打开；需要长时间分享时，请保持应用在前台运行。"
     },
     {
       "name": "protocol_version_label",

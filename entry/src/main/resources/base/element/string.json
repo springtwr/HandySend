@@ -474,7 +474,7 @@
     },
     {
       "name": "troubleshoot_title",
-      "value": "Troubleshooting"
+      "value": "FAQ"
     },
     {
       "name": "troubleshoot_group_general",
@@ -487,6 +487,10 @@
     {
       "name": "troubleshoot_group_mta",
       "value": "MTA (Mutual Transfer Alliance)"
+    },
+    {
+      "name": "troubleshoot_group_web",
+      "value": "Web"
     },
     {
       "name": "troubleshoot_firewall_title",
@@ -502,11 +506,11 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "[LocalSend] Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port.\n[MTA] The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)."
+      "value": "[LocalSend]\n1. Both devices are on the same Wi-Fi network;\n2. Both are running LocalSend or a compatible app;\n3. Both use the same port.\n\n[MTA]\n1. Enable Bluetooth and WLAN on this device (no network connection is needed);\n2. A Mutual Transfer Alliance member device nearby has its brand sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.);\n3. MTA devices are only scanned while the Send page is visible; switching tabs or moving to the background pauses scanning."
     },
     {
       "name": "troubleshoot_discovery_service_hint",
-      "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started. If devices cannot be discovered, clear it from the background and reopen the app."
+      "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started.\nIf devices cannot be discovered, clear it from the background and reopen the app."
     },
     {
       "name": "troubleshoot_connection_title",
@@ -514,7 +518,7 @@
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "Check if the target device is running and the IP address is correct. Ensure no VPN is interfering with local network access."
+      "value": "Check whether the target device is running and the IP address is correct.\nMake sure no VPN is interfering with local network access."
     },
     {
       "name": "troubleshoot_protocol_title",
@@ -522,7 +526,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides (Settings > LocalSend > Advanced settings > Encrypted transfer)."
+      "value": "Both devices must have compatible encryption settings to communicate.\nIf one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other.\nMake sure the encryption settings match on both sides (Settings > LocalSend > Advanced settings > Encrypted transfer)."
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -530,7 +534,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > LocalSend > Advanced settings > Network interface."
+      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues: broadcasts may go through the wrong interface.\nDisable unnecessary interfaces or select the correct one in Settings > LocalSend > Advanced settings > Network interface."
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -538,7 +542,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "[LocalSend] Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails.\n[MTA] MTA transfers require both Bluetooth and WLAN to stay enabled and the receiving app to stay in the foreground; switching networks or leaving the app in the background may interrupt the transfer. Retry if it fails."
+      "value": "[LocalSend]\n- While the app is in the background or the screen is locked, an ongoing transfer is protected by a background long-running task and keeps running;\n- Do not close the transfer notification or force-stop the app, or the transfer will be interrupted;\n- Network fluctuations or the peer exiting the app can also cause failures; retry if a transfer fails.\n\n[MTA]\n- Bluetooth and WLAN must stay enabled;\n- Keep the receiving app in the foreground; moving to the background stops its receive service and prevents new MTA receives;\n- Switching networks or network fluctuations during a transfer may interrupt it; retry if it fails."
     },
     {
       "name": "troubleshoot_remote_title",
@@ -546,7 +550,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > LocalSend > Advanced settings > Network interface."
+      "value": "HandySend works within the same local network by default.\nFor cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN:\n1. Enable the corresponding network interface in Settings > LocalSend > Advanced settings > Network interface;\n2. For web transfer, also allow that interface in Settings > Web Transfer > Advanced settings > Network interface and select the matching address."
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -554,7 +558,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "[LocalSend] If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this.\n[MTA] MTA devices are distinguished by their Bluetooth identifier; duplicates may briefly appear if the peer's Bluetooth identifier changes, and devices that stop advertising are removed automatically. You can also tap the refresh button to rescan and clear duplicates immediately."
+      "value": "[LocalSend]\nIf the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list.\nTap the refresh button to refresh the device list and resolve this.\n\n[MTA]\nMTA devices are distinguished by their Bluetooth identifier; duplicates may briefly appear if the peer's Bluetooth identifier changes, and devices that stop advertising are removed automatically.\nYou can also tap the refresh button to rescan and clear duplicates immediately."
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -562,11 +566,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "MTA (Mutual Transfer Alliance) has not yet been fully tested across all brands. If a transfer fails, collect the logs and report the issue as follows:\n1. Tap the More (⋯) menu at the top right of the Send page and choose \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
+      "value": "MTA (Mutual Transfer Alliance) has not yet been fully tested across all brands.\nIf a transfer fails, collect the logs and report the issue as follows:\n1. Tap the More (⋯) menu at the top right of the Send page and choose \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings > More > Feedback and choose \"Email\" or \"Code Repository\" to report the issue, attaching the exported log file."
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "The \"Detailed logging (DEBUG)\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
+      "value": "The \"Detailed logging (DEBUG)\" switch turns off automatically after the app restarts.\nReproduce the problem right after enabling it and do not restart the app in the meantime."
     },
     {
       "name": "troubleshoot_offline_title",
@@ -574,7 +578,39 @@
     },
     {
       "name": "troubleshoot_offline_desc",
-      "value": "Offline devices do not disappear from Nearby Devices immediately. A LAN (LocalSend) device is removed after a refresh confirmation once it stops announcing; an MTA (Mutual Transfer Alliance) device relies on BLE advertisements for its online status and is removed automatically after about 30 seconds without any advertisement, reappearing in real time once it comes back online. To save power, MTA discovery scanning only runs while the Send page is visible."
+      "value": "Offline devices do not disappear from Nearby Devices immediately.\n- A LAN (LocalSend) device is removed after a refresh confirmation once it stops announcing;\n- An MTA (Mutual Transfer Alliance) device relies on BLE advertisements for its online status and is removed automatically after about 30 seconds without any advertisement, reappearing in real time once it comes back online.\nTo save power, MTA discovery scanning only runs while the Send page is visible."
+    },
+    {
+      "name": "troubleshoot_web_usage_title",
+      "value": "How to Use Web Transfer"
+    },
+    {
+      "name": "troubleshoot_web_usage_desc",
+      "value": "1. Stage files on the Send page, then tap the Web icon to open the Web Transfer panel;\n2. The other device scans the QR code, or opens the shown address in a browser and enters the 6-digit access code to download, with no app required.\n\nThe address only works within the same local network; web uploads require \"Allow uploads\" to be enabled in Settings > Web Transfer."
+    },
+    {
+      "name": "troubleshoot_web_unreachable_title",
+      "value": "Web Address Does Not Open or Access Code Is Invalid"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_desc",
+      "value": "The web address is only reachable within the same local network and is valid for this sharing session only.\n- Stopping web transfer, restarting the web service, or restarting the app invalidates the current access code;\n- The address may also change after a port fallback or network change;\n- The other device needs to scan again, or use the address and access code currently shown in the panel.\n\nIf it still does not open, check:\n- Whether both devices are on the same network;\n- Whether the full address shown in the panel was entered correctly (default port 53310, a temporary port is used when it is occupied);\n- Whether the router has guest network isolation enabled or blocks the connection."
+    },
+    {
+      "name": "troubleshoot_web_encryption_title",
+      "value": "Why Is Web Transfer Unencrypted by Default"
+    },
+    {
+      "name": "troubleshoot_web_encryption_desc",
+      "value": "Encrypted web transfer is off by default and is independent of the LocalSend encryption setting.\nTo enable it, go to Settings > Web Transfer > Advanced settings > Encrypted transfer.\nIt uses a self-signed certificate, which browsers or ad-blocking extensions may block.\nIf downloads fail, temporarily disable encryption or turn off the extension and retry."
+    },
+    {
+      "name": "troubleshoot_web_background_title",
+      "value": "Web Page Is Unreachable After Switching to the Background"
+    },
+    {
+      "name": "troubleshoot_web_background_desc",
+      "value": "The web service runs as long as the app does.\nWith \"Allow background receiving\" enabled in Settings > General, the app stays in the background for about 5 minutes when no transfer is running, and the web page remains reachable during that time.\nAfter it times out, or after web transfer is stopped manually, the page cannot be opened; keep the app in the foreground for long sharing sessions."
     },
     {
       "name": "protocol_version_label",

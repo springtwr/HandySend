@@ -65,10 +65,13 @@ export default function ReceiveHistoryServiceTest() {
 
     it('addEntries_exceeds_max_removes_oldest', 0, () => {
       clearAll()
-      // 超出上限一条：保留最新的 RECEIVE_HISTORY_CAPACITY 条，最旧一条被 FIFO 丢弃
+      // 单批超过上限一条：保留最新的 RECEIVE_HISTORY_CAPACITY 条，最旧一条被 FIFO 丢弃。
+      // 用单批追加而非逐条循环：5000 条逐条落盘会让每个用例产生 O(n²) 的序列化开销。
+      let batch: Array<ReceiveHistoryEntry> = []
       for (let i = 0; i < RECEIVE_HISTORY_CAPACITY + 1; i++) {
-        addEntries([makeEntry('h-max-' + i, 'file-' + i + '.png')])
+        batch.push(makeEntry('h-max-' + i, 'file-' + i + '.png'))
       }
+      addEntries(batch)
       expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
       let firstIdStillPresent: boolean = false
       let list: Array<ReceiveHistoryEntry> = getHistory()
@@ -108,9 +111,12 @@ export default function ReceiveHistoryServiceTest() {
 
     it('addEntries_exactly_max_keeps_all', 0, () => {
       clearAll()
+      // 单批恰好达到上限：不触发丢弃，顺序保持不变
+      let batch: Array<ReceiveHistoryEntry> = []
       for (let i = 0; i < RECEIVE_HISTORY_CAPACITY; i++) {
-        addEntries([makeEntry('h-exact-' + i, 'file-' + i + '.png')])
+        batch.push(makeEntry('h-exact-' + i, 'file-' + i + '.png'))
       }
+      addEntries(batch)
       expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
       expect(getHistory()[0].id).assertEqual('h-exact-0')
       expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
@@ -262,6 +268,30 @@ export default function ReceiveHistoryServiceTest() {
       expect(receiveHistoryPreferencesUtil.has(segmentKey('receiveHistory', 0))).assertFalse()
       initHistory(ctx)
       expect(getHistory().length).assertEqual(0)
+    })
+
+    it('legacyTextContent_strippedFromMemoryAndStorage', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      initHistory(ctx)
+      clearAll()
+      // 模拟旧版 Web 上传文本消息：接收历史段中带有无消费者的 textContent 正文
+      let legacy: ReceiveHistoryEntry = makeEntry('legacy_text_1', 'message.txt')
+      legacy.fileType = 'text/plain'
+      legacy.isMessage = true
+      legacy.textContent = '旧版正文'
+      receiveHistoryPreferencesUtil.setString(segmentKey('receiveHistory', 0),
+        JSON.stringify([legacy]))
+      // 重新初始化：读取时剥离字段并全量回写，磁盘上不再保留正文
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(1)
+      expect(getHistory()[0].textContent === undefined).assertTrue()
+      let raw: string = receiveHistoryPreferencesUtil.getString(segmentKey('receiveHistory', 0), '[]')
+      expect(raw.indexOf('textContent') < 0).assertTrue()
+      clearAll()
     })
 
     it('deleteTextFileLinkage_andLegacyTextIgnored', 0, () => {
