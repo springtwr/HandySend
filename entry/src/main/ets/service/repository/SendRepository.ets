@@ -91,6 +91,19 @@ let pendingSharedUrisJson: string = '';
 // 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
 let pendingSharedTextsJson: string = '';
 
+// 正在被发送会话读取的暂存句柄（fd → 占用）：
+// dup 副本与暂存句柄共享文件偏移，两个会话同时读取同一句柄会互相推进偏移、导致内容错乱，
+// 因此同一句柄同一时刻只交给一个发送会话复用；其余会话改为按路径独立打开。
+const fdsInActiveSend: Set<number> = new Set();
+
+// 释放本轮发送占用的暂存句柄（幂等：先逐个释放标记，再清空入参数组）
+function releaseClaimedSendFds(claimedFds: Array<number>): void {
+  for (let i = 0; i < claimedFds.length; i++) {
+    fdsInActiveSend.delete(claimedFds[i]);
+  }
+  claimedFds.length = 0;
+}
+
 // ── 发送文件信息映射（fileId → 大小/路径）──
 // 供发送方向进度事件补齐 totalBytes/filePath（新事件仅携带 progress）。
 
@@ -347,7 +360,7 @@ export async function sendToDevice(
   };
   // 记录发送文件信息（元数据），供发送方向进度事件补齐 totalBytes/filePath。
   // 内容 fd 不在本层长期持有：每次 nativeSendFiles 调用前取用（优先复用条目携带的暂存句柄，
-  // 缺失或校验不一致时按路径打开，见下方重试循环）。
+  // dup 后把共享偏移归位到文件头；缺失/失效/被其他会话占用时按路径打开，见下方重试循环）。
   let totalBytes: number = 0;
   let hashedCount: number = 0;
   for (let i = 0; i < files.length; i++) {
@@ -376,6 +389,9 @@ export async function sendToDevice(
   // 当前迭代已打开、尚未交由 Rust 接管的文件句柄（nativeSendFiles 正常返回后
   // Rust 对所有传入 fd 全权负责并关闭；仅当调用抛异常时才由本层关闭避免泄漏）
   let pendingFileHandles: Array<fs.File> = [];
+  // 本轮发送占用（claim）的暂存句柄：从 dup 到 nativeSendFiles 返回期间持有，
+  // 避免其他并发发送会话同时读取同一句柄
+  let claimedFds: Array<number> = [];
   try {
     while (true) {
       // 每次发送前重新打开源文件 fd：上一次 nativeSendFiles（无论成功/失败/可重试错误）
@@ -393,32 +409,48 @@ export async function sendToDevice(
         let openedCount: number = 0;
         let dupFailedCount: number = 0;
         let noFdCount: number = 0;
+        let inUseCount: number = 0;
         await forEachConcurrently(files.length, async (index: number): Promise<void> => {
           let f: SendFileItem = files[index];
-          // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）
-          if (f.sourceFd !== undefined) {
+          let sourceFd: number | undefined = f.sourceFd;
+          // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）。
+          // dup 副本与暂存句柄共享文件偏移：重发时偏移已停在末尾，必须归位到文件头；
+          // 同一句柄正被其他发送会话读取时不参与复用（共享偏移会互相干扰），改为按路径打开。
+          if (sourceFd !== undefined && !fdsInActiveSend.has(sourceFd)) {
+            let duped: fs.File | undefined = undefined;
             try {
-              let duped: fs.File = fs.dup(f.sourceFd);
+              duped = fs.dup(sourceFd);
               // 句柄可能在“暂存句柄关闭→操作系统复用该 fd 编号”后被别的文件占用：
               // 用条目已知大小校验，不一致则丢弃并回退按路径打开，避免发错文件
               if (fs.statSync(duped.fd).size === f.size) {
+                // dup 副本与暂存句柄共享文件偏移：重发时偏移已停在末尾，读取前归位到文件头
+                fs.lseek(duped.fd, 0, fs.WhenceType.SEEK_SET);
+                fdsInActiveSend.add(sourceFd);
+                claimedFds.push(sourceFd);
                 handles[index] = duped;
                 reusedCount++;
                 return;
               }
-              fs.closeSync(duped);
             } catch (_dupErr) {
             }
+            if (duped !== undefined) {
+              try {
+                fs.closeSync(duped);
+              } catch (_closeErr) {
+              }
+            }
             dupFailedCount++;
-          } else {
+          } else if (sourceFd === undefined) {
             noFdCount++;
+          } else {
+            inUseCount++;
           }
           handles[index] = await fs.open(f.filePath, fs.OpenMode.READ_ONLY);
           openedCount++;
         });
         logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' + files.length +
           ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount + ' dup失败=' + dupFailedCount +
-          ' 无句柄=' + noFdCount, sendCtx);
+          ' 无句柄=' + noFdCount + ' 他会话占用=' + inUseCount, sendCtx);
         for (let i = 0; i < files.length; i++) {
           let f = files[i];
           let file: fs.File | undefined = handles[i];
@@ -453,6 +485,7 @@ export async function sendToDevice(
           handles[k] = undefined;
         }
         opened = [];
+        releaseClaimedSendFds(claimedFds);
         logger.error('打开源文件失败：' + openErr, sendCtx);
         notifyChange();
         return { success: false, error: { kind: 'other', message: String(openErr) } };
@@ -463,6 +496,8 @@ export async function sendToDevice(
       logger.debug('发送请求往返耗时=' + (Date.now() - roundTripStartMs) + 'ms success=' + result.success, sendCtx);
       // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
       pendingFileHandles = [];
+      // 读取结束：释放句柄占用，供后续发送会话复用（下次复用前会重新归位偏移）
+      releaseClaimedSendFds(claimedFds);
       if (result.success) {
         logger.debug('发送成功', { sessionId: result.sessionId, direction: 'send' });
         notifyChange();
@@ -544,10 +579,12 @@ export async function sendToDevice(
       }
     }
     pendingFileHandles = [];
+    releaseClaimedSendFds(claimedFds);
     logger.error('发送异常：' + e, { direction: 'send' });
     notifyChange();
     return { success: false, error: { kind: 'other', message: String(e) } };
   } finally {
+    releaseClaimedSendFds(claimedFds);
     nativeFlushRustLogs();
   }
 }
@@ -646,7 +683,8 @@ function extractFileName(uri: string): string {
  * @param manualTextUris 可选的「手动文本来源」源定位列表：命中该列表的条目
  *   读取文本内容填入 preview，供接收端识别为文本消息；未传入时不补设任何 preview
  * @param knownMeta 可选的「已读到的源文件元数据」：命中者直接复用，不再为同一文件 open/stat
- * @param knownFds 可选的「已打开的源文件句柄」：命中者随条目下传，发送时以 dup 复用
+ * @param knownFds 可选的「已打开的源文件句柄」：命中者随条目下传，
+ *   发送/校验和以 dup 复用（读取前把共享偏移归位到文件头），网页分享直接借用
  * @returns 发送条目列表（准备失败的条目被跳过）
  */
 export async function prepareSendFiles(
@@ -750,7 +788,7 @@ async function buildSendFileItem(uri: string, index: number,
     preview: preview,
     lastModified: lastModified
   };
-  // 暂存阶段已打开过的句柄：随条目下传，发送时 dup 复用（避免同一文件被再次 open）
+  // 暂存阶段已打开过的句柄：随条目下传，发送/校验和 dup 复用（读取前归位偏移），网页分享借用
   let knownFd: number | undefined = knownFds !== undefined ? knownFds.get(uri) : undefined;
   if (knownFd !== undefined) {
     item.sourceFd = knownFd;
@@ -910,8 +948,8 @@ function filesForSession(files: Array<SendFileItem>): Array<SendFileItem> {
       preview: f.preview,
       hash: f.hash,
       lastModified: f.lastModified,
-      // 必须透传暂存阶段保留的源句柄：会话条目也是发送入参，
-      // 丢失后 sendToDevice 会为每个文件重新 open（媒体库来源可达秒级）
+      // 透传暂存阶段保留的源句柄：发送时 dup 复用，读取前把共享偏移归位到文件头；
+      // 并发会话占用该句柄时 sendToDevice 会回退按路径打开
       sourceFd: f.sourceFd
     });
   }

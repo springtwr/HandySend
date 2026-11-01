@@ -1595,7 +1595,8 @@ export class SendViewModel {
       await forEachConcurrently(pending.length, async (index: number): Promise<void> => {
         let uri: string = pending[index];
         // 打开后保留句柄：发送与网页挂载都只需要 dup 一份就能拿到相同文件，
-        // 否则同一批文件会被反复 open（媒体库 URI 单次打开在并发下可达数十毫秒）
+        // 否则同一批文件会被反复 open（媒体库 URI 单次打开在并发下可达数十毫秒）；
+        // dup 副本与暂存句柄共享文件偏移，读取前由使用方归位到文件头
         let opened: StagedHandleSnapshot | undefined = await this.openStagedHandle(uri);
         // 失败同样记为已处理：避免不可读文件在每次刷新时被反复重试
         this.metaFilledUris.add(uri);
@@ -1620,7 +1621,7 @@ export class SendViewModel {
 
   /**
    * 打开暂存项并读取元数据；句柄在数量上限内保留于 stagedHandles，供发送 / 网页挂载复用
-   * （复用方式是 dup，避免同一文件被再次 open）。超过上限或失败时同样返回元数据。
+   * （复用方式是 dup，避免同一文件被再次 open；读取前归位共享偏移）。超过上限或失败时同样返回元数据。
    */
   private async openStagedHandle(uri: string): Promise<StagedHandleSnapshot | undefined> {
     let file: fs.File | undefined = undefined;
@@ -1705,7 +1706,7 @@ export class SendViewModel {
     }
   }
 
-  // 暂存项已保留的源文件句柄（uri → fd）：发送与校验和据此 dup，网页分享直接借用
+  // 暂存项已保留的源文件句柄（uri → fd）：发送/校验和据此 dup（读取前归位偏移），网页分享直接借用
   private stagedSourceFds(): Map<string, number> {
     let fds: Map<string, number> = new Map();
     this.stagedHandles.forEach((handle: fs.File, uri: string): void => {

@@ -115,20 +115,27 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
       // 令牌先建：建令牌抛错时尚未打开句柄，无泄漏。
       let token = nativeCreateCancelToken();
       cancelId = token.id;
-      // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）
+      // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）。
+      // dup 副本与暂存句柄共享文件偏移：读取前归位到文件头，
+      // 否则复用上一次读完（停在末尾）的偏移会算出空内容的哈希
       let file: fs.File | undefined = undefined;
       let knownFd: number | undefined = files[i].sourceFd;
       if (knownFd !== undefined) {
+        let duped: fs.File | undefined = undefined;
         try {
-          let duped: fs.File = fs.dup(knownFd);
+          duped = fs.dup(knownFd);
           // 与发送链路同一校验：句柄编号可能已被其他文件复用，大小不一致则回退按路径打开
           if (fs.statSync(duped.fd).size === files[i].size) {
+            fs.lseek(duped.fd, 0, fs.WhenceType.SEEK_SET);
             file = duped;
-          } else {
-            fs.closeSync(duped);
           }
         } catch (_dupErr) {
-          file = undefined;
+        }
+        if (file === undefined && duped !== undefined) {
+          try {
+            fs.closeSync(duped);
+          } catch (_closeErr) {
+          }
         }
       }
       if (file === undefined) {

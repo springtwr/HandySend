@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
+import { fileIo as fs } from '@kit.CoreFileKit'
 import {
   SendFileItem
 } from '../../../../main/ets/model/Types'
@@ -210,6 +211,49 @@ export default function ChecksumBatchTest() {
       } finally {
         setCreateChecksums(previous)
         resetRegistry()
+      }
+      done()
+    })
+
+    it('reused_source_fd_rewinds_offset_before_hashing', 0, async (done: Function) => {
+      // 回归：发送/上一次哈希读完会把暂存句柄的共享偏移推到末尾，
+      // 复用它计算校验和时必须先归位，否则会从末尾读到空内容
+      let previous: boolean = isCreateChecksums()
+      setCreateChecksums(true)
+      let handle: fs.File | undefined = undefined
+      try {
+        let content: string = 'rewind before hashing'
+        let path: string = writeTestFileToSandbox('checksum_rewind.txt', content)
+        handle = await fs.open(path, fs.OpenMode.READ_ONLY)
+        // 模拟上一次发送读完后的状态：共享偏移停在文件末尾
+        let buffer: ArrayBuffer = new ArrayBuffer(content.length)
+        fs.readSync(handle.fd, buffer)
+        // 基准：不复用句柄、按路径打开计算的哈希
+        let baseline: Array<SendFileItem> = [{
+          fileId: 'baseline',
+          filePath: path,
+          fileName: 'checksum_rewind.txt',
+          fileType: 'text/plain',
+          size: content.length
+        }]
+        await calculateChecksumsForFiles(baseline)
+        // 复用已到末尾的暂存句柄：归位后应与基准一致
+        let reused: Array<SendFileItem> = [{
+          fileId: 'reused',
+          filePath: path,
+          fileName: 'checksum_rewind.txt',
+          fileType: 'text/plain',
+          size: content.length,
+          sourceFd: handle.fd
+        }]
+        await calculateChecksumsForFiles(reused)
+        expect(baseline[0].hash !== undefined && baseline[0].hash.length === 64).assertTrue()
+        expect(reused[0].hash).assertEqual(baseline[0].hash)
+      } finally {
+        if (handle !== undefined) {
+          fs.closeSync(handle)
+        }
+        setCreateChecksums(previous)
       }
       done()
     })
