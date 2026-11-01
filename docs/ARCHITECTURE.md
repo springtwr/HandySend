@@ -183,6 +183,8 @@ debug 写入受全局令牌桶限制（100 条/秒，突发 300 条），超限�
 Toggle「记录详细日志」及说明，选择在重启后继续生效，可覆盖下次启动阶段的详细日志采集。
 导出把 events/detail 的 current/previous 四份文件 + `metadata.json`/`README.txt` 用 zlib 打包为 ZIP，
 Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs/picker）。
+同一打包流程也供反馈邮件使用：联系开发者弹窗勾选「附带诊断日志」后，ZIP 保留在 cacheDir，
+随邮件扩展面板以只读 URI 授权附带；下一次打包时清理上一份。
 
 ### 4.6 GallerySaveService — 相册保存服务
 

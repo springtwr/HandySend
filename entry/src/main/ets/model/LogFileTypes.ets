@@ -35,3 +35,13 @@ export interface LogExportResult {
   status: LogExportStatus
   fileName: string
 }
+
+/** 邮件附件打包状态。 */
+export type LogAttachmentStatus = 'ready' | 'empty' | 'failed'
+
+/** 邮件附件打包结果：ready 时附带 cacheDir 下的 ZIP 路径与文件名。 */
+export interface LogAttachmentResult {
+  status: LogAttachmentStatus
+  filePath: string
+  fileName: string
+}
