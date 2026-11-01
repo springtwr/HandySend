@@ -410,6 +410,22 @@ export default function NativeEventParseTest() {
       expect(e.error === 'network').assertTrue()
     })
 
+    it('parse_web_download_ended_null_error', 0, () => {
+      // 下载成功（或取消）时 Rust 的 error 为 None，序列化为 JSON null；
+      // 可选字段须归一为 undefined，防止下游「!== undefined && .length」判断被 null 穿透
+      let json =
+        '{"type":"webDownloadEnded","payload":{"batchId":"b2","outcome":"succeeded","error":null}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadEndedEvent = event as NativeWebDownloadEndedEvent
+      expect(e.batchId === 'b2').assertTrue()
+      expect(e.outcome === 'succeeded').assertTrue()
+      expect(e.error === undefined).assertTrue()
+    })
+
     // ── webSendSessionEnd 事件 ──
 
     it('parse_web_send_session_end_event', 0, () => {

@@ -618,7 +618,11 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         type: 'webDownloadEnded',
         batchId: payload['batchId'] as string,
         outcome: payload['outcome'] as string,
-        error: payload['error'] as string | undefined
+        // Rust Option::None 经 serde 序列化为 JSON null，须归一为 undefined：
+        // 下游判断为「!== undefined && .length > 0」，null 会穿透并触发
+        // 「Cannot read property length of null」（下载成功/取消时 error 为 None）
+        error: (payload['error'] !== undefined && payload['error'] !== null) ?
+          payload['error'] as string : undefined
       } as NativeWebDownloadEndedEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
