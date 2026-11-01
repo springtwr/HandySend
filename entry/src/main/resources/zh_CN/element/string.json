@@ -25,8 +25,8 @@
       "value": "文件"
     },
     {
-      "name": "send_image",
-      "value": "图片"
+      "name": "send_media",
+      "value": "图库"
     },
     {
       "name": "send_justify",
@@ -741,10 +741,6 @@
       "value": "信息"
     },
     {
-      "name": "send_audio",
-      "value": "音频"
-    },
-    {
       "name": "checksum_create_desc",
       "value": "发送前计算 SHA-256 哈希值"
     },
@@ -1207,18 +1203,6 @@
     {
       "name": "history_text_content_title",
       "value": "文本内容"
-    },
-    {
-      "name": "send_video",
-      "value": "视频"
-    },
-    {
-      "name": "send_document",
-      "value": "文档"
-    },
-    {
-      "name": "send_archive",
-      "value": "压缩包"
     },
     {
       "name": "file_status_waiting",
@@ -1963,10 +1947,6 @@
     {
       "name": "transfer_center_text_label",
       "value": "文本"
-    },
-    {
-      "name": "staged_text_title",
-      "value": "文本 %d"
     },
     {
       "name": "session_meta_time_title",

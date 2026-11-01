@@ -167,6 +167,8 @@ export interface StagedFile {
   isManualText?: boolean
   // 手输文本是否已随某次发送发起（已发起 = 其持久文件不再随暂存列表清理删除）
   persisted?: boolean
+  // 手输文本的正文预览（换行折叠为空格）：列表以正文代替沙箱文件名展示
+  textPreview?: string
   // 源文件修改时间（Unix 毫秒，可缺省）：暂存时由异步补全读取原文件属性，
   // 随发送文件 JSON 传递，供接收端还原文件时间
   lastModified?: number

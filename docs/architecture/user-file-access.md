@@ -8,30 +8,24 @@
 | 入口 | 选择器 | 单次上限 | 备注 |
 |---|---|---|---|
 | 文件 | `DocumentViewPicker` | 100 | 文档选择器自身上限 500，应用收敛到 100 |
-| 文档 | `DocumentViewPicker` + 聚合视图 | 100 | `MergeTypeMode.DOCUMENT` + 后缀过滤 |
-| 压缩包 | `DocumentViewPicker` + 后缀过滤 | 100 | 聚合视图无压缩包类型，见下 |
-| 音频 | `DocumentViewPicker` + 聚合视图 | 100 | `MergeTypeMode.AUDIO` + 后缀过滤，原因见下 |
-| 图片 / 视频 | `photoAccessHelper.PhotoViewPicker` | 100 | 图库选择器自身上限 500 |
+| 图库（图片和视频） | `PhotoViewPicker` | 100 | 不设 `MIMEType`，默认混选图片与视频 |
+| 粘贴 | 系统安全控件 `PasteButton` | — | 不经过 Picker，读剪贴板纯文本 |
+| 文本 | 应用内输入弹窗 | — | 不经过 Picker，正文写入沙箱文本文件 |
 
-音频不用 `AudioViewPicker`：其界面由系统 AudioPicker 提供，官方指南注明 `AudioSelectOptions`
-目前不支持参数配置，数量上限与多选交互都不受应用控制；改用文档选择器后，
-上限、多选与数量提示与其他入口一致。
+发送页只保留上述四个入口。音频、文档、压缩包不再单列，统一从「文件」入口选择：
+`DocumentSelectOptions.defaultFilePathUri` 为空时选择器落在文件管理器的「最近访问」页，
+该页只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法改为默认展示全部），
+更早的文件需用户切到「浏览」页按目录查找。鸿蒙 7 的文件选择器在「浏览」页提供分类聚合，
+更早版本没有。
 
-`DocumentSelectOptions.defaultFilePathUri` 为空时，选择器落在文件管理器的「最近访问」页，
-该页只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法改为默认展示全部）。
-文档与音频因此设 `mergeMode`（`MergeTypeMode.DOCUMENT` / `AUDIO`）拉起分类聚合视图，
-直接列出设备内该类型的全部文件；该参数仅在 Phone 生效，其他设备按普通文件树处理。
+图库入口合并图片与视频后，暂存项按扩展名区分两者（`isImageExtension`）：图片直接显示缩略图，
+视频由 `loadVideoPreview` 懒生成缩略图，其余类型回退类型图标。
 
-聚合视图与其它参数的关系：API 26.0.0 及之后仅 `fileSuffixFilters` 与聚合视图同时生效，
-更早版本设置 `mergeMode` 会使其参数（含 `maxSelectNumber`）一并失效，
-此时单次选择数量由系统选择器自身限制。压缩包没有对应的聚合类型，
-只能按后缀过滤在「最近访问」页或用户自行切换的「浏览」页中挑选。
-
-上限常量为 `SendViewModel.ets` 顶部的 `MAX_PICK_SELECT_NUMBER`；音频后缀列表在 `pickAudio` 内维护，
-新增后缀需同步 `MimeUtils.getMimeForExt` 的映射（否则类型退化为 `application/octet-stream`）。
+上限常量为 `SendViewModel.ets` 顶部的 `MAX_PICK_SELECT_NUMBER`，两个 Picker 入口共用。
 
 `StagedFile` 记录文件名、MIME、图片标记、源修改时间与真实大小；大小与修改时间在选择返回后
 由 `prefetchStagedMeta` 异步补全（受限并发、不阻塞 UI），补全完成前列表显示占位 `—`。
+手输文本条目另记正文预览 `textPreview`（换行折叠为空格），列表以正文代替沙箱文件名展示。
 
 ## 2. Picker URI 的授权
 

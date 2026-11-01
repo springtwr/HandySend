@@ -546,7 +546,7 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 
 ```
 ├── SendContent (装配发送页三区；根 Stack 承载收藏设备半模态面板 bindSheet)
-│   ├── SendContentZone  内容区（类型选择 + 暂存列表，可折叠/限高）
+│   ├── SendContentZone  内容区（四个类型入口磁贴 + 暂存列表，列表最多 4 行、超出滚动）
 │   └── SendTargetZone   目标区（来源注册表驱动：来源标签/设备网格/收藏/刷新/空态）
 │       └── SendMethodZone 方式区（方式注册表驱动：网页组 / 其它方式组）
 ├── TransferCenterContent (任务：合并会话列表〔进行中/待确认/终态可见窗口/历史，时间倒序，按会话标识去重〕 + 待确认交互 + 空态)
@@ -901,7 +901,7 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   、后台续传（后台存在活跃传输时申请或保持 dataTransfer 长时任务并以实况通知展示聚合进度，
   覆盖 LocalSend 收发、MTA 收发与 Web 下载批次/上传；网页访问只续期 5 分钟有界保活；删通知即取消全部传输，见 §4.7）
 - **发现**：UDP 组播 + HTTP 子网扫描设备发现、收藏设备
-- **用户文件访问**：各入口单次选择上限 100（文件/文档/压缩包/音频/图片/视频），
+- **用户文件访问**：各入口单次选择上限 100（文件、图库两个 Picker 入口），
   Picker URI 选择后持久化授权、访问前激活，暂存句柄在发送、校验和与网页分享间复用
   （详见 [architecture/user-file-access.md](architecture/user-file-access.md)）
 - **网页**：网页传输总开关 + 允许上传子开关（总开关控制自研网页服务，与 LocalSend 服务器生命周期无关）、

@@ -25,8 +25,8 @@
       "value": "Files"
     },
     {
-      "name": "send_image",
-      "value": "Images"
+      "name": "send_media",
+      "value": "Gallery"
     },
     {
       "name": "send_justify",
@@ -741,10 +741,6 @@
       "value": "Info"
     },
     {
-      "name": "send_audio",
-      "value": "Audio"
-    },
-    {
       "name": "checksum_create_desc",
       "value": "Calculate SHA-256 hash before sending and verify file integrity on receiving"
     },
@@ -1207,18 +1203,6 @@
     {
       "name": "history_text_content_title",
       "value": "Message content"
-    },
-    {
-      "name": "send_video",
-      "value": "Video"
-    },
-    {
-      "name": "send_document",
-      "value": "Document"
-    },
-    {
-      "name": "send_archive",
-      "value": "Archive"
     },
     {
       "name": "file_status_waiting",
@@ -1963,10 +1947,6 @@
     {
       "name": "transfer_center_text_label",
       "value": "Text"
-    },
-    {
-      "name": "staged_text_title",
-      "value": "Text %d"
     },
     {
       "name": "session_meta_time_title",

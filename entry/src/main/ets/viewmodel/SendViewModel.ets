@@ -104,7 +104,7 @@ interface StagedHandleSnapshot {
   lastModified: number
 }
 
-// 各选择器单次可选数量上限：选择器自身上限为 500（文档选择器默认 500，API 21 起系统不再限制），
+// 两个 Picker 入口的单次可选数量上限：选择器自身上限为 500（API 21 起文档选择器不再限制），
 // 这里统一收敛到 100，避免单次选入的文件数把后续准备、建行与统计开销推到不可控
 const MAX_PICK_SELECT_NUMBER: number = 100;
 
@@ -622,104 +622,28 @@ export class SendViewModel {
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     try {
       let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, undefined);
+      this.stageUris(uris);
     } catch (e) {
       logger.warn('选择文件失败：' + JSON.stringify(e));
     }
   }
 
-  async pickImages(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    // 使用 Media Library Kit 的 photoAccessHelper（@ohos.file.picker 的 PhotoViewPicker 自 API 12 起废弃）
-    let photoPicker = new photoAccessHelper.PhotoViewPicker();
-    let options = new photoAccessHelper.PhotoSelectOptions();
-    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
-    options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
-    try {
-      let result = await photoPicker.select(options);
-      let uris: Array<string> = result.photoUris;
-      this.stageUris(uris, true);
-    } catch (e) {
-      logger.warn('选择图片失败：' + JSON.stringify(e));
-    }
-  }
-
-  // 音频选择：使用 DocumentViewPicker + 聚合视图 + 音频后缀过滤。
-  // AudioViewPicker 的选择界面由系统 AudioPicker 提供，官方指南注明 AudioSelectOptions
-  // 目前不支持参数配置，数量上限与多选交互都不受应用控制；改用文档选择器后与其他入口口径一致
-  async pickAudio(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    let documentPicker = new picker.DocumentViewPicker(this.context);
-    let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
-    options.fileSuffixFilters = ['音频|.mp3,.flac,.wav,.aac,.m4a,.ogg,.opus,.amr,.ape,.wma,.alac,.aiff,.aif,.dsf,.dff'];
-    // 聚合视图：拉起文件管理器的「音频」分类页，列出设备内全部音频文件。
-    // 不设该项时选择器落在「最近访问」页，只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法关闭）
-    options.mergeMode = picker.MergeTypeMode.AUDIO;
-    try {
-      let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, false);
-    } catch (e) {
-      logger.warn('选择音频失败：' + JSON.stringify(e));
-    }
-  }
-
-  // 视频选择：使用 photoAccessHelper.PhotoViewPicker + VIDEO_TYPE
-  async pickVideos(): Promise<void> {
+  // 图片与视频选择：图库选择器不设 MIMEType 即同时展示图片与视频（可混选）。
+  // 使用 Media Library Kit 的 photoAccessHelper（@ohos.file.picker 的 PhotoViewPicker 自 API 12 起废弃）
+  async pickMedia(): Promise<void> {
     if (this.context === undefined) {
       return;
     }
     let photoPicker = new photoAccessHelper.PhotoViewPicker();
     let options = new photoAccessHelper.PhotoSelectOptions();
-    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE;
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     try {
       let result = await photoPicker.select(options);
       let uris: Array<string> = result.photoUris;
-      this.stageUris(uris, false);
+      // 不强制标记为图片：按扩展名区分图片与视频，视频条目由暂存列表懒生成缩略图
+      this.stageUris(uris);
     } catch (e) {
-      logger.warn('选择视频失败：' + JSON.stringify(e));
-    }
-  }
-
-  // 文档选择：使用 DocumentViewPicker + 聚合视图 + fileSuffixFilters 过滤办公格式
-  async pickDocuments(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    let documentPicker = new picker.DocumentViewPicker(this.context);
-    let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
-    options.fileSuffixFilters = ['文档|.doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf,.wps,.et,.dps,.ofd,.xmind,.mm,.opml'];
-    // 聚合视图：拉起文件管理器的「文档」分类页，列出设备内全部文档。
-    // 不设该项时选择器落在「最近访问」页，只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法关闭）
-    options.mergeMode = picker.MergeTypeMode.DOCUMENT;
-    try {
-      let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, undefined);
-    } catch (e) {
-      logger.warn('选择文档失败：' + JSON.stringify(e));
-    }
-  }
-
-  // 压缩包选择：使用 DocumentViewPicker + fileSuffixFilters 过滤压缩包格式
-  async pickArchives(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    let documentPicker = new picker.DocumentViewPicker(this.context);
-    let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
-    options.fileSuffixFilters = ['压缩包|.zip,.rar,.7z,.tar,.gz'];
-    try {
-      let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, false);
-    } catch (e) {
-      logger.warn('选择压缩包失败：' + JSON.stringify(e));
+      logger.warn('选择图片或视频失败：' + JSON.stringify(e));
     }
   }
 
@@ -740,7 +664,7 @@ export class SendViewModel {
     let added: boolean = false;
     if (result.uris.length > 0) {
       let beforeCount: number = this.stagedFiles.length;
-      this.stageUris(result.uris, undefined);
+      this.stageUris(result.uris);
       if (this.stagedFiles.length > beforeCount) {
         added = true;
       }
@@ -808,6 +732,11 @@ export class SendViewModel {
     return true;
   }
 
+  // 文本消息的列表标题：取正文并把换行折叠为空格，供暂存列表直接展示
+  private textPreviewOf(text: string): string {
+    return text.replace(/\r\n|\r|\n/g, ' ').trim();
+  }
+
   stageTextFile(text: string, prefix: string): void {
     if (this.context === undefined) {
       return;
@@ -845,7 +774,8 @@ export class SendViewModel {
       fileName: fileName,
       fileType: 'text/plain',
       isImage: false,
-      isManualText: true
+      isManualText: true,
+      textPreview: this.textPreviewOf(text)
     };
     this.stagedFiles.push(staged);
     // 暂存列表新增条目后，既有预准备结果不再对应当前内容，须失效，
@@ -876,6 +806,21 @@ export class SendViewModel {
     } catch (_e) {
       return;
     }
+    // 列表标题跟随正文变化：重建条目对象并替换数组引用，驱动列表刷新
+    let updated: Array<StagedFile> = this.stagedFiles.slice();
+    updated[index] = {
+      uri: staged.uri,
+      fileName: staged.fileName,
+      fileType: staged.fileType,
+      isImage: staged.isImage,
+      isManualText: true,
+      persisted: staged.persisted,
+      lastModified: staged.lastModified,
+      size: staged.size,
+      previewPixelMap: staged.previewPixelMap,
+      textPreview: this.textPreviewOf(newText)
+    };
+    this.stagedFiles = updated;
     // 文件内容已变化：既有预准备结果不再对应当前内容，须失效（与 stageTextFile 的失效时机一致）
     invalidatePrePreparedItems();
     // 该条目字节大小已随内容变化：作废旧的大小与元数据标记，由异步补全重新读取
@@ -1474,9 +1419,8 @@ export class SendViewModel {
 
   // 将选择器返回的 uri 列表去重后暂存为 StagedFile 并刷新总大小缓存；
   // 确有条目新增时使既有预准备结果失效（未新增则保持复用）。
-  // forceImage: true=强制标记为图片（图片选择器）；false=强制非图片（音频/视频/压缩包）；
-  // undefined=按扩展名判断（通用/文档选择器）。
-  private stageUris(uris: Array<string>, forceImage: boolean | undefined): void {
+  // 图片与视频按扩展名区分：图片直显缩略图，视频由暂存列表懒生成缩略图。
+  private stageUris(uris: Array<string>): void {
     // 选择返回的临时授权尽快转成持久授权：过期或进程重启后仍可读取（不复制文件、不占应用存储）
     persistPickedUris(uris).catch((): void => {
     });
@@ -1488,7 +1432,7 @@ export class SendViewModel {
       }
       let name = this.extractFileNameFromUri(uri);
       let ext = this.getExtension(name);
-      let isImg: boolean = forceImage !== undefined ? forceImage : isImageExtension(ext);
+      let isImg: boolean = isImageExtension(ext);
       let mime = mimeGetMimeForExt(ext);
       // 大小与源修改时间不在选择返回时读取：选择器 URI 逐项同步 open/stat 会阻塞 UI 线程，
       // 数百个文件的累计耗时可达秒级。此处先入列表（文件名/图标即时可见），

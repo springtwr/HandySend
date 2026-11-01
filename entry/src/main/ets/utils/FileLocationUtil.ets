@@ -74,7 +74,7 @@ export enum FileOpenResult {
   fileMissing = 'fileMissing',
   /**
    * 访问授权已失效：文件仍在原处，但应用已没有读取权限。
-   * 典型来源：文档 / 音频等选择器标识的临时授权超过有效期（与进程是否重启无关）
+   * 典型来源：文件选择器标识的临时授权超过有效期（与进程是否重启无关）
    * 且该 URI 未做过持久化授权；图库标识无法区分「不存在」与「无授权」，按缺失收口。
    */
   accessDenied = 'accessDenied',
