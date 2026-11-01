@@ -3,6 +3,7 @@ import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { connection } from '@kit.NetworkKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
+import { appendDiagnosticLog, clearDiagnosticLogs } from '../log/DiagnosticLogService';
 import { LogDomains } from '../../common/LogDomains';
 import { nativeGetNetworkInterfaces } from '../NativeBridge';
 import { NetworkInterfaceInfo } from 'localsend_ohrs';
@@ -89,22 +90,25 @@ export function getLogs(): Array<LogEntry> {
 }
 
 /**
- * 清空内存日志源数据。诊断日志页的"清空"必须调用本函数，
+ * 清空内存与文件日志。诊断日志页的“清除日志”必须调用本函数，
  * 否则仅清空 UI 副本会被后台持续写入的日志立即覆盖（表现为清除无效）。
  */
 export function clearLogs(): void {
   logs = [];
+  clearDiagnosticLogs();
 }
 
-export function addLog(level: string, message: string): void {
-  logs.push({ timestamp: Date.now(), level: level, message: message });
-  if (logs.length > 2000) {
-    // 裁剪到最近 1800 条，保留最近的条目。
-    // 2000 条约占用 0.6–1 MB 内存（消息均长 < 1KB），对手机无压力。
-    logs = logs.slice(-1800);
+/**
+ * 日志入口：内存只保留最近一小段作为文件不可用时的回退视图；
+ * 完整历史由 DiagnosticLogService 写入双通道文件。
+ */
+export function addLog(level: string, message: string, tag: string = ''): void {
+  logs.push({ timestamp: Date.now(), level: level, tag: tag, message: message });
+  if (logs.length > 500) {
+    logs = logs.slice(-400);
   }
-  // hilog 输出现已由 Logger 模块处理；addLog 仅管理内存日志存储。
-  // 写入与裁剪完成后通知日志订阅者（仅日志刷新通道，不触碰全局 changeBus）
+  appendDiagnosticLog(level, tag, message);
+  // 保留原有日志通道通知：日志页文件不可用时仍可回退到内存视图。
   logBus.notifyChange();
 }
 
@@ -113,9 +117,10 @@ export function addLog(level: string, message: string): void {
  * 纯逻辑：picker + fileUri + fs 写入均在此完成，不弹 Toast（UI 反馈由调用方负责）。
  * @param context UIAbilityContext（picker 构造需要），由 View 传入以保持本模块不自行获取 UI 上下文
  * @param text 待保存的日志文本
+ * @returns 实际写入的文件名；用户取消选择器时返回空串
  * @throws 保存失败时抛出 BusinessError（含用户取消选择器的错误码，调用方据此区分取消/失败）
  */
-export async function saveLogsToFile(context: common.UIAbilityContext, text: string): Promise<void> {
+export async function saveLogsToFile(context: common.UIAbilityContext, text: string): Promise<string> {
   let date: Date = new Date();
   let pad = (n: number): string => (n < 10 ? '0' + n : '' + n);
   let fileName: string = 'handysend_logs_' + date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate()) +
@@ -125,17 +130,19 @@ export async function saveLogsToFile(context: common.UIAbilityContext, text: str
   let documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
   let uris: Array<string> = await documentPicker.save(saveOptions);
   if (uris.length === 0) {
-    return;
+    return '';
   }
   let dirPath: string = new fileUri.FileUri(uris[0]).path;
   let filePath: string = dirPath + '/' + fileName;
-  let file: fs.File = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY);
+  let file: fs.File = fs.openSync(filePath,
+    fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
   try {
     fs.writeSync(file.fd, text);
     fs.fsyncSync(file.fd);
   } finally {
-    fs.closeSync(file);
+    fs.closeSync(file.fd);
   }
+  return fileName;
 }
 
 // ── 本地网络接口 ──

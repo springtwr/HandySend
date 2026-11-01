@@ -56,6 +56,8 @@ import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
 import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
 import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
+import LogFileFormatTest from './utils/LogFileFormatTest.test'
+import DebugLogBudgetTest from './utils/DebugLogBudgetTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -151,6 +153,8 @@ export default function testsuite() {
   FileLocationUtilTest()
   TextAlignUtilTest()
   WebAccessCodeTest()
+  LogFileFormatTest()
+  DebugLogBudgetTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()

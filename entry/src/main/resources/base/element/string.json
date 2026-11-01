@@ -686,11 +686,11 @@
     },
     {
       "name": "save_logs_button",
-      "value": "Save"
+      "value": "Export all logs"
     },
     {
       "name": "save_success",
-      "value": "Logs saved to Download/%s"
+      "value": "Logs saved to:\nDownload/%s/%s\nTurn off detailed logging after troubleshooting."
     },
     {
       "name": "save_failed",
@@ -698,7 +698,7 @@
     },
     {
       "name": "clear_logs_button",
-      "value": "Clear"
+      "value": "Clear logs"
     },
     {
       "name": "no_logs",
@@ -1002,11 +1002,23 @@
     },
     {
       "name": "debug_log_label",
-      "value": "Detailed logging (DEBUG)"
+      "value": "Detailed logging"
     },
     {
       "name": "debug_log_desc",
-      "value": "Outputs more detailed log information for troubleshooting; turns off automatically after restart"
+      "value": "Records more detailed diagnostic information to help developers locate issues. Turn it off after reproducing the issue."
+    },
+    {
+      "name": "log_settings_title",
+      "value": "Log settings"
+    },
+    {
+      "name": "log_settings_info_title",
+      "value": "Log files"
+    },
+    {
+      "name": "log_settings_info_desc",
+      "value": "Logs are kept in the app sandbox. The exported ZIP contains key and detailed logs from this and the previous session, plus app version and device information."
     },
     {
       "name": "more_settings",
@@ -2351,6 +2363,10 @@
     {
       "name": "session_end_web_download",
       "value": "End download"
+    },
+    {
+      "name": "log_file_unavailable",
+      "value": "File logging unavailable; showing temporary memory logs"
     }
   ]
 }

@@ -686,11 +686,11 @@
     },
     {
       "name": "save_logs_button",
-      "value": "保存"
+      "value": "匯出全部日誌"
     },
     {
       "name": "save_success",
-      "value": "日誌已儲存到 Download/%s"
+      "value": "日誌已儲存到：\nDownload/%s/%s\n排障結束後建議關閉詳細日誌"
     },
     {
       "name": "save_failed",
@@ -698,7 +698,7 @@
     },
     {
       "name": "clear_logs_button",
-      "value": "清除"
+      "value": "清除日誌"
     },
     {
       "name": "no_logs",
@@ -1002,11 +1002,23 @@
     },
     {
       "name": "debug_log_label",
-      "value": "詳細日誌（DEBUG）"
+      "value": "記錄詳細日誌"
     },
     {
       "name": "debug_log_desc",
-      "value": "輸出更詳細的日誌資訊，用於排查故障，重啟後自動關閉"
+      "value": "記錄更詳細的診斷資訊，協助開發者定位問題。問題重現後建議關閉"
+    },
+    {
+      "name": "log_settings_title",
+      "value": "日誌設定"
+    },
+    {
+      "name": "log_settings_info_title",
+      "value": "日誌檔案"
+    },
+    {
+      "name": "log_settings_info_desc",
+      "value": "日誌保存在應用程式沙箱中；匯出的 ZIP 包含本次與上次會話的關鍵日誌、詳細日誌，以及應用程式版本和裝置資訊。"
     },
     {
       "name": "more_settings",
@@ -2351,6 +2363,10 @@
     {
       "name": "session_end_web_download",
       "value": "結束下載"
+    },
+    {
+      "name": "log_file_unavailable",
+      "value": "檔案日誌不可用，目前顯示暫存記憶體日誌"
     }
   ]
 }

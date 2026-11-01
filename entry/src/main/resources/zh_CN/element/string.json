@@ -686,11 +686,11 @@
     },
     {
       "name": "save_logs_button",
-      "value": "保存"
+      "value": "导出全部日志"
     },
     {
       "name": "save_success",
-      "value": "日志已保存到 Download/%s"
+      "value": "日志已保存到：\nDownload/%s/%s\n排障结束后建议关闭详细日志"
     },
     {
       "name": "save_failed",
@@ -698,7 +698,7 @@
     },
     {
       "name": "clear_logs_button",
-      "value": "清除"
+      "value": "清除日志"
     },
     {
       "name": "no_logs",
@@ -1002,11 +1002,23 @@
     },
     {
       "name": "debug_log_label",
-      "value": "详细日志（DEBUG）"
+      "value": "记录详细日志"
     },
     {
       "name": "debug_log_desc",
-      "value": "输出更详细的日志信息，用于排查故障，重启后自动关闭"
+      "value": "记录更详细的诊断信息，帮助开发者定位问题。问题复现后建议关闭"
+    },
+    {
+      "name": "log_settings_title",
+      "value": "日志设置"
+    },
+    {
+      "name": "log_settings_info_title",
+      "value": "日志文件"
+    },
+    {
+      "name": "log_settings_info_desc",
+      "value": "日志保存在应用沙箱中；导出的 ZIP 包含本次与上次会话的关键日志、详细日志，以及应用版本和设备信息。"
     },
     {
       "name": "more_settings",
@@ -2351,6 +2363,10 @@
     {
       "name": "session_end_web_download",
       "value": "结束下载"
+    },
+    {
+      "name": "log_file_unavailable",
+      "value": "文件日志不可用，当前显示临时内存日志"
     }
   ]
 }

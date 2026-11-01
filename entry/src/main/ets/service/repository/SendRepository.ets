@@ -617,15 +617,14 @@ export function handleSendProgress(progress: TransferProgress): void {
   let fileId: string = progress.fileId;
   let bytesSent: number = progress.bytesSent;
   let totalBytes: number = progress.totalBytes;
-  let key: string = sessionId + ':' + fileId;
-  // 终态（完成）日志必发，不受节流限制；进行中日志最多每秒一条
+  let key: string = sessionId + ':progress';
+  // 终态（完成）日志必发；进行中日志按会话聚合为每 5 秒最多一条，避免多文件放大日志量。
   let completed: boolean = bytesSent >= totalBytes && totalBytes > 0;
 
   if (completed) {
-    progressLogThrottle.clear(key);
     logger.debug('文件上传完成', { sessionId: sessionId, fileId: fileId, direction: 'send' });
   } else if (progressLogThrottle.shouldLog(key, Date.now())) {
-    logger.debug('文件进度：' + bytesSent + '/' + totalBytes + ' 字节',
+    logger.debug('传输进度：' + bytesSent + '/' + totalBytes + ' 字节',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });
   }
 }

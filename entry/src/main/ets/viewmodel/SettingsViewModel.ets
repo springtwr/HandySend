@@ -98,6 +98,7 @@ import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { errorText } from '../utils/FormatUtil';
 import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { setDebugEnabled, getLogger } from '../utils/Logger';
+import { setPersistedDebugEnabled } from '../service/log/DiagnosticLogService';
 import { LogDomains } from '../common/LogDomains';
 import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService';
 import { NetworkInterface } from '../model/Types';
@@ -809,8 +810,9 @@ export class SettingsViewModel {
     setCreateChecksums(DEFAULT_CREATE_CHECKSUMS);
     setVerifyChecksums(DEFAULT_VERIFY_CHECKSUMS);
 
-    // 调试日志（非常驻设置项，不经 SettingsDefaults）：恢复默认时一并复位该内存态
+    // 详细日志（独立设置项，不经 SettingsDefaults）：恢复默认时一并复位内存态与持久化选择
     setDebugEnabled(false);
+    setPersistedDebugEnabled(false);
 
     // 刷新设备信息（服务器重启横幅会自动显示）
     refreshDeviceInfo();

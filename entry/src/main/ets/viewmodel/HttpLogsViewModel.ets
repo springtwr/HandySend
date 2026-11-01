@@ -1,178 +1,248 @@
-import { LogEntry } from '../model/Types';
 import { common } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
-import { getLogs, clearLogs, saveLogsToFile, subscribeLogs, unsubscribeLogs } from '../service/AppService';
+import { LogEntry, LogViewEntry } from '../model/Types';
+import { LogExportResult, LogFileChangeEvent, LogFileKind } from '../model/LogFileTypes';
+import {
+  exportAllDiagnosticLogs,
+  getDiagnosticLogError,
+  isDiagnosticLogAvailable,
+  readLogFrom,
+  readLogTail,
+  setPersistedDebugEnabled,
+  subscribeLogFileChanges,
+  unsubscribeLogFileChanges
+} from '../service/log/DiagnosticLogService';
+import {
+  clearLogs as clearMemoryLogs,
+  getLogs,
+  saveLogsToFile,
+  subscribeLogs as subscribeMemoryLogs,
+  unsubscribeLogs as unsubscribeMemoryLogs
+} from '../service/AppService';
 import { formatLogsAsText } from '../utils/LogFormatter';
 import { isDebugEnabled, setDebugEnabled, getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:HttpLogsViewModel', '日志页');
 
-// 合并窗口时长（ms）：与 Rust 侧日志轮询（~500ms）同拍，避免高频刷新抖动
-const MERGE_WINDOW_MS: number = 500;
-// 积压阈值：窗口内累计通知达到该值即立即刷新，兜底 DEBUG 洪水下的上屏延迟
-const BACKLOG_THRESHOLD: number = 100;
+// 合并窗口：文件日志写入端每 500ms flush 一次，页面稍作合并避免频繁读文件
+const MERGE_WINDOW_MS: number = 300;
+// 内存回退模式的积压阈值（仅 Service 尚未初始化时使用）
+const MEMORY_BACKLOG_THRESHOLD: number = 100;
 
-/**
- * 保存日志的结果。
- * - success：已写入文件
- * - empty：无日志可保存（Page 据此提示"暂无日志"）
- * - cancelled：用户取消文件选择器（Page 不弹失败 Toast）
- * - failed：保存过程出错（Page 据此提示"保存失败"）
- */
-export type SaveLogsResult = 'success' | 'empty' | 'cancelled' | 'failed';
+export type SaveLogsResult = LogExportResult;
 
 /**
  * HttpLogsViewModel
- * 诊断日志页的视图模型。进入页面时加载一次日志快照，之后订阅日志刷新通道实时增量刷新；
- * 保存时直接从 AppCore 拉最新日志，保证导出的是当前数据。
+ * 诊断日志页视图模型：
+ * - 文件日志可用时，固定读取 detail 当前文件尾部，按偏移增量刷新；
+ * - Service 尚未初始化（如部分测试或早期启动）时，回退到 AppCore 的小容量内存缓存。
  */
 @ObservedV2
 export class HttpLogsViewModel {
-  @Trace public logEntries: Array<LogEntry> = [];
-  // 详细日志（DEBUG）开关状态：初始取 Logger 当前内存态（Release 默认关闭，重启复位）
+  @Trace public logEntries: Array<LogViewEntry> = [];
   @Trace public debugLogEnabled: boolean = isDebugEnabled();
+  @Trace public fileLogAvailable: boolean = false;
+  @Trace public loading: boolean = false;
+  @Trace public fileError: string = '';
 
-  // 已从源缓冲加载的条数：用于增量追加与「源长度回退 = 发生裁剪」的检测
+  // 页面固定读 detail：它始终记录 info+，详细日志开启时再追加 debug
+  private activeKind: LogFileKind = LogFileKind.DETAIL;
+  private offset: number = 0;
+  private generation: number = 0;
+  private filePrefix: string = 'memory';
   private loadedCount: number = 0;
-  // 列表稳定键（与 logEntries 一一对应）：由时间戳 + 全局单调序号构成、不含数组下标，
-  // 使尾部追加不改变既有键；仅在裁剪触发的整体重载时重新对齐
-  private entryKeys: Array<string> = [];
-  // 全局单调序号：跨加载/追加持续递增，裁剪重载时亦不回退，保证键不重复
-  private keySeq: number = 0;
-  // 节流状态：合并窗口定时器标识、窗口内累计通知数、待刷新标记
+  private memoryMode: boolean = false;
+  private refreshing: boolean = false;
+
+  private subscribed: boolean = false;
   private refreshTimer: number = -1;
   private notifyCountInWindow: number = 0;
   private pendingRefresh: boolean = false;
-  // 订阅守卫：避免重复订阅（订阅与退订由页面成对调用）
-  private subscribed: boolean = false;
 
-  // 订阅回调需保持稳定引用以支持按引用退订
-  private logBusCallback: () => void = () => {
-    this.handleLogBusNotification();
+  private fileChangeCallback: (event: LogFileChangeEvent) => void = (event: LogFileChangeEvent): void => {
+    if (event.kind !== this.activeKind) {
+      return;
+    }
+    this.scheduleRefresh();
   };
 
-  /**
-   * 加载当前最新日志快照用于 UI 显示，并记录已加载条数。必须在 Page 的 aboutToAppear 中调用。
-   */
+  private memoryChangeCallback: () => void = (): void => {
+    this.notifyCountInWindow++;
+    if (this.notifyCountInWindow >= MEMORY_BACKLOG_THRESHOLD) {
+      this.flushMemoryRefresh();
+      return;
+    }
+    this.pendingRefresh = true;
+    if (this.refreshTimer >= 0) {
+      return;
+    }
+    this.refreshTimer = setTimeout((): void => {
+      this.refreshTimer = -1;
+      if (this.pendingRefresh) {
+        this.flushMemoryRefresh();
+      }
+    }, MERGE_WINDOW_MS);
+  };
+
+  /** 页面进入：加载 detail 当前文件尾部。 */
   loadLogs(): void {
-    let source: Array<LogEntry> = getLogs();
-    this.entryKeys = this.buildKeys(source, 0);
-    this.logEntries = source.slice();
-    this.loadedCount = source.length;
+    this.activeKind = LogFileKind.DETAIL;
+    this.fileLogAvailable = isDiagnosticLogAvailable();
+    this.fileError = getDiagnosticLogError();
+    this.memoryMode = !this.fileLogAvailable;
+    if (this.memoryMode) {
+      this.loadMemorySnapshot();
+      return;
+    }
+    this.reloadFile();
   }
 
-  /**
-   * 订阅日志刷新通道。页面打开期间调用，须与 unsubscribeLogs() 成对使用。
-   * 内部守卫避免重复订阅导致回调累积。
-   */
+  /** 订阅刷新：文件可用走文件通道，否则回退到内存日志通道。 */
   subscribeLogs(): void {
     if (this.subscribed) {
       return;
     }
     this.subscribed = true;
-    subscribeLogs(this.logBusCallback);
+    if (this.memoryMode) {
+      subscribeMemoryLogs(this.memoryChangeCallback);
+    } else {
+      subscribeLogFileChanges(this.fileChangeCallback);
+    }
   }
 
-  /** 退订日志刷新通道，并清理未决的合并窗口（防止页面销毁后仍被回调持有）。 */
   unsubscribeLogs(): void {
     if (!this.subscribed) {
       return;
     }
     this.subscribed = false;
-    unsubscribeLogs(this.logBusCallback);
-    this.cancelScheduledRefresh();
+    if (this.memoryMode) {
+      unsubscribeMemoryLogs(this.memoryChangeCallback);
+    } else {
+      unsubscribeLogFileChanges(this.fileChangeCallback);
+    }
+    this.cancelRefreshTimer();
   }
 
-  /**
-   * 保存日志到文件。保存时直接从 AppCore 拉最新日志
-   * 保证导出的始终是当前最新的数据。
-   * @param context UIAbilityContext
-   */
+  /** 导出应用全部诊断日志（events/detail 的 current/previous）。 */
   async saveLogs(context: common.UIAbilityContext): Promise<SaveLogsResult> {
-    let currentLogs = getLogs();
-    if (currentLogs.length === 0) {
-      return 'empty';
+    if (!this.memoryMode) {
+      return await exportAllDiagnosticLogs(context);
     }
-    let text: string = formatLogsAsText(currentLogs);
+    let current: Array<LogEntry> = getLogs();
+    if (current.length === 0) {
+      return { status: 'empty', fileName: '' };
+    }
     try {
-      await saveLogsToFile(context, text);
-      return 'success';
-    } catch (e) {
-      let err: BusinessError = e as BusinessError;
-      // 用户取消选择器（常见错误码 0 / 801）按取消处理，不报错
-      if (err.code === 0 || err.code === 801) {
-        return 'cancelled';
+      let fileName: string = await saveLogsToFile(context, formatLogsAsText(current));
+      if (fileName.length === 0) {
+        return { status: 'cancelled', fileName: '' };
       }
-      logger.error('保存诊断日志失败：' + err.code + ' ' + err.message);
-      return 'failed';
+      return { status: 'success', fileName: fileName };
+    } catch (e) {
+      let errText: string = String(e);
+      if (errText.includes('801') || errText.includes('code: 0')) {
+        return { status: 'cancelled', fileName: '' };
+      }
+      logger.error('保存诊断日志失败：' + errText);
+      return { status: 'failed', fileName: '' };
+    }
+  }
+
+  /** 清空全部日志并重置页面视图。 */
+  clearLogs(): void {
+    clearMemoryLogs();
+    this.logEntries = [];
+    this.offset = 0;
+    this.loadedCount = 0;
+    this.filePrefix = 'memory';
+    this.activeKind = LogFileKind.DETAIL;
+    this.fileLogAvailable = isDiagnosticLogAvailable();
+    this.memoryMode = !this.fileLogAvailable;
+    if (!this.memoryMode) {
+      this.reloadFile();
     }
   }
 
   /**
-   * 清空内存日志源数据，并清空 UI 显示、重置已加载条数。
-   * 保持订阅有效：清空后新产生的日志仍能实时追加。
-   */
-  clearLogs(): void {
-    clearLogs();
-    this.logEntries = [];
-    this.entryKeys = [];
-    this.loadedCount = 0;
-  }
-
-  /**
-   * 切换「详细日志（DEBUG）」开关：委托 Logger 的内存态。
-   * 立即生效且不持久化（应用重启后回到默认）。
+   * 详细日志开关：只改变后续是否记录 debug，并持久化选择。
+   * 页面始终读 detail，不切换数据源，因此开启/关闭都不会清空当前列表。
    */
   setDebugLogEnabled(on: boolean): void {
+    if (this.debugLogEnabled === on) {
+      return;
+    }
     this.debugLogEnabled = on;
     setDebugEnabled(on);
+    setPersistedDebugEnabled(on);
   }
 
-  /**
-   * 生成列表项的稳定键（供 Repeat 的 .key() 使用）。
-   * 正常走预分配的稳定键；极端越界时回退为按时间戳生成的键，避免空键冲突。
-   */
-  keyFor(item: LogEntry, index: number): string {
-    if (index >= 0 && index < this.entryKeys.length) {
-      return this.entryKeys[index];
+  /** 列表稳定键：文件模式下用文件内字节偏移；内存回退模式用加载序号。 */
+  keyFor(item: LogViewEntry, index: number): string {
+    if (this.memoryMode) {
+      return this.filePrefix + ':' + index.toString();
     }
-    return item.timestamp.toString();
+    return this.filePrefix + ':' + item.offset.toString();
   }
 
-  // ── 内部：合并窗口与增量追加 ──
+  // ── 文件模式 ──
 
-  /**
-   * 日志通道通知处理：按「合并窗口 + 积压阈值」双条件刷新。
-   * 窗口内仅置待刷新标记、窗口结束时统一刷新；窗口内累计通知达积压阈值则立即刷新。
-   */
-  private handleLogBusNotification(): void {
-    this.notifyCountInWindow++;
-    if (this.notifyCountInWindow >= BACKLOG_THRESHOLD) {
-      this.flushRefresh();
+  private async reloadFile(): Promise<void> {
+    if (this.refreshing) {
+      return;
+    }
+    this.refreshing = true;
+    this.loading = true;
+    try {
+      let result = await readLogTail(this.activeKind);
+      this.filePrefix = this.activeKind + ':' + result.generation.toString();
+      this.logEntries = result.entries;
+      this.offset = result.nextOffset;
+      this.generation = result.generation;
+      this.fileError = getDiagnosticLogError();
+    } finally {
+      this.loading = false;
+      this.refreshing = false;
+    }
+  }
+
+  private scheduleRefresh(): void {
+    if (this.memoryMode) {
       return;
     }
     this.pendingRefresh = true;
     if (this.refreshTimer >= 0) {
-      // 已在合并窗口内：等待窗口结束统一刷新
       return;
     }
-    this.refreshTimer = setTimeout(() => {
+    this.refreshTimer = setTimeout((): void => {
       this.refreshTimer = -1;
       if (this.pendingRefresh) {
-        this.flushRefresh();
+        this.flushFileRefresh();
       }
     }, MERGE_WINDOW_MS);
   }
 
-  /** 立即刷新并复位节流状态。 */
-  private flushRefresh(): void {
-    this.cancelScheduledRefresh();
-    this.refreshFromSource();
+  private async flushFileRefresh(): Promise<void> {
+    this.pendingRefresh = false;
+    if (this.refreshing) {
+      return;
+    }
+    this.refreshing = true;
+    try {
+      let result = await readLogFrom(this.activeKind, this.offset, this.generation);
+      if (result.reset) {
+        this.filePrefix = this.activeKind + ':' + result.generation.toString();
+        this.logEntries = result.entries;
+      } else if (result.entries.length > 0) {
+        this.logEntries = this.logEntries.concat(result.entries);
+      }
+      this.offset = result.nextOffset;
+      this.generation = result.generation;
+    } finally {
+      this.refreshing = false;
+    }
   }
 
-  /** 取消未决的合并窗口定时器并复位节流中间状态。 */
-  private cancelScheduledRefresh(): void {
+  private cancelRefreshTimer(): void {
     if (this.refreshTimer >= 0) {
       clearTimeout(this.refreshTimer);
       this.refreshTimer = -1;
@@ -181,43 +251,44 @@ export class HttpLogsViewModel {
     this.notifyCountInWindow = 0;
   }
 
-  /**
-   * 从源缓冲刷新 UI 数据：源长度小于已加载条数说明发生裁剪，退化为整体重载；
-   * 否则取源数组尾部新增段增量追加（不整体重建数组，保持虚拟滚动与滚动位置）。
-   */
-  private refreshFromSource(): void {
+  // ── 内存回退模式 ──
+
+  private loadMemorySnapshot(): void {
+    let source: Array<LogEntry> = getLogs();
+    let entries: Array<LogViewEntry> = [];
+    for (let i = 0; i < source.length; i++) {
+      entries.push(this.toViewEntry(source[i], i));
+    }
+    this.filePrefix = 'memory';
+    this.logEntries = entries;
+    this.loadedCount = source.length;
+  }
+
+  private flushMemoryRefresh(): void {
+    this.cancelRefreshTimer();
     let source: Array<LogEntry> = getLogs();
     if (source.length < this.loadedCount) {
-      this.loadLogs();
+      this.loadMemorySnapshot();
       return;
     }
     if (source.length === this.loadedCount) {
       return;
     }
-    let additions: Array<LogEntry> = [];
-    let keys: Array<string> = this.entryKeys.slice();
+    let additions: Array<LogViewEntry> = [];
     for (let i = this.loadedCount; i < source.length; i++) {
-      additions.push(source[i]);
-      keys.push(this.buildKey(source[i]));
+      additions.push(this.toViewEntry(source[i], i));
     }
-    this.entryKeys = keys;
     this.logEntries = this.logEntries.concat(additions);
     this.loadedCount = source.length;
   }
 
-  /** 为源缓冲 [from, end) 段生成稳定键。 */
-  private buildKeys(source: Array<LogEntry>, from: number): Array<string> {
-    let keys: Array<string> = [];
-    for (let i = from; i < source.length; i++) {
-      keys.push(this.buildKey(source[i]));
-    }
-    return keys;
-  }
-
-  /** 单条日志的稳定键：时间戳 + 全局单调序号（不含数组下标）。 */
-  private buildKey(entry: LogEntry): string {
-    let key: string = entry.timestamp.toString() + '_' + this.keySeq.toString();
-    this.keySeq++;
-    return key;
+  private toViewEntry(entry: LogEntry, index: number): LogViewEntry {
+    return {
+      timestamp: entry.timestamp,
+      level: entry.level,
+      tag: entry.tag,
+      message: entry.message,
+      offset: index
+    };
   }
 }

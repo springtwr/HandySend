@@ -93,10 +93,25 @@ hdc shell hilog | grep "HandySend:"
 
 Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 
+## 文件日志（双通道）
+
+- 位置：应用沙箱 `filesDir/diagnostics/`
+- 文件：
+  - `events-current.log` / `events-previous.log`：info/warn/error/fatal，始终写入，绝不写 debug，单文件上限 512KB
+  - `detail-current.log` / `detail-previous.log`：始终写 info+；详细日志开启时额外写 debug，单文件上限 2MB
+- 时间：本地时区 ISO 8601，带偏移（如 `2026-11-01T03:48:47.184+08:00`），不是 UTC `Z`
+- 写入：内存队列 + 每 500ms 批量 append；warn/error/fatal 立即 flush；退后台、窗口销毁、正常退出主动 flush
+- 轮转：current 超过上限时删除旧 previous，current 改名为 previous，新建 current 并写新会话头
+- 会话标记：`# session-start ...`、`# session-end ...`；previous 文件保留上一次会话内容，供 ZIP 导出携带
+- 页面：固定只读 detail 当前文件尾部（最近约 256KB），按偏移增量刷新；时间按本地 24 小时制显示；详细开关只决定后续是否追加 debug
+- debug 预算：全局每秒最多 100 条、突发 300 条；超限丢弃并写入 `# debug-suppressed` 汇总，events 不受影响
+- 导出：events/detail 的 current/previous 四份文件 + `metadata.json`/`README.txt` 打包为 ZIP
+- 内存回退：`AppCore` 仅保留最近 500 条，文件日志不可用时供诊断页临时显示
+
 ## 传输进度与任务列表转储的节流策略
 
-- 传输进度日志：发送/接收两侧统一口径，进行中按「会话标识 + 文件标识」维度每秒最多 1 条
-  （`File progress` / `Receive file progress`），终态（完成/失败/取消）必发、不受节流限制；
+- 传输进度日志：发送/接收两侧统一口径，进行中按「会话」维度每 5 秒最多 1 条
+  （`传输进度` / `接收进度`），逐文件不再单独刷日志；文件完成与终态（完成/失败/取消）必发、不受节流限制；
   无字节进度的会话（如纯文本消息）不输出进度日志；节流状态随会话终结清理。
 - 任务列表行序列转储（`TransferCenterViewModel`）：常态仅一行摘要（行数/剔除数/首尾条目标识），
   体积不随记录数增长；命中异常信号（条目被剔除、存在重复标识、行数相比上次减少）时输出完整序列。
@@ -116,7 +131,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:RustWeb` | `[网页传输]` | NativeBridge.ets | Rust 网页传输子系统日志归并（按 Rust target 归入 `bridge::web`） |
 | `HandySend:NativeTypes` | `[Native 类型]` | model/NativeTypes.ets | 事件必填字段缺失丢弃告警 |
 | `HandySend:EventBus` | `[事件总线]` | utils/EventBus.ets | 事件回调异常 |
-| `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 日志导出保存失败 |
+| `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 文件尾部读取、全量日志导出保存失败 |
 | `HandySend:MainTab` | `[主页]` | MainTabViewModel.ets | Tab 切换、分享 URI 消费 |
 | `HandySend:MainTabFloating` | `[主页]` | MainTabFloating.ets | 首页悬浮壳层、启动门禁与页面收尾 |
 | `HandySend:DiscoveryRepository` | `[发现]` | DiscoveryRepository.ets | 设备发现事件、扫描/连接/注册、Rust 日志归并 |
@@ -223,7 +238,12 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 ## Debug 开关
 
-- **Debug 版本**：默认 DEBUG 级别，全量输出
-- **Release 版本**：默认 INFO 级别，诊断日志页「详细日志（DEBUG）」Toggle 可临时开启 DEBUG，重启恢复
-- 不持久化，不依赖 PreferencesUtil
-- `setDebugEnabled()` 同时修改内存标志 + hilog 全局级别
+- 默认关闭不再基于内存压力：内存回退 500 条、写入队列 500 行、页面尾读 256KB 均有界
+- 仍保留显式开关的原因：限制持续 debug 写入、hilog 与 Rust 日志的 I/O/性能开销，
+  减少原始协议/设备标识等诊断内容长期落盘，并避免普通用户看到诊断噪音
+- **Debug 构建**：未保存用户选择时默认 DEBUG
+- **Release 构建**：未保存用户选择时默认 INFO
+- 诊断日志页标题栏溢出菜单 →「日志设置」弹层，内含唯一的「记录详细日志」Toggle 与说明
+- 用户选择持久化，重启后继续生效；可在启动阶段捕获详细日志
+- `setDebugEnabled()` 修改内存标志、hilog 全局级别、detail 的 debug 写入和 Rust 日志级别
+- 文件日志写入与页面读取解耦：页面关闭后仍持续写 events/detail；detail 始终记录 info+，debug 按开关追加
