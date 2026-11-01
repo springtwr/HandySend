@@ -1598,10 +1598,17 @@ export class SendViewModel {
         // 否则同一批文件会被反复 open（媒体库 URI 单次打开在并发下可达数十毫秒）；
         // dup 副本与暂存句柄共享文件偏移，读取前由使用方归位到文件头
         let opened: StagedHandleSnapshot | undefined = await this.openStagedHandle(uri);
+        if (!this.isAlreadyStaged(uri)) {
+          // 补全期间条目已被移除：撤回已写的补全标记，并释放刚登记进 stagedHandles 的句柄
+          // （仍被网页分享表借用时由 closeStagedHandle 转入延迟关闭）
+          this.metaFilledUris.delete(uri);
+          this.closeStagedHandle(uri);
+          return;
+        }
         // 失败同样记为已处理：避免不可读文件在每次刷新时被反复重试
         this.metaFilledUris.add(uri);
-        if (opened === undefined || !this.isAlreadyStaged(uri)) {
-          // 补全期间条目已被移除：不再写回缓存与列表
+        if (opened === undefined) {
+          // 打开失败（句柄未保留）：跳过元数据写回
           return;
         }
         this.stagedSizeCache.set(uri, opened.size);
