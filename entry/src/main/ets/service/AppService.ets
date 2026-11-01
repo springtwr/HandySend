@@ -415,7 +415,7 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 先注册 addLog 回调（打破 Logger → AppCore 的循环依赖）
   registerAddLog(addLog);
 
-  // 初始化日志系统（调试构建 = DEBUG 级别，发布构建 = INFO 级别）
+  // 初始化日志系统：优先使用用户持久化选择，未保存过时使用构建默认级别
   initLogger();
 
   // 启动时校验原生库版本

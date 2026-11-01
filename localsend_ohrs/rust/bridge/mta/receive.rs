@@ -34,8 +34,8 @@ const WRITE_BUFFER_SIZE: usize = 1024 * 1024;
 /// 网络数据块合并阈值（256 KiB）：小块累积到阈值再整体交付解析线程，
 /// 减少逐小块拷贝与线程交接；取值为写盘缓冲的约数以保持数据粒度一致
 const BODY_MERGE_THRESHOLD: usize = 256 * 1024;
-/// 接收诊断日志最小输出间隔（约 1 s）
-const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(1);
+/// 接收诊断日志最小输出间隔（约 10 s）：逐秒速率对排障价值低，终态另有汇总
+const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(10);
 /// 字节速率换算用的每 MiB
 const BYTES_PER_MIB: f64 = 1024.0 * 1024.0;
 /// 缺省连接超时

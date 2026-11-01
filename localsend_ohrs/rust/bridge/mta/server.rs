@@ -36,8 +36,8 @@ use crate::bridge::mta::{ws, DownloadPhase, MtaContext};
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
 /// 响应体分块通道容量（块）
 const BODY_CHANNEL_CAPACITY: usize = 8;
-/// 发送诊断日志最小输出间隔（约 1 s）
-const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(1);
+/// 发送诊断日志最小输出间隔（约 10 s）：逐秒速率对排障价值低，终态另有汇总
+const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(10);
 /// 字节速率换算用的每 MiB
 const BYTES_PER_MIB: f64 = 1024.0 * 1024.0;
 

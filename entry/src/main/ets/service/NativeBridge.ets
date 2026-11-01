@@ -14,6 +14,7 @@ import {
   registerRecvFileFd,
   discardRecvFileFds,
   pollDebugLog,
+  setLogLevel as nativeSetLogLevelFn,
   getNativeVersion,
   getProtocolVersion,
   sanitizeFileName,
@@ -435,6 +436,11 @@ export function nativeFlushRustLogs(): void {
  */
 export function nativePollDebugLogWithLevels(): Array<string> {
   return pollDebugLog();
+}
+
+/** 同步 Rust 日志级别（debug/info），供诊断日志开关联动。 */
+export function nativeSetRustLogLevel(level: string): void {
+  nativeSetLogLevelFn(level);
 }
 
 // ── 加密 / 安全 NAPI 包装 ──

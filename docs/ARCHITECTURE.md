@@ -125,7 +125,9 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 
 ### 4.5 Logger — 统一日志模块
 
-`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets` + `entry/src/main/ets/common/LogLevels.ets` + `entry/src/main/ets/common/LogFormat.ets`
+`entry/src/main/ets/utils/Logger.ets` + `entry/src/main/ets/common/LogDomains.ets` +
+`entry/src/main/ets/common/LogLevels.ets` + `entry/src/main/ets/common/LogFormat.ets` +
+`entry/src/main/ets/service/log/DiagnosticLogService.ets`
 
 封装 hilog，提供双层输出（hilog 系统日志 + addLog 应用内日志），按业务域细分 domain，支持模块标签（label）与结构化上下文（LogContext）
 。仅依赖 `@kit.PerformanceAnalysisKit`（hilog）和 `entry/BuildProfile`（编译时常量），addLog 回调通过运行时注入。
@@ -136,11 +138,13 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 |----------|------|
 | `getLogger(domain, tag, label?)` | 创建 LoggerInstance（每个模块顶层调用一次，返回实例复用）；`label` 为模块级稳定短标签（如 `发送`），缺省时省略标签前缀 |
 | `registerAddLog(fn)` | 注入 addLog 回调（运行时注入，避免编译期循环依赖） |
-| `initLogger()` | 根据编译模式初始化日志级别（Debug=DEBUG, Release=INFO） |
-| `setDebugEnabled(on)` | 临时切换 Debug 开关（仅内存 + hilog 级别，不持久化，重启恢复） |
+| `initLogger(persistedDebug?)` | 初始化日志级别：优先使用用户持久化选择；未保存过时 Debug 构建默认 DEBUG，Release 默认 INFO |
+| `setDebugEnabled(on)` | 运行时切换 Debug 开关（内存 + hilog 级别）；持久化由诊断日志页负责 |
 | `logger.log(level, msg, ctx?)` | 通用分级出口：按 `LogLevels` token 分发到对应 hilog 级别，未知 token 兜底 info |
 
-**初始化链路**：`AppService.initAppService()` → `registerAddLog(addLog)` → `initLogger()`
+**初始化链路**：`EntryAbility.onCreate()` → `startDiagnosticLogging(context)`（返回持久化详细日志选择）→
+`registerAddLog(addLog)` → `initLogger(persistedDebug)`，在首帧前建立文件日志与 Logger；`initLogger()` 只生效一次，
+Ability 重建不会重置 DEBUG 状态。
 
 **业务域常量**（`LogDomains`）：
 
@@ -165,11 +169,20 @@ Rust 事件 JSON（`{"type":"...","payload":{...}}`，camelCase type）后解析
 
 **规范约束**：全项目仅 Logger.ets 可直接 import hilog，其他文件必须通过 `getLogger()` 使用日志功能；禁止 `console.*` 输出。模块标签、TAG、域与级别规则的完整清单见 `docs/DEBUG_LOG_INVENTORY.md`。
 
-**应用内日志缓冲与导出**：内存日志源位于 `AppCore.ets`（`logs: Array<LogEntry>`，上限 2000 条，超限裁剪到最近 1800 条）；
-日志写入仅经独立的日志通道（`logBus`）通知诊断日志页订阅者，不触发全局界面刷新。诊断日志页进入时加载一次快照，
-其后按「合并窗口 + 积压阈值」策略增量刷新并滚动跟随（上滑暂停时浮出「回到底部」主色胶囊控件）；
-「详细日志（DEBUG）」开关位于该页标题栏底部自定义区域、常驻可见且不随列表滚动离开视野，状态不持久化；
-导出通过 `DocumentViewPicker` 落盘，VM 层编排文本拼接，Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs/picker）。
+**文件日志与诊断页**：日志以 `service/log/DiagnosticLogService.ets` 写入沙箱双通道文件——`events`（始终只写
+info 及以上，绝不写 debug）与 `detail`（始终写 info 及以上，详细日志开启时额外写 debug），各保留 current/previous
+两段并限制容量（events 512KB/detail 2MB）。`events` 作为关键日志兜底，debug 洪水不会挤掉它；页面固定读 `detail`，
+因此关闭详细日志时仍有 info，打开后继续追加 debug，不会切换数据源或变空。
+写入采用内存队列 + 批量 append，退后台、窗口销毁和正常退出时主动 flush；`EntryAbility.onCreate` 第一行初始化，
+覆盖首帧前的启动链路。启动时 current 轮转为 previous；previous 不提供页面查看入口，只随 ZIP 导出。
+`AppCore` 仅保留最近 500 条内存回退，文件不可用时仍能显示临时日志。
+debug 写入受全局令牌桶限制（100 条/秒，突发 300 条），超限丢弃并在 detail 写入压制汇总，防止热点日志刷爆文件。
+
+诊断日志页只读文件尾部，按偏移增量刷新并滚动跟随（上滑暂停时浮出「回到底部」主色胶囊控件）。
+标题栏保留导出图标与溢出菜单；溢出菜单提供「日志设置」和「清空日志」。「日志设置」弹层内只有一个持久化
+Toggle「记录详细日志」及说明，选择在重启后继续生效，可覆盖下次启动阶段的详细日志采集。
+导出把 events/detail 的 current/previous 四份文件 + `metadata.json`/`README.txt` 用 zlib 打包为 ZIP，
+Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs/picker）。
 
 ### 4.6 GallerySaveService — 相册保存服务
 

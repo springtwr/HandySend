@@ -160,3 +160,13 @@ pub fn get_protocol_version() -> String {
 pub fn poll_debug_log() -> Vec<String> {
     identity::drain_rust_log_buf_with_levels()
 }
+
+/// 同步 Rust 日志级别：诊断日志开启时放开 debug，关闭时只保留 info 及以上。
+#[napi]
+pub fn set_log_level(level: String) {
+    let filter = match level.as_str() {
+        "debug" => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Info,
+    };
+    log::set_max_level(filter);
+}

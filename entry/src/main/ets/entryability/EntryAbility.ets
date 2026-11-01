@@ -28,8 +28,14 @@ import {
   cleanupReceiveCacheDirWithContext,
   startMtaReceiveIfEnabled,
   stopMtaReceive,
-  stopLocalServer
+  stopLocalServer,
+  addLog
 } from '../service/AppService';
+import {
+  startDiagnosticLogging,
+  flushDiagnosticLog,
+  markDiagnosticSessionEnd
+} from '../service/log/DiagnosticLogService';
 import { NAVIGATION_PARAM_KEY, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
@@ -53,7 +59,7 @@ import {
   isPrivacyAgreed
 } from '../service/PermissionService';
 import { DialogService } from '../service/DialogService';
-import { getLogger } from '../utils/Logger';
+import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { readJsonString } from '../utils/JsonGuard';
 import { LogDomains } from '../common/LogDomains';
 import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUtil';
@@ -169,7 +175,11 @@ export default class EntryAbility extends UIAbility {
   private startupPermissionRequested: boolean = false;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    logger.debug('Ability 创建（onCreate）');
+    // 文件日志必须早于其余初始化：首帧前的启动异常也要留下会话记录。
+    let persistedDebug: boolean | undefined = startDiagnosticLogging(this.context);
+    registerAddLog(addLog);
+    initLogger(persistedDebug);
+    logger.info('Ability 创建（onCreate）');
 
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
@@ -328,7 +338,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    logger.debug('Ability 销毁（onDestroy）');
+    logger.info('Ability 销毁（onDestroy）');
     // 退订系统语言/地区变化公共事件（onCreate 中订阅），避免订阅者泄漏
     this.unsubscribeSystemLocaleChanged();
     // 退订隐私弹框签署结果公共事件（等待用户同意时按需订阅），避免订阅者泄漏
@@ -344,10 +354,12 @@ export default class EntryAbility extends UIAbility {
     stopMtaReceive();
     stopLocalServer().catch((_e: Error) => {
     });
+    // 退出前收尾：写 session-end 并关闭文件，便于导出时识别本次会话正常结束。
+    markDiagnosticSessionEnd();
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    logger.debug('Ability 窗口舞台创建（onWindowStageCreate）');
+    logger.info('Ability 窗口舞台创建（onWindowStageCreate）');
 
     let targetPage: string = 'pages/MainTabFloating';
 
@@ -356,7 +368,7 @@ export default class EntryAbility extends UIAbility {
         logger.error('页面内容加载失败，原因：' + JSON.stringify(err));
         return;
       }
-      logger.debug('页面内容加载成功');
+      logger.info('页面内容加载成功');
       try {
         // 将窗口背景色与页面背景对齐并最先设置：内容未绘制/页面转场期间状态栏
         // 和导航条避让区会露出窗口背景色，若不设置则为系统默认背景色，造成闪变
@@ -509,6 +521,7 @@ export default class EntryAbility extends UIAbility {
         DialogService.showCloseConfirmDialog((keepRunning: boolean) => {
           if (!keepRunning) {
             logger.debug('窗口关闭：用户选择退出，正在终止应用');
+            flushDiagnosticLog('window-close', true);
             this.context.terminateSelf().catch((_e: BusinessError) => {
             });
           }
@@ -547,12 +560,14 @@ export default class EntryAbility extends UIAbility {
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
     this.mainWindow = null;
-    logger.debug('Ability 窗口舞台销毁（onWindowStageDestroy）');
+    logger.info('Ability 窗口舞台销毁（onWindowStageDestroy）');
+    // 随后可能进入 onDestroy 并关闭文件，这里同步落盘，避免异步 flush 与关闭竞态
+    flushDiagnosticLog('window-stage-destroy', true);
   }
 
   onForeground(): void {
     // 应用回到前台
-    logger.debug('Ability 回到前台（onForeground）');
+    logger.info('Ability 回到前台（onForeground）');
     // 「跟随系统」语言同步放在回到前台时执行：设置应用语言会触发系统配置变化回调
     // （onConfigurationUpdate），若在该回调内再次同步会形成无限递归并栈溢出；
     // 用户在系统设置中更改语言后返回应用即可跟随。
@@ -570,7 +585,7 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     // 应用退到后台
-    logger.debug('Ability 退到后台（onBackground）');
+    logger.info('Ability 退到后台（onBackground）');
     // 偏好写入为防抖刷盘，退后台时全部立即落盘，防止进程在后台被杀导致 pending 写入丢失
     flushAllPreferences();
     // MTA 接收进行中（建链/下载/落盘）时跳过停止，由长时任务保活继续接收；
@@ -583,6 +598,8 @@ export default class EntryAbility extends UIAbility {
     startWebKeepaliveIfEnabled(this.context);
     // 前台期间已存在的待确认请求/网页访问在退后台时补发关注通知
     refreshBackgroundAttention();
+    // 进程随时可能被系统回收，退后台即把最后一段日志交给文件系统。
+    flushDiagnosticLog('background', false);
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {

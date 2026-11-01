@@ -638,14 +638,14 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
     handleRecvProgress(progressEntry, false);
   }
 
-  // 接收方向进度日志：与发送方向同一节流口径（进行中每秒最多 1 条、终态必发）；
+  // 接收方向进度日志：与发送方向同一口径（进行中按会话每 5 秒最多 1 条、终态必发）；
   // 无字节进度的会话（totalBytes 为 0，如纯文本消息）不输出
   if (totalBytes > 0) {
+    let progressKey: string = sessionId + ':progress';
     if (progress >= 1) {
-      progressLogThrottle.clear(key);
       logger.debug('接收文件完成', { sessionId: sessionId, fileId: fileId, direction: 'recv' });
-    } else if (progressLogThrottle.shouldLog(key, Date.now())) {
-      logger.debug('接收文件进度：' + bytesSent + '/' + totalBytes + ' 字节',
+    } else if (progressLogThrottle.shouldLog(progressKey, Date.now())) {
+      logger.debug('接收进度：' + bytesSent + '/' + totalBytes + ' 字节',
         { sessionId: sessionId, fileId: fileId, direction: 'recv' });
     }
   }

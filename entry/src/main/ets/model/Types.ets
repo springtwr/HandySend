@@ -149,7 +149,13 @@ export interface SourceFileMeta {
 export interface LogEntry {
   timestamp: number
   level: string
+  tag: string
   message: string
+}
+
+/** 诊断日志页从文件尾部解析出的单行条目（offset 为文件内字节偏移，用于稳定列表键）。 */
+export interface LogViewEntry extends LogEntry {
+  offset: number
 }
 
 export interface StagedFile {
