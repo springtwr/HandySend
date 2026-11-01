@@ -913,6 +913,10 @@
       "value": "Send email"
     },
     {
+      "name": "contact_developer_attach_logs",
+      "value": "Attach diagnostic logs (device and transfer info)"
+    },
+    {
       "name": "feedback_mail_subject",
       "value": "HandySend user feedback"
     },
@@ -942,7 +946,11 @@
     },
     {
       "name": "feedback_mail_body_logs",
-      "value": "Logs (optional; export them in Settings > More > Diagnostic logs and attach):"
+      "value": "Logs (optional; tick \"Attach diagnostic logs\" when sending):"
+    },
+    {
+      "name": "feedback_mail_logs_manual_attach",
+      "value": "(Diagnostic logs could not be attached automatically; export them in Settings > More > Diagnostic logs and attach manually.)"
     },
     {
       "name": "about_handysend_version",

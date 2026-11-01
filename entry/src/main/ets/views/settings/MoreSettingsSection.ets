@@ -1,6 +1,7 @@
-import { common, Want } from '@kit.AbilityKit';
+import { common, wantConstant, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { AlertDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
+import { fileUri } from '@kit.CoreFileKit';
+import { AdvancedDialogV2Button, ConfirmDialogV2, promptAction, uiObserver } from '@kit.ArkUI';
 import {
   DesignTokens
 } from '../../common/DesignTokens';
@@ -10,6 +11,8 @@ import {
 import { copyText } from '../../utils/ClipboardUtil';
 import { getStringSync } from '../../utils/ResourceUtil';
 import { getDeviceType } from '../../service/repository/DeviceRepository';
+import { buildDiagnosticLogAttachment } from '../../service/log/DiagnosticLogService';
+import { LogAttachmentResult } from '../../model/LogFileTypes';
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
@@ -29,6 +32,8 @@ export struct MoreSettingsSection {
   @Local isShowAboutSheet: boolean = false
   @Local isShowSponsorSheet: boolean = false
   @Local isShowRateSheet: boolean = false
+  // 反馈邮件是否附带诊断日志（每次打开联系开发者弹窗时复位为不附带）
+  @Local attachDiagnosticLogs: boolean = false
   // 当前打开的 A 类弹窗 id（接触开发者弹窗关闭时使用）
   private activeDialogId: number = -1
   // 打开诊断日志页意图：本组件不持有导航栈，经此上抛由持有栈的页面执行
@@ -245,11 +250,37 @@ export struct MoreSettingsSection {
   /**
    * 邮箱反馈：先按系统邮件扩展面板拉起（安装多个邮件应用时由用户在面板中选择），
    * 面板不可用（无接入 ComposeMail 的邮件应用）时回退 mailto 隐式拉起默认邮件应用。
+   * 勾选附带日志时先把全部诊断日志打包为 ZIP，再随面板意图以只读 URI 授权给邮件应用；
+   * 打包失败、日志为空或回退 mailto（不支持附件）时，在正文补充手动附带的提示。
    */
-  private openFeedbackMail(): void {
+  private openFeedbackMail(attachLogs: boolean): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let subject: string = this.buildFeedbackMailSubject();
     let body: string = this.buildFeedbackMailBody();
+    if (!attachLogs) {
+      this.startFeedbackMail(context, subject, body, '');
+      return;
+    }
+    buildDiagnosticLogAttachment(context).then((attachment: LogAttachmentResult) => {
+      if (attachment.status === 'ready') {
+        this.startFeedbackMail(context, subject, body, attachment.filePath);
+      } else {
+        this.startFeedbackMail(context, subject, this.appendManualAttachNote(body), '');
+      }
+    }).catch(() => {
+      this.startFeedbackMail(context, subject, this.appendManualAttachNote(body), '');
+    });
+  }
+
+  /** 提示用户手动导出并附带日志：用于打包失败或当前邮件应用不支持附件。 */
+  private appendManualAttachNote(body: string): string {
+    let note: string = getStringSync(this.getUIContext(), $r('app.string.feedback_mail_logs_manual_attach'));
+    return body + '\n' + note;
+  }
+
+  /** 拉起邮件应用；attachmentPath 非空时以只读 URI 附带该文件。 */
+  private startFeedbackMail(context: common.UIAbilityContext, subject: string, body: string,
+    attachmentPath: string): void {
     let wantParam: Record<string, Object> = {
       'sceneType': 1,
       // 邮件类扩展面板要求字符串参数统一 encodeURI 编码
@@ -257,6 +288,11 @@ export struct MoreSettingsSection {
       'subject': encodeURI(subject),
       'body': encodeURI(body)
     };
+    if (attachmentPath.length > 0) {
+      wantParam['ability.params.stream'] = [encodeURI(fileUri.getUriFromPath(attachmentPath))];
+      // 附件 URI 位于应用沙箱，需同时授予目标应用至少读权限
+      wantParam['ability.want.params.uriPermissionFlag'] = wantConstant.Flags.FLAG_AUTH_READ_URI_PERMISSION;
+    }
     let callback: common.AbilityStartCallback = {
       onError: () => {
       },
@@ -264,11 +300,13 @@ export struct MoreSettingsSection {
       }
     };
     context.startAbilityByType('mail', wantParam, callback).catch((_e: BusinessError) => {
+      // mailto 不支持附件：原本要附带日志时在正文补充手动附带的提示
+      let fallbackBody: string = attachmentPath.length > 0 ? this.appendManualAttachNote(body) : body;
       let want: Want = {
         action: 'ohos.want.action.sendToData',
         // query 段用 encodeURIComponent：正文含换行与中文，且需转义 & 与 =
         uri: `mailto:${FEEDBACK_MAIL_ADDRESS}?subject=${encodeURIComponent(subject)}` +
-          `&body=${encodeURIComponent(body)}`
+          `&body=${encodeURIComponent(fallbackBody)}`
       };
       context.startAbility(want).catch((_err: BusinessError) => {
         // 设备可能未安装邮件应用
@@ -276,9 +314,10 @@ export struct MoreSettingsSection {
     });
   }
 
-  // ── DialogV2 弹窗：联系开发者（A 类 AlertDialogV2） ──
+  // ── DialogV2 弹窗：联系开发者（A 类 ConfirmDialogV2，带附带日志复选） ──
 
   private openContactDeveloperDialog(): void {
+    this.attachDiagnosticLogs = false;
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
         this.contactDeveloperDialog();
@@ -303,9 +342,14 @@ export struct MoreSettingsSection {
 
   @Builder
   contactDeveloperDialog() {
-    AlertDialogV2({
-      primaryTitle: $r('app.string.contact_developer_title'),
+    ConfirmDialogV2({
+      title: $r('app.string.contact_developer_title'),
       content: FEEDBACK_MAIL_ADDRESS,
+      checkTips: $r('app.string.contact_developer_attach_logs'),
+      checked: this.attachDiagnosticLogs,
+      onCheckedChange: (checked: boolean) => {
+        this.attachDiagnosticLogs = checked;
+      },
       primaryButton: new AdvancedDialogV2Button({
         content: $r('app.string.contact_developer_copy'),
         action: () => {
@@ -321,7 +365,7 @@ export struct MoreSettingsSection {
         content: $r('app.string.contact_developer_send'),
         action: () => {
           this.closeActiveDialog();
-          this.openFeedbackMail();
+          this.openFeedbackMail(this.attachDiagnosticLogs);
         }
       })
     })

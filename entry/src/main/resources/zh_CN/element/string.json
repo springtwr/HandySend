@@ -913,6 +913,10 @@
       "value": "发送邮件"
     },
     {
+      "name": "contact_developer_attach_logs",
+      "value": "附带诊断日志（含设备与传输信息）"
+    },
+    {
       "name": "feedback_mail_subject",
       "value": "便捷快传用户反馈"
     },
@@ -942,7 +946,11 @@
     },
     {
       "name": "feedback_mail_body_logs",
-      "value": "日志（可选，可在「设置 → 更多 → 诊断日志」中导出后附上）："
+      "value": "日志（可选，发送邮件时可勾选「附带诊断日志」）："
+    },
+    {
+      "name": "feedback_mail_logs_manual_attach",
+      "value": "（未能自动附带诊断日志，请在「设置 → 更多 → 诊断日志」中导出后手动附上。）"
     },
     {
       "name": "about_handysend_version",

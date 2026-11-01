@@ -14,7 +14,13 @@ import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
 import { preferences } from '@kit.ArkData';
 import { deviceInfo, zlib } from '@kit.BasicServicesKit';
 import { util } from '@kit.ArkTS';
-import { LogFileChangeEvent, LogFileKind, LogExportResult, LogReadResult } from '../../model/LogFileTypes';
+import {
+  LogAttachmentResult,
+  LogFileChangeEvent,
+  LogFileKind,
+  LogExportResult,
+  LogReadResult
+} from '../../model/LogFileTypes';
 import { LogViewEntry } from '../../model/Types';
 import {
   formatLocalIsoTimestamp,
@@ -569,13 +575,20 @@ interface DiagnosticExportMetadata {
   files: Array<string>;
 }
 
+interface DiagnosticArchive {
+  status: 'ready' | 'empty' | 'failed';
+  zipPath: string;
+  fileName: string;
+}
+
 /**
- * 导出应用的全部诊断日志：events/detail 的 current/previous 四份文件 + 元数据打包为 ZIP。
- * 页面不再提供“上次会话查看”入口，上一次会话仅作为导出内容保留。
+ * 打包应用的全部诊断日志：events/detail 的 current/previous 四份文件 + 元数据打包为 ZIP。
+ * 只负责在 cacheDir 生成文件，产物是否保留由调用方决定。
  */
-export async function exportAllDiagnosticLogs(context: common.UIAbilityContext): Promise<LogExportResult> {
+async function buildDiagnosticArchive(context: common.UIAbilityContext): Promise<DiagnosticArchive> {
   let tempDir: string = context.cacheDir + '/diagnostic_export_' + Date.now().toString();
-  let zipPath: string = context.cacheDir + '/handysend_logs_' + timestampForFileName() + '.zip';
+  let fileName: string = 'handysend_logs_' + timestampForFileName() + '.zip';
+  let zipPath: string = context.cacheDir + '/' + fileName;
   try {
     await prepareExportSnapshot();
     let names: Array<string> = ['events-current.log', 'events-previous.log',
@@ -594,7 +607,7 @@ export async function exportAllDiagnosticLogs(context: common.UIAbilityContext):
       }
     }
     if (included.length === 0) {
-      return { status: 'empty', fileName: '' };
+      return { status: 'empty', zipPath: '', fileName: '' };
     }
     let metadata: DiagnosticExportMetadata = buildExportMetadata(included);
     writeTextFile(tempDir + '/metadata.json', JSON.stringify(metadata, null, 2));
@@ -603,9 +616,34 @@ export async function exportAllDiagnosticLogs(context: common.UIAbilityContext):
       'timestamps use local time with a UTC offset (for example +08:00)\n' +
       'events-*.log: info/warn/error/fatal only (never debug)\n' +
       'detail-*.log: info/warn/error/fatal; debug lines appear when detailed logging is enabled\n');
+    deleteFile(zipPath);
     await zlib.compressFile(tempDir, zipPath, {
       level: zlib.CompressLevel.COMPRESS_LEVEL_DEFAULT_COMPRESSION
     });
+    return { status: 'ready', zipPath: zipPath, fileName: fileName };
+  } catch (_e) {
+    deleteFile(zipPath);
+    return { status: 'failed', zipPath: '', fileName: '' };
+  } finally {
+    cleanupExportTemp(tempDir);
+  }
+}
+
+/**
+ * 导出应用的全部诊断日志。
+ * 页面不再提供“上次会话查看”入口，上一次会话仅作为导出内容保留。
+ */
+export async function exportAllDiagnosticLogs(context: common.UIAbilityContext): Promise<LogExportResult> {
+  let zipPath: string = '';
+  try {
+    let archive: DiagnosticArchive = await buildDiagnosticArchive(context);
+    if (archive.status === 'empty') {
+      return { status: 'empty', fileName: '' };
+    }
+    if (archive.status === 'failed') {
+      return { status: 'failed', fileName: '' };
+    }
+    zipPath = archive.zipPath;
     let saveOptions: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();
     saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
     let documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
@@ -614,9 +652,8 @@ export async function exportAllDiagnosticLogs(context: common.UIAbilityContext):
       return { status: 'cancelled', fileName: '' };
     }
     let dirPath: string = new fileUri.FileUri(uris[0]).path;
-    let fileName: string = 'handysend_logs_' + timestampForFileName() + '.zip';
-    fs.copyFileSync(zipPath, dirPath + '/' + fileName);
-    return { status: 'success', fileName: fileName };
+    fs.copyFileSync(zipPath, dirPath + '/' + archive.fileName);
+    return { status: 'success', fileName: archive.fileName };
   } catch (e) {
     let text: string = errorText(e);
     if (text.includes('[801]') || text.includes('[0]')) {
@@ -624,13 +661,46 @@ export async function exportAllDiagnosticLogs(context: common.UIAbilityContext):
     }
     return { status: 'failed', fileName: '' };
   } finally {
-    cleanupExportTemp(tempDir);
-    try {
-      if (fs.accessSync(zipPath)) {
-        fs.unlinkSync(zipPath);
-      }
-    } catch (_e) {
+    deleteFile(zipPath);
+  }
+}
+
+// 最近一次生成的邮件附件路径：再次生成时清理，避免 cacheDir 累积 ZIP
+let lastAttachmentPath: string = '';
+
+/**
+ * 生成供邮件附带的全量日志 ZIP 并保留在 cacheDir。
+ * 与导出不同，产物不立即删除，交目标邮件应用按临时授权读取；下一次生成成功后清理上一份。
+ */
+export async function buildDiagnosticLogAttachment(context: common.UIAbilityContext): Promise<LogAttachmentResult> {
+  let previousPath: string = lastAttachmentPath;
+  try {
+    let archive: DiagnosticArchive = await buildDiagnosticArchive(context);
+    if (archive.status === 'empty') {
+      return { status: 'empty', filePath: '', fileName: '' };
     }
+    if (archive.status === 'failed') {
+      return { status: 'failed', filePath: '', fileName: '' };
+    }
+    lastAttachmentPath = archive.zipPath;
+    if (previousPath !== archive.zipPath) {
+      deleteFile(previousPath);
+    }
+    return { status: 'ready', filePath: archive.zipPath, fileName: archive.fileName };
+  } catch (_e) {
+    return { status: 'failed', filePath: '', fileName: '' };
+  }
+}
+
+function deleteFile(path: string): void {
+  if (path.length === 0) {
+    return;
+  }
+  try {
+    if (fs.accessSync(path)) {
+      fs.unlinkSync(path);
+    }
+  } catch (_e) {
   }
 }
 

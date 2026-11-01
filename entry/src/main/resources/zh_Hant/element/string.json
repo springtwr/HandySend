@@ -913,6 +913,10 @@
       "value": "傳送電子郵件"
     },
     {
+      "name": "contact_developer_attach_logs",
+      "value": "附帶診斷日誌（含裝置與傳輸資訊）"
+    },
+    {
       "name": "feedback_mail_subject",
       "value": "便捷快傳使用者反饋"
     },
@@ -942,7 +946,11 @@
     },
     {
       "name": "feedback_mail_body_logs",
-      "value": "日誌（可選，可在「設定 → 更多 → 診斷日誌」中匯出後附上）："
+      "value": "日誌（可選，傳送電子郵件時可勾選「附帶診斷日誌」）："
+    },
+    {
+      "name": "feedback_mail_logs_manual_attach",
+      "value": "（未能自動附帶診斷日誌，請在「設定 → 更多 → 診斷日誌」中匯出後手動附上。）"
     },
     {
       "name": "about_handysend_version",
