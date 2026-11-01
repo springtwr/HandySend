@@ -133,7 +133,8 @@ export interface SendFileItem {
   hash?: string
   // 源文件修改时间（Unix 毫秒，可缺省）；用于接收端还原文件时间
   lastModified?: number
-  // 暂存阶段已打开的只读源句柄：发送/校验和据此 dup（读取前归位共享偏移），网页分享直接借用
+  // 暂存阶段已打开的只读源句柄：发送据此 dup（Rust 以 pread 从文件头读取），
+  // 校验和 dup 后归位偏移，网页分享直接借用
   sourceFd?: number
 }
 

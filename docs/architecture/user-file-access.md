@@ -48,13 +48,13 @@ Picker 返回的 URI（`file://media/...`、`file://docs/...`）只带临时授�
 
 | 使用方 | 复用方式 |
 |---|---|
-| 发送（`sendToDevice`） | `fs.dup(sourceFd)` 后交 Rust，Rust 取得副本所有权；读取前把共享偏移归位到文件头 |
-| 校验和（`calculateChecksumsForFiles`） | 同上 |
+| 发送（`sendToDevice`） | `fs.dup(sourceFd)` 后交 Rust，Rust 取得副本所有权；Rust 以 pread 从文件头读取 |
+| 校验和（`calculateChecksumsForFiles`） | `fs.dup(sourceFd)` 后读取前 `fs.lseek` 归位共享偏移 |
 | 网页分享（`createShareLink` / `updateShareFiles`） | **借用**同一 fd 登记进文件表，不额外占用 |
 
-`dup` 副本与暂存句柄共享文件偏移，读完一次后偏移停在末尾；发送与校验和在读取前统一
-`fs.lseek(fd, 0, SEEK_SET)` 归位，否则重发会从末尾读到 0 字节。同一句柄被一个发送会话占用期间
-（从 dup 到上传结束），其他并发发送会话不再复用该句柄、改为按路径独立打开，避免共享偏移互相干扰。
+`dup` 副本与暂存句柄共享文件偏移。发送链路在 Rust 侧用 `pread` 按显式偏移读取，
+既不推进也不依赖共享偏移，因此重发以及多目标并发复用同一句柄都不会读错位置；
+校验和链路仍走顺序读，读取前统一 `fs.lseek(fd, 0, SEEK_SET)` 归位。
 
 网页服务的下载链路对每个文件自行 `dup` 副本、不取得所有权，因此可以借用暂存句柄。借用的
 句柄由暂存区负责关闭；`closeStagedHandle` 发现该文件仍在分享表（`isSharingPath`）时转入

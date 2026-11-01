@@ -275,6 +275,66 @@ export default function LoopbackTransferTest() {
       offBridgeEvent('sessionEnd', endHandler)
       done()
     })
+
+    it('loopback_transfer_fd_content_matches', 0, async (done: Function) => {
+      // 回归：fd 读取走 Rust pread，从文件头开始，不依赖共享偏移。
+      // 先把句柄偏移推到末尾：旧实现（顺序 read）会从末尾读到 0 字节。
+      let fileName: string = 'e2e_fd_' + Date.now().toString() + '.txt'
+      let content: string = 'FD-PREAD-' + Date.now().toString() + '-0123456789abcdef'
+      let sendPath: string = writeTestFileToSandbox(fileName, content)
+      let source: fs.File = await fs.open(sendPath, fs.OpenMode.READ_ONLY)
+      let probe: ArrayBuffer = new ArrayBuffer(content.length)
+      fs.readSync(source.fd, probe)
+
+      let prepareHandler = (e: NativeEvent): void => {
+        if (e.type === 'prepareUpload') {
+          acceptWithRecvTargets(e, getRecvDir())
+        }
+      }
+      onBridgeEvent('prepareUpload', prepareHandler)
+      try {
+        let hash: string = await nativeHashFileStream(sendPath, undefined)
+        let target: NativeTargetDevice = {
+          ip: '127.0.0.1',
+          port: suitePort,
+          fingerprint: 'test_fp',
+          protocol: 'http'
+        }
+        // 句柄所有权随 nativeSendFiles 移交 Rust，用例内不再关闭
+        let files: Array<NativeFileToSend> = [{
+          fileId: 'e2e_fd_1',
+          filePath: sendPath,
+          fileName: fileName,
+          fileType: 'text/plain',
+          size: content.length,
+          fd: source.fd,
+          preview: undefined,
+          sha256: hash
+        }]
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+        if (!result.success) {
+          throw new Error('[E2E] fd send failed: ' + JSON.stringify(result.error) +
+            ' [Rust 日志] ' + dumpRustLogs())
+        }
+        let recvPath: string = getRecvDir() + fileName
+        let saved: boolean = false
+        let deadline: number = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (fileExists(recvPath)) {
+            saved = true
+            break
+          }
+          await sleep(200)
+        }
+        if (!saved) {
+          throw new Error('[E2E] fd 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+        }
+        expect(readFileContent(recvPath) === content).assertTrue()
+      } finally {
+        offBridgeEvent('prepareUpload', prepareHandler)
+      }
+      done()
+    })
   })
 
   // ── HTTPS 开关开启：TLS + 指纹校验下的完整回环传输 ──

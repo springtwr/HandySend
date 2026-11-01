@@ -417,6 +417,49 @@ pub async fn send_files(
     .to_string())
 }
 
+/// 以 pread 从文件头读取 fd，构造不依赖共享文件偏移的字节流。
+///
+/// 核心库的 `FileContent::Fd` 走顺序 read，多个发送会话复用同一暂存句柄的 dup 副本时
+/// 会互相推进共享偏移；这里改用显式偏移的 pread，各会话都从 0 读，互不影响。
+/// fd 所有权随任务移交，读毕或接收方结束（通道关闭）后由包装的 File 关闭。
+#[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+fn fd_pread_content(fd: i32, file_label: &str) -> FileContent {
+    const READ_CHUNK: usize = 512 * 1024;
+    const CHANNEL_CAPACITY: usize = 16;
+    let (tx, rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
+    let label = file_label.to_string();
+    // 后台阻塞读取：显式忽略 JoinHandle，fd 所有权已由任务接管
+    let _ = tokio::task::spawn_blocking(move || {
+        use std::os::unix::fs::FileExt;
+
+        // SAFETY: fd 所有权由本任务接管；调用方已把该 fd 从剩余表移除，
+        // 任务结束时 File drop 关闭，不会重复关闭。
+        let file = unsafe { std::fs::File::from_raw_fd(fd) };
+        let mut offset: u64 = 0;
+        let mut buffer = bytes::BytesMut::with_capacity(READ_CHUNK);
+        loop {
+            buffer.resize(READ_CHUNK, 0);
+            match file.read_at(&mut buffer[..], offset) {
+                Ok(0) => break,
+                Ok(n) => {
+                    offset += n as u64;
+                    buffer.truncate(n);
+                    if tx.blocking_send(buffer.split().freeze()).is_err() {
+                        // 接收方（上传请求）已结束：正常提前退出
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("send-files: pread 读取失败 file={label} offset={offset}: {e}");
+                    break;
+                }
+            }
+        }
+        log::debug!("send-files: pread 读取结束 file={label} 字节={offset}");
+    });
+    FileContent::Stream(rx)
+}
+
 /// 上传单个文件（使用会话级取消令牌与会话级 HTTP 客户端）。
 ///
 /// `client` 由 `send_files` 会话级构造并传入，会话内复用同一连接池。
@@ -451,11 +494,18 @@ async fn upload_file_with_cancel(
         std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0)
     };
 
-    // fd ≥ 0：内容源为已打开的文件描述符（所有权随 from_raw_fd 移交、读毕关闭）；
+    // fd ≥ 0：所有权在此移交读取任务，先从剩余表移除；取消/提前返回时由读取任务收尾，
+    // 避免收尾路径重复关闭
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    if fd >= 0 {
+        remaining_fds.remove(file_id);
+    }
+
+    // fd ≥ 0：pread 从文件头读取（不依赖共享偏移，多个会话可并发复用同一暂存句柄）；
     // fd < 0：内容源为沙箱路径（协议兼容回退）
     #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
     let content = if fd >= 0 {
-        FileContent::Fd(fd)
+        fd_pread_content(fd, file_path)
     } else {
         FileContent::Path(std::path::PathBuf::from(file_path))
     };
@@ -500,12 +550,6 @@ async fn upload_file_with_cancel(
         }
     };
 
-    // 上传即将开始：句柄平台消费时从剩余表移除（所有权移交——内容读取完毕由
-    // from_raw_fd 包装的 File 关闭）；其他平台保留在表内，收尾统一关闭
-    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
-    if fd >= 0 {
-        remaining_fds.remove(file_id);
-    }
     // 非句柄平台未消费该表，显式标记已考虑，避免未使用告警
     #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
     let _ = remaining_fds;

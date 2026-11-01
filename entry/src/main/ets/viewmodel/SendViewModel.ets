@@ -1596,7 +1596,7 @@ export class SendViewModel {
         let uri: string = pending[index];
         // 打开后保留句柄：发送与网页挂载都只需要 dup 一份就能拿到相同文件，
         // 否则同一批文件会被反复 open（媒体库 URI 单次打开在并发下可达数十毫秒）；
-        // dup 副本与暂存句柄共享文件偏移，读取前由使用方归位到文件头
+        // 发送由 Rust 以 pread 从文件头读取，dup 副本共享偏移也不影响
         let opened: StagedHandleSnapshot | undefined = await this.openStagedHandle(uri);
         if (!this.isAlreadyStaged(uri)) {
           // 补全期间条目已被移除：撤回已写的补全标记，并释放刚登记进 stagedHandles 的句柄
@@ -1628,7 +1628,7 @@ export class SendViewModel {
 
   /**
    * 打开暂存项并读取元数据；句柄在数量上限内保留于 stagedHandles，供发送 / 网页挂载复用
-   * （复用方式是 dup，避免同一文件被再次 open；读取前归位共享偏移）。超过上限或失败时同样返回元数据。
+   * （复用方式是 dup，避免同一文件被再次 open）。超过上限或失败时同样返回元数据。
    */
   private async openStagedHandle(uri: string): Promise<StagedHandleSnapshot | undefined> {
     let file: fs.File | undefined = undefined;
@@ -1713,7 +1713,8 @@ export class SendViewModel {
     }
   }
 
-  // 暂存项已保留的源文件句柄（uri → fd）：发送/校验和据此 dup（读取前归位偏移），网页分享直接借用
+  // 暂存项已保留的源文件句柄（uri → fd）：发送据此 dup（Rust 以 pread 读取），
+  // 校验和 dup 后归位偏移，网页分享直接借用
   private stagedSourceFds(): Map<string, number> {
     let fds: Map<string, number> = new Map();
     this.stagedHandles.forEach((handle: fs.File, uri: string): void => {
