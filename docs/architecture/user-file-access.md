@@ -7,13 +7,25 @@
 
 | 入口 | 选择器 | 单次上限 | 备注 |
 |---|---|---|---|
-| 文件 / 文档 / 压缩包 | `DocumentViewPicker` | 100 | 文档选择器自身上限 500，应用收敛到 100 |
-| 音频 | `DocumentViewPicker` + 后缀过滤 | 100 | 不使用 `AudioViewPicker`，原因见下 |
+| 文件 | `DocumentViewPicker` | 100 | 文档选择器自身上限 500，应用收敛到 100 |
+| 文档 | `DocumentViewPicker` + 聚合视图 | 100 | `MergeTypeMode.DOCUMENT` + 后缀过滤 |
+| 压缩包 | `DocumentViewPicker` + 后缀过滤 | 100 | 聚合视图无压缩包类型，见下 |
+| 音频 | `DocumentViewPicker` + 聚合视图 | 100 | `MergeTypeMode.AUDIO` + 后缀过滤，原因见下 |
 | 图片 / 视频 | `photoAccessHelper.PhotoViewPicker` | 100 | 图库选择器自身上限 500 |
 
 音频不用 `AudioViewPicker`：其界面由系统 AudioPicker 提供，官方指南注明 `AudioSelectOptions`
-目前不支持参数配置，数量上限与多选交互都不受应用控制；改用文档选择器 + 音频后缀过滤后，
-上限、多选与数量提示与其他入口一致（数据源变为按目录浏览）。
+目前不支持参数配置，数量上限与多选交互都不受应用控制；改用文档选择器后，
+上限、多选与数量提示与其他入口一致。
+
+`DocumentSelectOptions.defaultFilePathUri` 为空时，选择器落在文件管理器的「最近访问」页，
+该页只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法改为默认展示全部）。
+文档与音频因此设 `mergeMode`（`MergeTypeMode.DOCUMENT` / `AUDIO`）拉起分类聚合视图，
+直接列出设备内该类型的全部文件；该参数仅在 Phone 生效，其他设备按普通文件树处理。
+
+聚合视图与其它参数的关系：API 26.0.0 及之后仅 `fileSuffixFilters` 与聚合视图同时生效，
+更早版本设置 `mergeMode` 会使其参数（含 `maxSelectNumber`）一并失效，
+此时单次选择数量由系统选择器自身限制。压缩包没有对应的聚合类型，
+只能按后缀过滤在「最近访问」页或用户自行切换的「浏览」页中挑选。
 
 上限常量为 `SendViewModel.ets` 顶部的 `MAX_PICK_SELECT_NUMBER`；音频后缀列表在 `pickAudio` 内维护，
 新增后缀需同步 `MimeUtils.getMimeForExt` 的映射（否则类型退化为 `application/octet-stream`）。

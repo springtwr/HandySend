@@ -646,7 +646,7 @@ export class SendViewModel {
     }
   }
 
-  // 音频选择：使用 DocumentViewPicker + 音频后缀过滤。
+  // 音频选择：使用 DocumentViewPicker + 聚合视图 + 音频后缀过滤。
   // AudioViewPicker 的选择界面由系统 AudioPicker 提供，官方指南注明 AudioSelectOptions
   // 目前不支持参数配置，数量上限与多选交互都不受应用控制；改用文档选择器后与其他入口口径一致
   async pickAudio(): Promise<void> {
@@ -657,6 +657,9 @@ export class SendViewModel {
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     options.fileSuffixFilters = ['音频|.mp3,.flac,.wav,.aac,.m4a,.ogg,.opus,.amr,.ape,.wma,.alac,.aiff,.aif,.dsf,.dff'];
+    // 聚合视图：拉起文件管理器的「音频」分类页，列出设备内全部音频文件。
+    // 不设该项时选择器落在「最近访问」页，只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法关闭）
+    options.mergeMode = picker.MergeTypeMode.AUDIO;
     try {
       let uris: Array<string> = await documentPicker.select(options);
       this.stageUris(uris, false);
@@ -683,7 +686,7 @@ export class SendViewModel {
     }
   }
 
-  // 文档选择：使用 DocumentViewPicker + fileSuffixFilters 过滤办公格式
+  // 文档选择：使用 DocumentViewPicker + 聚合视图 + fileSuffixFilters 过滤办公格式
   async pickDocuments(): Promise<void> {
     if (this.context === undefined) {
       return;
@@ -692,6 +695,9 @@ export class SendViewModel {
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     options.fileSuffixFilters = ['文档|.doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf,.wps,.et,.dps,.ofd,.xmind,.mm,.opml'];
+    // 聚合视图：拉起文件管理器的「文档」分类页，列出设备内全部文档。
+    // 不设该项时选择器落在「最近访问」页，只列最近 30 天内访问过的文件（系统 UI 策略，应用侧无法关闭）
+    options.mergeMode = picker.MergeTypeMode.DOCUMENT;
     try {
       let uris: Array<string> = await documentPicker.select(options);
       this.stageUris(uris, undefined);
