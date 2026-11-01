@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { connection } from '@kit.NetworkKit';
+import { wifiManager } from '@kit.ConnectivityKit';
 import {
   verifyNativeVersion,
   getNativeLibraryVersion,
@@ -402,6 +403,17 @@ function initSessionEngine(): void {
 // 生命周期编排（整合各仓库的关注点）
 // ════════════════════════════════════════════════════════════
 
+/**
+ * 网络接口变化后的统一刷新：重枚举网卡，更新局域网警告与网页可展示地址。
+ * 系统网络事件覆盖不到热点（SoftAP 不产生连接网络事件），
+ * 由热点状态监听与页面进入时主动调用来补齐。
+ */
+export function refreshWebNetwork(): void {
+  // 先重枚举缓存，警告与地址都基于同一份最新接口列表
+  refreshWifiWarning();
+  refreshWebAddress();
+}
+
 export function initAppService(context: common.UIAbilityContext): void {
   if (appServiceInitialized) {
     // Ability 重建时 context 实例会变化，仍需刷新以免后续操作使用失效上下文；
@@ -537,21 +549,25 @@ export function initAppService(context: common.UIAbilityContext): void {
 
     // 网络变化自动扫描的防抖计时器
     let autoScanTimer: number = -1;
+    // 热点状态变化后的补查计时器
+    let hotspotRecheckTimer: number = -1;
 
-    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知 + 重启发现
+    // 实际应用一次网络变化：刷新网卡/警告/网页地址，服务器运行中则重启发现
+    let applyNetworkChange = (): void => {
+      refreshWebNetwork();
+      // 服务器运行中则重启发现（让组播 socket 适配新接口）
+      if (isServerRunning()) {
+        restartDiscovery();
+      }
+    };
+
+    // 每次网络事件重置 1s 防抖计时器
     let onNetworkChange = (): void => {
-      // 每次网络事件重置 1s 防抖计时器
       if (autoScanTimer >= 0) {
         clearTimeout(autoScanTimer);
       }
       autoScanTimer = setTimeout(() => {
-        refreshWifiWarning();
-        // 网页服务监听全部网卡，但展示地址跟随本机网卡变化
-        refreshWebAddress();
-        // 服务器运行中则重启发现（让组播 socket 适配新接口）
-        if (isServerRunning()) {
-          restartDiscovery();
-        }
+        applyNetworkChange();
         autoScanTimer = -1;
       }, 1000);
     };
@@ -570,6 +586,25 @@ export function initAppService(context: common.UIAbilityContext): void {
       // 注册时的初始检查
       onNetworkChange();
     });
+
+    // 热点（SoftAP）启停不产生 netAvailable/netLost 等连接网络事件，
+    // 单独监听热点状态，让网页面板与设置页的可用地址随热点开关即时更新。
+    try {
+      wifiManager.on('hotspotStateChange', (state: number): void => {
+        logger.debug('热点状态变化 state=' + state);
+        onNetworkChange();
+        // 热点接口的 IPv4 可能晚于状态事件就绪：稍后补查一次，避免地址短暂缺失后不再更新
+        if (hotspotRecheckTimer >= 0) {
+          clearTimeout(hotspotRecheckTimer);
+        }
+        hotspotRecheckTimer = setTimeout((): void => {
+          hotspotRecheckTimer = -1;
+          applyNetworkChange();
+        }, 3000);
+      });
+    } catch (e) {
+      logger.warn('注册热点状态监听失败：' + String(e));
+    }
   } catch (_e) {
     logger.warn('注册网络变化监听失败');
   }

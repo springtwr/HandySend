@@ -91,7 +91,6 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '�
 
 // ── Web 分享服务状态（自研单服务：下载与上传同端口） ──
 
-let shareLinkInfo: string = '';
 let sharePort: number = 0;
 // 本次服务实例的二维码/URL 能力令牌：随服务启动生成，浏览器扫码后换取 HttpOnly Cookie。
 // 服务重启即失效，旧二维码/链接随之作废。
@@ -428,10 +427,9 @@ function buildWebServiceConfig(uploadEnabled: boolean, preferredPort: number): s
   return JSON.stringify(config);
 }
 
-/** 服务启动失败：清掉运行时地址与端口，避免面板继续展示已停止服务的旧地址。 */
+/** 服务启动失败：清掉运行时端口，避免面板继续展示已停止服务的旧地址。 */
 function markWebServiceUnavailable(): void {
   sharePort = 0;
-  shareLinkInfo = '';
   webPortFallback = false;
   webUploadEnabled = false;
   stopWebLogFlush();
@@ -479,9 +477,10 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   webServiceHttps = getWebHttpsEnabled();
   webServiceConfiguredPort = getWebPort();
   refreshWebAddress();
-  if (shareLinkInfo.length > 0) {
+  let link: string = getShareLink();
+  if (link.length > 0) {
     logger.info('网页服务已启动');
-    logger.debug('网页服务地址：' + redactWebToken(shareLinkInfo));
+    logger.debug('网页服务地址：' + redactWebToken(link));
   } else {
     logger.warn('网页服务已启动但无可用展示地址 port=' + port);
   }
@@ -489,8 +488,18 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
   return true;
 }
 
+/**
+ * 当前分享链接：按实时网卡列表与展示选择派生，不做本地缓存。
+ * 网卡变化（热点启停、Wi-Fi 断连等）后无需等待额外的地址刷新即可取到最新地址；
+ * 服务未运行或无可用地址时为空串。
+ */
 export function getShareLink(): string {
-  return shareLinkInfo;
+  if (sharePort <= 0) {
+    return '';
+  }
+  let address: WebAddress | undefined = getSelectedWebAddress();
+  return address !== undefined ?
+    buildWebUrl(webServiceHttps, address.ip, sharePort, webCapabilityToken) : '';
 }
 
 /** 当前启用的可展示网页地址（按 Wi-Fi → 有线 → VPN → 网桥 → 未知 → 蜂窝排序）。 */
@@ -504,20 +513,12 @@ export function getSelectedWebAddress(): WebAddress | undefined {
 }
 
 /**
- * 按当前网卡、展示选择与加密开关重建网页地址（不重启服务）。
+ * 刷新网页地址的派生状态（不重启服务）。
+ * 链接由 getShareLink 按实时网卡派生，这里只更新端口回退状态并通知面板；
  * 网络变化、网卡筛选/展示选择变化、加密开关变化后调用。
  */
 export function refreshWebAddress(): void {
-  if (sharePort <= 0) {
-    shareLinkInfo = '';
-    webPortFallback = false;
-    notifyChange();
-    return;
-  }
-  let address: WebAddress | undefined = getSelectedWebAddress();
-  shareLinkInfo = address !== undefined ?
-    buildWebUrl(webServiceHttps, address.ip, sharePort, webCapabilityToken) : '';
-  webPortFallback = isPortFallback(getWebPort(), sharePort);
+  webPortFallback = sharePort > 0 && isPortFallback(getWebPort(), sharePort);
   notifyChange();
 }
 
@@ -745,7 +746,6 @@ export async function stopShareLink(): Promise<void> {
     }
   }
   closeShareFileHandles();
-  shareLinkInfo = '';
   sharePort = 0;
   webPortFallback = false;
   webServiceAlias = '';

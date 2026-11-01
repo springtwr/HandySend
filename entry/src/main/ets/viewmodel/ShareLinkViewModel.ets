@@ -21,7 +21,8 @@ import {
   getWebPort,
   getWebActualPort,
   isWebPortFallback,
-  getWebAccessCode
+  getWebAccessCode,
+  refreshWebNetwork
 } from '../service/AppService';
 import { WebAddress } from '../model/WebAddress';
 import { copyText } from '../utils/ClipboardUtil';
@@ -124,6 +125,9 @@ export class ShareLinkViewModel {
     if (this.sendDisabled) {
       return;
     }
+    // 热点（SoftAP）等接口变化可能不产生系统网络事件，进入面板时主动重枚举，
+    // 避免已开启热点却仍提示「没有可用的网络接口」
+    refreshWebNetwork();
     applyWebSendAllowed(true);
   }
 
