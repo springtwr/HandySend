@@ -81,12 +81,13 @@ export function isTabletPortrait(deviceType: string, heightBp: HeightBreakpoint)
   return deviceType === 'tablet' && heightBp === HeightBreakpoint.HEIGHT_LG
 }
 
-// 宽屏侧边栏布局判断：宽度断点为 lg/xl（≥840vp）、设备非平板竖屏、窗口高度足够（非矮窗）时，
+// 宽屏侧边栏布局判断：宽度断点为 lg/xl（≥840vp）且设备非平板竖屏时，
 // 主界面采用常驻宽侧边栏 + 内容区单栏形态；其余情况沿用底部浮动页签栏形态。
+// 窗口高度不参与判断：侧边栏只占横向空间，矮窗下比底部页签栏更省竖向空间。
 // 与底部页签栏的判断互为正反面：本函数为 true 时不再使用底部页签栏。
 export function isWidescreenSideBarLayout(widthBp: WidthBreakpoint, heightBp: HeightBreakpoint,
-  deviceType: string, isShortHeight: boolean): boolean {
-  if (!isWideWidth(widthBp) || isShortHeight) {
+  deviceType: string): boolean {
+  if (!isWideWidth(widthBp)) {
     return false
   }
   return !isTabletPortrait(deviceType, heightBp)

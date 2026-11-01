@@ -2,7 +2,6 @@ import {
   AlertDialogV2,
   AdvancedDialogV2Button,
   ComponentContent,
-  mediaquery,
   promptAction,
   uiObserver,
   window
@@ -98,13 +97,11 @@ struct MainTabFloating {
   @Local viewModel: MainTabViewModel = new MainTabViewModel();
   // 任务视图模型：由主入口持有并下传内容组件，标题栏入口与列表共享同一份历史状态
   @Local transferViewModel: TransferCenterViewModel = new TransferCenterViewModel();
-  @Local private isShortHeight: boolean = false;
   // 首帧内容就绪标志：首帧仅构建壳层（标题栏 + 空页签容器），三个页签的重量级内容
   // 在此标志置真后一次性构建；同时作为重量级初始化（应用服务、服务器、订阅、滚动绑定）的
   // 一次性守卫。置真时机：onPageShow 首次触发时（首帧已绘制之后），此后不再重复执行
   @Local private firstFrameContentReady: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
-  private shortHeightListener: mediaquery.MediaQueryListener | null = null
   // 底部系统导航条避让高度（vp）：>0 表示存在系统导航条。窗口在全屏/小窗/分屏间切换、
   // 旋转或折叠时该值会变化，故监听 avoidAreaChange 动态更新；底部浮动页签栏间距据此条件化
   @Local private naviIndicatorHeight: number = 0;
@@ -188,14 +185,8 @@ struct MainTabFloating {
 
   aboutToAppear(): void {
     let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-    // 偏好读取保留在首帧路径：首帧布局形态（矮窗适配）与设置值依赖它
+    // 偏好读取保留在首帧路径：首帧布局形态与设置值依赖它
     initAllPreferences(context);
-
-    this.shortHeightListener = this.getUIContext().getMediaQuery().matchMediaSync('(height<600vp)');
-    this.shortHeightListener.on('change', (result: mediaquery.MediaQueryResult) => {
-      this.isShortHeight = result.matches;
-    });
-    this.isShortHeight = this.shortHeightListener.matches;
 
     // 相册保存自动提示回调：订阅本身延后到首帧之后，但回调字段须在订阅前完成赋值
     this.galleryPromptCallback = (): void => {
@@ -307,9 +298,6 @@ struct MainTabFloating {
     this.hdsController.unbindScroller(this.sendScroller);
     this.hdsController.unbindScroller(this.transferScroller);
     this.hdsController.unbindScroller(this.settingsScroller);
-    if (this.shortHeightListener !== null) {
-      this.shortHeightListener.off('change');
-    }
     this.unregisterAvoidAreaListener();
   }
 
@@ -1110,7 +1098,7 @@ struct MainTabFloating {
   }
 
   /**
-   * 宽屏侧边栏形态判定：宽度 lg/xl 且设备非平板竖屏、窗口非矮窗，且侧边栏套件能力可用。
+   * 宽屏侧边栏形态判定：宽度 lg/xl 且设备非平板竖屏，且侧边栏套件能力可用。
    * 为 true 时主界面以常驻宽侧边栏承载导航、内容区单栏；为 false 时沿用底部浮动页签栏形态。
    */
   private useWidescreenSideBar(): boolean {
@@ -1118,7 +1106,7 @@ struct MainTabFloating {
       return false;
     }
     return isWidescreenSideBarLayout(this.breakpointInfo.widthBreakpoint,
-      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType, this.isShortHeight);
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType);
   }
 
   @Builder
@@ -1274,7 +1262,7 @@ struct MainTabFloating {
     })
   }
 
-  /** 底部浮动页签栏形态的页签容器（窄屏、平板竖屏、矮窗与套件能力降级时使用）。 */
+  /** 底部浮动页签栏形态的页签容器（窄屏、平板竖屏与套件能力降级时使用）。 */
   @Builder
   floatingTabs() {
     // 显式指定当前页签索引：页签容器在断点切换时会被条件渲染重建，不指定则落回默认索引 0，
@@ -1369,8 +1357,9 @@ struct MainTabFloating {
   /** 导航内容区：宽屏为「左宽侧边栏 + 右页签内容」两段式布局，其余形态为单栏页签容器。 */
   @Builder
   navigationContent() {
-    // 页签容器形态：宽屏（lg/xl 且非平板竖屏、非矮窗、套件能力可用）→ 常驻宽侧边栏 + 隐藏页签栏的内容区；
-    // 其余情况（手机、平板竖屏 600~840vp 及以上、矮窗）→ 底部浮动水平栏
+    // 页签容器形态：宽屏（lg/xl 且非平板竖屏、套件能力可用）→ 常驻宽侧边栏 + 隐藏页签栏的内容区；
+    // 其余情况（手机、平板竖屏 600~840vp 及以上）→ 底部浮动水平栏
+    // 窗口高度不参与形态判断：矮窗下侧边栏同样可用，且比底部页签栏更省竖向空间
     if (this.useWidescreenSideBar()) {
       Row() {
         // 左侧常驻宽侧边栏：宽度固定，不提供折叠与拖拽调宽。
@@ -1421,7 +1410,7 @@ struct MainTabFloating {
   build() {
     // 导航容器始终为页面根容器；两种形态仅内容区不同。
     // 宽屏（平板横屏 / 折叠屏展开 / PC）时内容区为「常驻宽侧边栏 + 单栏内容」两段式布局，
-    // 其余情况（手机、平板竖屏、矮窗、套件能力缺失）沿用底部浮动页签栏形态
+    // 其余情况（手机、平板竖屏、套件能力缺失）沿用底部浮动页签栏形态
     HdsNavigation(this.pathStack) {
       this.navigationContent()
     }

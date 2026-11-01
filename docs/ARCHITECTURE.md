@@ -519,7 +519,7 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 三大主页面顶部统一显示标题栏（标题随页签切换，层叠于内容之上；毛玻璃随内容滚动渐显），页内不再重复标题与页面级入口；
 主入口持有三个页签的真实滚动控制器与任务视图模型，经参数下传给内容组件。
 
-主页面首帧只构建壳层（导航 + 标题栏 + 空页签容器）：`aboutToAppear` 仅做形态相关的轻量同步（偏好读取、矮窗监听、深链消费），
+主页面首帧只构建壳层（导航 + 标题栏 + 空页签容器）：`aboutToAppear` 仅做形态相关的轻量同步（偏好读取、深链消费），
 三个页签的重量级内容与 `initAppService`、接收服务器启动、视图模型订阅、页签滚动绑定，经 `onPageShow` 首次触发的一次性守卫延后到首帧之后执行。
 
 主页面按窗口形态选择首页栏内容，页面根容器与三个页签的内容组件树共用：
@@ -528,7 +528,7 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容随窗口形态分支）
 └── HdsNavigation（页面根容器，沉浸式标题栏 + NavPathStack）
     └── 首页栏内容区（按窗口形态二选一）
-        ├── 宽屏形态（lg/xl 且非平板竖屏、非矮窗、侧边栏菜单能力可用）
+        ├── 宽屏形态（lg/xl 且非平板竖屏、侧边栏菜单能力可用）
         │   └── Row 两段式布局
         │       ├── 左：宽侧边栏列（固定 240vp，不折叠不拖拽调宽；底色延伸至顶部高度带与底部系统栏）
         │       │   └── WidescreenSideBar（品牌区自顶部高度带起排布）
@@ -536,7 +536,7 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
         │       │       └── HdsSideMenu：发送 / 任务 / 设置三项一级导航（任务项带数字角标）
         │       └── 右：内容区列（自带等于标题栏高度的顶部避让）
         │           └── HdsTabs（隐藏页签栏：barHeight 0、不可滑动切换）承载三个 TabContent
-        └── 其余形态（手机 / 平板竖屏 / 矮窗 / 侧边栏菜单能力缺失）
+        └── 其余形态（手机 / 平板竖屏 / 侧边栏菜单能力缺失）
             └── HdsTabs（底部浮动页签栏）承载三个 TabContent
 ```
 
@@ -732,15 +732,14 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   - `getSheetWidth`：sm/md→480、lg/xl→560
   - `getPageMargin`：sm→16、md→24、lg→24、xl→32
   - `isTabletPortrait`（tablet + HEIGHT_LG）
-  - `isWidescreenSideBarLayout`：宽 lg/xl 且非平板竖屏、非矮窗 → 宽侧边栏形态
-    （矮窗标记来自 `mediaquery` 的 `(height<600vp)` 监听）
+  - `isWidescreenSideBarLayout`：宽 lg/xl 且非平板竖屏 → 宽侧边栏形态（窗口高度不参与判定）
 - **导航形态**：宽屏（`isWidescreenSideBarLayout` 成立且 `canIUse('SystemCapability.UIDesign.HDSPattern.Standard')` 可用）→ 首页栏为
   「常驻宽侧边栏 + 隐藏页签栏的内容区」两段式布局：侧边栏宽度取 `DesignTokens.size.widescreenSideBarWidth` 的固定 240vp、
   顶部区高度取 `widescreenSideBarHeaderHeight`、底色取 `app.color.accent_blue_bg`，导航菜单为 `HdsSideMenu`，其导航图标以系统
   符号（`sys.symbol.*`）+ `SymbolGlyphModifier` 承载，随选中 / 未选中态着色；内容区页签栏隐藏（`barHeight` 0 且不可滑动切换）。
   宽屏顶部由侧边栏品牌区与内容区标题栏并列占据同一高度带：标题栏关闭对内容区的自动避让、起始端内边距取侧边栏宽度，
   内容区列自行预留等于侧边栏顶部区高度（`widescreenSideBarHeaderHeight`，56vp）的顶部避让。
-  其余情况（md 及以下 / 平板竖屏 / 矮窗 / 能力缺失）→ 底部浮动水平页签栏
+  其余情况（md 及以下 / 平板竖屏 / 能力缺失）→ 底部浮动水平页签栏
 - **安全区策略**：导航根容器与内容根节点均声明 `expandSafeArea(SYSTEM, TOP+BOTTOM)`（绘制级扩展，布局仍避让系统安全区），
   宽侧边栏列底色同样声明，使页面背景与侧边栏底色延伸至顶部高度带与底部系统导航条区域，不出现空白带或异色带；
   底部浮动页签栏间距条件化（有导航条 → 4vp、无 → 固定 12vp）依赖安全区自动提供底部导航条间距，根容器不得改用布局级忽略安全区
