@@ -465,6 +465,9 @@ export type NativeEvent =
  * 各事件类型的必需字段表。payload 来自 Rust 桥接层序列化，正常情况字段必然存在；
  * 缺失说明两侧结构漂移（如 Rust 端改名/漏字段），此时丢弃事件并记日志，
  * 避免 undefined 字段静默注入下游（会话匹配失败、进度 NaN 等）且无从排查。
+ *
+ * 只登记协议必填字段：Rust 侧的 Option 字段取 None 时同样序列化为 null，
+ * 列入本表会让整条事件被丢弃（如浏览器未发 User-Agent 时丢掉上传请求）。
  */
 const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'serverStarted': ['port'],
@@ -484,7 +487,7 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'webDownloadFileDone': ['batchId', 'fileId', 'totalBytes'],
   'webDownloadEnded': ['batchId', 'outcome'],
   'webSendSessionEnd': ['sessionId'],
-  'webUploadPrepare': ['token', 'ip', 'userAgent', 'files'],
+  'webUploadPrepare': ['token', 'ip', 'files'],
   'webUploadProgress': ['token', 'fileId', 'receivedBytes', 'totalBytes'],
   'webUploadDone': ['token', 'fileId', 'path'],
   'mtaServerStarted': ['port'],
@@ -504,6 +507,11 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
 /**
  * 解析 Rust 桥接层事件 JSON（{"type":"...","payload":{...}}）。
  * 将 payload 展平到顶层，返回类型化事件；解析失败或必需字段缺失返回 undefined。
+ *
+ * 可选字段约定：Rust 侧 `Option<T>` 为 None 时经 serde 序列化为 JSON null，
+ * 此处必须归一为 undefined（或类型对应的空值），不能只做类型断言——
+ * 声明为 `string | undefined` 的字段若在运行时保留 null，
+ * 下游「!== undefined && .length」之类的判断会被穿透。
  */
 export function parseNativeEvent(json: string): NativeEvent | undefined {
   let obj: Record<string, Object> = {};
@@ -587,7 +595,9 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       return {
         type: 'webAccess',
         ip: payload['ip'] as string,
-        userAgent: payload['userAgent'] as string | undefined,
+        // 浏览器可不带 User-Agent：None 归一为 undefined，见 parseNativeEvent 注释
+        userAgent: (payload['userAgent'] !== undefined && payload['userAgent'] !== null) ?
+          payload['userAgent'] as string : undefined,
         fileCount: payload['fileCount'] as number
       } as NativeWebAccessEvent;
     case 'webDownloadStarted':
@@ -595,7 +605,8 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         type: 'webDownloadStarted',
         batchId: payload['batchId'] as string,
         ip: payload['ip'] as string,
-        userAgent: payload['userAgent'] as string | undefined,
+        userAgent: (payload['userAgent'] !== undefined && payload['userAgent'] !== null) ?
+          payload['userAgent'] as string : undefined,
         files: parseWebFileList(payload['files'])
       } as NativeWebDownloadStartedEvent;
     case 'webDownloadProgress':
@@ -766,7 +777,9 @@ function parseWebUploadPrepareEvent(
     type: 'webUploadPrepare',
     token: payload['token'] as string,
     ip: payload['ip'] as string,
-    userAgent: payload['userAgent'] as string | undefined,
+    // 浏览器可不带 User-Agent：None 归一为 undefined，见 parseNativeEvent 注释
+    userAgent: (payload['userAgent'] !== undefined && payload['userAgent'] !== null) ?
+      payload['userAgent'] as string : undefined,
     files: parseWebFileList(payload['files'])
   } as NativeWebUploadPrepareEvent;
 }

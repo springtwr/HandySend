@@ -25,6 +25,7 @@ import {
   NativeWebDownloadProgressEvent,
   NativeWebDownloadFileDoneEvent,
   NativeWebDownloadEndedEvent,
+  NativeWebUploadPrepareEvent,
   NativeWebSendSessionEndEvent,
   NativeMtaReceiveProgressEvent,
   NativeErrorEvent
@@ -352,6 +353,20 @@ export default function NativeEventParseTest() {
       expect(e.fileCount === 2).assertTrue()
     })
 
+    it('parse_web_access_null_user_agent', 0, () => {
+      // 浏览器可不带 User-Agent（或头含非 ASCII 字节）：Rust 侧为 None，
+      // 序列化为 null，须归一为 undefined
+      let json = '{"type":"webAccess","payload":{"ip":"192.168.1.201","userAgent":null,"fileCount":1}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebAccessEvent = event as NativeWebAccessEvent
+      expect(e.ip === '192.168.1.201').assertTrue()
+      expect(e.userAgent === undefined).assertTrue()
+    })
+
     it('parse_web_download_started_event', 0, () => {
       let json =
         '{"type":"webDownloadStarted","payload":{"batchId":"b1","ip":"192.168.1.200","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
@@ -365,6 +380,20 @@ export default function NativeEventParseTest() {
       expect(e.ip === '192.168.1.200').assertTrue()
       expect(e.files.length === 1).assertTrue()
       expect(e.files[0].fileName === 'a.txt').assertTrue()
+    })
+
+    it('parse_web_download_started_null_user_agent', 0, () => {
+      let json =
+        '{"type":"webDownloadStarted","payload":{"batchId":"b3","ip":"192.168.1.202","userAgent":null,"files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadStartedEvent = event as NativeWebDownloadStartedEvent
+      expect(e.batchId === 'b3').assertTrue()
+      expect(e.userAgent === undefined).assertTrue()
+      expect(e.files.length === 1).assertTrue()
     })
 
     it('parse_web_download_progress_event', 0, () => {
@@ -438,6 +467,41 @@ export default function NativeEventParseTest() {
       let e: NativeWebSendSessionEndEvent = event as NativeWebSendSessionEndEvent
       expect(e.type === 'webSendSessionEnd').assertTrue()
       expect(e.sessionId === 'web_session_001').assertTrue()
+    })
+
+    // ── webUploadPrepare 事件 ──
+
+    it('parse_web_upload_prepare_event', 0, () => {
+      let json =
+        '{"type":"webUploadPrepare","payload":{"token":"t1","ip":"192.168.1.203","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3,"preview":null}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebUploadPrepareEvent = event as NativeWebUploadPrepareEvent
+      expect(e.token === 't1').assertTrue()
+      expect(e.ip === '192.168.1.203').assertTrue()
+      expect(e.userAgent === 'Mozilla/5.0').assertTrue()
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].preview === undefined).assertTrue()
+    })
+
+    it('parse_web_upload_prepare_null_user_agent', 0, () => {
+      // User-Agent 是可选协议头，不得列为必需字段：条件为 null 时整条事件
+      // 仍须保留并进入上传确认链路（否则浏览器上传等满 60s 后超时）
+      let json =
+        '{"type":"webUploadPrepare","payload":{"token":"t2","ip":"192.168.1.204","userAgent":null,"files":[{"fileId":"f2","fileName":"b.txt","fileType":"text/plain","size":5}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebUploadPrepareEvent = event as NativeWebUploadPrepareEvent
+      expect(e.token === 't2').assertTrue()
+      expect(e.userAgent === undefined).assertTrue()
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].fileName === 'b.txt').assertTrue()
     })
 
     // ── error 事件 ──
