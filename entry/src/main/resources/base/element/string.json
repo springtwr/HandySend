@@ -449,6 +449,18 @@
       "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started.\nIf devices cannot be discovered, clear it from the background and reopen the app."
     },
     {
+      "name": "troubleshoot_slow_transfer_title",
+      "value": "Slow Transfer"
+    },
+    {
+      "name": "troubleshoot_slow_transfer_desc",
+      "value": "Start with three simple checks:\n1. Make sure both devices are connected to the same 5GHz Wi-Fi; do not leave one on 5GHz and the other on 2.4GHz (2.4GHz is much slower).\n2. Check the Wi-Fi connection speed: Settings > WLAN > tap the connected network > Connection speed. If it is below 300Mbps, move closer to the router or make sure you are on 5GHz. If it shows 800Mbps or more but transfers are still slow, the limit is usually router forwarding or the other device.\n3. Use a broadband speed test only as a reference: the test also uses the device-to-router Wi-Fi link. If the broadband test is normal (for example, a 300M connection reaches 30–40MB/s) but local transfers are clearly slower, the bottleneck is local forwarding or the other device. If the broadband test is also low, move closer to the router and test again to rule out Wi-Fi signal/band issues; if it is still low after moving closer, the broadband speed is low, but broadband does not participate in local transfers and is unrelated to this issue.\n\nCommon causes:\n- When both devices are on the same 5GHz router, data goes through the router twice (receive and retransmit), so the actual speed is usually about half of a single device's test. When both devices transfer through the same router's Wi-Fi, mid-range and entry-level home routers usually cannot sustain more than 50MB/s.\n- Long distance, walls, weak signal, or many nearby Wi-Fi networks can all reduce speed.\n- Many small files are slower than one large file; this is normal.\n- If a computer is connected by Ethernet, a 100Mbps port or cable has a theoretical limit of about 12.5MB/s."
+    },
+    {
+      "name": "troubleshoot_slow_transfer_highlight",
+      "value": "The most effective fix:\nEnable the hotspot directly on the HarmonyOS device (a HarmonyOS device can usually keep Wi-Fi and the hotspot enabled at the same time) and let the other device connect to that hotspot; transfer speeds can often exceed 100MB/s."
+    },
+    {
       "name": "troubleshoot_connection_title",
       "value": "Cannot Connect"
     },
