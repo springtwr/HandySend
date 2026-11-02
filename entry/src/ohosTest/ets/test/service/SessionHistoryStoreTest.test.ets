@@ -843,8 +843,8 @@ export default function SessionHistoryStoreTest() {
     it('build_entry_durationMs_matchesTimelineScope', 0, () => {
       resetRegistry()
       let s = createSession(terminalInput())
-      // 复现偏差场景：start=..00.900, end=..02.100 → 时间线口径差 2 秒 → durationMs 应为 2000
-      s.startedAt = 1000000000900
+      // 复现偏差场景：传输 start=..00.900, end=..02.100 → 时间线口径差 2 秒 → durationMs 应为 2000
+      s.transferStartedAt = 1000000000900
       finish(s.id, SessionStage.succeeded)
       let current = getSession(s.id)
       expect(current !== undefined).assertTrue()
@@ -854,6 +854,24 @@ export default function SessionHistoryStoreTest() {
         expect(built !== undefined).assertTrue()
         if (built !== undefined) {
           expect(built.durationMs).assertEqual(2000)
+        }
+      }
+      resetRegistry()
+    })
+
+    it('build_entry_durationMs_subSecondTransfer_atLeastOneSecond', 0, () => {
+      resetRegistry()
+      let s = createSession(terminalInput())
+      // 传输窗口不足 1 秒：耗时不得因秒级截断退化为 0（详情页会显示占位符），应记 1 秒
+      s.transferStartedAt = Date.now()
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.durationMs).assertEqual(1000)
         }
       }
       resetRegistry()

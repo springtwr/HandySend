@@ -1697,8 +1697,12 @@
       "value": "This device & identity"
     },
     {
-      "name": "session_meta_duration_label",
-      "value": "Duration"
+      "name": "session_meta_task_duration_label",
+      "value": "Task duration"
+    },
+    {
+      "name": "session_meta_transfer_duration_label",
+      "value": "Transfer duration"
     },
     {
       "name": "session_meta_average_speed_label",

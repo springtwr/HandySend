@@ -36,11 +36,13 @@ import {
 import {
   SessionCreateInput,
   SessionDataFlow,
+  SessionEventKind,
   SessionFileStage,
   SessionInitiator,
   SessionPeer,
   SessionStage,
   SessionFilter,
+  SessionTimelineEvent,
   TransferSession,
   defaultCapabilities,
   emptyPeer,
@@ -96,6 +98,17 @@ function twoFileInput(): SessionCreateInput {
   }
 }
 
+/** 取时间线中的「已开始」事件（用于断言其记录时机）。 */
+function startedEventsOf(session: TransferSession): Array<SessionTimelineEvent> {
+  let events: Array<SessionTimelineEvent> = [];
+  for (let i = 0; i < session.timeline.length; i++) {
+    if (session.timeline[i].kind === SessionEventKind.started) {
+      events.push(session.timeline[i]);
+    }
+  }
+  return events;
+}
+
 /** 三文件输入：用于验证取消后逐文件终态改写（f1 已完成、f2 传输中、f3 等待中）。 */
 function threeFileInput(): SessionCreateInput {
   return {
@@ -147,9 +160,25 @@ export default function TransferSessionRegistryTest() {
       resetRegistry()
       let s = createSession(makeInput())
       expect(s.stage).assertEqual(SessionStage.active)
-      expect(s.timeline.length).assertEqual(2) // created + started
+      expect(s.timeline.length).assertEqual(1) // created（「已开始」在首个字节进度时才记录）
       expect(getActiveCount()).assertEqual(1)
       expect(getSession(s.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('timeline_startedRecordedAtFirstByteProgress', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      // 创建后不出现「已开始」：等待确认 / 校验和 / 建链期间尚未开始传输
+      expect(startedEventsOf(s).length).assertEqual(0)
+      updateFileProgress(s.id, 'f1', 10)
+      let events = startedEventsOf(s)
+      expect(events.length).assertEqual(1)
+      // 「已开始」时间与耗时起点同源
+      expect(events[0].timestamp).assertEqual(s.transferStartedAt)
+      // 后续进度不重复记录
+      updateFileProgress(s.id, 'f1', 20)
+      expect(startedEventsOf(s).length).assertEqual(1)
       resetRegistry()
     })
 
@@ -225,6 +254,54 @@ export default function TransferSessionRegistryTest() {
       let current = getSession(s.id)
       if (current !== undefined) {
         expect(current.files[0].bytesSent).assertEqual(80)
+      }
+      resetRegistry()
+    })
+
+    it('transferStartedAt_firstByteOnly', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      // 零字节进度不算开始传输（创建后的等待、校验和与建链不进入传输计时）
+      updateFileProgress(s.id, 'f1', 0)
+      expect(s.transferStartedAt).assertEqual(0)
+      // 首个字节进度记录开始传输时刻
+      updateFileProgress(s.id, 'f1', 50)
+      let firstStart: number = s.transferStartedAt
+      expect(firstStart > 0).assertTrue()
+      // 后续进度不重置起点
+      updateFileProgress(s.id, 'f1', 100)
+      expect(s.transferStartedAt).assertEqual(firstStart)
+      resetRegistry()
+    })
+
+    it('averageSpeed_measuredFromFirstByteProgress', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      // 创建于 60 秒前，但传输窗口只有约 2 秒：平均速度须按传输窗口推导
+      s.startedAt = Date.now() - 60000
+      s.transferStartedAt = Date.now() - 2000
+      updateFileProgress(s.id, 'f1', 100)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        // 按创建时刻算会得到约 1.7 B/s；按传输窗口算约为 50 B/s
+        expect(current.averageSpeedBps > 40).assertTrue()
+      }
+      resetRegistry()
+    })
+
+    it('averageSpeed_unavailableWithoutByteProgress', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      // 从未产生字节进度即终结（如文本消息）：没有传输窗口，平均速度不可得
+      s.startedAt = Date.now() - 2000
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        expect(current.transferStartedAt).assertEqual(0)
+        expect(current.averageSpeedBps).assertEqual(0)
       }
       resetRegistry()
     })

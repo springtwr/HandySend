@@ -1697,8 +1697,12 @@
       "value": "本機裝置與識別"
     },
     {
-      "name": "session_meta_duration_label",
-      "value": "耗時"
+      "name": "session_meta_task_duration_label",
+      "value": "任務耗時"
+    },
+    {
+      "name": "session_meta_transfer_duration_label",
+      "value": "傳輸耗時"
     },
     {
       "name": "session_meta_average_speed_label",

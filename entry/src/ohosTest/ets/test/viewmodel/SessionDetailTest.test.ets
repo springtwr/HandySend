@@ -17,6 +17,7 @@ import {
   getSession,
   resetRegistry,
   setSessionFiles,
+  updateFileProgress,
   updateProtocolSessionId,
   updateSessionFilePath
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
@@ -32,7 +33,7 @@ import {
 import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
-import { writeTestFileToSandbox } from '../helper/TestHelper'
+import { waitUntil, writeTestFileToSandbox } from '../helper/TestHelper'
 import { TEXT_READ_MAX_BYTES } from '../../../../main/ets/utils/FileTextUtil'
 
 const DETAIL_KEY: string = 'test-detail'
@@ -299,13 +300,13 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
-    it('meta_durationMs_matchesTimelineScope_whenMsOverflow', 0, () => {
+    it('meta_transferDurationMs_matchesTimelineScope_whenMsOverflow', 0, () => {
       registerAdapter(testAdapter)
       resetRegistry()
       let s = createSession(input())
       // 复现偏差场景：start=..00.900, end=..02.100（实际 1200ms）。
-      // 时间线显示 10:00:00 → 10:00:02（差 2 秒），耗时须按时间线口径为 2000ms
-      s.startedAt = 1000000000900
+      // 时间线显示 10:00:00 → 10:00:02（差 2 秒），传输耗时须按时间线口径为 2000ms
+      s.transferStartedAt = 1000000000900
       finish(s.id, SessionStage.succeeded)
       let current = getSession(s.id)
       expect(current !== undefined).assertTrue()
@@ -314,17 +315,17 @@ export default function SessionDetailTest() {
       }
       let vm = new SessionDetailViewModel()
       vm.load(s.id)
-      expect(vm.meta.durationMs).assertEqual(2000)
+      expect(vm.meta.transferDurationMs).assertEqual(2000)
       vm.unload()
       resetRegistry()
     })
 
-    it('meta_durationMs_matchesTimelineScope_withinSameSecond', 0, () => {
+    it('meta_transferDurationMs_matchesTimelineScope_withinSameSecond', 0, () => {
       registerAdapter(testAdapter)
       resetRegistry()
       let s = createSession(input())
-      // start=..00.900, end=..01.100（实际 200ms）：时间线显示差 1 秒，耗时须为 1000ms
-      s.startedAt = 1000000000900
+      // start=..00.900, end=..01.100（实际 200ms）：时间线显示差 1 秒，传输耗时须为 1000ms
+      s.transferStartedAt = 1000000000900
       finish(s.id, SessionStage.succeeded)
       let current = getSession(s.id)
       expect(current !== undefined).assertTrue()
@@ -333,7 +334,29 @@ export default function SessionDetailTest() {
       }
       let vm = new SessionDetailViewModel()
       vm.load(s.id)
-      expect(vm.meta.durationMs).assertEqual(1000)
+      expect(vm.meta.transferDurationMs).assertEqual(1000)
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_taskAndTransferDuration_splitAtFirstByte', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      // 创建于 ..00.900，首个字节进度在 ..01.900（等待 1 秒），终结于 ..03.900：
+      // 任务耗时 = 创建 → 终结（3 秒），传输耗时 = 首个字节 → 终结（2 秒）
+      s.startedAt = 1000000000900
+      s.transferStartedAt = 1000000001900
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        current.finishedAt = 1000000003900
+      }
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.meta.taskDurationMs).assertEqual(3000)
+      expect(vm.meta.transferDurationMs).assertEqual(2000)
       vm.unload()
       resetRegistry()
     })
@@ -653,17 +676,17 @@ export default function SessionDetailTest() {
       registerAdapter(testAdapter)
       resetRegistry()
       let s = createSession(input())
-      // 构造已传输中的会话：开始于 4 秒前、已传 500/1000 字节
-      s.startedAt = Date.now() - 4000
+      // 构造已传输中的会话：开始传输于 4 秒前、已传 500/1000 字节
+      s.transferStartedAt = Date.now() - 4000
       s.totalBytes = 1000
       s.bytesSent = 500
       s.peakSpeedBps = 12345
       let vm = new SessionDetailViewModel()
       vm.load(s.id)
       let metaRef = vm.meta
-      // 进行中：耗时 = 当前时刻 − 开始时刻，平均速度 = 已传字节 ÷ 已用时间，峰值取会话实时峰值
-      expect(vm.meta.durationMs >= 3000).assertTrue()
-      expect(vm.meta.durationMs <= 6000).assertTrue()
+      // 进行中：传输耗时 = 当前时刻 − 开始传输时刻，平均速度 = 已传字节 ÷ 传输耗时，峰值取会话实时峰值
+      expect(vm.meta.transferDurationMs >= 3000).assertTrue()
+      expect(vm.meta.transferDurationMs <= 6000).assertTrue()
       expect(vm.meta.averageSpeedBps > 0).assertTrue()
       expect(vm.meta.peakSpeedBps).assertEqual(12345)
       let firstAverage: number = vm.meta.averageSpeedBps
@@ -676,6 +699,63 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
+    it('meta_liveTaskAndTransferDuration_splitAtFirstByte', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      // 任务创建后长时间等待（确认 / 校验和 / 建链）才产生首个字节进度：
+      // 任务耗时含等待，传输耗时只从首个字节进度起算
+      s.startedAt = Date.now() - 60000
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      // 尚未开始传输：任务耗时已计时，传输耗时保持占位
+      expect(vm.meta.taskDurationMs >= 59000).assertTrue()
+      expect(vm.meta.transferDurationMs).assertEqual(0)
+      updateFileProgress(s.id, 'f1', 100, 100)
+      expect(s.transferStartedAt > s.startedAt).assertTrue()
+      vm.refresh()
+      expect(vm.meta.taskDurationMs >= 59000).assertTrue()
+      expect(vm.meta.transferDurationMs < 10000).assertTrue()
+      vm.unload()
+      resetRegistry()
+    })
+
+    it('meta_transferDurationMs_subSecondTransfer_showsAtLeastOneSecond', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let s = createSession(input())
+      // 传输窗口不足 1 秒：首个字节进度后立即终结，耗时不得截断为 0（占位符），应记 1 秒
+      s.transferStartedAt = Date.now()
+      finish(s.id, SessionStage.succeeded)
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.meta.transferDurationMs).assertEqual(1000)
+      // 任务耗时同样适用「不足 1 秒记 1 秒」
+      expect(vm.meta.taskDurationMs).assertEqual(1000)
+      vm.unload()
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('meta_taskDuration_ticksWhileWaitingForConfirmation', 0, async (done: Function) => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let createInput = input()
+      createInput.stage = SessionStage.awaitingConfirmation
+      let s = createSession(createInput)
+      // 等待确认期间没有进度事件：详情页须靠走时刷新让任务耗时自行增长
+      s.startedAt = Date.now() - 3000
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      let before: number = vm.meta.taskDurationMs
+      let ticked: boolean = await waitUntil((): boolean => vm.meta.taskDurationMs > before, 4000)
+      expect(ticked).assertTrue()
+      vm.unload()
+      resetRegistry()
+      done()
+    })
+
     it('meta_placeholderBeforeTimerStarts', 0, () => {
       registerAdapter(testAdapter)
       resetRegistry()
@@ -685,8 +765,8 @@ export default function SessionDetailTest() {
       s.totalBytes = 1000
       let vm = new SessionDetailViewModel()
       vm.load(s.id)
-      // 待确认阶段未开始计时：耗时 / 平均速度 / 峰值速度一律占位，不显示 0 以外的虚构值
-      expect(vm.meta.durationMs).assertEqual(0)
+      // 待确认阶段：任务已计时（任务耗时可得），但传输耗时 / 平均速度 / 峰值速度一律占位
+      expect(vm.meta.transferDurationMs).assertEqual(0)
       expect(vm.meta.averageSpeedBps).assertEqual(0)
       expect(vm.meta.peakSpeedBps).assertEqual(0)
       vm.unload()
@@ -698,7 +778,8 @@ export default function SessionDetailTest() {
       resetRegistry()
       resetSessionHistoryCache()
       let s = createSession(input())
-      s.startedAt = Date.now() - 2000
+      s.startedAt = Date.now() - 6000
+      s.transferStartedAt = Date.now() - 2000
       s.totalBytes = 1000
       s.bytesSent = 1000
       finish(s.id, SessionStage.succeeded)
@@ -707,17 +788,39 @@ export default function SessionDetailTest() {
       let current = getSession(s.id)
       expect(current !== undefined).assertTrue()
       if (current !== undefined) {
-        // 终态：耗时取归档耗时、平均速度取归档平均速度，此后不再随进度变化
-        let expectedDuration: number =
+        // 终态：任务耗时按创建 → 终结推导，传输耗时与平均速度取归档值，此后不再随进度变化
+        let expectedTask: number =
           (Math.floor(current.finishedAt / 1000) - Math.floor(current.startedAt / 1000)) * 1000
-        expect(vm.meta.durationMs).assertEqual(expectedDuration)
+        let expectedTransfer: number =
+          (Math.floor(current.finishedAt / 1000) - Math.floor(current.transferStartedAt / 1000)) * 1000
+        expect(vm.meta.taskDurationMs).assertEqual(expectedTask)
+        expect(vm.meta.transferDurationMs).assertEqual(expectedTransfer)
         expect(vm.meta.averageSpeedBps).assertEqual(current.averageSpeedBps)
         expect(vm.meta.averageSpeedBps > 0).assertTrue()
         current.bytesSent = 999999
         vm.refresh()
-        expect(vm.meta.durationMs).assertEqual(expectedDuration)
+        expect(vm.meta.taskDurationMs).assertEqual(expectedTask)
+        expect(vm.meta.transferDurationMs).assertEqual(expectedTransfer)
         expect(vm.meta.averageSpeedBps).assertEqual(current.averageSpeedBps)
       }
+      vm.unload()
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('meta_terminal_noTransfer_keepsTransferDurationPlaceholder', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      resetSessionHistoryCache()
+      let s = createSession(input())
+      // 传输前即终结（如文本消息）：任务耗时可得，传输耗时与平均速度保持占位
+      s.startedAt = Date.now() - 3000
+      finish(s.id, SessionStage.succeeded)
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      expect(vm.meta.taskDurationMs >= 2000).assertTrue()
+      expect(vm.meta.transferDurationMs).assertEqual(0)
+      expect(vm.meta.averageSpeedBps).assertEqual(0)
       vm.unload()
       resetRegistry()
       resetSessionHistoryCache()

@@ -128,10 +128,13 @@ function sampleSpeed(session: TransferSession): void {
   sample.lastBytes = session.bytesSent;
 }
 
-/** 会话终结时按总字节/耗时推导平均速度（不可得时保持 0）。 */
+/**
+ * 会话终结时按总字节/传输耗时推导平均速度：仅当真正传输过字节时可得，
+ * 窗口为「首个字节进度 → 终结」，不含等待确认、校验和计算与建链时间（不可得时保持 0）。
+ */
 function finalizeSpeed(session: TransferSession): void {
-  let durationMs: number = session.finishedAt - session.startedAt;
-  if (durationMs > 0 && session.bytesSent > 0) {
+  let durationMs: number = session.finishedAt - session.transferStartedAt;
+  if (session.transferStartedAt > 0 && durationMs > 0 && session.bytesSent > 0) {
     session.averageSpeedBps = (session.bytesSent * 1000) / durationMs;
   }
   speedSamples.delete(session.id);
@@ -370,9 +373,6 @@ export function createSession(input: SessionCreateInput): TransferSession {
   touchActivity(session);
   ensureWatchdog();
   pushTimeline(session, SessionEventKind.created, input.protocolKey);
-  if (session.stage !== SessionStage.awaitingConfirmation) {
-    pushTimeline(session, SessionEventKind.started);
-  }
   logger.debug(`会话创建 id=${session.id} 协议=${session.protocolKey} 方向=${session.dataFlow}` +
     ` 阶段=${session.stage} 文件数=${session.files.length}`);
   notifyChange();
@@ -507,7 +507,11 @@ export function markFileStage(sessionId: string, fileId: string,
   notifyChange();
 }
 
-/** 字节级进度更新（单文件单调不回跳）。 */
+/**
+ * 字节级进度更新（单文件单调不回跳）。
+ * 首个字节进度同时记录为「开始传输时刻」并写入时间线「已开始」事件，
+ * 耗时与平均速度自此起点计时。
+ */
 export function updateFileProgress(sessionId: string, fileId: string,
   bytesSent: number, totalBytes?: number): void {
   let session = getSession(sessionId);
@@ -524,6 +528,12 @@ export function updateFileProgress(sessionId: string, fileId: string,
     }
     if (bytesSent > f.bytesSent) {
       f.bytesSent = bytesSent;
+      // 首个字节进度即实际开始传输：耗时与平均速度自此起点计时（不把等待确认、
+      // 校验和计算与建链时间计入传输耗时），时间线的「已开始」也在同一时刻记录
+      if (session.transferStartedAt === 0) {
+        session.transferStartedAt = Date.now();
+        pushTimeline(session, SessionEventKind.started);
+      }
     }
     if (f.totalBytes > 0 && f.bytesSent >= f.totalBytes) {
       f.stage = SessionFileStage.completed;
@@ -610,7 +620,6 @@ export function setStage(sessionId: string, stage: SessionStage, errorMessage?: 
   }
   if (session.stage === SessionStage.awaitingConfirmation && stage === SessionStage.active) {
     pushTimeline(session, SessionEventKind.confirmed);
-    pushTimeline(session, SessionEventKind.started);
   }
   // 生命周期诊断只记录阶段跃迁（进度与文案更新属高频事件，不记录）
   if (session.stage !== stage) {
@@ -644,7 +653,6 @@ export function confirmSession(sessionId: string): void {
   session.stage = SessionStage.active;
   touchActivity(session);
   pushTimeline(session, SessionEventKind.confirmed);
-  pushTimeline(session, SessionEventKind.started);
   notifyChange();
   if (adapter !== undefined) {
     adapter.confirm(sessionId);

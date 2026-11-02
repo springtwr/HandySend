@@ -29,7 +29,7 @@ import {
   trimHistory,
   upsertHistory
 } from '../../model/transfer/SessionHistory';
-import { TransferSession, outcomeForStage } from '../../model/transfer/TransferSession';
+import { TransferSession, outcomeForStage, displayDurationMs } from '../../model/transfer/TransferSession';
 import {
   SESSION_HISTORY_CAPACITY,
   SESSION_HISTORY_MAX_ENTRIES,
@@ -100,12 +100,9 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
     return undefined;
   }
   let finishedAt: number = session.finishedAt > 0 ? session.finishedAt : Date.now();
-  // 耗时与时间线口径严格一致（与详情页实时口径相同）：起止时间各自截断毫秒后取差，
-  // 避免「毫秒差向下取整」与「时间线绝对时间之差」偶发 1 秒偏差
-  let durationMs: number = 0;
-  if (finishedAt > session.startedAt) {
-    durationMs = (Math.floor(finishedAt / 1000) - Math.floor(session.startedAt / 1000)) * 1000;
-  }
+  // 归档耗时即传输耗时：从首个字节进度到结束（秒级截断，不足 1 秒记 1 秒）；
+  // 从未开始传输时为 0，由展示层降级为占位符（任务耗时由 startedAt → finishedAt 另行推导）
+  let durationMs: number = displayDurationMs(session.transferStartedAt, finishedAt);
   let files: Array<SessionHistoryFileEntry> = [];
   for (let i = 0; i < session.files.length; i++) {
     let f = session.files[i];

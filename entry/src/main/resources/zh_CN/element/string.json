@@ -1697,8 +1697,12 @@
       "value": "本机设备与标识"
     },
     {
-      "name": "session_meta_duration_label",
-      "value": "耗时"
+      "name": "session_meta_task_duration_label",
+      "value": "任务耗时"
+    },
+    {
+      "name": "session_meta_transfer_duration_label",
+      "value": "传输耗时"
     },
     {
       "name": "session_meta_average_speed_label",
