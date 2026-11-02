@@ -1,13 +1,12 @@
 /**
  * SendMethodZone.ets — 发送页方式区
  *
- * 网页图标直接进入「网页传输」面板（不再弹发送/接收菜单）；
+ * 网页图标直接进入「网页传输」面板；
  * 「其它方式」保留菜单入口（指定 IP 等）。
  * 网页服务运行中时网页图标右上角叠绿点（overlay 不占纵向空间）。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { TransferMethodDescriptor, TransferMethodGroup } from '../../model/transfer/Registries';
 import { listMethodsByGroup } from '../../service/transfer/TransferMethodRegistry';
 
@@ -19,10 +18,9 @@ export interface SendMethodZoneOptions {
 
 /** 方式菜单项：单个入口的可点击条目。 */
 @Builder
-function methodItem(descriptor: TransferMethodDescriptor, checked: boolean) {
+function methodItem(descriptor: TransferMethodDescriptor) {
   MenuItem({
-    content: descriptor.label,
-    symbolEndIcon: checked ? new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined
+    content: descriptor.label
   })
   .enabled(descriptor.available())
   .onClick(() => {
@@ -36,7 +34,7 @@ function otherMenu() {
   Menu() {
     Repeat(listMethodsByGroup(TransferMethodGroup.other))
       .each((ri: RepeatItem<TransferMethodDescriptor>) => {
-        methodItem(ri.item, false)
+        methodItem(ri.item)
       })
       .key((item: TransferMethodDescriptor) => item.key)
   }

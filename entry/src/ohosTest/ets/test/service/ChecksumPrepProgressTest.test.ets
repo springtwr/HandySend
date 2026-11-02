@@ -4,7 +4,6 @@ import {
   SessionDataFlow,
   SessionInitiator,
   SessionStage,
-  TransferSession,
   defaultCapabilities,
   emptyPeer,
   isPreparing,

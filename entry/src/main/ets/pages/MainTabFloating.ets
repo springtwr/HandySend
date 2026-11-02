@@ -34,7 +34,7 @@ import {
 } from '../views/transfer/ClearHistoryConfirmDialog';
 import { SendContent } from '../components/SendContent';
 import { SettingsContent } from '../components/SettingsContent';
-import { TransferCenterContent } from './TransferCenterPage';
+import { TransferCenterContent } from './TransferCenterContent';
 import { LocalDeviceSection } from '../views/settings/LocalDeviceSection';
 import { initAllPreferences } from '../utils/PreferencesUtil';
 import { common } from '@kit.AbilityKit';
@@ -69,8 +69,7 @@ import {
   SessionDataFlow,
   SessionFilter,
   SessionStage,
-  TransferSession,
-  isTerminalStage
+  TransferSession
 } from '../model/transfer/TransferSession';
 import {
   galleryMediaFilesOf,

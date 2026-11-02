@@ -170,13 +170,6 @@ impl UploadStore {
         }
     }
 
-    /// 标记已开始上传。
-    pub fn mark_started(&mut self, token: &str) {
-        if let Some(session) = self.sessions.get_mut(token) {
-            session.download_started = true;
-        }
-    }
-
     /// 设置落盘目标（确认前由 ArkTS 指定最终路径；未知条目忽略）。
     /// 返回实际生效条目数（调用方可据此发现标识漂移）。
     ///

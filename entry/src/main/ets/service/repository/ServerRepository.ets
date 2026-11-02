@@ -131,7 +131,6 @@ function computeDiscoveryWhitelist(): Array<string> {
 // ── 服务器运行时状态 ──
 
 let serverRunning = false;
-let serverErrorMsg: string = '';
 let noWifiWarning: boolean = false;
 let allInterfacesDisabled: boolean = false;
 // 上一次成功启动 discovery 时的配置签名：配置未变化时跳过无谓的 stop/start 重启
@@ -139,10 +138,6 @@ let lastDiscoverySignature: string = '';
 
 export function isServerRunning(): boolean {
   return serverRunning;
-}
-
-export function getServerError(): string {
-  return serverErrorMsg;
 }
 
 export function getNoWifiWarning(): boolean {
@@ -471,16 +466,12 @@ export async function startLocalServer(): Promise<string> {
       // 入口已判空 appContext 并提前返回，此处必非空
       let portMsg = appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id)
         .replace('%d', String(getPort()));
-      serverErrorMsg = portMsg;
       logger.error(portMsg);
     } else {
-      serverErrorMsg = errorMsg;
       logger.error('服务器启动失败：' + errorMsg);
     }
     return '';
   }
-  // 清除之前的错误
-  serverErrorMsg = '';
   setServerFingerprint(handle.fingerprint);
   serverRunning = true;
   // 服务器以当前设置运行——无需重启
@@ -530,7 +521,6 @@ export async function stopLocalServer(): Promise<void> {
   }
   serverRunning = false;
   setServerFingerprint('');
-  serverErrorMsg = '';
   clearDiscoveryState();
   logger.info('服务器已停止');
   notifyChange();

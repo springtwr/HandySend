@@ -93,7 +93,6 @@ import { LOCAL_RECEIVE_KEY } from './transfer/adapters/LocalSendReceiveAdapter';
 import { MTA_SEND_KEY } from './transfer/adapters/MtaSendAdapter';
 import { MTA_RECEIVE_KEY } from './transfer/adapters/MtaReceiveAdapter';
 import { WEB_DOWNLOAD_KEY } from './transfer/adapters/WebDownloadAdapter';
-import { WEB_UPLOAD_KEY } from './transfer/adapters/WebUploadAdapter';
 import { initializeAdapters } from './transfer/adapters/SessionAdapter';
 import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
 
@@ -200,7 +199,6 @@ export { getDeviceAlias,
 
 // 服务端仓储导出
 export { isServerRunning,
-  getServerError,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   getServerFingerprint,
@@ -249,9 +247,7 @@ export { getShareLink,
   hasActiveWebUploads } from './repository/WebShareRepository';
 
 // 校验和仓储导出
-export { getChecksumProgress,
-  getChecksumTotal,
-  calculateChecksumsForFiles,
+export { calculateChecksumsForFiles,
   handleChecksumProgress } from './repository/ChecksumRepository';
 
 // 发送仓储导出
@@ -272,8 +268,7 @@ export { sendResultErrorMessage,
   setPrePreparedItems,
   peekPrePreparedItems,
   invalidatePrePreparedItems,
-  sendTextDir,
-  clearSendTextFiles } from './repository/SendRepository';
+  sendTextDir } from './repository/SendRepository';
 
 export type { SendResult } from './repository/SendRepository';
 
@@ -300,8 +295,7 @@ export { nativeCancelTransfer,
   nativeSetWebUploadTargets,
   nativeAcceptWebSession,
   nativeDeclineWebSession,
-  nativeExpireWebSession,
-  nativeSweepWebSessions } from './NativeBridge';
+  nativeExpireWebSession } from './NativeBridge';
 
 // 接收历史服务导出
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
@@ -315,7 +309,6 @@ export { startMtaDiscoveryScan,
   getMtaSendClickedMs,
   getMtaDiscoveredDevices,
   getMtaBluetoothStatus,
-  isMtaBluetoothOn,
   isMtaWifiOn,
   startMtaReceiveIfEnabled,
   applyMtaEnabled,
@@ -500,7 +493,7 @@ export function initAppService(context: common.UIAbilityContext): void {
       handleWebUploadDoneTyped(e as NativeWebUploadDoneEvent);
     });
     onBridgeEvent('error', (e: NativeEvent) => {
-      // 原生错误事件此前已解析但未订阅：订阅后纳入发送失败诊断，不再仅依赖调用返回值
+      // 原生错误事件纳入发送失败诊断，不只依赖调用返回值
       handleNativeErrorEventTyped(e as NativeErrorEvent);
     });
     logger.debug('原生桥接事件已订阅');

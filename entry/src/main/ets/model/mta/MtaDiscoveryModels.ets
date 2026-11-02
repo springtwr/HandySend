@@ -47,16 +47,6 @@ export function mapMtaBluetoothObservation(observation: MtaBluetoothObservation)
   }
 }
 
-/** 三态是否为「不可确定」 */
-export function isMtaBluetoothUnknown(status: MtaBluetoothStatus): boolean {
-  return status === MtaBluetoothStatus.UNKNOWN;
-}
-
-/** 三态是否为「确认关闭」（唯一允许清空/隐藏互传分组的条件） */
-export function isMtaBluetoothConfirmedOff(status: MtaBluetoothStatus): boolean {
-  return status === MtaBluetoothStatus.DISABLED;
-}
-
 /** 是否应由蓝牙状态触发互传分组清空（纯函数）：仅「确认关闭」为真，不可确定与已开启均不得清空 */
 export function shouldClearMtaOnBluetoothStatus(status: MtaBluetoothStatus): boolean {
   return status === MtaBluetoothStatus.DISABLED;

@@ -10,19 +10,6 @@ import { notifyChange } from './AppCore';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ChecksumRepository', '校验');
 
-// ── 校验和状态 ──
-
-let checksumProgress: number = 0;
-let checksumTotal: number = 0;
-
-export function getChecksumProgress(): number {
-  return checksumProgress;
-}
-
-export function getChecksumTotal(): number {
-  return checksumTotal;
-}
-
 /**
  * 单次校验和运行的进度/取消钩子（可选注入）。
  * - onAggregate：汇聚后的进度回调（aggregateHashedBytes 含已完成文件字节，totalBytes 为本次待哈希字节总量）；
@@ -89,8 +76,6 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
   if (needHash.length === 0) {
     return [];
   }
-  checksumTotal = files.length;
-  checksumProgress = files.length - needHash.length;
   notifyChange();
   if (options !== undefined) {
     // 起始进度：0 / 本次待哈希字节总量
@@ -181,7 +166,6 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     }
     // 失败文件同样计入已完成字节（按声明大小），保证进度不因单文件失败而停滞
     completedBytes = completedBytes + files[i].size;
-    checksumProgress = checksumProgress + 1;
     if (options !== undefined) {
       // 文件边界进度直接写回（不经节流），确保每个文件的完成可见
       options.onAggregate(completedBytes, pendingTotalBytes);
@@ -199,8 +183,6 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     }
     logger.warn('已剔除哈希失败文件 ' + failedIndices.length + ' 个');
   }
-  checksumTotal = 0;
-  checksumProgress = 0;
   notifyChange();
   return failedPaths;
 }

@@ -340,15 +340,6 @@ function touchActivity(session: TransferSession, nowMs: number = Date.now()): vo
   activityTimes.set(session.id, nowMs);
 }
 
-/** 外部心跳续期：仅刷新活动基准，不改变阶段/文案，也不触发 notifyChange。 */
-export function touchSessionActivity(sessionId: string): void {
-  let session = getSession(sessionId);
-  if (session === undefined || isTerminalStage(session.stage)) {
-    return;
-  }
-  touchActivity(session);
-}
-
 export function createSession(input: SessionCreateInput): TransferSession {
   let session = new TransferSession();
   session.id = nextSessionId(input.protocolKey);
@@ -491,51 +482,6 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
   }
   session.files = next;
   recomputeTotals(session);
-  notifyChange();
-  return true;
-}
-
-/**
- * 按文件标识同步会话文件清单（保留已有条目的进度）：
- * - 同一 fileId 复用原字节/阶段/路径，仅更新名称、类型与大小；
- * - 大小变化视为内容更新，进度归零重新等待；
- * - 新文件按等待状态加入，被移除的文件从清单删除。
- * 用于网页访问会话在分享文件表 revision 变化时同步任务清单。
- * @returns 是否实际发生替换
- */
-export function mergeSessionFiles(sessionId: string,
-  files: Array<SessionFileDescriptor>): boolean {
-  if (sessionId.length === 0 || files.length === 0) {
-    return false;
-  }
-  let session = getSession(sessionId);
-  if (session === undefined || isTerminalStage(session.stage)) {
-    return false;
-  }
-  let oldById: Map<string, SessionFile> = new Map();
-  for (let i = 0; i < session.files.length; i++) {
-    oldById.set(session.files[i].fileId, session.files[i]);
-  }
-  let next: Array<SessionFile> = [];
-  for (let i = 0; i < files.length; i++) {
-    let descriptor: SessionFileDescriptor = files[i];
-    let merged: SessionFile = toSessionFile(descriptor);
-    let existing: SessionFile | undefined = oldById.get(descriptor.fileId);
-    if (existing !== undefined) {
-      if (descriptor.path === undefined || descriptor.path.length === 0) {
-        merged.path = existing.path;
-      }
-      if (existing.totalBytes === descriptor.totalBytes) {
-        merged.bytesSent = existing.bytesSent;
-        merged.stage = existing.stage;
-        merged.checksum = existing.checksum;
-      }
-    }
-    next.push(merged);
-  }
-  session.files = next;
-  recomputeTotals(session);
-  touchActivity(session);
   notifyChange();
   return true;
 }

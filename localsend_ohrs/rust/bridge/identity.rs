@@ -248,7 +248,7 @@ pub fn get_security_context(state: &BridgeState) -> Result<SecurityContextDto, B
 /// 写盘失败立即返回 Err，内存态保持旧值；磁盘不留半新身份
 /// （key/cert 写入失败时清理已写入部分，下次启动按无身份重新生成）。
 /// 重载 IO 在 state 锁外执行，由 IDENTITY_LOCK 串行化（与 init 互斥），
-/// 同时消除原实现"写盘锁块与更新锁块之间"的并发分裂窗口。
+/// 避免写盘锁块与更新锁块之间出现并发分裂窗口。
 pub fn reset_security_context(
     state: &Mutex<BridgeState>,
 ) -> Result<SecurityContextDto, BridgeError> {

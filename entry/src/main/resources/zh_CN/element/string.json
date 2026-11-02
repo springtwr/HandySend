@@ -33,14 +33,6 @@
       "value": "文本"
     },
     {
-      "name": "send_select_title",
-      "value": "选择文件"
-    },
-    {
-      "name": "nearby_devices_title",
-      "value": "附近的设备"
-    },
-    {
       "name": "nearby_devices_subtitle",
       "value": "请确保与目标连接到同一个 Wi-Fi 网络"
     },
@@ -85,14 +77,6 @@
       "value": "加密传输"
     },
     {
-      "name": "share_link_title",
-      "value": "网页发送"
-    },
-    {
-      "name": "receive_link_title",
-      "value": "网页接收"
-    },
-    {
       "name": "share_link_qr_hint",
       "value": "扫描二维码进入"
     },
@@ -131,38 +115,6 @@
     {
       "name": "input_alias_title",
       "value": "昵称"
-    },
-    {
-      "name": "input_model_title",
-      "value": "设备型号"
-    },
-    {
-      "name": "select_device_type_title",
-      "value": "设备类型"
-    },
-    {
-      "name": "transfer_confirm",
-      "value": "确认"
-    },
-    {
-      "name": "transfer_cancel",
-      "value": "取消"
-    },
-    {
-      "name": "transfer_complete",
-      "value": "传输完成"
-    },
-    {
-      "name": "transfer_failed",
-      "value": "传输失败"
-    },
-    {
-      "name": "transfer_abort",
-      "value": "取消传输"
-    },
-    {
-      "name": "transfer_abort_confirm",
-      "value": "确定要取消传输吗？接收端可能会丢失部分文件"
     },
     {
       "name": "send_text_input_title",
@@ -267,18 +219,6 @@
     {
       "name": "rate_go",
       "value": "去评分"
-    },
-    {
-      "name": "settings_network",
-      "value": "网络"
-    },
-    {
-      "name": "send_failed_prefix",
-      "value": "发送失败: "
-    },
-    {
-      "name": "send_error_prefix",
-      "value": "发送异常: "
     },
     {
       "name": "protocol_mismatch_error",
@@ -469,10 +409,6 @@
       "value": "创建校验和"
     },
     {
-      "name": "calculating_checksum",
-      "value": "正在计算校验和"
-    },
-    {
       "name": "troubleshoot_title",
       "value": "常见问题"
     },
@@ -613,10 +549,6 @@
       "value": "网页服务随应用运行。\n开启「设置 → 通用 → 允许后台接收」后，没有传输任务时应用会在后台保留约 5 分钟，期间仍可访问网页。\n超时后或手动停止网页传输，网页将无法打开；需要长时间分享时，请保持应用在前台运行。"
     },
     {
-      "name": "protocol_version_label",
-      "value": "Localsend 协议版本"
-    },
-    {
       "name": "network_type_wifi",
       "value": "Wi-Fi"
     },
@@ -709,44 +641,8 @@
       "value": "回到底部"
     },
     {
-      "name": "server_status_label",
-      "value": "服务器状态"
-    },
-    {
-      "name": "link_share_button",
-      "value": "用网页接收"
-    },
-    {
-      "name": "receive_details_title",
-      "value": "详细信息"
-    },
-    {
-      "name": "receive_device_title",
-      "value": "本机"
-    },
-    {
-      "name": "receive_more_title",
-      "value": "更多"
-    },
-    {
-      "name": "online_status",
-      "value": "在线"
-    },
-    {
-      "name": "offline_status",
-      "value": "离线"
-    },
-    {
-      "name": "info_label",
-      "value": "信息"
-    },
-    {
       "name": "checksum_create_desc",
       "value": "发送前计算 SHA-256 哈希值"
-    },
-    {
-      "name": "save_to_history_desc",
-      "value": "记录已接收的文件"
     },
     {
       "name": "appearance_settings",
@@ -767,10 +663,6 @@
     {
       "name": "verify_hex_mode",
       "value": "文本"
-    },
-    {
-      "name": "multi_device_sessions",
-      "value": "多设备会话"
     },
     {
       "name": "device_fingerprint_label",
@@ -795,46 +687,6 @@
     {
       "name": "clipboard_read_failed",
       "value": "读取剪贴板失败"
-    },
-    {
-      "name": "protocol_https",
-      "value": "HTTPS"
-    },
-    {
-      "name": "protocol_http",
-      "value": "HTTP"
-    },
-    {
-      "name": "session_status_waiting",
-      "value": "等待中"
-    },
-    {
-      "name": "session_waiting_peer_download",
-      "value": "等待对方下载"
-    },
-    {
-      "name": "session_status_checksum",
-      "value": "校验中..."
-    },
-    {
-      "name": "session_status_sending",
-      "value": "发送中..."
-    },
-    {
-      "name": "session_status_done",
-      "value": "完成"
-    },
-    {
-      "name": "session_status_error",
-      "value": "错误"
-    },
-    {
-      "name": "session_status_declined",
-      "value": "已拒绝"
-    },
-    {
-      "name": "session_status_locked",
-      "value": "已锁定"
     },
     {
       "name": "auto_confirm_paired_warning",
@@ -887,10 +739,6 @@
     {
       "name": "feedback_email",
       "value": "邮箱"
-    },
-    {
-      "name": "feedback_appgallery",
-      "value": "华为应用市场"
     },
     {
       "name": "feedback_repo",
@@ -983,22 +831,6 @@
     {
       "name": "send_error_cancelled",
       "value": "对方已取消接收"
-    },
-    {
-      "name": "recv_cancelled_message",
-      "value": "对方已取消发送"
-    },
-    {
-      "name": "session_status_busy",
-      "value": "对方忙，请稍后重试"
-    },
-    {
-      "name": "session_status_timeout",
-      "value": "未响应"
-    },
-    {
-      "name": "session_status_pin_required",
-      "value": "需要 PIN 码"
     },
     {
       "name": "send_error_busy",
@@ -1103,34 +935,6 @@
     {
       "name": "web_access_unavailable",
       "value": "网页服务暂未就绪"
-    },
-    {
-      "name": "web_download_request_title",
-      "value": "下载请求"
-    },
-    {
-      "name": "web_upload_request_title",
-      "value": "上传请求"
-    },
-    {
-      "name": "web_download_from",
-      "value": "来自"
-    },
-    {
-      "name": "web_download_no_requests",
-      "value": "暂无下载请求"
-    },
-    {
-      "name": "web_upload_no_requests",
-      "value": "暂无上传请求"
-    },
-    {
-      "name": "web_download_exit_confirm_title",
-      "value": "确认退出"
-    },
-    {
-      "name": "web_download_exit_confirm_message",
-      "value": "退出将中断正在进行的传输"
     },
     {
       "name": "history_open_directory",
@@ -1397,10 +1201,6 @@
       "value": "知道了"
     },
     {
-      "name": "bg_transfer_title",
-      "value": "传输中"
-    },
-    {
       "name": "bg_transfer_title_done",
       "value": "传输完成"
     },
@@ -1411,14 +1211,6 @@
     {
       "name": "bg_transfer_title_partial",
       "value": "传输完成（部分失败）"
-    },
-    {
-      "name": "bg_transfer_content_percent",
-      "value": "%d%%"
-    },
-    {
-      "name": "bg_transfer_content_devices_percent",
-      "value": "%d 台设备 · %d%%"
     },
     {
       "name": "close_confirm_title",
@@ -1477,10 +1269,6 @@
       "value": "%d 个请求等待你确认"
     },
     {
-      "name": "background_attention_web_access_text",
-      "value": "%s 正在通过网页访问你的文件（共 %d 个）"
-    },
-    {
       "name": "session_stage_awaiting",
       "value": "待确认"
     },
@@ -1523,10 +1311,6 @@
     {
       "name": "session_stage_receiving",
       "value": "接收中"
-    },
-    {
-      "name": "session_stage_downloading",
-      "value": "下载中"
     },
     {
       "name": "session_stage_connecting",
@@ -1677,14 +1461,6 @@
       "value": "取消传输"
     },
     {
-      "name": "session_detail_retry",
-      "value": "重试"
-    },
-    {
-      "name": "session_detail_verify",
-      "value": "验证指纹"
-    },
-    {
       "name": "session_detail_timeline",
       "value": "时间线"
     },
@@ -1749,48 +1525,16 @@
       "value": "目标设备"
     },
     {
-      "name": "send_zone_method_title",
-      "value": "更多方式"
-    },
-    {
-      "name": "send_method_group_web",
-      "value": "网页"
-    },
-    {
-      "name": "send_method_group_other",
-      "value": "其它方式"
-    },
-    {
       "name": "send_method_ip",
       "value": "指定 IP 发送"
-    },
-    {
-      "name": "send_zone_refresh",
-      "value": "刷新"
     },
     {
       "name": "send_zone_favorites",
       "value": "收藏列表"
     },
     {
-      "name": "send_empty_clear_staged",
-      "value": "清空暂存内容"
-    },
-    {
       "name": "settings_group_general",
       "value": "通用"
-    },
-    {
-      "name": "settings_group_device",
-      "value": "设备与网络"
-    },
-    {
-      "name": "settings_group_appearance",
-      "value": "外观"
-    },
-    {
-      "name": "settings_group_more",
-      "value": "更多"
     },
     {
       "name": "settings_group_local_device",
@@ -1821,18 +1565,6 @@
       "value": "LocalSend"
     },
     {
-      "name": "settings_source_mta",
-      "value": "互传联盟"
-    },
-    {
-      "name": "send_expand",
-      "value": "展开"
-    },
-    {
-      "name": "send_collapse",
-      "value": "收起"
-    },
-    {
       "name": "auto_clear_staged_label",
       "value": "自动清空选中文件"
     },
@@ -1859,10 +1591,6 @@
     {
       "name": "local_device_fingerprint",
       "value": "设备指纹"
-    },
-    {
-      "name": "local_device_ip",
-      "value": "本机 IP"
     },
     {
       "name": "local_device_type",
@@ -1937,20 +1665,12 @@
       "value": "保存到相册失败"
     },
     {
-      "name": "settings_group_device_info",
-      "value": "设备信息"
-    },
-    {
       "name": "transfer_center_file_count",
       "value": "%d 个文件"
     },
     {
       "name": "transfer_center_text_label",
       "value": "文本"
-    },
-    {
-      "name": "session_meta_time_title",
-      "value": "时间信息"
     },
     {
       "name": "session_meta_performance_title",
@@ -1963,18 +1683,6 @@
     {
       "name": "session_meta_local_title",
       "value": "本机设备与标识"
-    },
-    {
-      "name": "session_meta_created_label",
-      "value": "创建"
-    },
-    {
-      "name": "session_meta_started_label",
-      "value": "开始"
-    },
-    {
-      "name": "session_meta_finished_label",
-      "value": "结束"
     },
     {
       "name": "session_meta_duration_label",
@@ -2071,14 +1779,6 @@
     {
       "name": "new_transfer_alert_view",
       "value": "查看"
-    },
-    {
-      "name": "web_access_notice_title",
-      "value": "网页访问"
-    },
-    {
-      "name": "web_access_notice_message",
-      "value": "%s 访问了网页，可下载你已选中的 %d 个文件。"
     },
     {
       "name": "favorites_online",
@@ -2249,14 +1949,6 @@
       "value": "当前端口 %d（默认 %d 被占用）"
     },
     {
-      "name": "web_info_status",
-      "value": "服务状态"
-    },
-    {
-      "name": "web_info_address",
-      "value": "网页地址"
-    },
-    {
       "name": "web_address_switch",
       "value": "切换网页地址"
     },
@@ -2275,14 +1967,6 @@
     {
       "name": "web_service_restart_cancel",
       "value": "取消"
-    },
-    {
-      "name": "bg_transfer_title_web_keepalive",
-      "value": "网页服务运行中"
-    },
-    {
-      "name": "bg_transfer_content_web_keepalive",
-      "value": "后台临时保活，5 分钟后自动关闭"
     },
     {
       "name": "bg_transfer_title_keepalive",

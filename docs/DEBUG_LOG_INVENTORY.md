@@ -10,7 +10,7 @@ HandySend 使用统一日志模块 `Logger.ets` 封装 hilog，按业务域（do
 | 带上下文 | `[模块] [字段=值 …] 内容` | 传输/接收/分享链路，标签在前、上下文在后 |
 | 原生来源 | `[模块] Rust: 内容` | Rust 日志经桥接后的正文前缀 |
 
-- 模块标签为模块/子系统级稳定短标签，由 `getLogger(domain, tag, label)` 集中前置，调用点不再手写 `[模块]`。
+- 模块标签为模块/子系统级稳定短标签，由 `getLogger(domain, tag, label)` 集中前置，调用点不手写 `[模块]`。
 - 正文中的数据方括号（如 `[wlan0]`、文件列表）保留，不影响按 `[模块]` 无歧义过滤。
 - 日志消息不得包含换行符，保证一事件一行。
 
@@ -35,7 +35,7 @@ hdc shell hilog | grep "HandySend:"
 
 | 域 | 值 | 适用模块 |
 |----|----|----------|
-| GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel |
+| GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel、PermissionService 等 |
 | DISCOVERY | 0x0001 | DiscoveryRepository、DeviceRepository、MainTabViewModel |
 | TRANSFER | 0x0002 | SendRepository、ReceiveRepository、ReceiveTargets、SendViewModel、SendContent、WebShareRepository 等（完整清单见注 1） |
 | NETWORK | 0x0003 | AppCore、NetworkSettingsSection |
@@ -43,11 +43,14 @@ hdc shell hilog | grep "HandySend:"
 | SETTINGS | 0x0005 | SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel |
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
+> GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission。
+>
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository、ReceiveRepository、
 > ReceiveTargets、SendViewModel、SendContent、WebShareRepository、RustWeb（NativeBridge
 > 内的网页传输 Rust 日志归并）、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、
-> service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel、
-> BackgroundTransferService、BackgroundAttentionNotifier。
+> ImageThumbnailUtil、FileEntryThumb、service/transfer/*（会话引擎与协议适配器）、
+> TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、
+> BackgroundAttentionNotifier。
 
 ## 日志级别规则（五级）
 
@@ -111,7 +114,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 ## 传输进度与任务列表转储的节流策略
 
 - 传输进度日志：发送/接收两侧统一口径，进行中按「会话」维度每 5 秒最多 1 条
-  （`传输进度` / `接收进度`），逐文件不再单独刷日志；文件完成与终态（完成/失败/取消）必发、不受节流限制；
+  （`传输进度` / `接收进度`），逐文件不单独刷日志；文件完成与终态（完成/失败/取消）必发、不受节流限制；
   无字节进度的会话（如纯文本消息）不输出进度日志；节流状态随会话终结清理。
 - 任务列表行序列转储（`TransferCenterViewModel`）：常态仅一行摘要（行数/剔除数/首尾条目标识），
   体积不随记录数增长；命中异常信号（条目被剔除、存在重复标识、行数相比上次减少）时输出完整序列。
@@ -132,8 +135,16 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:NativeTypes` | `[Native 类型]` | model/NativeTypes.ets | 事件必填字段缺失丢弃告警 |
 | `HandySend:EventBus` | `[事件总线]` | utils/EventBus.ets | 事件回调异常 |
 | `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 文件尾部读取、全量日志导出保存失败 |
-| `HandySend:MainTab` | `[主页]` | MainTabViewModel.ets | Tab 切换、分享 URI 消费 |
+| `HandySend:MainTab` | `[主页]` | MainTabViewModel.ets | 角标刷新、新待确认任务感知 |
 | `HandySend:MainTabFloating` | `[主页]` | MainTabFloating.ets | 首页悬浮壳层、启动门禁与页面收尾 |
+| `HandySend:BackgroundTransferService` | `[后台传输]` | BackgroundTransferService.ets | 后台长时任务启停、实况进度与终态通知 |
+| `HandySend:BackgroundAttentionNotifier` | `[后台关注]` | BackgroundAttentionNotifier.ets | 待确认请求的后台关注通知 |
+| `HandySend:PermissionService` | `[权限]` | PermissionService.ets | 通知/蓝牙权限查询、申请与设置引导 |
+| `HandySend:ImmersiveTitleBar` | `[沉浸式标题栏]` | common/ImmersiveTitleBar.ets | 标题栏材质能力探测与降级 |
+| `HandySend:FileLocation` | `[文件定位]` | utils/FileLocationUtil.ets | 文件定位归一、存在性探测与打开 |
+| `HandySend:FileTextUtil` | `[文本读取]` | utils/FileTextUtil.ets | 文本文件按路径读取与降级 |
+| `HandySend:FileEntryThumb` | `[缩略图]` | components/FileEntryThumb.ets | 图片/视频缩略图解码 |
+| `HandySend:UriPermission` | `[URI授权]` | utils/UriPermission.ets | Picker URI 持久化授权与激活 |
 | `HandySend:DiscoveryRepository` | `[发现]` | DiscoveryRepository.ets | 设备发现事件、扫描/连接/注册、Rust 日志归并 |
 | `HandySend:DeviceRepository` | `[设备]` | DeviceRepository.ets | 设备身份刷新 |
 | `HandySend:SendRepository` | `[发送]` | SendRepository.ets | 发送流程（sendToDevice/Multi、文件 staging、会话管理）、Rust 日志归并 |
@@ -215,7 +226,7 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 ## Rust 侧日志
 
-- Rust `log::*` 调用按同一套五级语义校正；调试标签（`[DBG-*]` 等）已移除，由正文自述。
+- Rust `log::*` 调用按同一套五级语义校正；正文自述内容，不使用 `[DBG-*]` 之类调试标签。
 - Rust info 只保留服务启停、接收完成等关键节点；页面访问、下载会话建立、批次/令牌明细与协议阶段参数用 debug。
 - 缓冲元素格式为 `level|target|message`（`level ∈ error/warn/info/debug/trace`，`target` 为 Rust 模块路径）；ArkTS 侧按前两个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
 - ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`、`[桥接] Rust: ...`），经带级别轮询接口读取，保留原始级别；轮询时机为设备发现、发送结束与网页服务运行期（每 2 秒）。
@@ -238,8 +249,8 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 ## Debug 开关
 
-- 默认关闭不再基于内存压力：内存回退 500 条、写入队列 500 行、页面尾读 256KB 均有界
-- 仍保留显式开关的原因：限制持续 debug 写入、hilog 与 Rust 日志的 I/O/性能开销，
+- 默认关闭；内存回退 500 条、写入队列 500 行、页面尾读 256KB 均有界
+- 保留显式开关的原因：限制持续 debug 写入、hilog 与 Rust 日志的 I/O/性能开销，
   减少原始协议/设备标识等诊断内容长期落盘，并避免普通用户看到诊断噪音
 - **Debug 构建**：未保存用户选择时默认 DEBUG
 - **Release 构建**：未保存用户选择时默认 INFO

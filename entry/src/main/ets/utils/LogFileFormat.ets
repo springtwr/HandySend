@@ -80,10 +80,6 @@ export function formatSessionEnd(timestamp: number, clean: boolean): string {
     ' clean=' + (clean ? 'true' : 'false') + '\n';
 }
 
-export function isMarkerLine(line: string): boolean {
-  return line.startsWith('#');
-}
-
 /** 解析一行日志；模块标记行或格式不符时返回 undefined。 */
 export function parseLogLine(line: string, offset: number): LogViewEntry | undefined {
   if (line.length === 0 || line.startsWith('#')) {

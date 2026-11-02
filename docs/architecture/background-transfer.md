@@ -15,13 +15,12 @@
 
 ### 1.1 数据源
 
-- 唯一来源为统一会话注册表——`TransferSessionRegistry.getOverallSnapshot()` 的协议无关聚合快照（活跃会话数/设备数/整体进度/成败汇总）
-- 服务不再逐协议读取快照，也不再按方向硬编码取消分支
+- 唯一来源为统一会话注册表——`TransferSessionRegistry.getOverallSnapshot()` 的协议无关聚合快照（活跃会话数/设备数/整体进度/成败汇总）；服务不逐协议读取快照，也不按方向硬编码取消分支
 - 待确认会话（`awaitingConfirmation`）不计入活跃：活跃标志、会话数、设备数、进度与字节汇总均只覆盖「进行中」会话；`allFinished` 仍表示「全部会话均已终态」，仅有待确认时不视为全部完成
 
 ### 1.2 传输驱动启停
 
-- 长时任务的申请/保持不再仅依赖 `onBackground` 时机：缓存 `UIAbilityContext`，changeBus 在后台检出进行中传输且任务空闲时主动申请（`ensureTransferTaskForBackground`，幂等）
+- 长时任务的申请/保持除 `onBackground` 时机外，也由 changeBus 驱动：缓存 `UIAbilityContext`，在后台检出进行中传输且任务空闲时主动申请（`ensureTransferTaskForBackground`，幂等）
 - 传输任务与空闲保活任务分离，各自持有独立的 `dataTransfer` 长时任务、通知 Id 与任务 Id：
   - 传输任务：后台存在活跃会话时申请，通知显示「后台传输中 / 关闭通知会中断传输」，随真实进度更新；
   - 保活任务：设置「允许后台接收」开启且网页服务或 LocalSend 服务器运行时，进入后台即申请，
@@ -58,7 +57,7 @@
 
 ### 1.7 可测性
 
-- 导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测（聚合断言迁移至 `BackgroundAggregateTest`，经注册表快照验证）
+- 导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测；聚合断言由 `BackgroundAggregateTest` 经注册表快照验证
 
 ## 2. BackgroundAttentionNotifier — 后台关注通知层
 

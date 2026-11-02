@@ -1,11 +1,10 @@
 /**
  * BackgroundAttentionNotifier.ets — 后台关注通知层
  *
- * 应用在后台时，把需要用户关注的事件收敛为**一条**系统通知：
- * - 待确认请求：LocalSend / MTA 接收、Web 上传；
- * - 网页访问：已由扫码或本次访问码直接放行、或本次免确认放行的 Web 下载。
+ * 应用在后台时，把需要用户关注的待确认请求（LocalSend / MTA 接收、Web 上传）
+ * 收敛为**一条**系统通知。网页访问与下载不进入该通知：访问只写诊断日志并续期
+ * 有界后台保活，下载批次由后台传输实况通知承载。
  *
- * 待确认请求优先展示；没有待确认时展示最近一次仍存活的网页访问。
  * 通知使用独立 id（与后台传输实况通知区分），点击回到任务中心。
  * 模块级单例，由 EntryAbility 生命周期与注册表变更共同驱动。
  */
@@ -27,7 +26,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:BackgroundAttentionNoti
 // 后台关注通知 id：与后台传输任务的实况通知区分，避免相互覆盖
 const BACKGROUND_ATTENTION_NOTIFICATION_ID = 10001;
 
-/** 后台关注类别（待确认请求优先于网页访问）。 */
+/** 后台关注类别。 */
 export enum AttentionKind {
   none = 'none',
   pendingRequest = 'pendingRequest'
@@ -43,7 +42,7 @@ let attentionWantAgent: WantAgent | undefined = undefined;
 let subscribed: boolean = false;
 
 /**
- * 关注类别决策（纯函数）：只有真实待确认请求，网页访问不再进入通知层。
+ * 关注类别决策（纯函数）：仅有待确认请求时发布通知，其余情况不发布。
  */
 export function resolveAttentionKind(pendingCount: number): AttentionKind {
   return pendingCount > 0 ? AttentionKind.pendingRequest : AttentionKind.none;
@@ -132,9 +131,8 @@ async function publishAttention(kind: AttentionKind, pendingCount: number): Prom
 
 /**
  * 按当前后台状态同步关注通知（幂等）：
- * - 前台：撤回并清空网页访问关注；
- * - 后台且有待确认请求：展示待确认（优先）；
- * - 后台且无待确认、但有存活网页访问：展示网页访问；
+ * - 前台：撤回通知；
+ * - 后台且有待确认请求：展示待确认数量；
  * - 其余：撤回。
  */
 export function refreshBackgroundAttention(): void {
@@ -158,7 +156,7 @@ export function refreshBackgroundAttention(): void {
 }
 
 /**
- * 撤回后台关注通知并清空网页访问关注（回到前台或事件已全部处理时调用，幂等）。
+ * 撤回后台关注通知（回到前台或待确认请求已全部处理时调用，幂等）。
  */
 export function withdrawBackgroundAttention(): void {
   // 无论是否已发布均递增代际：拦截「撤回先于 publish 完成」的在途发布

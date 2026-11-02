@@ -65,10 +65,6 @@
       "value": "#E00003"
     },
     {
-      "name": "orange_accent",
-      "value": "#AA5A00"
-    },
-    {
       "name": "purple_text",
       "value": "#6A5AE4"
     },
@@ -89,20 +85,8 @@
       "value": "#CCCCCC"
     },
     {
-      "name": "pressed_bg",
-      "value": "#D8DADD"
-    },
-    {
       "name": "disabled_bg",
       "value": "#E8E8E8"
-    },
-    {
-      "name": "input_bg",
-      "value": "#F2F3F5"
-    },
-    {
-      "name": "tab_text_active",
-      "value": "#181818"
     },
     {
       "name": "clipboard_button_icon",
@@ -117,10 +101,6 @@
       "value": "#66000000"
     },
     {
-      "name": "shadow_color",
-      "value": "#33000000"
-    },
-    {
       "name": "gradient_mask",
       "value": "#66F1F3F5"
     },
@@ -131,18 +111,6 @@
     {
       "name": "qr_code_background",
       "value": "#FFFFFF"
-    },
-    {
-      "name": "accent_color",
-      "value": "#316FC4"
-    },
-    {
-      "name": "floating_bar_bg",
-      "value": "#CCFFFFFF"
-    },
-    {
-      "name": "tab_icon_inactive",
-      "value": "#99182431"
     }
   ]
 }
