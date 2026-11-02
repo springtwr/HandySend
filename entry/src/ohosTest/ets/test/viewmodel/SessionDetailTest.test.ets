@@ -690,13 +690,37 @@ export default function SessionDetailTest() {
       expect(vm.meta.averageSpeedBps > 0).assertTrue()
       expect(vm.meta.peakSpeedBps).assertEqual(12345)
       let firstAverage: number = vm.meta.averageSpeedBps
-      // 进度推进后刷新：平均速度随之变化，且详情信息为同一实例（原地更新，不替换对象）
+      // 进度推进后立即刷新：平均速度受 1 秒显示节流约束，数值保持不变（避免随进度事件持续跳动），
+      // 详情信息仍为同一实例（原地更新，不替换对象）
       s.bytesSent = 1000
       vm.refresh()
-      expect(vm.meta.averageSpeedBps > firstAverage).assertTrue()
+      expect(vm.meta.averageSpeedBps).assertEqual(firstAverage)
       expect(vm.meta === metaRef).assertTrue()
       vm.unload()
       resetRegistry()
+    })
+
+    it('meta_liveAverageSpeed_updatesAfterDisplayInterval', 0, async (done: Function) => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let s = createSession(input())
+      s.transferStartedAt = Date.now() - 4000
+      s.totalBytes = 1000
+      s.bytesSent = 500
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      let firstAverage: number = vm.meta.averageSpeedBps
+      expect(firstAverage > 0).assertTrue()
+      s.bytesSent = 1000
+      // 1 秒内的刷新不更新平均速度显示
+      vm.refresh()
+      expect(vm.meta.averageSpeedBps).assertEqual(firstAverage)
+      // 走时刷新（1 秒节奏）后平均速度随之更新
+      let updated: boolean = await waitUntil((): boolean => vm.meta.averageSpeedBps > firstAverage, 4000)
+      expect(updated).assertTrue()
+      vm.unload()
+      resetRegistry()
+      done()
     })
 
     it('meta_liveTaskAndTransferDuration_splitAtFirstByte', 0, () => {

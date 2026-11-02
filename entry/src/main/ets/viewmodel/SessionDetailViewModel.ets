@@ -208,8 +208,12 @@ function liveElapsedMs(start: number, now: number): number {
  * 平均速度取「已传字节 ÷ 传输耗时」、峰值速度取会话实时峰值；
  * 未开始传输时传输耗时与平均速度保持占位（0）；会话进入终态后耗时与平均速度切换为归档口径，
  * 与随后从历史条目进入时看到的结果一致。
+ *
+ * `syncAverageSpeed` 控制实时平均速度是否写入：该值随每个进度事件变化，逐事件刷新会持续跳动，
+ * 故由调用方按显示节流（与瞬时速度同为 1 秒节奏）决定是否写入；终态一律写入归档值。
  */
-function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): void {
+function applyLiveMeta(target: SessionDetailMeta, session: TransferSession,
+  syncAverageSpeed: boolean): void {
   let createdAt: number = timelineTimeOf(session.timeline, SessionEventKind.created);
   if (createdAt <= 0) {
     createdAt = session.startedAt;
@@ -247,7 +251,10 @@ function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): voi
   target.taskDurationMs = taskDurationMs;
   target.transferDurationMs = transferDurationMs;
   target.totalBytes = session.totalBytes;
-  target.averageSpeedBps = averageSpeedBps;
+  // 实时平均速度按显示节流写入（终态一律写归档值），避免随每个进度事件跳动
+  if (terminal || syncAverageSpeed) {
+    target.averageSpeedBps = averageSpeedBps;
+  }
   target.peakSpeedBps = session.peakSpeedBps;
   target.errorMessage = session.errorMessage;
   target.errorCode = session.errorCode;
@@ -355,6 +362,8 @@ export class SessionDetailViewModel {
   private subscribed: boolean = false
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
   private lastSyncMs: number = 0
+  // 实时平均速度的最近一次显示刷新时刻（与瞬时速度同为 1 秒显示节奏）
+  private lastAverageSpeedSyncMs: number = 0
   // 走时刷新定时器（页面打开且会话未终结时运行；-1 表示未运行）
   private timingTimer: number = -1
   private changeCallback: () => void = (): void => {
@@ -370,6 +379,7 @@ export class SessionDetailViewModel {
     this.speed = 0;
     this.etaSeconds = -1;
     this.lastSyncMs = 0;
+    this.lastAverageSpeedSyncMs = 0;
     // 切换会话时复位完整信息与历史快照，避免残留上一会话数据
     this.meta = emptySessionDetailMeta();
     this.historyFiles = [];
@@ -430,7 +440,9 @@ export class SessionDetailViewModel {
       this.stopTimingTicker();
       return;
     }
-    applyLiveMeta(this.meta, session);
+    // 走时刷新固定 1 秒一次，与平均速度的显示节奏一致，同时推进该节奏的时间基准
+    this.lastAverageSpeedSyncMs = Date.now();
+    applyLiveMeta(this.meta, session, true);
   }
 
   /** 会话（实时或历史摘要）是否已加载。 */
@@ -523,8 +535,14 @@ export class SessionDetailViewModel {
     this.session = session;
     this.files = session.files;
     this.timeline = session.timeline;
-    // 原地更新同一详情信息实例：子组件持有的对象不变，`@Trace` 字段变化即驱动界面刷新
-    applyLiveMeta(this.meta, session);
+    // 原地更新同一详情信息实例：子组件持有的对象不变，`@Trace` 字段变化即驱动界面刷新。
+    // 实时平均速度与瞬时速度同为 1 秒显示节奏，避免进度事件密集时数值持续跳动
+    let now: number = Date.now();
+    let syncAverageSpeed: boolean = now - this.lastAverageSpeedSyncMs >= DISPLAY_SYNC_INTERVAL;
+    if (syncAverageSpeed) {
+      this.lastAverageSpeedSyncMs = now;
+    }
+    applyLiveMeta(this.meta, session, syncAverageSpeed);
     this.capabilities = getSessionCapabilities(session);
     let adapter = getAdapter(session.protocolKey);
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
