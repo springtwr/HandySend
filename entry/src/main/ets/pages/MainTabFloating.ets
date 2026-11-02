@@ -82,7 +82,7 @@ import { GallerySaveResult, MediaFileInfo } from '../model/Types';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
-import { shouldShowPartialProtocolDisabledHint } from '../viewmodel/SendViewModel';
+import { SendViewModel, shouldShowPartialProtocolDisabledHint } from '../viewmodel/SendViewModel';
 import { getStringSync } from '../utils/ResourceUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
@@ -95,6 +95,8 @@ struct MainTabFloating {
   // 系统宽度断点（@Env 随窗口尺寸变化自动刷新，宽 320vp~520vp 范围）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: MainTabViewModel = new MainTabViewModel();
+  // 发送视图模型：由主入口持有并下传内容组件，窗口跨断点切换页签容器形态时保留暂存列表等状态
+  @Local private sendViewModel: SendViewModel = new SendViewModel();
   // 任务视图模型：由主入口持有并下传内容组件，标题栏入口与列表共享同一份历史状态
   @Local transferViewModel: TransferCenterViewModel = new TransferCenterViewModel();
   // 首帧内容就绪标志：首帧仅构建壳层（标题栏 + 空页签容器），三个页签的重量级内容
@@ -265,6 +267,9 @@ struct MainTabFloating {
     // 角标刷新订阅统一变更总线（与任务列表同源同时机）；
     // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）弹出新传输提示弹窗
     this.viewModel.start();
+    // 发送页视图模型由页面宿主持有：在此注入上下文并订阅收藏，内容组件重建不改变其生命周期
+    this.sendViewModel.init(context);
+    this.sendViewModel.subscribeFavorites();
     this.transferViewModel.start();
 
     // 相册保存自动提示：接收完成后用户未必停留在详情页，故在壳层订阅统一变更总线触发
@@ -290,6 +295,7 @@ struct MainTabFloating {
 
   aboutToDisappear(): void {
     this.viewModel.stop();
+    this.sendViewModel.unsubscribeFavorites();
     this.transferViewModel.stop();
     unsubscribeSessions(this.galleryPromptCallback);
     unsubscribe(this.settingsChangedCallback);
@@ -1116,6 +1122,7 @@ struct MainTabFloating {
         // 首帧只保留空的页签容器：发送页重量级内容在首帧之后构建
         if (this.firstFrameContentReady) {
           SendContent({
+            viewModel: this.sendViewModel,
             scroller: this.sendScroller,
             onScrollDelta: (deltaY: number, absY: number) => {
               this.handleScrollDelta(deltaY, absY)

@@ -296,7 +296,7 @@ export class SendViewModel {
     this.context = context;
   }
 
-  // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
+  // 订阅收藏设备变化（由持有该视图模型的页面宿主在生命周期内调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
       // LocalSend 总开关关闭时收藏保持隐藏（收藏均为局域网来源设备）
@@ -308,7 +308,7 @@ export class SendViewModel {
     subscribeFavorites(this.favoritesCallback);
   }
 
-  // 取消订阅收藏设备变化（从视图的 aboutToDisappear 调用）。
+  // 取消订阅收藏设备变化（由持有该视图模型的页面宿主在生命周期内调用）。
   unsubscribeFavorites(): void {
     unsubscribeFavorites(this.favoritesCallback);
   }

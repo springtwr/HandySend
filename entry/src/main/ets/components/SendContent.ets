@@ -1,4 +1,3 @@
-import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
@@ -43,7 +42,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送�
 export struct SendContent {
   // 系统宽度断点（随窗口尺寸变化自动刷新，收藏面板宽度断点化用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
-  @Local viewModel: SendViewModel = new SendViewModel();
+  // 发送页视图模型由页面宿主持有：页签容器跨断点重建时暂存列表等状态不丢失
+  @Require @Param viewModel: SendViewModel
   // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
   @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
@@ -106,8 +106,6 @@ export struct SendContent {
   }
 
   aboutToAppear(): void {
-    this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
-    this.viewModel.subscribeFavorites();
     // 收藏面板：绑定在线快照来源并订阅收藏变更（新增/重命名/删除面板实时同步）
     this.favoritesPanelViewModel.attach(this.viewModel);
     this.favoritesPanelViewModel.subscribeFavorites();
@@ -147,7 +145,6 @@ export struct SendContent {
 
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
-    this.viewModel.unsubscribeFavorites();
     this.favoritesPanelViewModel.unsubscribeFavorites();
   }
 
