@@ -42,7 +42,6 @@ export interface NativeServerConfig {
   useHttps: boolean
   verifyChecksums?: boolean
   pin?: string
-  maxConcurrent?: number
   showToken?: string
 }
 
@@ -53,7 +52,6 @@ export interface NativeServerHandle {
 
 export interface NativeServerStatus {
   running: boolean
-  activeSession?: string
   fingerprint?: string
 }
 

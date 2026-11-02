@@ -368,7 +368,7 @@ class PreferencesSessionHistoryStore implements SessionHistoryStore {
       entries: entries
     };
     let key: string = segmentKey(SESSION_HISTORY_PREFIX, segIndex);
-    // 只序列化一次并直接写字符串：原实现经 setObject 再序列化一次，大段时是纯浪费。
+    // 只序列化一次并直接写字符串，避免经 setObject 再序列化一次。
     // 同时记录段落大小：偏好存储建议保持轻量（官方建议 ≤50MB），大文件数会话会让单段膨胀，
     // 写入的同步序列化会阻塞主线程，需要按实测数据决定是否截断明细
     let json: string = '';

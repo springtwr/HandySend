@@ -44,7 +44,6 @@ import {
   declineWebSession,
   expireWebSession,
   cancelWebDownload,
-  sweepWebSessions,
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
@@ -245,7 +244,6 @@ export function nativeGetServerStatus(): NativeServerStatus {
   let status: ServerStatus = getServerStatus();
   let result: NativeServerStatus = {
     running: status.running,
-    activeSession: status.activeSession,
     fingerprint: status.fingerprint
   };
   return result;
@@ -329,11 +327,6 @@ export function nativeDeclineWebSession(token: string): void {
 /** 令待确认的浏览器上传会话过期（浏览器收 408）。 */
 export function nativeExpireWebSession(token: string): void {
   expireWebSession(token);
-}
-
-/** 触发自研网页服务的全量惰性打扫（供 ArkTS 侧超时驱动调用）。 */
-export async function nativeSweepWebSessions(): Promise<void> {
-  await sweepWebSessions();
 }
 
 export function nativeRespondTransfer(sessionId: string, accept: boolean,

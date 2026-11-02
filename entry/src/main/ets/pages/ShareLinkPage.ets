@@ -34,8 +34,6 @@ export struct ShareLinkPage {
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Local viewModel: ShareLinkViewModel = new ShareLinkViewModel();
   @Local private isNavigatingBack: boolean = false;
-  // 路由参数（当前无方向区分，保留以兼容既有导航参数）
-  @Param pageParam: Object = new Object()
   // NavDestination 返回栈（onReady 注入）
   private pathStack: NavPathStack = new NavPathStack()
   // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
@@ -51,7 +49,6 @@ export struct ShareLinkPage {
     return true;
   }
 
-  /** 进入方向：'receive' 为接收模式，其余一律为发送模式。 */
   aboutToAppear(): void {
     this.viewModel.loadShareInfo();
     // 总开关开启而服务尚未恢复时补一次启动；关闭时页面只出示已关闭提示
@@ -392,5 +389,5 @@ export struct ShareLinkPage {
 // 路由表引用：ShareLinkPageBuilder(name, param)
 @Builder
 export function ShareLinkPageBuilder(name: string, param: Object) {
-  ShareLinkPage({ pageParam: param })
+  ShareLinkPage()
 }

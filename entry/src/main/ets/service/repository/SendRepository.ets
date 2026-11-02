@@ -666,7 +666,7 @@ export async function prepareSendFiles(
   knownFds?: Map<string, number>
 ): Promise<Array<SendFileItem>> {
   // 手动文本来源集合：命中者补设 preview（承载文本消息内容）。
-  // 未传入该列表时集合为空，行为与本特性之前完全一致。
+  // 未传入该列表时集合为空，所有条目按普通文件发送。
   let manualTextSourceUris: Set<string> = new Set();
   if (manualTextUris !== undefined) {
     for (let m = 0; m < manualTextUris.length; m++) {
@@ -813,17 +813,6 @@ function clearDirContents(dirPath: string): void {
     }
   } catch (_e) {
   }
-}
-
-// 清空「发送文本」目录内的全部文件（best-effort：目录不存在或单文件删除失败静默跳过），
-// 完成后发布变更总线通知，驱动发送暂存列表自检移除底层文件已消失的手动文本条目。
-export function clearSendTextFiles(): void {
-  let dir: string = sendTextDir();
-  if (dir.length === 0) {
-    return;
-  }
-  clearDirContents(dir);
-  notifyChange();
 }
 
 /**

@@ -186,7 +186,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   };
 
   // 降噪判定：仅在该设备为本轮新出现、或关键字段相较既有条目发生变化时输出一条 DEBUG 日志；
-  // 无变化的重复广播不打印（此前每条广播两条日志会迅速挤占缓冲、淹没有价值的日志）
+  // 无变化的重复广播不打印，避免高频广播挤占缓冲、淹没有价值的日志
   let existing: DiscoveredDevice | undefined = findDeviceByFingerprint(fingerprint);
   let isChanged: boolean = true;
   if (existing !== undefined) {

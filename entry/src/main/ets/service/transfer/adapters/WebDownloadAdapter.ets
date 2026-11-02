@@ -20,7 +20,6 @@ import {
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
 import { redactSessionToken } from '../../../utils/LogRedaction';
-import { getMimeForFileName } from '../../../utils/MimeUtils';
 import {
   createSession,
   finish,

@@ -36,7 +36,7 @@ HandySend/
 │   │   └── ets/
 │   │       ├── entryability/        # EntryAbility 应用入口
 │   │       ├── entrybackupability/  # EntryBackupAbility 备份扩展
-│   │       ├── pages/               # 页面（导航子页面，见 §8）
+│   │       ├── pages/               # 页面与页面级内容组件（见 §8）
 │   │       ├── components/          # 页面级内容组件 + 设置类型定义
 │   │       ├── views/               # 可复用视图组件（传输/设备/弹窗）+ settings/ 设置分组
 │   │       ├── service/             # 业务服务层
@@ -77,7 +77,7 @@ HandySend/
 - 处理系统分享 Intent（`ohos.want.action.sendData/sendMultipleData`）：未消费 pending 与本次新增合并去重后截断（文件 20 条、文本 20 条 20 万字符上限）
 - 始终加载 `MainTabFloating` 页面
 - 启动页使用简易启动页：`startWindowIcon` 取 `$media:start_window_icon`（512×512，透明背景），`startWindowBackground` 取 `$color:start_window_background`
-  （与页面背景 `page_background` 同值：base `#F2F3F5` / dark `#121212`）；不使用增强启动页（`startWindow` profile 及其 json 已移除）
+  （与页面背景 `page_background` 同值：base `#F2F3F5` / dark `#121212`）；不配置增强启动页 `startWindow` profile
 - `loadContent` 回调内最先设置窗口背景色（与 `page_background` 对齐），覆盖内容未绘制与页面转场期间状态栏/导航条避让区露出的底色
 - 窗口内容加载完成后申请通知与蓝牙权限（经 `PermissionService` 串行排队；两个接口仅首次弹窗，已授权或用户已拒绝后静默返回，见 §4.10）；
   申请经隐私声明守卫：隐私托管场景下系统隐私弹窗优先级高于权限弹窗，未签署时订阅隐私弹框签署结果公共事件
@@ -91,7 +91,7 @@ HandySend/
   - `onBackground`：启动后台传输任务后同步一次后台关注通知，补发前台期间已存在的待确认请求
   - `onDestroy` 兜底停止
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回
-  true 阻止关闭，并异步弹出应用内二次确认（继续/退出），选"退出"主动终止应用（平台无主窗口隐藏能力，不再接入状态栏托盘、也不最小化窗口）
+  true 阻止关闭，并异步弹出应用内二次确认（继续/退出），选"退出"主动终止应用（平台无主窗口隐藏能力，不接入状态栏托盘、也不最小化窗口）
 
 ### 4.2 AppService ★ 核心业务门面
 
@@ -150,7 +150,7 @@ Ability 重建不会重置 DEBUG 状态。
 
 | 域 | 值 | 适用模块 |
 |----|----|----------|
-| GENERAL | 0x0000 | AppService, EntryAbility, EntryBackupAbility, DialogService, ReceiveHistoryService, NativeBridge, NativeTypes, EventBus, HttpLogsViewModel, PermissionService |
+| GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel、PermissionService 等 |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
 | TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets, SendViewModel, SendContent, WebShareRepository 等（完整清单见注 1） |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
@@ -158,11 +158,13 @@ Ability 重建不会重置 DEBUG 状态。
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, service/repository/FavoritesService, SettingsViewModel |
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
+> GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission。
+>
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository, ReceiveRepository,
 > ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ChecksumRepository,
-> GallerySaveService, VideoThumbnailUtil, service/transfer/*（会话引擎与协议适配器）,
-> TransferCenterViewModel, SessionDetailViewModel, BackgroundTransferService,
-> BackgroundAttentionNotifier。
+> GallerySaveService, VideoThumbnailUtil, ImageThumbnailUtil, FileEntryThumb,
+> service/transfer/*（会话引擎与协议适配器）, TransferCenterViewModel,
+> SessionDetailViewModel, BackgroundTransferService, BackgroundAttentionNotifier。
 
 **消息格式**：`[模块] 内容`；带上下文为 `[模块] [sid=.. dir=..] 内容`；Rust 来源为 `[模块] Rust: 内容`。
 模块标签集中前置，保证 `grep '\[模块\]'` 无歧义过滤；正文数据方括号（如 `[wlan0]`）保留不影响过滤。日志消息不得含换行符。
@@ -281,7 +283,7 @@ adapter 以纯函数隔离上游类型、幂等且错误语义明确。
 
 ### 7.1 ArkTS 层
 
-- **Instrument Test**：设备端测试，运行于真机/模拟器，统一承载 ArkTS 侧全部单元测试（纯逻辑函数、.so 调用、Repository 逻辑和事件解析），覆盖原 Local Test 迁移的全部用例
+- **Instrument Test**：设备端测试，运行于真机/模拟器，统一承载 ArkTS 侧全部单元测试（纯逻辑函数、.so 调用、Repository 逻辑和事件解析）
 
 运行命令与编写规范见 `docs/testing/instrument-test-guide.md`。
 
@@ -344,7 +346,6 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 | 页面 | 用途 |
 |------|------|
 | `MainTabFloating` | 主页（三个稳定一级区域：发送 / 任务 / 设置）+ 导航根容器 + 主页面标题栏 |
-| `TransferCenterPage` | 任务（一级页签内容 + 路由页外壳）：跨协议聚合全部会话并合并为单一列表（详见下方说明） |
 | `SessionDetailPage` | 唯一通用会话详情页：协议差异仅经适配器描述符、能力声明与可选插槽表达（详见下方说明） |
 | `ShareLinkPage` | 网页传输：总开关启停、二维码/访问码/手动地址、允许上传与上传免确认 |
 | `DeviceDetailsPage` | 设备详情 |
@@ -389,9 +390,9 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 
 顶部模糊载体与内容避让均由标题栏承担，底部避让沿用既有做法（内容区底部预留/偏移、`List.contentEndOffset`），全面屏手势导航下页面背景延伸至屏幕边缘、无白色条带。
 
-**TransferCenterPage 行为细节**：
+**任务页行为细节**：
 
-- 壳层（主入口页签与路由外壳）持有内容视图模型与滚动控制器并下传内容组件，同时承载标题栏与入口；内容组件为纯内容，自行启停视图模型的职责归壳层
+- 主入口壳层 `MainTabFloating` 持有内容视图模型与滚动控制器并下传内容组件，同时承载标题栏与入口；内容组件为纯内容，自行启停视图模型的职责归壳层
 - 合并列表的构成：进行中 / 待确认 / 终态可见窗口 / 持久化历史，按会话时间倒序、按会话标识去重；行序列为「条目 / 空态」，不含标题行
 - 行序列构建流水线中的合并去重与可解析性校验以**标识集合**承载已出现项与基准标识：逐行线性回扫的开销随时长成平方，而历史条目数可接近保留上限、且列表在传输中被进度事件高频刷新
 - **历史行按内容版本号复用**：任务历史内容版本号（`getHistoryRevision`，进程内信号，归档 / 清除 / 删除 / 读取时清洗回写时自增）
@@ -401,7 +402,7 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 - 条目状态与进度直接绑定统一会话对象的 `@Trace` 字段（行模型只保留时间戳/方向/来源/昵称/文件数量等稳定展示值），与会话详情页同源同口径；历史条目行无实时对象，以终态快照展示
 - 行序列构建后执行可解析性校验（「条目必须可进入」硬性不变式）：不能解析为「实时会话或历史记录」的条目从序列中剔除并留痕，
   保证列表中每一条目都可进入详情（详见 [architecture/session-engine.md](architecture/session-engine.md) §3）
-- 「任务」页签使用本地双向箭头图标（`ic_tab_transfer`），不再复用接收页签图标
+- 「任务」页签使用本地双向箭头图标（`ic_tab_transfer`）
 - 标题与入口由标题栏承载：「文件接收历史」与「清空任务历史」由标题栏自动生成的「更多」菜单收纳（直接显示项数上限为「期望直接显示项数
   + 1」，为自动生成的「更多」入口预留槽位）；「清空任务历史」常显，无可清除内容（持久化历史 + 已终态可见会话）时置灰不可用
 - 「清空任务历史」为不可逆操作，点击后先弹出共享二次确认弹窗（DialogV2 `AlertDialogV2`，取消 / 确定两键，取消不产生任何效果），确认后
@@ -419,8 +420,8 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   以标识为键可跨「实时条目 ↔ 持久化历史」来源切换保持稳定；每次刷新末尾剔除已不可勾选的勾选，
   仅在列表整体清空时退出多选（仅剩不可勾选行时保留，用户仍可操作其余行）
 - 批量删除走 `TransferSessionRegistry.removeEntriesByIds`（与全量清除同一领域语义）：移除持久化历史条目 +
-  移除已终态可见会话条目，一次变更通知内发布；删除后退出多选。二级确认弹窗本体在两个壳层
-  （`pages/TransferCenterPage.ets` 与 `pages/MainTabFloating.ets`）内以 `@Builder` 方法实现，
+  移除已终态可见会话条目，一次变更通知内发布；删除后退出多选。二级确认弹窗本体在壳层
+  `pages/MainTabFloating.ets` 内以 `@Builder` 方法实现，
   说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 的 `buildDeleteSelectedMessage` 统一构造
 - **删除任务历史时连带清理应用自建文件**（全量与多选同一语义）：删除记录的同时删除这些记录对应的
   应用自建文件——收发文本落盘副本（`filesDir/text_send/` 与 `filesDir/text_recv/`），其唯一用途是详情页预览文本内容，
@@ -434,10 +435,9 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 - 上述文件清理由 `SessionHistoryStore.removeSelfBuiltFilesOf` 统一承担（`clearSessionHistory` 与
   `removeSessionHistoryByIds` 共用），实际删除经 `SendRepository.removeSendTextFiles`，
   完成后发布变更总线通知驱动发送暂存列表自检；路径前缀与目录来源共用 `sendTextDir` 与 `recvTextDir`，避免口径分叉
-- 任务标题栏菜单与「本机信息」半模态参数由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，
-  主入口与路由外壳共用，避免两处漂移；
+- 任务标题栏菜单与「本机信息」半模态参数由 `views/transfer/TransferCenterTitleActions.ets` 统一提供，主入口直接使用；
   二次确认弹窗的说明文案由 `views/transfer/ClearHistoryConfirmDialog.ets` 统一提供，
-  弹窗本体以两入口组件内的 `@Builder` 方法实现（DialogV2 需绑定组件实例），避免文案漂移
+  弹窗本体以主入口组件内的 `@Builder` 方法实现（DialogV2 需绑定组件实例），避免文案漂移
 - 清空任务历史后由领域动作层发布变更总线通知，列表与入口置灰状态随通知自动重算
 
 **SessionDetailPage 行为细节**：
@@ -512,8 +512,8 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   仅消息文案由「将删除：文件名」改为按勾选条数计数
 - 历史写入统一走 `ReceiveHistoryService.addEntries`（可传一条或多条）：一次传输的多个文件构建完全部条目后**一次性落盘**，
   避免逐条写入导致「全量序列化次数 = 文件数」；超出 `RECEIVE_HISTORY_CAPACITY` 时按 FIFO 丢弃最旧条目并留痕
-- 接收历史只存路径与元数据，不持久化正文；旧版 Web 上传路径曾把文本消息正文写入 `ReceiveHistoryEntry.textContent`，
-  读取时检测到该字段即剥离并全量回写一次，之后不再产生（预览/全文一律按 `path` 读取文件本身）
+- 接收历史只存路径与元数据，不持久化正文；`ReceiveHistoryEntry.textContent` 是旧版本的兼容字段，
+  读取时检测到即剥离并全量回写一次，当前不再写入（预览/全文一律按 `path` 读取文件本身）
 - 列表重建时勾选状态按 id 映射（`Map`）从旧条目回填，不做逐条线性查找
 
 ### 8.2 主页面结构
@@ -583,7 +583,7 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 | 任务 | 标题「任务」+ 结束端「更多」菜单（文件接收历史 / 清空任务历史） | 文件接收历史 → 路由栈；清空任务历史 → 任务视图模型动作 |
 | 设置 | 标题「设置」，无入口 | — |
 
-设置页仅新增标题栏，页内分组标题与分区顺序保持既有形态。
+设置页顶部显示标题栏，页内保留分组标题与既有分区顺序。
 
 发送页设备展示与收藏口径：
 
@@ -638,7 +638,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 每次开启网页分享都会生成本次访问码（6 位数字，显示在分享面板的地址下方）与二维码能力令牌，分享停止或服务重启即失效；
 扫码/链接以能力令牌免密进入，裸地址（书签/手动输入）展示访问码页，输入面板上的 6 位访问码即可进入。
 通过任一入口即视为外发授权，下载服务端直接放行；应用侧只在日志中记录访问者（IP/UA/文件数），
-不再弹「网页访问」提示。访问码只服务 PC 或无法扫码/收链接的临时接收方，不作为长期密码，也不进入设置持久化。
+不弹「网页访问」提示。访问码只服务 PC 或无法扫码/收链接的临时接收方，不作为长期密码，也不进入设置持久化。
 网页下载按批次建任务：页面多选后打包为一个 zip，浏览器通过精确 `Content-Length` 显示进度；
 单文件直接下载。页面不做下载进度轮询。文件列表按应用暂存顺序展示；列表变化实时重拉完整列表并短暂提示；
 面板另有与暂存文件列表解耦、仅在应用重启或手动停止网页服务后重置的“上传免确认”。
@@ -858,7 +858,7 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   派生（不可用时以占位符呈现）；`meta` 汇总完整传输信息（对端设备/时间/传输详情〔性能与结果、错误〕/本机标识），实时会话与历史条目统一取数
   - 会话被回收（`getSession` 返回 undefined）时保留最后一次快照，使详情页继续呈现终态结果而非空白页
   - 从未加载到会话（终态可见窗口已结束）时按持久化历史条目标识加载历史条目的完整信息、逐文件清单与时间线
-- 发送页：`SendViewModel` 移除单/多目标模式与内联进度；点击设备即创建会话并发送，暂存内容默认保留（可选「发送成功后自动清空暂存」）
+- 发送页：`SendViewModel` 点击设备即创建会话并发送，不维护单/多目标模式与内联进度；暂存内容默认保留（可选「发送成功后自动清空暂存」）
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil` 按用途分三个**相互独立的存储文件**——应用设置（含设备身份、网络名单、收藏）`handysend_settings`、任务历史
   `handysend_session_history`、文件接收历史 `handysend_receive_history`（历史为高频写且体积随条目增长，与设置的低频小写入隔离）；全部设置项默认值集中定义于

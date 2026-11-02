@@ -4,8 +4,8 @@
 >
 > 主文档 `docs/ARCHITECTURE.md` §4.2 保留概述。
 >
-> **会话状态边界（本特性后）**：Repository 退化为「协议 I/O + 原生调用 + 适配器事件来源」，
-> 不再持有会话状态与聚合。全部会话的唯一事实源是 `service/transfer/TransferSessionRegistry`，
+> **会话状态边界**：Repository 只承担「协议 I/O + 原生调用 + 适配器事件来源」，
+> 不持有会话状态与聚合。全部会话的唯一事实源是 `service/transfer/TransferSessionRegistry`，
 > 由 `service/transfer/adapters/*` 把各协议事件翻译为注册表操作（见「统一会话引擎」一节）。
 
 ## AppService — 核心业务门面
@@ -41,7 +41,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > **注 2**：`SendRepository` 为发送链路的**协议 I/O**：sendToDevice/Multi、文件 staging、
 > `resolveSendProtocol`（加密不可降级策略，可独立测试）、send/recv 共享的 `activeProgress`
 > （进度事件补齐字节用）+ 共享 URIs inbox；会话创建/进度/终态经 `LocalSendSendAdapter`
-> 登记到统一注册表（仓库自身的会话表仅作发送内部簿记，UI/后台/聚合不再读取）；每次发送的
+> 登记到统一注册表（仓库自身的会话表只作发送内部簿记，UI/后台/聚合不读取）；每次发送的
 > 逻辑会话标识唯一（时间戳 + 单调计数），并为其派生会话内唯一的文件标识，
 > `beginLocalSendSession` 返回的统一标识记入会话状态，进度与终态一律按该统一标识归属
 > （不做按逻辑标识的首匹配查找）；成功/失败/异常/取消各路径均保证终态落地。发送零拷贝：
@@ -54,7 +54,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收
 > 时预创建目标文件并注册 fd（普通文件落 Download/`<包名>/`，文本消息落 `filesDir/text_recv/`；落盘前先做存储预留检查，不足直接拒绝）；取消/失败时删除预创建的不完整文件；文本消息
-> 落沙箱后文件名仅为内部实现细节，UI 不再展示）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
+> 落沙箱后文件名仅为内部实现细节，UI 不展示）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
 > 三模式，文本消息同样按模式决策，纯文本消息自动接收时复制到剪贴板并在屏幕中央提示，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
 > 注册表，确认/拒绝入口由中心经适配器回调本仓库。
 >
@@ -84,7 +84,7 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 ### 状态管理
 
 设置与运行时状态由 Repository 模块变量持有；**会话状态与聚合的唯一事实源为 `service/transfer/TransferSessionRegistry`**，VM 通过注册表查询 + `subscribeSessions`/`notifyChange` 刷新。跨页面共享
-URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接收文本消息/媒体文件信息仍以 `peek/consume` 队列供相册保存与文本展示消费（会话生命周期信号已不再走一次性队列）。
+URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接收文本消息/媒体文件信息以 `peek/consume` 队列供相册保存与文本展示消费；会话生命周期信号经注册表变更总线发布。
 
 ## 统一会话引擎（service/transfer/）
 
@@ -110,7 +110,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 >
 > **注 8**：独立存储文件 `handysend_session_history`；所有终态会话统一归档，包含待确认阶段
 > 被拒绝/撤回/超时终结的会话，与文件级接收历史相互独立；Preferences 实现以**内存权威列表**
-> 承载读取（首次访问加载一次，写入先改内存再触发落盘），读取不再每次解析全量 JSON；
+> 承载读取（首次访问加载一次，写入先改内存再触发落盘），读取命中内存、不重复解析全量 JSON；
 > `resetSessionHistoryCache()` 供测试与重置场景失效缓存。
 >
 > **注 9**：可选成员 `getGalleryMediaFiles(sessionId)` 提供该会话可保存到相册的媒体文件
@@ -170,11 +170,11 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 
 LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接收端据此把该条目识别为「文本消息」而非普通 `.txt` 文件。
 
-- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页传输）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
+- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页传输）唯一的条目构造点，preview 补设也集中于此。
 - 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true`
   的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
 - 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由上述纯函数用例锁定），存在任一
-  未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不再自行构建布尔数组或内联累算。
+  未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不自行构建布尔数组或内联累算。
 - 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页传输路径 `shareByLink`）
   均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
@@ -192,16 +192,18 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 - **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 按条目是否文本消息分流目标目录——普通文件落 `Download/<包名>/`，
   文本消息落应用私有接收文本目录（`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供），重名规则一致（`uniquePath`，同名自动加序号、不覆盖）；
-  接收完成处理不再"读全文后删除缓存文件"，文本文件长期保留在接收文本目录。
+  接收完成处理不读取全文、不删除文本文件，文件长期保留在接收文本目录。
 - **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**先做存储预留检查、再把文本写入接收文本目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
 - **发送**：局域网手输文本（`SendViewModel.stageTextFile`）与互传发送文本（`MtaSendService.writeSharedTextFile`）写入应用**私有持久目录** `filesDir/text_send/`，
   路径统一由 `SendRepository.sendTextDir` 提供；未发起发送的暂存文本在移出/清空暂存时仍按既有规则删除，已发起发送的文本（`StagedFile.persisted`）不被暂存清理删除。
-  **清除与清理边界**：用户确认「清空任务历史」时由 `SendRepository.clearSendTextFiles` 清空该目录（best-effort），发送暂存列表随变更通知自检移除底层文件已消失的手动文本条目；
+  **清除与清理边界**：用户确认「清空任务历史」或批量删除历史条目时，由 `SessionHistoryStore.removeSelfBuiltFilesOf`
+  按 `collectSelfBuiltFilePaths` 筛出收发文本目录内的路径，再经 `SendRepository.removeSendTextFiles` 逐个删除（best-effort）；
+  确有删除时发布变更总线通知，驱动发送暂存列表自检移除底层文件已消失的手动文本条目。
   该目录**不在**冷启动清理范围内（冷启动清理只针对手动文本暂存临时目录 `{cacheDir}/send/` 与旧版本遗留的 `{filesDir}/send/`，见 `SendRepository.cleanupSendDirWithContext`），
   故每次启动都不会破坏已发送文本的预览，文件只在用户主动清空任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
 - **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经 `LocalSendReceiveAdapter.updateReceiveSessionFilePath` 在会话终结前写入逐文件路径；
   发送侧由发送适配器在会话创建时携带。归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
-- **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时剥离并全量回写一次）；
+- **文件级接收历史**：`ReceiveHistoryEntry` 只写入路径与元数据；读取旧数据时剥离其遗留的 `textContent` 字段并全量回写一次；
   `ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
   接收历史页的查看全文/复制改为经共用工具 `utils/FileTextUtil.readTextOfLocation` 读取文件（沙箱路径直读、选择器 URI 经文件描述符读取，失败返回不可用并由界面明确提示）。
 

@@ -93,12 +93,3 @@ pub fn set_web_upload_targets(token: String, targets_json: String) -> Result<u32
         .map_err(|e| Error::from_reason(format!("Set web upload targets failed: {e:#}")))?;
     Ok(applied)
 }
-
-/// 触发全量惰性打扫（供 ArkTS 侧超时驱动调用）。
-#[napi]
-pub async fn sweep_web_sessions() -> Result<()> {
-    runtime::sweep()
-        .await
-        .map_err(|e| Error::from_reason(format!("Sweep web sessions failed: {e:#}")))?;
-    Ok(())
-}

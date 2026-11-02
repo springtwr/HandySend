@@ -478,7 +478,7 @@ mod tests {
     /// 类型 + 原因组合分类：五类结果各取一条可判定路径，并与对端语义一一对应。
     #[test]
     fn classify_status_type_and_reason_matrix() {
-        // 成功类型 + 部分接收原因 → 部分完成（此前被误判为成功）
+        // 成功类型 + 部分接收原因 → 部分完成，不得判为成功
         assert_eq!(
             classify_status("{\"type\":1,\"reason\":\"partial\"}"),
             StatusKind::Partial

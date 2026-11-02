@@ -31,7 +31,6 @@ import {
   nativeAcceptWebSession,
   nativeDeclineWebSession,
   nativeExpireWebSession,
-  nativeSweepWebSessions,
   nativeSetWebUploadTargets,
   nativeFlushRustLogs
 } from '../NativeBridge';

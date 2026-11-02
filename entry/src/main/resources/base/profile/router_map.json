@@ -5,7 +5,7 @@
       "pageSourceFile": "src/main/ets/pages/ShareLinkPage.ets",
       "buildFunction": "ShareLinkPageBuilder",
       "data": {
-        "description": "分享链接页（含网页接收模式 mode=receive）"
+        "description": "分享链接页"
       }
     },
     {
@@ -14,14 +14,6 @@
       "buildFunction": "ReceiveHistoryPageBuilder",
       "data": {
         "description": "接收历史页"
-      }
-    },
-    {
-      "name": "TransferCenterPage",
-      "pageSourceFile": "src/main/ets/pages/TransferCenterPage.ets",
-      "buildFunction": "TransferCenterPageBuilder",
-      "data": {
-        "description": "任务（一级页签内容，聚合全部任务与任务历史）"
       }
     },
     {

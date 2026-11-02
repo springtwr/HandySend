@@ -41,7 +41,6 @@ import {
   setWebSendAllowed,
   getWebSendAllowed,
   getWebReceiveAllowed,
-  isWebUploadEnabled,
   isShareActive,
   isSharingPath,
   sendTextDir,
@@ -1077,11 +1076,6 @@ export class SendViewModel {
   // 触发一轮 LocalSend 发现扫描（MTA 扫描由调用方另行触发，避免重复发起）
   rescanDevices(): void {
     rescanDevices();
-  }
-
-  // 触发一轮 MTA 发现扫描（与 LocalSend 发现同一触发时机，不依赖服务器就绪）
-  rescanMtaDevices(): void {
-    rescanMtaDiscovery();
   }
 
   // 构建 MTA 发送页面参数（复用暂存文件；无可发送内容时返回 undefined）

@@ -19,8 +19,6 @@ export struct SingleLineValueRow {
   @Require @Param value: string
   /** 是否启用行内长按复制（复制完整值并提示成功 / 失败） */
   @Param enableCopy: boolean = true
-  /** 是否允许点击值区域弹出完整值弹窗 */
-  @Param allowDialog: boolean = true
   /** 值是否靠右对齐（详情页信息行靠右；文件清单行随标签顺排） */
   @Param valueAlignEnd: boolean = true
   /** 行内字号（默认 bodyS 同详情页辅助信息；需要与主信息行同号时由调用方覆盖） */
@@ -62,7 +60,7 @@ export struct SingleLineValueRow {
 
   /** 点击值区域：弹出完整值弹窗（弹窗文本可长按自由选择复制）。 */
   private openDialog(): void {
-    if (!this.allowDialog || this.value.length === 0) {
+    if (this.value.length === 0) {
       return;
     }
     let options: promptAction.CustomDialogOptions = {

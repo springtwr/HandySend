@@ -17,7 +17,7 @@ import { common } from '@kit.AbilityKit';
 import { wifiManager } from '@kit.ConnectivityKit';
 import { DiscoveredDevice, MediaFileInfo } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
-import { isBluetoothEnabled, loadOrCreateMtaDeviceIdHex, queryMtaBluetoothStatus } from '../mta/MtaBleCommon';
+import { loadOrCreateMtaDeviceIdHex, queryMtaBluetoothStatus } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import {
   MtaBluetoothStatus,
@@ -810,13 +810,6 @@ function handleBluetoothEnabled(): void {
     // 未起扫时补一次通知，确保蓝牙警告横幅即时收起
     notifyChange();
   }
-}
-
-/** 本机蓝牙是否已开启（保留二值语义，供不区分「不可得」的旧调用方使用） */
-export function isMtaBluetoothOn(): boolean {
-  // 惰性创建扫描客户端并注册蓝牙开关监听，保证后续开关变化能推送刷新
-  ensureScanClient();
-  return isBluetoothEnabled();
 }
 
 /**

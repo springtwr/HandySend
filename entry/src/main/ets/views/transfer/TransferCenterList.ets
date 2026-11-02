@@ -29,7 +29,6 @@ import {
   rowCancelLabel
 } from '../../viewmodel/TransferCenterViewModel';
 import { SessionStatusBadge } from './SessionStatusBadge';
-import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
 import { copyText } from '../../utils/ClipboardUtil';
 
 @ComponentV2

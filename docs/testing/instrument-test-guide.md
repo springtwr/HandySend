@@ -85,17 +85,6 @@ export default function VersionNativeTest() {
 
 `SecurityNativeTest` 的重置身份用例会触发 RSA 密钥生成（真机 release 下为亚秒级开销），属设备端必要开销。
 
-## 与 Local Test 的区别
+## 运行环境要求
 
-> Local Test（`entry/src/test/`）已废弃：2026-09 其全部用例迁移至本目录并合并去重，目录已删除，不再存在单独的本地位。
-> ArkTS 侧测试统一为设备端测试，无第二入口。下表保留历史差异说明。
-
-| 维度 | Local Test (entry/src/test/，已废弃/删除) | Instrument Test (entry/src/ohosTest/) |
-|------|------|------|
-| 运行环境 | ~~预览引擎~~ | 真机/模拟器 |
-| 系统API | ~~不支持~~ | 支持 |
-| .so 调用 | ~~不支持~~ | 支持 |
-| 文件操作 | ~~不支持~~ | 支持 |
-| Linux可用 | ~~否（需预览器）~~ | 是（需真机/模拟器） |
-
-> 已在 Linux 上运行过 Local Test（`entry/src/test/`，如 `hvigorw test`）会卡死/长时间无响应；该目录及命令已随迁移移除，请勿再使用。
+Instrument Test 运行于真机/模拟器，支持系统 API、`.so` 调用与文件操作；Linux 上需连接真机或模拟器运行。

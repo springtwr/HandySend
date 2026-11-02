@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     /// 对端回送「成功类型 + 部分接收原因」时，状态机须发部分完成事件，
-    /// 不得发发送成功事件（此前该报文被误判为成功）。
+    /// 不得发发送成功事件。
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn partial_status_terminates_with_partial_event() {
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<BridgeEvent>(32);

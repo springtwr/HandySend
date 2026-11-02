@@ -14,6 +14,7 @@
 
 | 函数 | 说明 |
 |------|------|
+| `nativeInit(alias, deviceType)` / `nativeInitWithPersistedIdentity(alias, deviceType, persistDir)` | 初始化桥接层；后者从持久化目录加载 TLS 身份 |
 | `nativeStartDiscoveryV2(config)` | 完整配置启动 Rust discovery（discovery 统一入口） |
 | `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, graceMs)` | 分阶段发现（announce → probe known channels → grace 确认窗口 → 无确认时回退子网扫描；详见注 1） |
 | `nativeDiscoveryScanSubnet(ip, port, protocol)` | 扫描子网 |
@@ -24,31 +25,34 @@
 | `nativeDiscoveryMulticastError()` | 获取 multicast 错误 |
 | `nativeClientInfo(protocol, ip, port)` | GET /api/localsend/v2/info |
 | `nativeComputeFingerprintHash(combined)` | SHA-256 哈希，用于指纹图标计算 |
-| `nativeAcceptWebDownload(sessionId)` | Web 分享：接受浏览器下载请求 |
-| `nativeStartWebUpload()` | Web 分享：启动浏览器上传模式，返回 port |
-| `nativeDeclineWebDownload(sessionId)` | Web 分享：拒绝浏览器下载请求 |
 | `nativeCreateServer(config)` | 创建服务器 |
 | `nativeStopServer()` | 停止服务器 |
 | `nativeGetServerStatus()` | 获取服务器状态 |
 | `nativePollPendingRequests()` | 轮询待处理请求 |
-| `nativeCreateShareLink(files)` | 创建分享链接 |
-| `nativeStopShareServer()` | 停止分享服务器（正常模式重启失败时返回错误，调用方可感知） |
-| `nativeRespondTransfer(sessionId, accept, fileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
-| `nativeSendFiles(target, files, pin)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
+| `nativeStartWebService(configJson)` | 启动自研网页服务，返回实际绑定端口 |
+| `nativeStopWebService()` | 停止自研网页服务（幂等） |
+| `nativeMarkWebServiceStopped()` | 标记分享已停止但保留服务，供页面显示结束态 |
+| `nativeUpdateWebServiceFiles(filesJson)` | 就地替换网页分享文件表，返回生效文件数 |
+| `nativeSetWebServiceUploadEnabled(enabled)` | 控制浏览器上传入口 |
+| `nativeSetWebUploadTargets(token, targetsJson)` | 预置浏览器上传的落盘目标，返回生效条目数 |
+| `nativeCancelWebDownload(batchId)` | 取消指定网页下载批次 |
+| `nativeAcceptWebSession(token)` / `nativeDeclineWebSession(token)` / `nativeExpireWebSession(token)` | 接受 / 拒绝 / 令待确认浏览器会话过期 |
+| `nativeRespondTransfer(sessionId, accept, acceptedFileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
+| `nativeSendFiles(target, senderAlias, files)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
 | `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
 | `nativeCancelTransfer(target, sessionId)` | 向对端设备发送取消传输请求 |
 | `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
 | `nativeCancelLocalSession(sessionId)` | 取消本地会话 |
 | `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID |
-| `nativeFlushRustLogs()` | 轮询 Rust 日志缓冲并按原始级别输出到 hilog（`level\|message` 前缀分割） |
-| `nativePollDebugLogWithLevels()` | 带级别的 Rust 日志轮询（返回原始 `level\|message` 元素，供 MTA 链路按级别还原展示） |
-| `nativeHashFileStream(filePath, cancelToken)` | 文件流哈希（沙箱路径版） |
-| `nativeHashFileStreamFd(fd, cancelToken)` | 基于文件描述符的流式哈希（fd-direct 源文件哈希；fd 由 Rust 关闭） |
-| `nativeCancelHash(cancelToken)` | 取消哈希 |
+| `nativeFlushRustLogs()` | 轮询 Rust 日志缓冲并按原始级别输出到 hilog（`level\|target\|message` 前缀分割） |
+| `nativePollDebugLogWithLevels()` | 带级别的 Rust 日志轮询（返回原始 `level\|target\|message` 元素，供 MTA 链路按级别还原展示） |
+| `nativeSetRustLogLevel(level)` | 同步 Rust 日志级别，供诊断日志开关联动 |
+| `nativeHashFileStream(filePath, cancelId)` | 文件流哈希（沙箱路径版） |
+| `nativeHashFileStreamFd(fd, cancelId)` | 基于文件描述符的流式哈希（fd-direct 源文件哈希；fd 由 Rust 关闭） |
+| `nativeCancelHash(cancelId)` | 取消哈希 |
 | `nativeHashBuffer(buffer)` | 缓冲区哈希 |
-| `nativeFailFileDownload(fileId, sessionId)` | 标记文件下载失败 |
-| `nativeFailFileUpload(fileId, sessionId)` | 标记文件上传失败 |
+| `nativeFailFileUpload(sessionId, fileId)` | 标记文件上传失败 |
 | `nativeGetNetworkInterfaces()` | 获取网络接口列表 |
 | `nativeSanitizeFileName(name)` | 清理文件名 |
 | `nativeCreateCancelToken()` | 创建取消令牌 |
@@ -58,8 +62,8 @@
 | `nativeMtaStopServer()` | 停止 MTA 发送端服务器（幂等） |
 | `nativeMtaRejectPeer()` | 登记「向对端回送取消」意图（不停止服务器、不触发取消令牌；服务器不存在时为空操作）；回送时机见注 3 |
 | `nativeGetInterfaceMac(interfaceName)` | 读取指定网络接口的硬件地址（MAC，形如 `AA:BB:CC:DD:EE:FF`；接口不存在或读取失败返回空串），经 `getifaddrs` 取 `AF_PACKET` 地址。<br>MTA 发送端用于取本机 P2P 设备地址填入 `P2pInfo.mac`（小米端会校验该值，详见 MTA 文档 §4.2） |
-| `nativeMtaReceiveDownload` | 参数与行为见注 4 |
-| `registerEventListener(callback)` | 注册 Rust 事件回调（内部经 onBridgeEvent 类型化订阅分发） |
+| `nativeMtaFetchThumbnail(goIp, port, taskId, targetDir, maxBytes)` | 接收确认阶段拉取 MTA 发送端缩略图；失败返回空串且不阻断接收 |
+| `nativeMtaReceiveDownload(goIp, port, taskId, targetDir, ...)` | 参数与行为见注 4 |
 | `onBridgeEvent(type, handler)` / `offBridgeEvent(type, handler)` | 类型化事件订阅（按事件类型 on/off 分发） |
 | `verifyNativeVersion()` | 验证原生库版本兼容性 |
 | `getNativeLibraryVersion()` | 获取原生库版本号 |
@@ -199,7 +203,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 3. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；
    `GET /caps` 只读快照，不建会话。下载会话只做授权与快照缓存：绝对 TTL 2 小时、最多 32 个，
    页面每次下载前 prepare 刷新；访问只记日志并续期网页保活，不建任务。
-4. 上传仍走待确认流程（`PrepareUploadRequested`，接受/拒绝/过期）；下载不再等待应用确认，
+4. 上传仍走待确认流程（`PrepareUploadRequested`，接受/拒绝/过期）；下载不等待应用确认，
    页面门禁通过即直接回文件表。下载批次开始/结束经 `WebDownloadStarted` / `WebDownloadEnded` 收口；
    上传完成回执（`POST /web/finish`）与惰性打扫收口上传终态。
 
@@ -210,7 +214,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 设置访问码时，通过任一入口即构成外发授权。生产环境始终有访问码/能力令牌；无门禁仅测试/旧调用放行并告警。
 
 服务监听 `0.0.0.0`（全部网卡）；`WebServiceConfig.port` 为 0 时由系统随机分配，非 0 时优先绑定该端口，
-被占用则回退随机端口并返回实际端口。ArkTS 侧持久化实际端口，下次启动优先复用；实际端口与设置端口不一致时面板提示回退。
+被占用则回退随机端口并返回实际端口。ArkTS 侧在本次进程内复用上次实际端口，应用重启后重新优先尝试配置端口；实际端口与设置端口不一致时面板提示回退。
 `WebServiceConfig.capability` 为本次服务实例的二维码/URL 能力令牌，缺省或空串时不启用能力门禁（兼容旧调用与测试）。
 `WebServiceConfig.pin` 为本次访问码：ArkTS 每次启动生成 6 位数字，服务端校验非空值为 6 位数字；
 空值兼容旧调用与测试，表示免访问码。
@@ -233,7 +237,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 感知变化并
   静默重拉完整文件表，短暂提示「文件列表已更新」；15 秒低频 `/caps` 轮询兜底。
 - 网页访问只在新建 token 时发 `WebAccess`（IP/UA/文件数），应用只记日志并续期有界保活；
-  下载不再有页面心跳、leave、下载 session-end。停止分享先 `mark_web_service_stopped`
+  下载没有页面心跳、leave、下载 session-end。停止分享先 `mark_web_service_stopped`
   标记 stopped 并广播，保留服务约 30 秒供页面收尾/刷新，再由 `stop_web_service` 关闭监听。
 - 服务硬停止/重启会关闭已有 TCP/SSE 连接，避免浏览器复用旧 keep-alive 连接读到停止态。
 
@@ -247,7 +251,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 未完成字节写在目标目录下的应用保留子目录 `.handysend-upload-part/`（与最终文件同父目录，完成后原子改名）；
   该子目录是本应用独占的临时区，接受新一批上传时清理其中不属于活跃会话的遗留半成品——
   进程被强制终止时也只有这里会留下文件，清理不会触碰目标目录里的用户文件或已交付文件。
-  `/web/leave` 仅上传使用：15s 宽限给刷新/bfcache 留时间，真正关闭后清理；下载不再使用。
+  `/web/leave` 仅上传使用：15s 宽限给刷新/bfcache 留时间，真正关闭后清理；下载不使用该接口。
 - 终结/过期只清理未完成的临时文件，不删除已改名为最终交付物的文件
 - 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
   文件与文本混合时文本按普通文本文件处理
@@ -267,7 +271,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 发送与接收均以文件描述符直读/直写，避免全量拷贝进沙箱再上传/导出的两段式 IO：
 
-- **发送**：`prepareSendFiles` 不再拷贝，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前临时 `openSync` 源文件并携带 `fd`。
+- **发送**：`prepareSendFiles` 不拷贝文件，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前优先 `dup` 暂存句柄，句柄失效时按路径打开，并携带 `fd`。
   fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经 `ensureReceiveDir` 获取 Download/`<包名>/`（`DocumentViewPicker.save`
   DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
@@ -283,7 +287,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 按 `/caps` 条件渲染下载/发送页签；下载走浏览器下载管理器（大文件无内存压力），
   文本类文件无预览字段时用 Range 取前 128KB 内联预览
   - 预览允许读取建会话后新增的当前文件表条目；真实下载仍按会话快照隔离
-- 下载/上传 token 分键存于 `sessionStorage`；下载刷新时直接 prepare 复用或重建会话，不再心跳；
+- 下载/上传 token 分键存于 `sessionStorage`；下载刷新时直接 prepare 复用或重建会话，不发送心跳；
   上传顺序直传（XHR 看进度），
   文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
   混合内容时文本作为 `message.txt` 随文件发送（文本文件）

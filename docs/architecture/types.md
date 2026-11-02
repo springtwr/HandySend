@@ -29,13 +29,13 @@
 > 发现快照，持久化保存并随设备在线被发现同步刷新——别名受自定义保护，其余字段在
 > 快照有效时才覆盖。
 >
-> **注 3**：`ReceiveHistoryEntry` 的 `textContent` 字段保留以兼容旧数据但不再写入，
+> **注 3**：`ReceiveHistoryEntry` 的 `textContent` 字段仅用于兼容旧数据，当前写入链路不产生该字段，
 > 读取时忽略（正文只存在于 `path` 指向的文件中）。`path` 是该条目可用性的唯一依据
 > ——非空即对应磁盘上的真实文件（文本消息与用户经文件选择器选中的 `.txt`/`.md` 等
-> 在此一视同仁，均不再有「消息无文件」语义），为空（旧数据/无磁盘文件）时展示层按
+> 一视同仁，没有「消息无文件」语义），为空（旧数据/无磁盘文件）时展示层按
 > 「不可用」降级。
 >
-> **注 4**：`SendSessionState` 供多目标每设备进度/状态展示；`unifiedSessionId` 为注册表
+> **注 4**：`SendSessionState` 供发送内部簿记与原生错误归属使用；`unifiedSessionId` 为注册表
 > 统一会话标识，该会话的进度与终态一律经它归属。
 
 ### 接收历史条目展示要素 (viewmodel/ReceiveHistoryItemViewModel.ets)
@@ -48,12 +48,12 @@
 | `canViewFullText` | boolean（派生） | 文本类且 `path` 非空且未超预览阈值：可查看全文 |
 | `isPreviewOverLimit` | boolean（派生） | 文本类且 `path` 非空且超预览阈值：不产缩略预览，查看全文时明确提示文件过大 |
 | `canCopyText` | boolean（派生） | 文本类且 `path` 非空：可复制文本（显式动作，不受预览阈值限制） |
-| `canOpenContainingFolder` | boolean（派生） | `path` 非空：可打开所在目录（不再依据「消息」语义禁用） |
+| `canOpenContainingFolder` | boolean（派生） | `path` 非空：可打开所在目录（与「消息」语义无关） |
 | `previewText` | string（`@Trace`） | 文本类条目的内容缩略预览（列表行出现时按需懒加载）；未读取 / 路径为空 / 文件缺失 / 非文本类 / 超阈值时为空串 |
 
 - 文本类判定经 `utils/MimeUtils.isTextFile` 唯一来源；文本内容读取经 `utils/FileTextUtil.readTextOfLocation` 唯一入口（预览场景传入预览阈值作为读取上限），
   路径为空、超阈值或读取失败一律按「不可用 / 空内容」降级，不抛异常、不空白无响应。
-- 类型图标区与媒体缩略（图片 URI / 视频缩略图）由公共组件 `components/FileEntryThumb` 承载，条目级 ViewModel 不再持有缩略状态。
+- 类型图标区与媒体缩略（图片 URI / 视频缩略图）由公共组件 `components/FileEntryThumb` 承载，条目级 ViewModel 不持有缩略状态。
 
 ## NAPI 层 (model/NativeTypes.ets)
 
