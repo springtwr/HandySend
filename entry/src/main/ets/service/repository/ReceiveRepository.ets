@@ -389,7 +389,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       acceptWithTargets(sid, allFileIds).then((acceptError: string) => {
         if (acceptError.length > 0) {
           receiveSessionStates[sid] = 'failed';
-          logger.warn('会话自动接收失败 ' + sid.substring(0, 8) + ': ' + acceptError);
+          logger.warn('会话自动接收失败 ' + sid + ': ' + acceptError);
         }
       }).catch((e: Error) => {
         logger.warn('自动确认接收失败：' + e.message);
@@ -418,7 +418,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   // 方向过滤：接收侧状态表只承载本机接收会话；发送方向/陌生标识的同类事件一律忽略并留痕，
   // 不改动任何接收侧状态表（不清理接收目录、不发布多余变更通知）。
   if (!isLocalReceiveSessionId(sessionId, Object.keys(receiveSessionStates))) {
-    logger.debug('忽略非本机接收会话的会话结束事件：' + sessionId.substring(0, 8));
+    logger.debug('忽略非本机接收会话的会话结束事件：' + sessionId);
     return;
   }
   if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
@@ -468,7 +468,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     sessionEndCheckTimers = newTimers;
     // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
     if (sessionFinished[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
-      logger.debug('会话已结束（已完成） 会话=' + sessionId.substring(0, 8));
+      logger.debug('会话已结束（已完成） 会话=' + sessionId);
       return;
     }
     // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
@@ -581,7 +581,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   finishLocalReceiveSession(sessionId, SessionStage.cancelled);
   // 清理该会话在沙箱目录中的半成品文件
   cleanupSessionReceiveFiles(sessionId);
-  logger.debug('发送方在确认前已中止传输 会话=' + sessionId.substring(0, 8));
+  logger.debug('发送方在确认前已中止传输 会话=' + sessionId);
   notifyChange();
 }
 
@@ -909,7 +909,7 @@ async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string
     }
   }
   if (known === 0) {
-    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 无声明大小');
+    logger.debug('跳过存储检查：会话 ' + sessionId + ' 无声明大小');
     return '';
   }
   let dir: string = await ensureRecvDownloadDir();
@@ -924,7 +924,7 @@ async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string
     logger.warn('查询可用空间失败：' + String(e));
   }
   if (free < 0) {
-    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 可用空间未知');
+    logger.debug('跳过存储检查：会话 ' + sessionId + ' 可用空间未知');
     return '';
   }
   if (decideStorageCheck(free, total, RECEIVE_STORAGE_RESERVE_BYTES) ===
@@ -1039,7 +1039,7 @@ export async function respondToRequest(sessionId: string, accept: boolean,
       // 失败原因透传到会话错误信息（存储不足等本地原因用户可见）
       receiveSessionStates[sessionId] = 'canceledBySender';
       finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
-      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId.substring(0, 8));
+      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId);
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';

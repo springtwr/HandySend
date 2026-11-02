@@ -220,7 +220,7 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
   }
   if (updated) {
     saveHistory();
-    logger.debug('sessionId=' + sessionId.substring(0, 8) + ' saved=' + saved);
+    logger.debug('sessionId=' + sessionId + ' saved=' + saved);
   }
 }
 

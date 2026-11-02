@@ -95,7 +95,7 @@ export class MainTabViewModel {
     // 取舍声明：多个新待确认会话同帧并发到达时只提示最后一个
     // （提示仅为便捷引导，任务列表可见全部待确认会话）
     if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
-      logger.debug('新的待确认任务：' + newSessionId.substring(0, 8));
+      logger.debug('新的待确认任务：' + newSessionId);
       this.autoOpenSessionId = newSessionId;
     }
   }
