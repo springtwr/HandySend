@@ -164,7 +164,7 @@ export struct FileEntryThumb {
       // 失败不锁存：显示类型图标，下次滚入可视区重试（授权激活后即可恢复）
       this.requested = false;
       this.loadFailed = true;
-      logger.debug('缩略图解码失败 uri=' + this.path.substring(0, 24) + '… 原因=' + String(e));
+      logger.debug('缩略图解码失败 uri=' + this.path + ' 原因=' + String(e));
     } finally {
       if (source !== undefined) {
         try {

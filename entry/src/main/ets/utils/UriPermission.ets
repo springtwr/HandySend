@@ -93,7 +93,7 @@ export async function ensureUriAccess(uri: string): Promise<void> {
   } catch (e) {
     // 未持久化（旧会话）/ 非持久化来源：记录后不再重复调用，交由实际读取动作给出结果
     activationFailedUris.add(uri);
-    logger.debug('URI 授权激活失败 uri=' + uri.substring(0, 24) + '… 原因=' + String(e));
+    logger.debug('URI 授权激活失败 uri=' + uri + ' 原因=' + String(e));
   }
 }
 
