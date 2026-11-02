@@ -6,11 +6,17 @@ import { DesignTokens } from '../common/DesignTokens';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
 import { getPort } from '../service/AppService';
 
+// 附加文本的样式：warning 为橙色警告（默认），highlight 为蓝色高亮
+type FaqExtraTone = 'warning' | 'highlight';
+
 // FAQ 条目数据结构
 interface FaqItem {
   titleRes: ResourceStr;
   descRes: ResourceStr;
-  hintRes?: ResourceStr;
+
+  // 非空表示：描述后追加一段附加文本（警告或高亮结论）
+  extraRes?: ResourceStr;
+  extraTone?: FaqExtraTone;
 
   // 非空表示：在该条目之前渲染一个分组标题（用于「通用 / LocalSend / MTA」分组）
   groupTitleRes?: ResourceStr;
@@ -27,7 +33,7 @@ export struct TroubleshootPage {
   private scroller: Scroller = new Scroller()
   // 各 FAQ 条目的展开状态，默认全部折叠（与 faqItems 一一对应）
   @Local expandedItems: boolean[] = [
-    false, false, false, false,
+    false, false, false, false, false,
     false, false, false, false, false,
     false,
     false, false, false, false
@@ -40,7 +46,13 @@ export struct TroubleshootPage {
       groupTitleRes: $r('app.string.troubleshoot_group_general'),
       titleRes: $r('app.string.troubleshoot_discovery_title'),
       descRes: $r('app.string.troubleshoot_discovery_desc'),
-      hintRes: $r('app.string.troubleshoot_discovery_service_hint')
+      extraRes: $r('app.string.troubleshoot_discovery_service_hint')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_slow_transfer_title'),
+      descRes: $r('app.string.troubleshoot_slow_transfer_desc'),
+      extraRes: $r('app.string.troubleshoot_slow_transfer_highlight'),
+      extraTone: 'highlight'
     },
     {
       titleRes: $r('app.string.troubleshoot_duplicate_title'),
@@ -82,7 +94,7 @@ export struct TroubleshootPage {
       groupTitleRes: $r('app.string.troubleshoot_group_mta'),
       titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
       descRes: $r('app.string.troubleshoot_mta_transfer_desc'),
-      hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
+      extraRes: $r('app.string.troubleshoot_mta_transfer_hint')
     },
     {
       // ── 网页专属（仅网页传输机制才会有） ──
@@ -162,11 +174,14 @@ export struct TroubleshootPage {
                         .margin({ top: DesignTokens.space.tiny })
                         .width('100%')
 
-                      // 可选的提示文字（如橙色警告）
-                      if (item.hintRes !== undefined) {
-                        Text(item.hintRes)
+                      // 可选的附加文本（警告或高亮结论）
+                      if (item.extraRes !== undefined) {
+                        Text(item.extraRes)
                           .fontSize(DesignTokens.font.bodyM)
-                          .fontColor($r('app.color.warning_orange'))
+                          .fontWeight(item.extraTone === 'highlight' ?
+                            FontWeight.Medium : FontWeight.Normal)
+                          .fontColor(item.extraTone === 'highlight' ?
+                            $r('app.color.accent_blue') : $r('app.color.warning_orange'))
                           .margin({ top: DesignTokens.space.tiny })
                           .width('100%')
                       }
