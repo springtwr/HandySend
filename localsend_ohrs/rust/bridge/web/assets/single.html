@@ -596,6 +596,8 @@ button.status-retry {
   width: 20px;
   height: 20px;
   margin: 0;
+  /* 从复选框起手时由脚本接管滑选，交给浏览器滚动会中断手势 */
+  touch-action: none;
 }
 
 .tab-dot {
@@ -655,6 +657,9 @@ button.status-retry {
   gap: 16px;
   min-height: 72px;
   padding: 12px 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .file-badge {
@@ -686,6 +691,9 @@ button.status-retry {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 文件名可拖选复制；行内其余区域保持不选中，避免点击勾选时出现文字选区 */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .file-size {
@@ -1183,6 +1191,17 @@ html[data-auth="open"] #gate {
   }
 }
 
+/* ========== 窄屏与触屏：长文件名换行完整展示 ========== */
+@media (max-width: 720px), (hover: none) {
+  .file-name {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+}
+
 /* ========== 动效减弱偏好 ========== */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -1424,6 +1443,12 @@ html[data-auth="open"] #gate {
   var listReloadPending = false;
   var listUpdatedTimer = -1;
   var selectedDownloadFiles = {};
+  // 连选锚点：最近一次普通勾选的条目；按住 Shift 点击时按展示顺序处理锚点到目标之间的整段
+  var selectionAnchorId = '';
+  // 触摸滑选：只从复选框起手，滑过的行统一应用起手条目的目标状态
+  var touchSelect = null;
+  // 滑选结束后短暂屏蔽浏览器补发的 click，避免起手复选框被再次切换
+  var suppressFileClickUntil = 0;
   // 文本预览缓存（文件标识 → 源内容），重绘列表时直接复用，避免占位与正文来回切换造成跳动
   var previewCache = {};
   var preparedBatchId = '';
@@ -2026,6 +2051,7 @@ html[data-auth="open"] #gate {
       batchPrepareTimer = -1;
     }
     selectedDownloadFiles = {};
+    selectionAnchorId = '';
     preparedBatchId = '';
     preparedSignature = '';
     // 展示表已清空：版本基线一并失效，后续由 prepare/caps 重建。
@@ -2420,6 +2446,7 @@ html[data-auth="open"] #gate {
         listStale = false;
         listLoaded = true;
         selectedDownloadFiles = {};
+        selectionAnchorId = '';
       } else {
         // 快照版本至少到 data.revision；请求期间若还有新变化，保留 listStale 供补拉。
         if (data.revision > lastRevision) {
@@ -2571,6 +2598,8 @@ html[data-auth="open"] #gate {
     for (var j = 0; j < selectedKeys.length; j++) {
       if (!valid[selectedKeys[j]]) { delete selectedDownloadFiles[selectedKeys[j]]; }
     }
+    // 锚点条目随列表更新消失时清空，后续 Shift 点击退化为普通勾选
+    if (selectionAnchorId && !valid[selectionAnchorId]) { selectionAnchorId = ''; }
     for (var cachedId in previewCache) {
       if (!valid[cachedId]) { delete previewCache[cachedId]; }
     }
@@ -2745,12 +2774,142 @@ html[data-auth="open"] #gate {
         selectedDownloadFiles[keys[i]] = true;
       }
     }
+    // 全选/取消全选后不保留旧锚点，避免下一次 Shift 点击范围超出用户预期
+    selectionAnchorId = '';
     applySelectionToDom();
     onSelectionChanged();
   });
 
   $('download-selected-btn').addEventListener('click', function () {
     downloadSelectedFiles();
+  });
+
+  /** 焦点是否位于需要保留原生文本操作的控件或预览正文内。 */
+  function isTextEntryTarget(el) {
+    return !!(el && el.closest &&
+      el.closest('input:not([type="checkbox"]), textarea, select, [contenteditable="true"], .text-preview-body'));
+  }
+
+  /** 清空下载列表的全部勾选与连选锚点。 */
+  function clearDownloadSelection() {
+    selectedDownloadFiles = {};
+    selectionAnchorId = '';
+    applySelectionToDom();
+    onSelectionChanged();
+  }
+
+  /**
+   * 下载页快捷键：Esc 取消全部勾选，Ctrl/Cmd+A 全选列表。
+   * 焦点在输入控件或预览正文内时不接管，保留原生文本操作。
+   */
+  document.addEventListener('keydown', function (e) {
+    if (isLocked || activeTab !== 'download' || e.defaultPrevented || isTextEntryTarget(e.target)) { return; }
+    if (e.key === 'Escape') {
+      // 页头菜单打开时 Esc 只关菜单，不取消列表勾选
+      if (!$('theme-menu').classList.contains('hidden') ||
+          !$('lang-menu').classList.contains('hidden')) {
+        return;
+      }
+      if (selectedIds().length === 0) { return; }
+      e.preventDefault();
+      clearDownloadSelection();
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) { return; }
+    var keys = fileKeysSorted(filesData);
+    if (keys.length === 0) { return; }
+    e.preventDefault();
+    for (var i = 0; i < keys.length; i++) {
+      selectedDownloadFiles[keys[i]] = true;
+    }
+    selectionAnchorId = '';
+    applySelectionToDom();
+    onSelectionChanged();
+  });
+
+  /**
+   * Shift 连选：以最近一次普通勾选的条目为锚点，按当前展示顺序把锚点到目标之间整段
+   * 统一改为目标条目的新状态（原未选则整段选中，原已选则整段取消）。
+   */
+  function applyRangeSelection(id) {
+    if (!selectionAnchorId || selectionAnchorId === id) { return false; }
+    var keys = fileKeysSorted(filesData);
+    var from = keys.indexOf(selectionAnchorId);
+    var to = keys.indexOf(id);
+    if (from < 0 || to < 0) { return false; }
+    // click 到达时勾选状态尚未写回模型：按点击前的状态决定整段目标
+    var checked = selectedDownloadFiles[id] !== true;
+    var start = Math.min(from, to);
+    var end = Math.max(from, to);
+    for (var i = start; i <= end; i++) {
+      if (checked) { selectedDownloadFiles[keys[i]] = true; }
+      else { delete selectedDownloadFiles[keys[i]]; }
+    }
+    applySelectionToDom();
+    onSelectionChanged();
+    return true;
+  }
+
+  /** 当前是否有非空文本选区（拖选文件名后松开鼠标仍会触发 click）。 */
+  function hasTextSelection() {
+    var selection = window.getSelection ? window.getSelection() : null;
+    return !!(selection && !selection.isCollapsed && selection.toString());
+  }
+
+  /** 清空文本选区：Shift 连选行时避免留下文件名选中态。 */
+  function clearTextSelection() {
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (selection && !selection.isCollapsed) {
+      selection.removeAllRanges();
+    }
+  }
+
+  /**
+   * 勾选点击：复选框默认切换由浏览器完成、change 事件写回模型，这里只维护 Shift 连选与锚点；
+   * 点击行的其他区域直接切换勾选，整行都是选择目标。
+   */
+  $('file-list').addEventListener('click', function (e) {
+    var target = e.target;
+    // 触摸滑选结束时浏览器可能补发一次 click：本次点击不再切换条目或触发下载
+    if (suppressFileClickUntil) {
+      var suppressed = Date.now() < suppressFileClickUntil;
+      suppressFileClickUntil = 0;
+      if (suppressed) {
+        e.stopImmediatePropagation();
+        // 复选框的默认切换由下方 DOM 同步覆盖；其余目标直接阻止默认动作
+        if (!(target && target.closest && target.closest('[data-select-id]'))) {
+          e.preventDefault();
+        }
+        applySelectionToDom();
+        return;
+      }
+    }
+    if (!target || !target.closest) { return; }
+    var box = target.closest('[data-select-id]');
+    var id = box ? box.getAttribute('data-select-id') : '';
+    if (!id) {
+      // 单文件下载链接保留原行为，不参与行勾选（文本预览位于行外，天然不受影响）
+      if (target.closest('a[data-file-id]')) { return; }
+      var row = target.closest('.file-row');
+      var rowBox = row ? row.querySelector('[data-select-id]') : null;
+      if (!rowBox) { return; }
+      id = rowBox.getAttribute('data-select-id');
+      // 拖选文件名后松开鼠标仍会触发 click：有文本选区时不把它当作勾选
+      if (!e.shiftKey && hasTextSelection()) { return; }
+      if (e.shiftKey) {
+        clearTextSelection();
+        if (applyRangeSelection(id)) { return; }
+      }
+      selectionAnchorId = id;
+      if (selectedDownloadFiles[id]) { delete selectedDownloadFiles[id]; }
+      else { selectedDownloadFiles[id] = true; }
+      applySelectionToDom();
+      onSelectionChanged();
+      return;
+    }
+    if (e.shiftKey && applyRangeSelection(id)) { return; }
+    // 普通点复选框：只更新锚点，勾选状态仍由 change 事件同步
+    selectionAnchorId = id;
   });
 
   $('file-list').addEventListener('change', function (e) {
@@ -2760,6 +2919,77 @@ html[data-auth="open"] #gate {
     if (box.checked) { selectedDownloadFiles[id] = true; } else { delete selectedDownloadFiles[id]; }
     onSelectionChanged();
   });
+
+  /** 把滑到的条目写成起手条目的目标状态，并即时同步复选框与操作区。 */
+  function applyTouchSelection(id, box) {
+    if (touchSelect.selected) { selectedDownloadFiles[id] = true; }
+    else { delete selectedDownloadFiles[id]; }
+    box.checked = touchSelect.selected;
+    updateDownloadActions();
+  }
+
+  /**
+   * 移动端滑选：只允许从复选框起手，避免在行上滑动时误触；
+   * 起手后移动超过阈值才进入滑选，普通点按仍走原生 check/change。
+   */
+  $('file-list').addEventListener('touchstart', function (e) {
+    touchSelect = null;
+    if (isLocked || e.touches.length !== 1) { return; }
+    var target = e.target;
+    var box = target && target.closest ? target.closest('[data-select-id]') : null;
+    if (!box) { return; }
+    var id = box.getAttribute('data-select-id');
+    var touch = e.touches[0];
+    touchSelect = {
+      startBox: box,
+      startId: id,
+      // 起手条目未选则整段选中，已选则整段取消
+      selected: selectedDownloadFiles[id] !== true,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastId: '',
+      active: false
+    };
+  }, { passive: true });
+
+  $('file-list').addEventListener('touchmove', function (e) {
+    if (!touchSelect || e.touches.length !== 1) { return; }
+    var touch = e.touches[0];
+    if (!touchSelect.active) {
+      if (Math.abs(touch.clientX - touchSelect.startX) < 8 &&
+          Math.abs(touch.clientY - touchSelect.startY) < 8) {
+        return;
+      }
+      touchSelect.active = true;
+      touchSelect.lastId = touchSelect.startId;
+      applyTouchSelection(touchSelect.startId, touchSelect.startBox);
+    }
+    // 进入滑选后阻止页面滚动
+    e.preventDefault();
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    var row = el && el.closest ? el.closest('.file-row') : null;
+    var box = row ? row.querySelector('[data-select-id]') : null;
+    if (!box) { return; }
+    var id = box.getAttribute('data-select-id');
+    if (id === touchSelect.lastId) { return; }
+    touchSelect.lastId = id;
+    applyTouchSelection(id, box);
+  }, { passive: false });
+
+  /** 结束触摸滑选：实际滑动过时屏蔽随后可能补发的 click，并把锚点移到末条目。 */
+  function finishTouchSelect() {
+    if (!touchSelect) { return; }
+    var active = touchSelect.active;
+    var lastId = touchSelect.lastId;
+    touchSelect = null;
+    if (!active) { return; }
+    suppressFileClickUntil = Date.now() + 400;
+    if (lastId) { selectionAnchorId = lastId; }
+    onSelectionChanged();
+  }
+
+  $('file-list').addEventListener('touchend', finishTouchSelect);
+  $('file-list').addEventListener('touchcancel', finishTouchSelect);
 
   // 点击单文件下载：先确保会话/快照是最新列表。
   $('file-list').addEventListener('click', function (e) {
