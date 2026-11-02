@@ -248,37 +248,49 @@ export struct SendTargetZone {
     .width('100%')
   }
 
+  /**
+   * 设备区空态卡片：外观与一条设备卡一致（card_background + radius.lg + 1vp 边框），
+   * 高度下限取一条设备卡的高度（统一空态面板高度 120 − 标准卡片上下内边距 2×20 = 80vp），
+   * 使有设备与无设备时目标区高度不跳变。
+   */
   @Builder
-  emptyState() {
-    // 空态位于「设备卡片」内，不再套第二层卡片；条件引导提示沿用警示语义色。
-    // 内容区下限按「空态面板统一高度」减去设备卡片自身内边距反推，使面板与卡片型空态同高
-    EmptyState({
-      mainText: this.emptyText(),
-      hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
-      hintColor: $r('app.color.warning_orange'),
-      minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
-    })
-      .id('send_no_devices')
+  emptyCard() {
+    Column() {
+      if (this.showCombinedEmptyState()) {
+        // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
+        // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启
+        EmptyState({
+          mainText: $r('app.string.send_no_source_title'),
+          actionText: $r('app.string.discovery_source_web'),
+          actionIcon: $r('sys.symbol.worldclock'),
+          onAction: () => {
+            this.onOpenWeb();
+          }
+        })
+          .id('send_no_source')
+      } else {
+        // 条件引导提示沿用警示语义色
+        EmptyState({
+          mainText: this.emptyText(),
+          hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
+          hintColor: $r('app.color.warning_orange')
+        })
+          .id('send_no_devices')
+      }
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .constraintSize({ minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2 })
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
   }
 
   @Builder
   deviceSection() {
-    if (this.showCombinedEmptyState()) {
-      // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
-      // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启。
-      // 与设备列表空态取同一内容区下限，避免两处空态在同一个卡片里高度跳变
-      EmptyState({
-        mainText: $r('app.string.send_no_source_title'),
-        actionText: $r('app.string.discovery_source_web'),
-        actionIcon: $r('sys.symbol.worldclock'),
-        onAction: () => {
-          this.onOpenWeb();
-        },
-        minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
-      })
-        .id('send_no_source')
-    } else if (this.currentDeviceItems().length === 0) {
-      this.emptyState()
+    if (this.showCombinedEmptyState() || this.currentDeviceItems().length === 0) {
+      this.emptyCard()
     } else {
       this.deviceGrid()
     }
@@ -286,7 +298,7 @@ export struct SendTargetZone {
 
   build() {
     Column() {
-      // ── 目标区标题行（自定义卡片外标题 + 方式区图标菜单 + 刷新） ──
+      // ── 目标区标题行（自定义区标题 + 方式区图标菜单 + 刷新） ──
       Row({ space: DesignTokens.space.md }) {
         Column() {
           Text($r('app.string.send_zone_target_title'))
@@ -352,15 +364,11 @@ export struct SendTargetZone {
         this.sourceTabs()
       }
 
-      // ── 设备卡片 ──
+      // ── 设备列表：条目自身为独立卡片，外层不再套大卡片；与上方标题/标签留出间距 ──
       Column() {
         this.deviceSection()
       }
       .width('100%')
-      .padding(DesignTokens.space.card)
-      .borderRadius(DesignTokens.radius.lg)
-      .backgroundColor($r('app.color.card_background'))
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')
