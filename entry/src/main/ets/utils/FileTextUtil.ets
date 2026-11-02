@@ -14,7 +14,7 @@ import { LogDomains } from '../common/LogDomains';
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:FileTextUtil', '文本读取');
 
 /** 缺省单次读取上限（字节）：避免超长文件一次性读入造成内存压力（超出部分不读取） */
-const TEXT_READ_MAX_BYTES: number = 200000;
+export const TEXT_READ_MAX_BYTES: number = 200000;
 
 /** 归一读取上限：非正值或不可得时回退到缺省上限。 */
 function effectiveLimit(maxBytes: number | undefined): number {

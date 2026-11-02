@@ -5,6 +5,10 @@ import {
   TransferTerminalKind as TerminalKind
 } from '../../../../main/ets/service/BackgroundTransferService'
 import {
+  AttentionKind,
+  resolveAttentionKind
+} from '../../../../main/ets/service/BackgroundAttentionNotifier'
+import {
   SessionCreateInput,
   SessionDataFlow,
   SessionInitiator,
@@ -55,6 +59,13 @@ export default function BackgroundAggregateTest() {
       expect(resolveTerminalKind(false, false)).assertEqual(TerminalKind.success)
       expect(resolveTerminalKind(true, true)).assertEqual(TerminalKind.failed)
       expect(resolveTerminalKind(true, false)).assertEqual(TerminalKind.partial)
+    })
+
+    // ── 后台关注类别：待确认请求优先于网页访问 ──
+    it('attentionKind_pendingFirst', 0, () => {
+      expect(resolveAttentionKind(0)).assertEqual(AttentionKind.none)
+      expect(resolveAttentionKind(2)).assertEqual(AttentionKind.pendingRequest)
+      expect(resolveAttentionKind(1)).assertEqual(AttentionKind.pendingRequest)
     })
 
     // ── 协议无关聚合（来自注册表） ──

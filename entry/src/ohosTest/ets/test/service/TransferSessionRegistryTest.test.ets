@@ -49,6 +49,8 @@ import {
   SessionHistoryOutcome
 } from '../../../../main/ets/model/transfer/TransferSession'
 import { clearSessionHistory } from '../../../../main/ets/service/transfer/SessionHistoryStore'
+import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
+import { getTestAppContext } from '../helper/TestContext'
 
 // 会话注册表纯逻辑单测：生命周期、聚合、回收窗口、分母增长容忍。
 function makeInput(): SessionCreateInput {
@@ -383,6 +385,32 @@ export default function TransferSessionRegistryTest() {
         expect(done.files[2].stage).assertEqual(SessionFileStage.cancelled)
       }
       resetRegistry()
+    })
+
+    it('cancel_endToEnd_noActiveAndHistoryTerminal', 0, () => {
+      // 取消端到端：传输中取消后无活跃/未完成会话，历史有取消终态条目
+      resetRegistry()
+      clearSessionHistory()
+      let ctx = getTestAppContext()
+      if (ctx !== undefined) {
+        initAllPreferences(ctx)
+      }
+      let s = createSession(twoFileInput())
+      updateFileProgress(s.id, 'f1', 50)
+      finish(s.id, SessionStage.cancelled)
+      expect(getActiveCount()).assertEqual(0)
+      expect(getUnfinishedCount()).assertEqual(0)
+      let history = getHistory()
+      let found: boolean = false
+      for (let i = 0; i < history.length; i++) {
+        if (history[i].sessionId === s.id) {
+          found = true
+          expect(history[i].outcome).assertEqual(SessionHistoryOutcome.cancelled)
+        }
+      }
+      expect(found).assertTrue()
+      resetRegistry()
+      clearSessionHistory()
     })
 
     it('finish_declined_keepsFileStages', 0, () => {

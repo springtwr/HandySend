@@ -141,7 +141,9 @@ export function ensureReceiveSession(protocolSessionId: string, senderAlias: str
     peer: buildPeer(senderAlias, senderIp, senderFingerprint, senderDeviceType, senderDeviceModel),
     files: files,
     capabilities: capabilities(),
-    stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active
+    stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active,
+    // 仅手动输入文本携带 preview；文件选择器选取的 .txt 不带该字段
+    textMessage: textPreview.length > 0
   });
   unifiedByProtocol.set(protocolSessionId, session.id);
   if (needsConfirm) {
@@ -264,7 +266,7 @@ const adapter: SessionAdapter = {
       return;
     }
     nativeCancelLocalSession(protocolSessionId).catch((e: Object): void => {
-      logger.warn('local session cancel failed: ' + String(e));
+      logger.warn('本地会话取消失败：' + String(e));
     });
   },
   retry: (): void => {

@@ -1,5 +1,5 @@
 // ReceiveLogic.test：自动接收决策纯逻辑测试
-// 覆盖 computeShouldAutoAccept 的所有条件组合
+// 覆盖 computeShouldAutoAccept 的所有条件组合（文本消息与文件请求同样按模式决策）
 import { describe, it, expect } from '@ohos/hypium'
 import { computeShouldAutoAccept } from '../../../../main/ets/service/repository/ReceiveRepository'
 import { AutoConfirmMode, FavoriteDevice } from '../../../../main/ets/model/Types'
@@ -11,19 +11,26 @@ export default function ReceiveLogicTest() {
 
     it('off_mode_never_auto_accepts', 0, () => {
       let favs: Array<FavoriteDevice> = []
-      expect(computeShouldAutoAccept(AutoConfirmMode.off, favs, 'fp1', false)).assertFalse()
+      expect(computeShouldAutoAccept(AutoConfirmMode.off, favs, 'fp1')).assertFalse()
     })
 
     // ── on 模式 ──
 
-    it('on_mode_auto_accepts_without_message', 0, () => {
+    it('on_mode_auto_accepts_any_device', 0, () => {
       let favs: Array<FavoriteDevice> = []
-      expect(computeShouldAutoAccept(AutoConfirmMode.on, favs, 'fp1', false)).assertTrue()
+      expect(computeShouldAutoAccept(AutoConfirmMode.on, favs, 'fp1')).assertTrue()
     })
 
-    it('on_mode_does_not_auto_accept_with_message', 0, () => {
-      let favs: Array<FavoriteDevice> = []
-      expect(computeShouldAutoAccept(AutoConfirmMode.on, favs, 'fp1', true)).assertFalse()
+    it('on_mode_auto_accepts_favorite_device', 0, () => {
+      let favs: Array<FavoriteDevice> = [{
+        id: '1',
+        fingerprint: 'fp1',
+        ip: '192.168.1.100',
+        port: 53317,
+        alias: 'TestDevice',
+        customAlias: false
+      }]
+      expect(computeShouldAutoAccept(AutoConfirmMode.on, favs, 'fp1')).assertTrue()
     })
 
     // ── paired 模式 ──
@@ -37,7 +44,7 @@ export default function ReceiveLogicTest() {
         alias: 'TestDevice',
         customAlias: false
       }]
-      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1', false)).assertTrue()
+      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1')).assertTrue()
     })
 
     it('paired_mode_rejects_unknown_device', 0, () => {
@@ -49,24 +56,12 @@ export default function ReceiveLogicTest() {
         alias: 'TestDevice',
         customAlias: false
       }]
-      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp2', false)).assertFalse()
-    })
-
-    it('paired_mode_rejects_favorite_device_with_message', 0, () => {
-      let favs: Array<FavoriteDevice> = [{
-        id: '1',
-        fingerprint: 'fp1',
-        ip: '192.168.1.100',
-        port: 53317,
-        alias: 'TestDevice',
-        customAlias: false
-      }]
-      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1', true)).assertFalse()
+      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp2')).assertFalse()
     })
 
     it('paired_mode_rejects_with_empty_favorites', 0, () => {
       let favs: Array<FavoriteDevice> = []
-      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1', false)).assertFalse()
+      expect(computeShouldAutoAccept(AutoConfirmMode.paired, favs, 'fp1')).assertFalse()
     })
 
   })

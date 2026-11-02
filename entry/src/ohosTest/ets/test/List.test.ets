@@ -5,7 +5,6 @@
 import ServerNativeTest from './native/ServerNativeTest.test'
 import DiscoveryNativeTest from './native/DiscoveryNativeTest.test'
 import SendNativeTest from './native/SendNativeTest.test'
-import WebShareNativeTest from './native/WebShareNativeTest.test'
 import SecurityNativeTest from './native/SecurityNativeTest.test'
 import UtilityNativeTest from './native/UtilityNativeTest.test'
 import VersionNativeTest from './native/VersionNativeTest.test'
@@ -31,8 +30,12 @@ import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
+import SessionArchiveRulesTest from './model/SessionArchiveRulesTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
+import HistorySegmentsTest from './model/HistorySegmentsTest.test'
+import WebAddressTest from './model/WebAddressTest.test'
+import WebSettingsTest from './model/WebSettingsTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
 import MimeUtilsTest from './utils/MimeUtilsTest.test'
@@ -41,13 +44,21 @@ import FormatUtilTest from './utils/FormatUtilTest.test'
 import IPValidatorTest from './utils/IPValidatorTest.test'
 import EventBusTest from './utils/EventBusTest.test'
 import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
+import NetworkInterfaceRulesTest from './utils/NetworkInterfaceRulesTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
+import LargeTransferUtilTest from './utils/LargeTransferUtilTest.test'
+import StorageCheckTest from './utils/StorageCheckTest.test'
 import ProgressLogThrottleTest from './utils/ProgressLogThrottleTest.test'
 import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
+import GallerySavePolicyTest from './utils/GallerySavePolicyTest.test'
+import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
+import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
+import LogFileFormatTest from './utils/LogFileFormatTest.test'
+import DebugLogBudgetTest from './utils/DebugLogBudgetTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -73,11 +84,13 @@ import ChecksumBatchTest from './service/ChecksumBatchTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
+import GallerySaveNameTest from './service/GallerySaveNameTest.test'
 import SendSessionRegistrationTest from './service/SendSessionRegistrationTest.test'
 import SendDiagnosticsTest from './service/SendDiagnosticsTest.test'
 import TransferCenterTest from './viewmodel/TransferCenterTest.test'
 import SessionDetailTest from './viewmodel/SessionDetailTest.test'
 import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
+import ReceiveHistorySelectionTest from './viewmodel/ReceiveHistorySelectionTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
 import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
@@ -91,7 +104,6 @@ export default function testsuite() {
   ServerNativeTest()
   DiscoveryNativeTest()
   SendNativeTest()
-  WebShareNativeTest()
   SecurityNativeTest()
   UtilityNativeTest()
   VersionNativeTest()
@@ -117,8 +129,11 @@ export default function testsuite() {
   SendTextPreparationTest()
   MtaProtocolModelsTest()
   MtaDiscoveryGuardTest()
+  SessionArchiveRulesTest()
   SendProgressTest()
   DragDropParserTest()
+  WebAddressTest()
+  WebSettingsTest()
 
   // ── utils/ 迁移测试套件 ──
   MimeUtilsTest()
@@ -127,13 +142,21 @@ export default function testsuite() {
   IPValidatorTest()
   EventBusTest()
   NetworkPresentationTest()
+  NetworkInterfaceRulesTest()
   SpeedEstimatorTest()
   MtaProgressUtilTest()
+  LargeTransferUtilTest()
+  StorageCheckTest()
   ProgressLogThrottleTest()
   PreferencesUtilTest()
   FingerprintIconsTest()
   FilePreviewPolicyTest()
   FileLocationUtilTest()
+  GallerySavePolicyTest()
+  TextAlignUtilTest()
+  WebAccessCodeTest()
+  LogFileFormatTest()
+  DebugLogBudgetTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()
@@ -156,14 +179,17 @@ export default function testsuite() {
   TransferSessionRegistryTest()
   ChecksumPrepProgressTest()
   ChecksumBatchTest()
+  HistorySegmentsTest()
   SessionHistoryStoreTest()
   RegistriesTest()
   AdaptersTest()
+  GallerySaveNameTest()
   SendSessionRegistrationTest()
   SendDiagnosticsTest()
   TransferCenterTest()
   SessionDetailTest()
   ReceiveHistoryItemTest()
+  ReceiveHistorySelectionTest()
   PendingConfirmTest()
   SendPageTest()
   ShareLinkViewModelTest()

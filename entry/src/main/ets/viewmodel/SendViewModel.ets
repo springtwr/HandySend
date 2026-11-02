@@ -11,6 +11,8 @@ import {
   prepareSendFiles,
   createShareLink,
   getShareLink,
+  hasSharedFiles,
+  updateShareFiles,
   processSharedUris,
   isAutoClearStagedAfterSend,
   isServerRunning,
@@ -33,8 +35,15 @@ import {
   isMtaConnectionWarnings,
   markMtaSendClicked,
   rescanMtaDiscovery,
+  isMtaManualRefreshInFlight,
   getLocalSendEnabled,
   getMtaEnabled,
+  setWebSendAllowed,
+  getWebSendAllowed,
+  getWebReceiveAllowed,
+  isWebUploadEnabled,
+  isShareActive,
+  isSharingPath,
   sendTextDir,
   connectByIp,
   getPort
@@ -42,6 +51,7 @@ import {
 import {
   DiscoveredDevice,
   SendFileItem,
+  SourceFileMeta,
   StagedFile,
   FavoriteDevice,
   TransferFileDescriptor
@@ -64,11 +74,14 @@ import {
 } from '../service/repository/FavoritesService';
 import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../model/mta/MtaMainModels';
 import { MtaBluetoothStatus } from '../model/mta/MtaDiscoveryModels';
-import { partitionDevicesByType, hasAnyMtaDevice, DeviceTypePartition } from '../model/SendDeviceGrouping';
+import { partitionDevicesByType, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getDemoDevices } from '../service/demo/DemoDevices';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
-import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
+import { generateVideoThumbnail, cancelVideoThumbnail } from '../utils/VideoThumbnailUtil';
+import { readJsonString } from '../utils/JsonGuard';
 import { getLogger } from '../utils/Logger';
+import { forEachConcurrently } from '../utils/AsyncBatch';
+import { persistPickedUris } from '../utils/UriPermission';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送页');
@@ -76,6 +89,25 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送
 // 设备来源键（与 DeviceSourceRegistry 中注册的来源描述符 key 一一对应）
 const SOURCE_KEY_LOCAL_SEND: string = 'localsend';
 const SOURCE_KEY_MTA: string = 'mta';
+
+/** 统一刷新按钮的最短加载显示时间（毫秒）：避免两个来源瞬间完成导致按钮闪烁 */
+const REFRESH_MIN_DISPLAY_MS: number = 500;
+
+/**
+ * 暂存项保留句柄的数量上限：覆盖「多次选择累计 400 个文件」的常见场景，
+ * 使发送时直接复用而不再逐项打开；上限本身用于避免文件描述符耗尽。
+ */
+const MAX_CACHED_STAGED_HANDLES: number = 400;
+
+/** 暂存项保留句柄 + 元数据的快照（打开一次即取得两者） */
+interface StagedHandleSnapshot {
+  size: number
+  lastModified: number
+}
+
+// 两个 Picker 入口的单次可选数量上限：选择器自身上限为 500（API 21 起文档选择器不再限制），
+// 这里统一收敛到 100，避免单次选入的文件数把后续准备、建行与统计开销推到不可控
+const MAX_PICK_SELECT_NUMBER: number = 100;
 
 // ── 点击设备即发送的发起结果 ──
 
@@ -121,6 +153,14 @@ export function decideSendInitiateResult(inFlight: boolean, hasActiveSession: bo
 }
 
 /**
+ * 读取分享文本记录中的字符串字段：缺失或类型不符返回空串（统一走 JsonGuard）。
+ * 动态取值的唯一收口，后续字段新增复用此处守卫。
+ */
+function readSharedTextField(record: Object, key: string): string {
+  return readJsonString(record, key, '');
+}
+
+/**
  * 失效手动文本条目筛选（纯函数，可注入文件存在性判定，便于单测）：
  * 移除标记为手动文本（isManualText）且底层文件已不存在的条目，保留其余条目。
  * 仅处理应用自建的发送文本条目；文件选择器等外部来源条目不在此列，不受影响。
@@ -160,32 +200,30 @@ export function filterFavoritesByProtocolToggles(favorites: Array<FavoriteDevice
 }
 
 /**
- * 协议总开关来源键过滤（纯函数，可独立测试）：
- * 从「曾发现过设备的来源」集合中移除被禁用协议对应的来源键（目标区来源标签随之消失）。
+ * 「部分传输方式已关闭」提示卡显隐判定（纯函数，可独立测试）：
+ * 仅针对 LocalSend / 互传联盟（网页传输默认关闭且面板内自带开启入口，不单独提示）；
+ * 至少一个关闭且并非所有方式都关闭，且用户未在本次会话内关闭过该提示时显示。
  */
-export function filterSeenSourceKeysByProtocolToggles(seen: Array<string>,
-  localSendEnabled: boolean, mtaEnabled: boolean): Array<string> {
-  let result: Array<string> = [];
-  for (let i = 0; i < seen.length; i++) {
-    let key: string = seen[i];
-    if (key === SOURCE_KEY_LOCAL_SEND && !localSendEnabled) {
-      continue;
-    }
-    if (key === SOURCE_KEY_MTA && !mtaEnabled) {
-      continue;
-    }
-    result.push(key);
+export function shouldShowPartialProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
+  webSendEnabled: boolean, dismissed: boolean): boolean {
+  if (dismissed) {
+    return false;
   }
-  return result;
+  if (localSendEnabled && mtaEnabled) {
+    return false;
+  }
+  // 全部方式关闭由「所有传输方式均已关闭」提示负责
+  return localSendEnabled || mtaEnabled || webSendEnabled;
 }
 
 /**
- * 「两个协议均禁用」提示卡显隐判定（纯函数，可独立测试）：
- * 单一协议禁用时不提示；仅两个总开关都关闭、且用户未在本次会话内关闭过该提示时显示。
+ * 「所有传输方式均禁用」提示卡显隐判定（纯函数，可独立测试）：
+ * 仅 LocalSend、互传联盟与网页传输总开关都关闭、
+ * 且用户未在本次会话内关闭过该提示时显示。
  */
 export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEnabled: boolean,
-  dismissed: boolean): boolean {
-  return !localSendEnabled && !mtaEnabled && !dismissed;
+  webSendEnabled: boolean, dismissed: boolean): boolean {
+  return !localSendEnabled && !mtaEnabled && !webSendEnabled && !dismissed;
 }
 
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
@@ -193,15 +231,15 @@ export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEna
 @ObservedV2
 export class SendViewModel {
   @Trace public stagedFiles: Array<StagedFile> = []
+  // 暂存区变化后同步已挂载网页分享的防抖定时器（-1 表示无待处理同步）
+  private shareSyncTimer: number = -1
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
   // 按设备类型拆分的展示数据源：局域网（LocalSend）与互传联盟（MTA）各占一组，供设备类型标签分别渲染。
   @Trace public localDeviceItemViewModels: Array<DeviceItemViewModel> = []
   @Trace public mtaDeviceItemViewModels: Array<DeviceItemViewModel> = []
   /** 上次构建设备项时的内容签名（未变则不重建条目对象，避免扫描高频通知反复重绑列表节点） */
   private localItemsSignature: string = ''
-  private mtaItemsSignature: string = ''  // 会话级标记：本次发送页会话内是否曾发现过互传联盟设备。
-  // 一旦置真即在 refresh() 中保持（不主动复位），作为设备类型标签出现与否的唯一依据。
-  @Trace public hasSeenMtaDevice: boolean = false
+  private mtaItemsSignature: string = ''
   // 本机蓝牙开关状态（三态）：确认关闭时才清空/隐藏互传分组，不可确定时保持上一稳定展示态
   @Trace public mtaBluetoothStatus: MtaBluetoothStatus = MtaBluetoothStatus.UNKNOWN
   // 本机蓝牙「上一稳定态」镜像：仅在三态为已开启/确认关闭时更新，不可确定时保持不变，
@@ -209,7 +247,7 @@ export class SendViewModel {
   @Trace public mtaBluetoothOn: boolean = true
   // 本机 WLAN 开关状态：互传 P2P 传输依赖 WLAN，关闭时提示可发现但无法传输
   @Trace public mtaWifiOn: boolean = true
-  // 互传连接提醒开关：关闭时不显示互传相关的连接警告横幅
+  // 显示互传提醒开关：关闭时不显示互传相关的连接警告横幅
   @Trace public mtaConnectionWarnings: boolean = true
   // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
   @Trace public localSendEnabled: boolean = true
@@ -219,19 +257,37 @@ export class SendViewModel {
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
+  // 网页服务是否运行：驱动方式区网页图标绿点（服务启动即亮，不要求已挂载文件）
+  @Trace public webServiceActive: boolean = false
+  // 网页方向允许开关镜像：驱动菜单勾选（勾选表达开关意向，不表达传输中）
+  @Trace public webSendAllowed: boolean = true
+  @Trace public webReceiveAllowed: boolean = true
   // 刷新按钮旋转角（发送页目标区刷新反馈）
   @Trace public refreshAngle: number = 0
-  // 本次发送页会话曾发现过设备的来源键（来源标签出现判定依据，会话内保持可见）
-  @Trace public seenSourceKeys: Array<string> = []
   @Trace public favoriteDevices: Array<FavoriteDevice> = []
   @Trace public isScanning: boolean = false
+  // 统一刷新按钮的加载态：覆盖 LocalSend 扫描与 MTA 手动刷新窗口
+  @Trace public isRefreshing: boolean = false
+  private isMtaRefreshing: boolean = false
+  private pendingRefresh: boolean = false
+  private refreshStartedMs: number = 0
+  private refreshSettleTimer: number = -1
   @Trace public noWifiWarning: boolean = false
   @Trace public allInterfacesDisabled: boolean = false
   private context: common.UIAbilityContext | undefined = undefined
   // 在途发送目标 IP 集合：点击后立即置位、发送收口后清除，弥补注册表会话创建前的空窗
   private inFlightSendIps: Set<string> = new Set()
-  // 暂存项大小缓存（uri → 字节数）：statSync 结果稳定，避免重复系统调用
+  // 暂存项大小缓存（uri → 字节数）：异步补全后写入，避免重复系统调用
   private stagedSizeCache: Map<string, number> = new Map()
+  // 已补全元数据（大小 / 源修改时间）的暂存 uri：含 stat 失败项，避免对同一文件反复尝试
+  private metaFilledUris: Set<string> = new Set()
+  // 元数据补全在途链：同一时刻只保留一条，并供发送/分享准备等待其完成
+  private metaPrefetchPromise: Promise<void> | undefined = undefined
+  // 暂存项已打开的只读句柄：发送、网页挂载、校验和据此 dup，避免同一批文件被反复 open
+  private stagedHandles: Map<string, fs.File> = new Map()
+  // 网页分享仍引用、暂不能关闭的句柄（同一 uri 可能因重写内容产生多个旧句柄）：
+  // 等分享表更新后再关闭，避免原生层读到已关闭的 fd
+  private deferredCloseHandles: Map<string, Array<fs.File>> = new Map()
   private favoritesCallback: () => void = () => {
   }
   // 已触发视频缩略图生成的 uri 集合（防重复加载）
@@ -241,7 +297,7 @@ export class SendViewModel {
     this.context = context;
   }
 
-  // 订阅收藏设备变化（从视图的 aboutToAppear 调用）。
+  // 订阅收藏设备变化（由持有该视图模型的页面宿主在生命周期内调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
       // LocalSend 总开关关闭时收藏保持隐藏（收藏均为局域网来源设备）
@@ -253,7 +309,7 @@ export class SendViewModel {
     subscribeFavorites(this.favoritesCallback);
   }
 
-  // 取消订阅收藏设备变化（从视图的 aboutToDisappear 调用）。
+  // 取消订阅收藏设备变化（由持有该视图模型的页面宿主在生命周期内调用）。
   unsubscribeFavorites(): void {
     unsubscribeFavorites(this.favoritesCallback);
   }
@@ -289,12 +345,21 @@ export class SendViewModel {
       let sharedFiles: Array<StagedFile> = processSharedUris(pendingJson);
       let newFiles: Array<StagedFile> = this.filterNewStaged(sharedFiles);
       if (newFiles.length > 0) {
+        // 分享意图带来的条目同样持有临时授权：一并转成持久授权，供后续（过期 / 重启后）访问
+        let sharedUris: Array<string> = [];
+        for (let i = 0; i < newFiles.length; i++) {
+          sharedUris.push(newFiles[i].uri);
+        }
+        persistPickedUris(sharedUris).catch((): void => {
+        });
         // 合并而非替换：保留用户已手动暂存的文件
         for (let i = 0; i < newFiles.length; i++) {
           this.stagedFiles.push(newFiles[i]);
         }
         invalidatePrePreparedItems();
+        this.prefetchStagedMeta();
         this.updateTotalSizeCache();
+        this.scheduleShareSync();
       }
     }
     // 消费分享的文本/链接数据，写入文件后暂存
@@ -306,9 +371,9 @@ export class SendViewModel {
           let textRecords: Array<Object> = parsed as Array<Object>;
           for (let i = 0; i < textRecords.length; i++) {
             let record: Object = textRecords[i];
-            let content: string = (record as Record<string, string>)['content'] ?? '';
-            let title: string = (record as Record<string, string>)['title'] ?? '';
-            let utd: string = (record as Record<string, string>)['utd'] ?? '';
+            let content: string = readSharedTextField(record, 'content');
+            let title: string = readSharedTextField(record, 'title');
+            let utd: string = readSharedTextField(record, 'utd');
             // 组合文本内容：超链接类型组合标题+内容，纯文本类型仅用内容
             let text: string = '';
             if (utd === 'general.hyperlink') {
@@ -333,7 +398,7 @@ export class SendViewModel {
           }
         }
       } catch (_e) {
-        logger.error('Failed to parse pending shared texts: ' + String(_e));
+        logger.warn('解析待分享文本失败：' + String(_e));
       }
     }
     // .slice() 强制产生新数组引用：V2 状态管理下 @Trace 数组同引用重复赋值不触发 UI 刷新
@@ -376,7 +441,7 @@ export class SendViewModel {
     // 每次通知都新建条目对象会让 Repeat 反复重绑节点，Image 异步加载下偶发一帧错配（图标抖动）。
     // 签名不变即保持既有条目对象与数组引用，Repeat 不重绑。
     // 演示虚拟设备常驻合并（仅演示分支存在）：各来源真实设备之后追加，排序置后（真实设备优先）；
-    // 演示 MTA 设备不受蓝牙开关门控（常驻可见）。演示设备为常量，纳入签名后即使真实设备为空也能建立。
+    // 演示设备为常量，纳入签名后即使真实设备为空也能建立。
     let localSource: Array<DiscoveredDevice> = [];
     for (let i = 0; i < visible.local.length; i++) {
       localSource.push(visible.local[i]);
@@ -398,6 +463,7 @@ export class SendViewModel {
     for (let i = 0; i < visible.mta.length; i++) {
       mtaSource.push(visible.mta[i]);
     }
+    // 演示 MTA 设备不受蓝牙开关门控（常驻可见）
     let demoMta = getDemoDevices('mta');
     for (let i = 0; i < demoMta.length; i++) {
       mtaSource.push(demoMta[i]);
@@ -411,23 +477,32 @@ export class SendViewModel {
       }
       this.mtaDeviceItemViewModels = mtaViewModels;
     }
-    // 一旦发现互传设备即置真，此后本次发送页会话内标签持续可见（即使互传设备数归 0）
-    if (hasAnyMtaDevice(allDevices)) {
-      this.hasSeenMtaDevice = true;
-    }
     // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
     this.serverReady = isServerRunning();
     this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
+    // 网页方向允许开关镜像：驱动菜单勾选（勾选表达开关意向，不表达传输中）
+    this.webSendAllowed = getWebSendAllowed();
+    this.webReceiveAllowed = getWebReceiveAllowed();
+    // 网页服务运行态（独立服务，地址存在即已启动）：只读镜像，用于方式区图标绿点
+    let webServiceWasActive: boolean = this.webServiceActive;
+    this.webServiceActive = getShareLink().length > 0;
+    // 服务从停止变为运行时，若已有暂存文件但尚未挂载，自动补一次分享表同步，
+    // 避免首次从网页查看时还要等进入网页面板才挂载
+    if (!webServiceWasActive && this.webServiceActive &&
+      !hasSharedFiles() && this.stagedFiles.length > 0) {
+      this.scheduleShareSync();
+    }
     // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
     this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
       this.localSendEnabled);
     // 收藏自定义别名回填附近列表（与面板口径一致）
     this.applyFavoriteAliases();
-    // 来源标签出现判定：记录本次会话曾发现过设备的来源（会话内保持可见；禁用来源除外）
-    this.updateSeenSourceKeys();
+    // 统一刷新状态：MTA 手动刷新窗口随仓储变更通知同步，两个来源都结束后恢复按钮
+    this.isMtaRefreshing = isMtaManualRefreshInFlight();
+    this.tryFinishRefresh();
   }
 
   /** 局域网设备项内容签名：覆盖列表展示与发起发送所需字段（不含 RSSI 等非展示字段） */
@@ -454,24 +529,6 @@ export class SendViewModel {
       parts.push(`${senderId}|${bleAddress}|${d.alias}|${brandId}|${brandName}|${is5Ghz}|${d.protocol}`);
     }
     return parts.join('\n');
-  }
-
-  /**
-   * 依据已发现设备更新「曾发现过设备的来源」集合（会话内单调累积）。
-   * 协议总开关关闭的来源不累积，并从集合中移除已累积键（目标区来源标签随之消失）。
-   */
-  private updateSeenSourceKeys(): void {
-    let seen: Array<string> = filterSeenSourceKeysByProtocolToggles(this.seenSourceKeys,
-      this.localSendEnabled, this.mtaEnabled);
-    if (this.localSendEnabled && this.localDeviceItemViewModels.length > 0 &&
-      seen.indexOf(SOURCE_KEY_LOCAL_SEND) < 0) {
-      seen.push(SOURCE_KEY_LOCAL_SEND);
-    }
-    if (this.mtaEnabled && (this.mtaDeviceItemViewModels.length > 0 || this.hasSeenMtaDevice) &&
-      seen.indexOf(SOURCE_KEY_MTA) < 0) {
-      seen.push(SOURCE_KEY_MTA);
-    }
-    this.seenSourceKeys = seen;
   }
 
   /**
@@ -535,40 +592,45 @@ export class SendViewModel {
       }
       if (!retained) {
         this.stagedSizeCache.delete(uri);
+        this.metaFilledUris.delete(uri);
+        this.closeStagedHandle(uri);
       }
     }
     this.stagedFiles = kept;
+    this.scheduleShareSync();
     invalidatePrePreparedItems();
     this.updateTotalSizeCache();
   }
 
   /** 判定暂存项 uri 对应文件是否存在（访问异常按不存在处理）。 */
   private stagedFileExists(uri: string): boolean {
+    let file: fs.File | undefined = undefined;
     try {
-      return fs.accessSync(uri);
+      file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      return fs.statSync(file.fd).isFile();
     } catch (_e) {
-      return false;
+      try {
+        return fs.accessSync(uri);
+      } catch (_fallbackErr) {
+        return false;
+      }
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_closeErr) {
+        }
+      }
     }
   }
 
-  /** 暂存项真实字节大小（statSync 结果缓存；文件不可读时为 0）。 */
-  getStagedFileSize(index: number): number {
+  /** 暂存项大小文案：元数据尚未补全时显示占位，避免误显示为 0 B。 */
+  getStagedFileSizeText(index: number): string {
     let staged: StagedFile | undefined = this.stagedFiles[index];
-    if (staged === undefined) {
-      return 0;
+    if (staged === undefined || staged.size === undefined) {
+      return '—';
     }
-    let cached: number | undefined = this.stagedSizeCache.get(staged.uri);
-    if (cached !== undefined) {
-      return cached;
-    }
-    let size: number = 0;
-    try {
-      size = fs.statSync(staged.uri).size;
-    } catch (_e) {
-      size = 0;
-    }
-    this.stagedSizeCache.set(staged.uri, size);
-    return size;
+    return formatSizeDetailed(staged.size);
   }
 
   async pickFiles(): Promise<void> {
@@ -577,96 +639,31 @@ export class SendViewModel {
     }
     let documentPicker = new picker.DocumentViewPicker(this.context);
     let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = 10;
+    options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     try {
       let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, undefined);
+      this.stageUris(uris);
     } catch (e) {
-      logger.error('pickFiles error: ' + JSON.stringify(e));
+      logger.warn('选择文件失败：' + JSON.stringify(e));
     }
   }
 
-  async pickImages(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    // 使用 Media Library Kit 的 photoAccessHelper（@ohos.file.picker 的 PhotoViewPicker 自 API 12 起废弃）
-    let photoPicker = new photoAccessHelper.PhotoViewPicker();
-    let options = new photoAccessHelper.PhotoSelectOptions();
-    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
-    options.maxSelectNumber = 10;
-    try {
-      let result = await photoPicker.select(options);
-      let uris: Array<string> = result.photoUris;
-      this.stageUris(uris, true);
-    } catch (e) {
-      logger.error('pickImages error: ' + JSON.stringify(e));
-    }
-  }
-
-  async pickAudio(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    let audioPicker = new picker.AudioViewPicker(this.context);
-    let options = new picker.AudioSelectOptions();
-    try {
-      let uris: Array<string> = await audioPicker.select(options);
-      this.stageUris(uris, false);
-    } catch (e) {
-      logger.error('pickAudio error: ' + JSON.stringify(e));
-    }
-  }
-
-  // 视频选择：使用 photoAccessHelper.PhotoViewPicker + VIDEO_TYPE
-  async pickVideos(): Promise<void> {
+  // 图片与视频选择：图库选择器不设 MIMEType 即同时展示图片与视频（可混选）。
+  // 使用 Media Library Kit 的 photoAccessHelper（@ohos.file.picker 的 PhotoViewPicker 自 API 12 起废弃）
+  async pickMedia(): Promise<void> {
     if (this.context === undefined) {
       return;
     }
     let photoPicker = new photoAccessHelper.PhotoViewPicker();
     let options = new photoAccessHelper.PhotoSelectOptions();
-    options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.VIDEO_TYPE;
-    options.maxSelectNumber = 10;
+    options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     try {
       let result = await photoPicker.select(options);
       let uris: Array<string> = result.photoUris;
-      this.stageUris(uris, false);
+      // 不强制标记为图片：按扩展名区分图片与视频，视频条目由暂存列表懒生成缩略图
+      this.stageUris(uris);
     } catch (e) {
-      logger.error('pickVideos error: ' + JSON.stringify(e));
-    }
-  }
-
-  // 文档选择：使用 DocumentViewPicker + fileSuffixFilters 过滤办公格式
-  async pickDocuments(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    let documentPicker = new picker.DocumentViewPicker(this.context);
-    let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = 10;
-    options.fileSuffixFilters = ['文档|.doc,.docx,.ppt,.pptx,.xls,.xlsx,.pdf,.wps,.et,.dps,.ofd,.xmind,.mm,.opml'];
-    try {
-      let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, undefined);
-    } catch (e) {
-      logger.error('pickDocuments error: ' + JSON.stringify(e));
-    }
-  }
-
-  // 压缩包选择：使用 DocumentViewPicker + fileSuffixFilters 过滤压缩包格式
-  async pickArchives(): Promise<void> {
-    if (this.context === undefined) {
-      return;
-    }
-    let documentPicker = new picker.DocumentViewPicker(this.context);
-    let options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = 10;
-    options.fileSuffixFilters = ['压缩包|.zip,.rar,.7z,.tar,.gz'];
-    try {
-      let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris, false);
-    } catch (e) {
-      logger.error('pickArchives error: ' + JSON.stringify(e));
+      logger.warn('选择图片或视频失败：' + JSON.stringify(e));
     }
   }
 
@@ -687,7 +684,7 @@ export class SendViewModel {
     let added: boolean = false;
     if (result.uris.length > 0) {
       let beforeCount: number = this.stagedFiles.length;
-      this.stageUris(result.uris, undefined);
+      this.stageUris(result.uris);
       if (this.stagedFiles.length > beforeCount) {
         added = true;
       }
@@ -700,7 +697,7 @@ export class SendViewModel {
       // 文本条目由 stageTextFile 新建沙箱文件承载、URI 每次拖入均不同，无法按 URI 去重，
       // 故按内容精确匹配：已存在相同内容时静默跳过（不新增条目、不提示）
       if (this.isTextContentStaged(item.content)) {
-        logger.debug('dropped text skipped (duplicate content): isLink=' + item.isLink);
+        logger.debug('拖入文本已跳过（内容重复）：isLink=' + item.isLink);
         continue;
       }
       let beforeCount: number = this.stagedFiles.length;
@@ -709,7 +706,7 @@ export class SendViewModel {
         added = true;
       }
       // isLink 仅用于来源追溯日志（拖入的超链接以组合文本暂存，行为与纯文本一致）
-      logger.debug('dropped text staged: isLink=' + item.isLink + ' prefix=drop_');
+      logger.debug('拖入文本已暂存：isLink=' + item.isLink + ' prefix=drop_');
     }
     return added;
   }
@@ -755,12 +752,17 @@ export class SendViewModel {
     return true;
   }
 
+  // 文本消息的列表标题：取正文并把换行折叠为空格，供暂存列表直接展示
+  private textPreviewOf(text: string): string {
+    return text.replace(/\r\n|\r|\n/g, ' ').trim();
+  }
+
   stageTextFile(text: string, prefix: string): void {
     if (this.context === undefined) {
       return;
     }
     // 手动文本写入「发送文本」统一目录（应用私有持久目录，filesDir/text_send/）：
-    // 写入与「清除任务历史」的清空共用同一路径来源（见 SendRepository.sendTextDir）；
+    // 写入与「清空任务历史」的清空共用同一路径来源（见 SendRepository.sendTextDir）；
     // 未发起发送的文本在移出暂存/清空暂存时仍按既有规则删除（见 deleteStagedTextFile）
     let sendDir: string = sendTextDir();
     if (sendDir.length === 0) {
@@ -792,13 +794,16 @@ export class SendViewModel {
       fileName: fileName,
       fileType: 'text/plain',
       isImage: false,
-      isManualText: true
+      isManualText: true,
+      textPreview: this.textPreviewOf(text)
     };
     this.stagedFiles.push(staged);
     // 暂存列表新增条目后，既有预准备结果不再对应当前内容，须失效，
     // 否则下次发送会复用旧条目（内容静默丢失）
     invalidatePrePreparedItems();
+    this.prefetchStagedMeta();
     this.updateTotalSizeCache();
+    this.scheduleShareSync();
   }
 
   // 编辑文本消息：覆盖写原文件（WRITE_ONLY | CREATE | TRUNC），不改变条目身份与持久化语义——
@@ -821,11 +826,30 @@ export class SendViewModel {
     } catch (_e) {
       return;
     }
+    // 列表标题跟随正文变化：重建条目对象并替换数组引用，驱动列表刷新
+    let updated: Array<StagedFile> = this.stagedFiles.slice();
+    updated[index] = {
+      uri: staged.uri,
+      fileName: staged.fileName,
+      fileType: staged.fileType,
+      isImage: staged.isImage,
+      isManualText: true,
+      persisted: staged.persisted,
+      lastModified: staged.lastModified,
+      size: staged.size,
+      previewPixelMap: staged.previewPixelMap,
+      textPreview: this.textPreviewOf(newText)
+    };
+    this.stagedFiles = updated;
     // 文件内容已变化：既有预准备结果不再对应当前内容，须失效（与 stageTextFile 的失效时机一致）
     invalidatePrePreparedItems();
-    // 该条目字节大小已随内容变化，删除 stat 缓存项，总大小经 statSync 重新计算
+    // 该条目字节大小已随内容变化：作废旧的大小与元数据标记，由异步补全重新读取
     this.stagedSizeCache.delete(staged.uri);
+    this.metaFilledUris.delete(staged.uri);
+    this.closeStagedHandle(staged.uri);
+    this.prefetchStagedMeta();
     this.updateTotalSizeCache();
+    this.scheduleShareSync();
   }
 
   // 手动文本暂存项的 uri 指向 text_send/ 下的自建文件，移出/清空暂存列表时
@@ -850,11 +874,27 @@ export class SendViewModel {
     }
   }
 
+  // 释放暂存条目携带的缩略图显存（被丢弃条目不再展示，需主动释放）
+  private releaseStagedPreview(staged: StagedFile): void {
+    let preview = staged.previewPixelMap;
+    if (preview !== undefined) {
+      try {
+        preview.release();
+      } catch (_e) {
+      }
+    }
+  }
+
   removeStagedFile(index: number): void {
     let removed: StagedFile | undefined = this.stagedFiles[index];
     if (removed !== undefined) {
       this.deleteStagedTextFile(removed);
+      this.releaseStagedPreview(removed);
+      // 被移除条目的在途解码已过期，通知丢弃（仅匹配该来源时生效）
+      cancelVideoThumbnail(removed.uri);
       this.stagedSizeCache.delete(removed.uri);
+      this.metaFilledUris.delete(removed.uri);
+      this.closeStagedHandle(removed.uri);
       // 释放缩略图请求标记：同一文件再次被选中时（URI 稳定）需重新生成缩略图
       this.videoPreviewRequestedUris.delete(removed.uri);
     }
@@ -865,6 +905,7 @@ export class SendViewModel {
       }
     }
     this.stagedFiles = updated;
+    this.scheduleShareSync();
     // 文件列表变化，清空预准备缓存
     invalidatePrePreparedItems();
     // 当所有文件被移除时，清除会话状态
@@ -892,6 +933,8 @@ export class SendViewModel {
     this.videoPreviewRequestedUris.add(src.uri);
     let pixelMap = await generateVideoThumbnail(src.uri, 96, 96);
     if (pixelMap === undefined) {
+      // 单飞行忙时丢弃与解码失败均回退图标，并释放请求标记以便下次出现时重试
+      this.videoPreviewRequestedUris.delete(src.uri);
       logger.warn('生成失败，回退类型图标 uri=' + src.uri);
       return;
     }
@@ -906,6 +949,11 @@ export class SendViewModel {
       }
     }
     if (currentIndex < 0) {
+      // 条目已删：已解码帧无处写回，直接释放避免泄漏
+      try {
+        pixelMap.release();
+      } catch (_e) {
+      }
       return;
     }
     let copy: StagedFile = {
@@ -926,9 +974,21 @@ export class SendViewModel {
   clearStagedFiles(): void {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       this.deleteStagedTextFile(this.stagedFiles[i]);
+      this.releaseStagedPreview(this.stagedFiles[i]);
     }
+    // 清空时全部解码过期，无条件取消在途解码
+    cancelVideoThumbnail();
     this.stagedFiles = [];
+    this.scheduleShareSync();
     this.stagedSizeCache.clear();
+    this.metaFilledUris.clear();
+    let handledUris: Array<string> = [];
+    this.stagedHandles.forEach((_handle: fs.File, uri: string): void => {
+      handledUris.push(uri);
+    });
+    for (let i = 0; i < handledUris.length; i++) {
+      this.closeStagedHandle(handledUris[i]);
+    }
     this.videoPreviewRequestedUris.clear();
     invalidatePrePreparedItems();
     clearAllSendSessions();
@@ -936,12 +996,102 @@ export class SendViewModel {
   }
 
   updateTotalSizeCache(): void {
-    let totalBytes = this.computeStagedTotalSize();
+    let totalBytes = this.sumCachedStagedSize();
     this.cachedTotalSizeText = totalBytes === 0 ? '' : formatSizeDetailed(totalBytes);
   }
 
   getTotalSizeText(): string {
     return this.cachedTotalSizeText;
+  }
+
+  /** 暂存内容总字节数（大文件提示阈值判定）：以异步补全的大小缓存为主。
+   *  补全尚未完成时（如选完立即发送）仅为缺项补一次同步 stat——正常路径不会有缺项，
+   *  而阈值判断不能建立在可能不完整的总量上；发送链路各自读取真实文件，不依赖该值。 */
+  getStagedTotalBytes(): number {
+    let total: number = this.sumCachedStagedSize();
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let uri: string = this.stagedFiles[i].uri;
+      if (this.stagedSizeCache.has(uri)) {
+        continue;
+      }
+      let size: number | undefined = this.statSizeSync(uri);
+      if (size !== undefined) {
+        this.stagedSizeCache.set(uri, size);
+        total = total + size;
+      }
+    }
+    return total;
+  }
+
+  // 同步读取文件大小（仅用于补全未完成时的兜底统计）：fd 模式兼容 picker URI
+  private statSizeSync(uri: string): number | undefined {
+    let file: fs.File | undefined = undefined;
+    try {
+      file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      return fs.statSync(file.fd).size;
+    } catch (_e) {
+      return undefined;
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_closeErr) {
+        }
+      }
+    }
+  }
+
+  /**
+   * 统一刷新入口：并行触发 LocalSend 与 MTA 刷新，返回是否真正发起。
+   * 刷新中再次点击只合并为一次待补刷，保留 LocalSend 既有“扫描中排队一次”语义。
+   */
+  refreshAllDevices(): boolean {
+    if (this.isRefreshing) {
+      this.pendingRefresh = true;
+      return false;
+    }
+    this.isRefreshing = true;
+    this.refreshStartedMs = Date.now();
+    if (this.serverReady) {
+      rescanDevices();
+    }
+    rescanMtaDiscovery();
+    this.isScanning = isScanningStatus();
+    this.isMtaRefreshing = isMtaManualRefreshInFlight();
+    this.tryFinishRefresh();
+    return true;
+  }
+
+  /**
+   * 统一刷新完成判定：LocalSend 扫描与 MTA 手动刷新窗口都结束后，
+   * 且满足最短展示时间，才恢复按钮；有合并请求时补刷一次。
+   */
+  private tryFinishRefresh(): void {
+    if (!this.isRefreshing) {
+      return;
+    }
+    if (this.refreshSettleTimer >= 0) {
+      return;
+    }
+    let remaining: number = REFRESH_MIN_DISPLAY_MS - (Date.now() - this.refreshStartedMs);
+    if (remaining > 0) {
+      this.refreshSettleTimer = setTimeout((): void => {
+        this.refreshSettleTimer = -1;
+        this.tryFinishRefresh();
+      }, remaining);
+      return;
+    }
+    if (this.isScanning || this.isMtaRefreshing) {
+      return;
+    }
+    this.isRefreshing = false;
+    if (this.pendingRefresh) {
+      this.pendingRefresh = false;
+      // 先让本轮结束态完成一次渲染，再消费待补刷，避免按钮状态合并丢失
+      setTimeout((): void => {
+        this.refreshAllDevices();
+      }, 0);
+    }
   }
 
   // 触发一轮 LocalSend 发现扫描（MTA 扫描由调用方另行触发，避免重复发起）
@@ -986,15 +1136,12 @@ export class SendViewModel {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       let staged = this.stagedFiles[i];
       uris.push(staged.uri);
-      let size: number = 0;
-      try {
-        size = fs.statSync(staged.uri).size;
-      } catch (_e) {
-      }
+      // 尺寸取暂存元数据（异步补全）：MtaSendService 打开直读 fd 时会以句柄属性重算实际大小，
+      // 此处仅为请求声明，无需再逐项同步 stat
       descriptors.push({
         fileId: '',
         fileName: staged.fileName,
-        size: size,
+        size: staged.size !== undefined ? staged.size : 0,
         fileType: staged.fileType
       });
     }
@@ -1014,19 +1161,82 @@ export class SendViewModel {
     }
     markMtaSendClicked();
     startMtaSendFlow(params, context).catch((e: Object): void => {
-      logger.warn('MTA 发送启动失败: ' + String(e));
+      logger.error('MTA 发送启动失败：' + String(e));
     });
   }
 
   // 返回要导航到的分享链接 URL；未创建链接时返回 ''
   // （选择器被取消或失败）。
   // 网页分享是一次性动作，不改变发送模式值。
-  async shareByLink(): Promise<string> {
-    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
-    if (!this.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略网页分享请求');
-      return '';
+  /**
+   * 暂存区变化：已挂载的网页分享随之更新。
+   *
+   * 网页分享运行期间，浏览器可下载的清单应与本机当前选择保持一致——退出面板后
+   * 增删文件，对方刷新网页即可看到新清单，不必重新生成分享链接。
+   *
+   * 触发方式：增删改各入口在改动完成处显式调用 `scheduleShareSync`（数组原地 push
+   * 不一定产生属性级通知，仅靠监视会漏更新）；此处的监视作为整体替换类改动的兜底，
+   * 重复触发由防抖合并。
+   */
+  @Monitor('stagedFiles')
+  onStagedFilesChanged(): void {
+    this.scheduleShareSync();
+  }
+
+  /** 合并连续变化后再同步（拖拽排序、批量删除只换表一次）。 */
+  private scheduleShareSync(): void {
+    // 服务已运行时即使尚未挂载文件也同步：首次选文件不必等进入网页面板
+    if (!hasSharedFiles() && getShareLink().length === 0) {
+      return;
     }
+    if (this.shareSyncTimer >= 0) {
+      clearTimeout(this.shareSyncTimer);
+    }
+    this.shareSyncTimer = setTimeout(() => {
+      this.shareSyncTimer = -1;
+      this.syncSharedFiles();
+    }, 400);
+  }
+
+  /** 以当前暂存内容替换分享文件表（失败时保留原有挂载）。 */
+  private async syncSharedFiles(): Promise<void> {
+    if (!hasSharedFiles() && getShareLink().length === 0) {
+      // 分享已不存在：此前因分享引用而延迟关闭的句柄可以回收
+      this.flushDeferredHandles();
+      return;
+    }
+    // 发送进行中跳过：同步会重新准备条目并更新原生文件表，与发送启动相互干扰
+    // （发送结束后由调用处补一次同步）
+    if (this.inFlightSendIps.size > 0) {
+      return;
+    }
+    try {
+      let uris: Array<string> = [];
+      for (let i = 0; i < this.stagedFiles.length; i++) {
+        uris.push(this.stagedFiles[i].uri);
+      }
+      let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
+      // 先等元数据补全：命中后准备层无需为同一批文件再次 open/stat
+      await this.ensureStagedMeta();
+      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris,
+        this.stagedSourceMeta(), this.stagedSourceFds());
+      await updateShareFiles(items);
+    } catch (_e) {
+      // 同步失败：保留原有挂载，不打断进行中的下载
+    } finally {
+      // 分享表已更新（或失败但旧表仍在）：关闭不再被引用的延迟句柄
+      this.flushDeferredHandles();
+    }
+  }
+
+  /** 网页分享是否已挂载当前暂存内容：面板入口据此避免重复挂载并重置本次授权。 */
+  isWebShareMounted(): boolean {
+    return hasSharedFiles();
+  }
+
+  async shareByLink(): Promise<string> {
+    // 菜单仅在发送开关开启时才走挂载；此处再写一次允许开关以保持幂等
+    setWebSendAllowed(true);
     if (this.isCreatingShareLink) {
       return '';
     }
@@ -1046,7 +1256,10 @@ export class SendViewModel {
       // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并交由共享准备层
       // 统一补设文本内容信息，网页分享不再单独维护筛选与补设循环
       let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
-      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris);
+      // 先等元数据补全：命中后准备层无需为同一批文件再次 open/stat
+      await this.ensureStagedMeta();
+      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris,
+        this.stagedSourceMeta(), this.stagedSourceFds());
       if (items.length > 0) {
         await createShareLink(items);
         let shareUrl = getShareLink();
@@ -1102,6 +1315,8 @@ export class SendViewModel {
       return SendInitiateResult.initiated;
     } finally {
       this.inFlightSendIps.delete(device.ip);
+      // 发送期间跳过的分享表同步在此补一次（保证网页面板与暂存内容一致）
+      this.scheduleShareSync();
     }
   }
 
@@ -1224,9 +1439,11 @@ export class SendViewModel {
 
   // 将选择器返回的 uri 列表去重后暂存为 StagedFile 并刷新总大小缓存；
   // 确有条目新增时使既有预准备结果失效（未新增则保持复用）。
-  // forceImage: true=强制标记为图片（图片选择器）；false=强制非图片（音频/视频/压缩包）；
-  // undefined=按扩展名判断（通用/文档选择器）。
-  private stageUris(uris: Array<string>, forceImage: boolean | undefined): void {
+  // 图片与视频按扩展名区分：图片直显缩略图，视频由暂存列表懒生成缩略图。
+  private stageUris(uris: Array<string>): void {
+    // 选择返回的临时授权尽快转成持久授权：过期或进程重启后仍可读取（不复制文件、不占应用存储）
+    persistPickedUris(uris).catch((): void => {
+    });
     let addedCount: number = 0;
     for (let i = 0; i < uris.length; i++) {
       let uri = uris[i];
@@ -1235,22 +1452,16 @@ export class SendViewModel {
       }
       let name = this.extractFileNameFromUri(uri);
       let ext = this.getExtension(name);
-      let isImg: boolean = forceImage !== undefined ? forceImage : isImageExtension(ext);
+      let isImg: boolean = isImageExtension(ext);
       let mime = mimeGetMimeForExt(ext);
-      // 暂存前捕获源文件修改时间：后续若发生字节复制会把副本时间置为当前时刻，
-      // 必须在此刻取原值才能保真。fs.Stat.mtime 为距 1970 的秒数，统一转为 Unix 毫秒
-      let lastModified: number | undefined = undefined;
-      try {
-        lastModified = Math.floor(fs.statSync(uri).mtime * 1000);
-      } catch (_e) {
-        lastModified = undefined;
-      }
+      // 大小与源修改时间不在选择返回时读取：选择器 URI 逐项同步 open/stat 会阻塞 UI 线程，
+      // 数百个文件的累计耗时可达秒级。此处先入列表（文件名/图标即时可见），
+      // 元数据随后由 prefetchStagedMeta 异步补全
       let staged: StagedFile = {
         uri: uri,
         fileName: name,
         fileType: mime,
-        isImage: isImg,
-        lastModified: lastModified
+        isImage: isImg
       };
       this.stagedFiles.push(staged);
       addedCount++;
@@ -1259,21 +1470,240 @@ export class SendViewModel {
     // （多目标模式连续向多台设备发送依赖该复用，不得每次无条件重新准备）
     if (addedCount > 0) {
       invalidatePrePreparedItems();
+      this.scheduleShareSync();
+      this.prefetchStagedMeta();
     }
     this.updateTotalSizeCache();
   }
 
-  // 计算所有暂存文件的总字节数（stat 失败的文件跳过）。
-  private computeStagedTotalSize(): number {
+  // 暂存项已补全的源文件元数据（uri → 大小与修改时间）：随准备请求一并下传，
+  // 使准备层不必为同一批文件再次逐项 open/stat（元数据缺失的条目仍由准备层自行读取）
+  private stagedSourceMeta(): Map<string, SourceFileMeta> {
+    let meta: Map<string, SourceFileMeta> = new Map();
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let staged: StagedFile = this.stagedFiles[i];
+      if (staged.size === undefined || staged.lastModified === undefined) {
+        continue;
+      }
+      let entry: SourceFileMeta = { size: staged.size, lastModified: staged.lastModified };
+      meta.set(staged.uri, entry);
+    }
+    return meta;
+  }
+
+  // 暂存文件总字节数：仅累计已补全的大小（不做同步 IO）；
+  // 补全完成前未就绪的条目按 0 计入，由补全结束后的刷新修正。
+  private sumCachedStagedSize(): number {
     let total: number = 0;
     for (let i = 0; i < this.stagedFiles.length; i++) {
-      try {
-        let stat = fs.statSync(this.stagedFiles[i].uri);
-        total = total + stat.size;
-      } catch (_e) {
+      let cached: number | undefined = this.stagedSizeCache.get(this.stagedFiles[i].uri);
+      if (cached !== undefined) {
+        total = total + cached;
       }
     }
     return total;
+  }
+
+  // 异步补全暂存项的大小与源修改时间：受限并发走异步 open/stat（不阻塞 UI 线程），
+  // 全部完成后整表替换一次，行内大小与总大小随之刷新。
+  // 补全只在暂存内容变化后触发，同一时刻只保留一条补全链。
+  private prefetchStagedMeta(): void {
+    if (this.metaPrefetchPromise !== undefined) {
+      return;
+    }
+    this.metaPrefetchPromise = this.runStagedMetaPrefetch();
+  }
+
+  /**
+   * 等待暂存元数据补全完成（发送/分享准备复用这些元数据时调用）：
+   * 补全在途则等待其结束，仍有未补全项时再补一轮；补全失败不影响后续流程。
+   */
+  private async ensureStagedMeta(): Promise<void> {
+    for (let round = 0; round < 8; round++) {
+      let promise: Promise<void> | undefined = this.metaPrefetchPromise;
+      if (promise === undefined) {
+        if (!this.hasUnfilledStagedMeta()) {
+          return;
+        }
+        this.prefetchStagedMeta();
+        promise = this.metaPrefetchPromise;
+        if (promise === undefined) {
+          return;
+        }
+      }
+      try {
+        await promise;
+      } catch (_e) {
+        // 补全失败按缺项处理：准备层会为缺失条目自行读取
+        return;
+      }
+    }
+  }
+
+  // 是否仍有未补全元数据的暂存项（补全失败项已记入 metaFilledUris，不会重复计数）
+  private hasUnfilledStagedMeta(): boolean {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (!this.metaFilledUris.has(this.stagedFiles[i].uri)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async runStagedMetaPrefetch(): Promise<void> {
+    // 先取一份待补全快照：补全期间新增的条目由下一轮补全处理
+    let pending: Array<string> = [];
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let uri: string = this.stagedFiles[i].uri;
+      if (!this.metaFilledUris.has(uri)) {
+        pending.push(uri);
+      }
+    }
+    let filled: number = 0;
+    let startMs: number = Date.now();
+    try {
+      await forEachConcurrently(pending.length, async (index: number): Promise<void> => {
+        let uri: string = pending[index];
+        // 打开后保留句柄：发送与网页挂载都只需要 dup 一份就能拿到相同文件，
+        // 否则同一批文件会被反复 open（媒体库 URI 单次打开在并发下可达数十毫秒）；
+        // 发送由 Rust 以 pread 从文件头读取，dup 副本共享偏移也不影响
+        let opened: StagedHandleSnapshot | undefined = await this.openStagedHandle(uri);
+        if (!this.isAlreadyStaged(uri)) {
+          // 补全期间条目已被移除：撤回已写的补全标记，并释放刚登记进 stagedHandles 的句柄
+          // （仍被网页分享表借用时由 closeStagedHandle 转入延迟关闭）
+          this.metaFilledUris.delete(uri);
+          this.closeStagedHandle(uri);
+          return;
+        }
+        // 失败同样记为已处理：避免不可读文件在每次刷新时被反复重试
+        this.metaFilledUris.add(uri);
+        if (opened === undefined) {
+          // 打开失败（句柄未保留）：跳过元数据写回
+          return;
+        }
+        this.stagedSizeCache.set(uri, opened.size);
+        this.applyStagedMeta(uri, opened.size, opened.lastModified);
+        filled++;
+      });
+      logger.debug('补全暂存元数据耗时=' + (Date.now() - startMs) + 'ms 文件数=' + pending.length);
+    } finally {
+      this.metaPrefetchPromise = undefined;
+      if (filled > 0) {
+        // 整表替换：Repeat 的键包含已知大小，替换后行内文案与总大小同步刷新
+        this.stagedFiles = this.stagedFiles.slice();
+        this.updateTotalSizeCache();
+      }
+    }
+  }
+
+  /**
+   * 打开暂存项并读取元数据；句柄在数量上限内保留于 stagedHandles，供发送 / 网页挂载复用
+   * （复用方式是 dup，避免同一文件被再次 open）。超过上限或失败时同样返回元数据。
+   */
+  private async openStagedHandle(uri: string): Promise<StagedHandleSnapshot | undefined> {
+    let file: fs.File | undefined = undefined;
+    try {
+      file = await fs.open(uri, fs.OpenMode.READ_ONLY);
+      let stat: fs.Stat = fs.statSync(file.fd);
+      let snapshot: StagedHandleSnapshot = {
+        size: stat.size,
+        lastModified: Math.floor(stat.mtime * 1000)
+      };
+      let existing: fs.File | undefined = this.stagedHandles.get(uri);
+      if (existing !== undefined) {
+        this.closeStagedHandle(uri);
+      }
+      if (this.stagedHandles.size < MAX_CACHED_STAGED_HANDLES) {
+        this.stagedHandles.set(uri, file);
+        // 句柄所有权已交给 stagedHandles，由 closeStagedHandle 统一关闭
+        file = undefined;
+      }
+      return snapshot;
+    } catch (_e) {
+      return undefined;
+    } finally {
+      if (file !== undefined) {
+        try {
+          fs.closeSync(file);
+        } catch (_closeErr) {
+        }
+      }
+    }
+  }
+
+  /**
+   * 关闭并移除某暂存项保留的句柄（条目移除 / 清空 / 内容重写时调用）。
+   *
+   * 网页分享表借用这些句柄（原生层下载时自行 dup，不取得所有权）：只要该文件仍在
+   * 分享表中，就不能关闭句柄——否则原生层可能读到已关闭的 fd。此时先转入延迟关闭，
+   * 待分享表更新完成后由 flushDeferredHandles 关闭。
+   */
+  private closeStagedHandle(uri: string): void {
+    let handle: fs.File | undefined = this.stagedHandles.get(uri);
+    if (handle === undefined) {
+      return;
+    }
+    this.stagedHandles.delete(uri);
+    if (isShareActive() && isSharingPath(uri)) {
+      let pending: Array<fs.File> | undefined = this.deferredCloseHandles.get(uri);
+      if (pending === undefined) {
+        pending = [];
+        this.deferredCloseHandles.set(uri, pending);
+      }
+      pending.push(handle);
+      this.scheduleShareSync();
+      return;
+    }
+    try {
+      fs.closeSync(handle);
+    } catch (_closeErr) {
+    }
+  }
+
+  /** 关闭已不再被分享表引用的延迟句柄（分享表更新成功后调用）。 */
+  private flushDeferredHandles(): void {
+    let ready: Array<string> = [];
+    this.deferredCloseHandles.forEach((_handles: Array<fs.File>, uri: string): void => {
+      if (!isSharingPath(uri)) {
+        ready.push(uri);
+      }
+    });
+    for (let i = 0; i < ready.length; i++) {
+      let handles: Array<fs.File> | undefined = this.deferredCloseHandles.get(ready[i]);
+      this.deferredCloseHandles.delete(ready[i]);
+      if (handles === undefined) {
+        continue;
+      }
+      for (let k = 0; k < handles.length; k++) {
+        try {
+          fs.closeSync(handles[k]);
+        } catch (_closeErr) {
+        }
+      }
+    }
+  }
+
+  // 暂存项已保留的源文件句柄（uri → fd）：发送据此 dup（Rust 以 pread 读取），
+  // 校验和 dup 后归位偏移，网页分享直接借用
+  private stagedSourceFds(): Map<string, number> {
+    let fds: Map<string, number> = new Map();
+    this.stagedHandles.forEach((handle: fs.File, uri: string): void => {
+      fds.set(uri, handle.fd);
+    });
+    return fds;
+  }
+
+  // 回填某暂存项的大小与源修改时间（按 uri 定位，避免补全期间增删导致下标漂移）
+  private applyStagedMeta(uri: string, size: number, lastModified: number): void {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let item: StagedFile = this.stagedFiles[i];
+      if (item.uri !== uri) {
+        continue;
+      }
+      item.size = size;
+      item.lastModified = lastModified;
+      return;
+    }
   }
 
   // 快速准备暂存文件（prepareSendFiles + 源修改时间回填）并缓存预准备结果，供发送链路复用。
@@ -1290,7 +1720,10 @@ export class SendViewModel {
     // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并传入共享准备层，
     // 由 prepareSendFiles 统一补设 preview（单目标、多目标、指定 IP 共用此路径）
     let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
-    let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris);
+    // 先等元数据补全：命中后准备层无需为同一批文件再次 open/stat
+    await this.ensureStagedMeta();
+    let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris,
+      this.stagedSourceMeta(), this.stagedSourceFds());
     if (items.length === 0) {
       return items;
     }

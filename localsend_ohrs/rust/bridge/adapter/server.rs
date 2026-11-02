@@ -158,55 +158,6 @@ pub fn adapt_server_event(event: ServerEventV2) -> (Option<BridgeEvent>, Vec<Sta
     }
 }
 
-/// 将 WebSendEvent 适配为桥接层事件 + 状态变更动作。
-///
-/// WebSend 事件与其他事件走同一条 adapter + engine 路径。
-pub fn adapt_web_send_event(
-    event: localsend::http::server::web::WebSendEvent,
-) -> (Option<BridgeEvent>, Vec<StateAction>) {
-    use localsend::http::server::web::WebSendEvent;
-
-    match event {
-        WebSendEvent::PrepareDownload {
-            ip,
-            session_id,
-            user_agent,
-            decision_tx,
-        } => {
-            let event = BridgeEvent::WebSendPrepareDownload {
-                session_id: session_id.clone(),
-                ip: ip.to_string(),
-                user_agent,
-            };
-            let actions = vec![StateAction::StoreWebDownloadDecision {
-                session_id,
-                tx: decision_tx,
-            }];
-            (Some(event), actions)
-        }
-
-        WebSendEvent::FileDownload {
-            session_id,
-            file_id,
-            file,
-            content_tx,
-        } => {
-            let event = BridgeEvent::WebSendFileDownload {
-                session_id: session_id.clone(),
-                file_id: file_id.clone(),
-                file_name: file.file_name.clone(),
-                size: file.size,
-            };
-            // 存储 content_tx，使 fail_file_download 可以丢弃发送端（导致 500 响应）
-            let actions = vec![StateAction::StorePendingFileDownload {
-                key: (session_id, file_id),
-                tx: content_tx,
-            }];
-            (Some(event), actions)
-        }
-    }
-}
-
 // ── 单元测试 ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -450,71 +401,6 @@ mod tests {
             _ => panic!("期望 CancelReceived 事件"),
         }
         assert_eq!(actions.len(), 1);
-    }
-
-    #[test]
-    fn adapt_web_send_prepare_download() {
-        use localsend::http::server::web::WebSendEvent;
-        let (tx, _rx) = oneshot::channel();
-        let ip = peer_ipv4(192, 168, 1, 9);
-        let (event, actions) = adapt_web_send_event(WebSendEvent::PrepareDownload {
-            ip,
-            session_id: "web-1".to_string(),
-            user_agent: Some("Mozilla".to_string()),
-            decision_tx: tx,
-        });
-        match event.unwrap() {
-            BridgeEvent::WebSendPrepareDownload {
-                session_id,
-                ip,
-                user_agent,
-            } => {
-                assert_eq!(session_id, "web-1");
-                assert_eq!(ip, "192.168.1.9");
-                assert_eq!(user_agent.as_deref(), Some("Mozilla"));
-            }
-            _ => panic!("期望 WebSendPrepareDownload 事件"),
-        }
-        assert!(
-            matches!(&actions[0], StateAction::StoreWebDownloadDecision { session_id, .. } if session_id == "web-1")
-        );
-    }
-
-    #[test]
-    fn adapt_web_send_file_download() {
-        use localsend::http::server::web::WebSendEvent;
-        let (tx, _rx) = oneshot::channel();
-        let (event, actions) = adapt_web_send_event(WebSendEvent::FileDownload {
-            session_id: "web-2".to_string(),
-            file_id: "f1".to_string(),
-            file: UpstreamFileDto {
-                id: "f1".to_string(),
-                file_name: "a.pdf".to_string(),
-                size: 100,
-                file_type: "application/pdf".to_string(),
-                sha256: None,
-                preview: None,
-                metadata: None,
-            },
-            content_tx: tx,
-        });
-        match event.unwrap() {
-            BridgeEvent::WebSendFileDownload {
-                session_id,
-                file_id,
-                file_name,
-                size,
-            } => {
-                assert_eq!(session_id, "web-2");
-                assert_eq!(file_id, "f1");
-                assert_eq!(file_name, "a.pdf");
-                assert_eq!(size, 100);
-            }
-            _ => panic!("期望 WebSendFileDownload 事件"),
-        }
-        assert!(
-            matches!(&actions[0], StateAction::StorePendingFileDownload { key, .. } if key == &("web-2".to_string(), "f1".to_string()))
-        );
     }
 
     #[test]

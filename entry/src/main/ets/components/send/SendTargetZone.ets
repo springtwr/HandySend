@@ -11,7 +11,7 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { EmptyState } from '../EmptyState';
 import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
 import { DiscoveredDevice } from '../../model/Types';
-import { filterSeenSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
+import { filterEnabledDeviceSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../../views/DeviceListItem';
@@ -26,15 +26,19 @@ export struct SendTargetZone {
   }
   @Event onRefresh: () => void = () => {
   }
-  // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态，
-  // 父级若按「键」存选中，则在可见来源集合增长/重排后同一下标指向不同来源
-  //（冷启动常见：先发现互传设备→集合只有[互传]，之后局域网设备出现→集合变为
-  // [LocalSend,互传]），会出现「页签停在一个来源、列表却按另一个来源取数」的不一致。
-  // 故统一按下标持有选中态、由下标派生来源，两侧由构造保证一致。
-  @Local private selectedSourceIndexValue: number = 0
-  // 官方分段标签选项集合：集合引用保持稳定，仅在可见来源集合变化时就地重建
+  // 点击网页图标：直接进入统一的「网页传输」面板
+  @Event onOpenWeb: () => void = () => {
+  }
+  // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态。
+  // -1 表示自动：从未手动选择时优先显示首个有设备的来源；用户点击标签后固定为该下标，
+  // 之后即使该来源设备归零也保持（便于查看来源空态与排查引导）。
+  @Local private selectedSourceIndexValue: number = -1
+  // 官方分段标签选项集合：集合引用保持稳定，仅在协议开关变化时就地重建
   // （官方标注 items 为只读 @Param，整体替换在组件侧不被保证生效）
   @Local private sourceItemsValue: SegmentButtonV2Items = new SegmentButtonV2Items([])
+  // 当前已启用来源数：作为 @Local 参与条件渲染，保证协议开关变化时标签栏显隐被重新求值
+  //（visibleSources 读取的协议开关不是响应式状态，仅靠 sourceItemsValue 更新不足以重算外层 if）
+  @Local private enabledSourceCount: number = 0
   // 已构建选项对应的来源键签名（变化时才重建集合）
   private sourceKeySignature: string = ''
 
@@ -42,21 +46,23 @@ export struct SendTargetZone {
     this.syncSourceItems();
   }
 
-  /** 可见来源集合变化时重建分段标签选项（会话内仅随「曾发现过设备的来源」增长）。 */
-  @Monitor('viewModel.seenSourceKeys')
-  onSeenSourcesChanged(): void {
+  /** 协议开关变化时重建分段标签选项（来源集合按开关常显，不随发现结果变化）。 */
+  @Monitor('viewModel.localSendEnabled', 'viewModel.mtaEnabled')
+  onSourceToggleChanged(): void {
     this.syncSourceItems();
   }
 
   private syncSourceItems(): void {
     let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    this.enabledSourceCount = sources.length;
     let signature: string = '';
     for (let i = 0; i < sources.length; i++) {
       signature = signature + sources[i].key + '|';
     }
-    // 集合变化后按下标夹取选中态：集合缩小时下标越界即回到首个来源，
-    // 保证下标始终有效（列表与页签由同一下标派生）
-    this.selectedSourceIndexValue = this.clampSourceIndex(this.selectedSourceIndexValue, sources.length);
+    // 手动下标越界时回退到首个来源；-1（自动模式）保持不变，由 selectedSourceIndex 决定展示哪个来源
+    if (this.selectedSourceIndexValue >= sources.length) {
+      this.selectedSourceIndexValue = 0;
+    }
     if (signature === this.sourceKeySignature) {
       return;
     }
@@ -68,17 +74,9 @@ export struct SendTargetZone {
     this.sourceItemsValue = new SegmentButtonV2Items(options);
   }
 
-  /** 下标夹取到 [0, count)（count 为 0 时归 0；越界归 0，即回退到首个来源） */
-  private clampSourceIndex(index: number, count: number): number {
-    if (count <= 0 || index < 0 || index >= count) {
-      return 0;
-    }
-    return index;
-  }
-
-  /** 可见来源：仅「本次发送页会话曾发现过设备」的来源（注册表顺序）。 */
+  /** 可见来源：协议开关开启的设备来源（注册表顺序），与是否发现设备无关。 */
   private visibleSources(): Array<DeviceSourceDescriptor> {
-    return filterSeenSources(listSources(), this.viewModel.seenSourceKeys);
+    return filterEnabledDeviceSources(listSources());
   }
 
   /** 当前选中来源（按选中下标派生；集合为空时返回 undefined）。 */
@@ -90,9 +88,24 @@ export struct SendTargetZone {
     return sources[this.selectedSourceIndex()];
   }
 
-  /** 当前选中来源在分段标签中的下标（夹取到有效范围，恒与页签选中下标一致）。 */
+  /**
+   * 当前选中来源下标：手动选择（>=0）优先；自动模式（-1）选首个有设备的来源，
+   * 都无设备时回退首个。标签隐藏时仍按同一口径派生当前来源。
+   */
   private selectedSourceIndex(): number {
-    return this.clampSourceIndex(this.selectedSourceIndexValue, this.visibleSources().length);
+    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    if (sources.length === 0) {
+      return 0;
+    }
+    if (this.selectedSourceIndexValue >= 0 && this.selectedSourceIndexValue < sources.length) {
+      return this.selectedSourceIndexValue;
+    }
+    for (let i = 0; i < sources.length; i++) {
+      if (this.devicesOf(sources[i]).length > 0) {
+        return i;
+      }
+    }
+    return 0;
   }
 
   /**
@@ -122,10 +135,38 @@ export struct SendTargetZone {
     return this.devicesOf(descriptor);
   }
 
-  /** 副标题引导文案：随当前选中来源切换，来源缺失时回退局域网文案。 */
+  /** 任一可见来源是否存在设备：决定标签栏是否出现、是否回退总空态。 */
+  private hasAnyDevice(): boolean {
+    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    for (let i = 0; i < sources.length; i++) {
+      if (this.devicesOf(sources[i]).length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 来源数 ≥2 且至少一个有设备时才显示标签栏；全部为空时回退总空态，不展示空标签。 */
+  private shouldShowSourceTabs(): boolean {
+    return this.enabledSourceCount >= 2 && this.hasAnyDevice();
+  }
+
+  /**
+   * 是否回退总空态：无任何已启用来源，或两个及以上来源全部无设备。
+   * 仅一个来源时保留该来源自己的空态与引导（比总空态更具体）。
+   */
+  private showCombinedEmptyState(): boolean {
+    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
+    return sources.length === 0 || (sources.length >= 2 && !this.hasAnyDevice());
+  }
+
+  /** 副标题：有设备时随当前来源切换；回退总空态时用总空态文案。 */
   private currentSubtitle(): ResourceStr {
+    if (this.showCombinedEmptyState()) {
+      return $r('app.string.send_no_source_subtitle');
+    }
     let descriptor = this.currentSource();
-    return descriptor !== undefined ? descriptor.subtitle : $r('app.string.nearby_devices_subtitle');
+    return descriptor !== undefined ? descriptor.subtitle : $r('app.string.send_no_source_subtitle');
   }
 
   /** 空态文案：来源描述符提供，缺失时回退默认空态。 */
@@ -159,7 +200,7 @@ export struct SendTargetZone {
       items: this.sourceItemsValue,
       selectedIndex: this.selectedSourceIndex(),
       $selectedIndex: (index: number) => {
-        // 直接持有下标：与官方组件同口径，避免「键 ↔ 下标」两套表示在集合变化后失配
+        // 用户点击后固定为具体下标、退出自动选择；集合变化时由 syncSourceItems 夹取
         this.selectedSourceIndexValue = index;
       },
       enableStateAnimation: true
@@ -207,31 +248,49 @@ export struct SendTargetZone {
     .width('100%')
   }
 
+  /**
+   * 设备区空态卡片：外观与一条设备卡一致（card_background + radius.lg + 1vp 边框），
+   * 高度下限取一条设备卡的高度（统一空态面板高度 120 − 标准卡片上下内边距 2×20 = 80vp），
+   * 使有设备与无设备时目标区高度不跳变。
+   */
   @Builder
-  emptyState() {
-    // 空态位于「设备卡片」内，不再套第二层卡片；条件引导提示沿用警示语义色。
-    // 内容区下限按「空态面板统一高度」减去设备卡片自身内边距反推，使面板与卡片型空态同高
-    EmptyState({
-      mainText: this.emptyText(),
-      hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
-      hintColor: $r('app.color.warning_orange'),
-      minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
-    })
-      .id('send_no_devices')
+  emptyCard() {
+    Column() {
+      if (this.showCombinedEmptyState()) {
+        // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
+        // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启
+        EmptyState({
+          mainText: $r('app.string.send_no_source_title'),
+          actionText: $r('app.string.discovery_source_web'),
+          actionIcon: $r('sys.symbol.worldclock'),
+          onAction: () => {
+            this.onOpenWeb();
+          }
+        })
+          .id('send_no_source')
+      } else {
+        // 条件引导提示沿用警示语义色
+        EmptyState({
+          mainText: this.emptyText(),
+          hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
+          hintColor: $r('app.color.warning_orange')
+        })
+          .id('send_no_devices')
+      }
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .constraintSize({ minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2 })
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
   }
 
   @Builder
   deviceSection() {
-    if (this.currentSource() === undefined) {
-      // 未发现任何来源设备：默认空态（文案与局域网空态一致），位于「设备卡片」内不带卡片；
-      // 与设备列表空态取同一内容区下限，避免两处空态在同一个卡片里高度跳变
-      EmptyState({
-        mainText: $r('app.string.no_devices_found'),
-        minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2
-      })
-        .id('send_no_source')
-    } else if (this.currentDeviceItems().length === 0) {
-      this.emptyState()
+    if (this.showCombinedEmptyState() || this.currentDeviceItems().length === 0) {
+      this.emptyCard()
     } else {
       this.deviceGrid()
     }
@@ -239,7 +298,7 @@ export struct SendTargetZone {
 
   build() {
     Column() {
-      // ── 目标区标题行（自定义卡片外标题 + 方式区图标菜单 + 刷新） ──
+      // ── 目标区标题行（自定义区标题 + 方式区图标菜单 + 刷新） ──
       Row({ space: DesignTokens.space.md }) {
         Column() {
           Text($r('app.string.send_zone_target_title'))
@@ -254,10 +313,15 @@ export struct SendTargetZone {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
-        // 方式区（注册表驱动；网页 / 其它方式两个入口）
-        SendMethodZone()
+        // 方式区：网页图标直接进入网页传输面板；其它方式保留菜单
+        SendMethodZone({
+          isWebActive: this.viewModel.webServiceActive,
+          onOpenWeb: () => {
+            this.onOpenWeb();
+          }
+        })
 
-        if (this.viewModel.isScanning) {
+        if (this.viewModel.isScanning || this.viewModel.isRefreshing) {
           LoadingProgress()
             .width(24)
             .height(24)
@@ -295,20 +359,16 @@ export struct SendTargetZone {
       .alignItems(VerticalAlign.Center)
       .justifyContent(FlexAlign.End)
 
-      // ── 来源标签（仅在可见来源数 ≥2 时展示） ──
-      if (this.visibleSources().length >= 2) {
+      // ── 来源标签（已启用来源 ≥2 且至少一个有设备时展示；全空时回退总空态） ──
+      if (this.shouldShowSourceTabs()) {
         this.sourceTabs()
       }
 
-      // ── 设备卡片 ──
+      // ── 设备列表：条目自身为独立卡片，外层不再套大卡片；与上方标题/标签留出间距 ──
       Column() {
         this.deviceSection()
       }
       .width('100%')
-      .padding(DesignTokens.space.card)
-      .borderRadius(DesignTokens.radius.lg)
-      .backgroundColor($r('app.color.card_background'))
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
       .margin({ top: DesignTokens.space.sm })
     }
     .width('100%')

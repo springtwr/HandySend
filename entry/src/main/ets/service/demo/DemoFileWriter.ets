@@ -11,7 +11,7 @@ import { common } from '@kit.AbilityKit';
 import { bundleManager } from '@kit.AbilityKit';
 import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { ReceiveHistoryEntry } from '../../model/Types';
-import { addEntry } from '../repository/ReceiveHistoryService';
+import { addEntries } from '../repository/ReceiveHistoryService';
 import { uniquePath } from '../repository/ReceiveTargets';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -146,7 +146,7 @@ export function appendReceiveHistory(specs: Array<DemoFileSpec>, written: Array<
       entry.textContent = textContent;
     }
     historySeq++;
-    addEntry(entry);
+    addEntries([entry]);
   }
 }
 

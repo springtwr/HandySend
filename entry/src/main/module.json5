@@ -26,6 +26,11 @@
         "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
       },
       {
+        // 文件授权持久化：把 Picker 返回的临时授权存到系统库，
+        // 使任务历史中的文件在超过临时授权有效期 / 应用重启后仍可读取（normal 级系统授权）
+        "name": "ohos.permission.FILE_ACCESS_PERSIST"
+      },
+      {
         "name": "ohos.permission.ACCESS_BLUETOOTH",
         // user_grant 权限，reason 与 usedScene 为必填
         "reason": "$string:permission_bluetooth_reason",

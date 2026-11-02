@@ -9,7 +9,7 @@ import {
 import { getSheetWidth, isWideWidth } from '../../common/Breakpoints';
 import { uiObserver } from '@kit.ArkUI';
 
-// 互传联盟（MTA）设置分组：MTA 接收开关 + 模拟品牌选择。
+// 互传联盟（MTA）设置分组：总开关 + 允许接收 + 显示互传提醒 + 模拟品牌选择。
 // 数据经 @Param 绑定父组件 VM，命令直调 VM（View → ViewModel）。
 @ComponentV2
 export struct MtaSettingsSection {
@@ -107,7 +107,7 @@ export struct MtaSettingsSection {
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.tiny })
 
-        // 互传联盟接收（默认开启）：应用在前台时以互传联盟身份接收附近设备传输；
+        // 允许接收（默认开启）：应用在前台时以互传联盟身份接收附近设备传输；
         // 总开关关闭时置灰
         Row() {
           Text($r('app.string.mta_receive_enabled_label'))
@@ -134,6 +134,30 @@ export struct MtaSettingsSection {
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.tiny })
 
+        // 显示互传提醒（默认开启）：关闭后发送页不再显示互传相关的蓝牙/WLAN 警告横幅
+        Row() {
+          Text($r('app.string.mta_connection_warnings_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.mtaConnectionWarnings })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setMtaConnectionWarningsValue(isOn);
+            })
+            .id('settings_mta_connection_warnings_toggle')
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.mta_connection_warnings_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.tiny })
+
         // 模拟品牌：显示当前品牌图标 + 本地化显示名，点击打开半屏选择弹窗
         Row() {
           Text($r('app.string.mta_simulated_brand_label'))
@@ -141,19 +165,22 @@ export struct MtaSettingsSection {
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
 
-          Row({ space: DesignTokens.space.tiny }) {
+          Row() {
             Image(resolveMtaBrandIcon(this.viewModel.mtaSimulatedBrandId))
               .width(DesignTokens.size.iconSm)
               .height(DesignTokens.size.iconSm)
+              // 图标与品牌名之间保留较大间距，文字与箭头统一为 4vp
+              .margin({ right: DesignTokens.space.tiny })
 
             Text(resolveMtaBrandDisplayName(this.viewModel.mtaSimulatedBrandId))
               .fontSize(DesignTokens.font.bodyM)
               .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ right: DesignTokens.space.xxs })
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
         }
@@ -179,30 +206,6 @@ export struct MtaSettingsSection {
         })
 
         Text($r('app.string.mta_simulated_brand_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
-
-        // 互传连接提醒（默认开启）：关闭后主页面不再显示互传相关的蓝牙/WLAN 警告横幅
-        Row() {
-          Text($r('app.string.mta_connection_warnings_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.mtaConnectionWarnings })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setMtaConnectionWarningsValue(isOn);
-            })
-            .id('settings_mta_connection_warnings_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.mta_connection_warnings_desc'))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)

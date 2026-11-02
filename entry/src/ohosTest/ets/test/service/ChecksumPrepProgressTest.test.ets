@@ -223,9 +223,9 @@ export default function ChecksumPrepProgressTest() {
       expect(rowHasByteProgress(row)).assertTrue()
       expect(rowPercent(row)).assertEqual(25)
       clearPrep(s.id)
-      // 非准备态维持传输口径（bytesSent=0 / totalBytes=200 → 0%）
+      // 非准备态维持传输口径：尚无字节进度时不渲染 0% 进度条
       let row2: SessionRowModel = liveSessionRow(s)
-      expect(rowHasByteProgress(row2)).assertTrue()
+      expect(rowHasByteProgress(row2)).assertFalse()
       expect(rowPercent(row2)).assertEqual(0)
       resetRegistry()
     })

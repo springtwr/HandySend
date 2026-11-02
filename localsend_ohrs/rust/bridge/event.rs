@@ -4,7 +4,7 @@
 //! `state.event_tx`（mpsc channel）推送，Serde 可序列化为 ArkTS 可消费的 JSON。
 //!
 //! 事件分类：
-//! - **关键事件**：必须用 `send().await` 保证送达（PrepareUpload、SessionEnd、
+//! - **关键事件**：`send().await` 发送并带 1 秒超时防护（PrepareUpload、SessionEnd、
 //!   DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Error 等）
 //! - **可丢弃事件**：用 `try_send` 发送，channel 满则丢弃（UploadProgress——
 //!   进度是瞬态值，用户只关心最新值）
@@ -99,31 +99,62 @@ pub enum BridgeEvent {
     /// （仅为事件模型完整性与序列化测试保留）。
     DeviceLost { fingerprint: String },
 
-    // ── WebSend（关键事件）──
-    /// Web 浏览器请求下载文件（待用户决策）。
-    WebSendPrepareDownload {
-        session_id: String,
+    // ── Web（关键事件）──
+    /// 网页访问（仅新建 token 时发；只用于日志/后台保活，不建任务）。
+    WebAccess {
         ip: String,
         user_agent: Option<String>,
+        file_count: usize,
     },
-    /// Web 浏览器实际下载文件。
-    WebSendFileDownload {
-        session_id: String,
-        file_id: String,
-        file_name: String,
-        size: u64,
+    /// 下载批次开始（第一个 body chunk 入队后发；应用据此建任务）。
+    WebDownloadStarted {
+        batch_id: String,
+        ip: String,
+        user_agent: Option<String>,
+        files: Vec<FileDto>,
     },
-    /// Web 浏览器下载进度（高频瞬态事件，channel 满时丢弃）。
-    /// `sent_bytes` 为已读入 HTTP 栈的字节（受 channel 缓冲影响会略超前于实际
-    /// 网络交付，属可接受近似）；`total_bytes` 为该文件声明大小。
-    WebSendProgress {
-        session_id: String,
+    /// 单文件下载进度（zip 内逐条目）。
+    WebDownloadProgress {
+        batch_id: String,
         file_id: String,
         sent_bytes: u64,
         total_bytes: u64,
     },
-    /// WebSend 会话结束。
+    /// 单文件下载完成。
+    WebDownloadFileDone {
+        batch_id: String,
+        file_id: String,
+        total_bytes: u64,
+    },
+    /// 下载批次结束（成功/失败/取消，只发一次）。
+    WebDownloadEnded {
+        batch_id: String,
+        outcome: String,
+        error: Option<String>,
+    },
+    /// 上传会话结束。
     WebSendSessionEnd { session_id: String },
+
+    /// 浏览器上传请求（待用户决策；含文件清单）。
+    WebUploadPrepare {
+        token: String,
+        ip: String,
+        user_agent: Option<String>,
+        files: Vec<FileDto>,
+    },
+    /// 浏览器上传进度（高频瞬态事件，channel 满时丢弃）。
+    WebUploadProgress {
+        token: String,
+        file_id: String,
+        received_bytes: u64,
+        total_bytes: u64,
+    },
+    /// 浏览器上传文件落盘完毕（携带最终路径）。
+    WebUploadDone {
+        token: String,
+        file_id: String,
+        path: String,
+    },
 
     // ── MTA 发送端服务器（关键事件，MtaSendProgress 可丢弃）──
     /// MTA 服务器已启动（携带实际绑定端口）。
@@ -181,7 +212,8 @@ impl BridgeEvent {
         matches!(
             self,
             BridgeEvent::UploadProgress { .. }
-                | BridgeEvent::WebSendProgress { .. }
+                | BridgeEvent::WebDownloadProgress { .. }
+                | BridgeEvent::WebUploadProgress { .. }
                 | BridgeEvent::ChecksumProgress { .. }
                 | BridgeEvent::MtaSendProgress { .. }
                 | BridgeEvent::MtaReceiveProgress { .. }
@@ -192,7 +224,7 @@ impl BridgeEvent {
     pub fn is_terminal_progress(&self) -> bool {
         match self {
             BridgeEvent::UploadProgress { progress, .. } => *progress >= 1.0,
-            BridgeEvent::WebSendProgress {
+            BridgeEvent::WebDownloadProgress {
                 sent_bytes,
                 total_bytes,
                 ..
@@ -215,8 +247,9 @@ impl BridgeEvent {
 /// 按事件分类发送桥接事件。
 ///
 /// - 可丢弃事件（进度类）：非终值时 `try_send`，channel 满则丢弃、不阻塞；
-///   终值（100%，见 [`BridgeEvent::is_terminal_progress`]）按关键事件 `send().await` 保证送达
-/// - 关键事件：`send().await` 保证送达
+///   终值（100%，见 [`BridgeEvent::is_terminal_progress`]）按关键事件发送
+/// - 关键事件：`send().await` 发送，1 秒超时防护——无消费者或通道满时丢弃并告警，
+///   不永久阻塞事件循环
 pub async fn send_event(
     event_tx: &Option<tokio::sync::mpsc::Sender<BridgeEvent>>,
     event: BridgeEvent,
@@ -227,7 +260,11 @@ pub async fn send_event(
     if event.is_droppable() && !event.is_terminal_progress() {
         let _ = tx.try_send(event);
     } else {
-        let _ = tx.send(event).await;
+        // 关键事件加超时防护：无消费者时避免永久阻塞事件循环
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), tx.send(event)).await;
+        if result.is_err() {
+            log::warn!("关键事件发送超时，可能无消费者或通道满");
+        }
     }
 }
 
@@ -279,6 +316,21 @@ pub enum BridgeError {
     Io(#[from] std::io::Error),
 }
 
+impl BridgeError {
+    /// 机器可判定的错误编码（跨语言分支用，展示文本保持不变）。
+    pub fn code(&self) -> &'static str {
+        match self {
+            BridgeError::NotInitialized => "NotInitialized",
+            BridgeError::AlreadyRunning => "AlreadyRunning",
+            BridgeError::ServerNotRunning => "ServerNotRunning",
+            BridgeError::SessionExpired(_) => "SessionExpired",
+            BridgeError::InvalidArgument(_) => "InvalidArgument",
+            BridgeError::Upstream(_) => "Upstream",
+            BridgeError::Io(_) => "Io",
+        }
+    }
+}
+
 // ── 跨层事件 JSON 契约表（单一事实源）───────────────────────────────
 //
 // 每个事件的 (tag, payload 字段集合)，字段名为 camelCase，与
@@ -325,19 +377,30 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
     ("checksumProgress", Some(&["cancelId", "hashedBytes"])),
     ("deviceFound", Some(&["device"])),
     ("deviceLost", Some(&["fingerprint"])),
+    ("webAccess", Some(&["ip", "userAgent", "fileCount"])),
     (
-        "webSendPrepareDownload",
-        Some(&["sessionId", "ip", "userAgent"]),
+        "webDownloadStarted",
+        Some(&["batchId", "ip", "userAgent", "files"]),
     ),
     (
-        "webSendFileDownload",
-        Some(&["sessionId", "fileId", "fileName", "size"]),
+        "webDownloadProgress",
+        Some(&["batchId", "fileId", "sentBytes", "totalBytes"]),
     ),
     (
-        "webSendProgress",
-        Some(&["sessionId", "fileId", "sentBytes", "totalBytes"]),
+        "webDownloadFileDone",
+        Some(&["batchId", "fileId", "totalBytes"]),
     ),
+    ("webDownloadEnded", Some(&["batchId", "outcome", "error"])),
     ("webSendSessionEnd", Some(&["sessionId"])),
+    (
+        "webUploadPrepare",
+        Some(&["token", "ip", "userAgent", "files"]),
+    ),
+    (
+        "webUploadProgress",
+        Some(&["token", "fileId", "receivedBytes", "totalBytes"]),
+    ),
+    ("webUploadDone", Some(&["token", "fileId", "path"])),
     ("mtaServerStarted", Some(&["port"])),
     ("mtaWsConnected", None),
     ("mtaVersionNegotiated", Some(&["version"])),
@@ -382,6 +445,20 @@ mod tests {
             speed: 100.0,
         };
         assert!(e.is_droppable());
+        // 自研 web 上传进度同样可丢弃；终值用 Done 事件保证送达。
+        assert!(BridgeEvent::WebUploadProgress {
+            token: "t".into(),
+            file_id: "f".into(),
+            received_bytes: 5,
+            total_bytes: 10,
+        }
+        .is_droppable());
+        assert!(!BridgeEvent::WebUploadDone {
+            token: "t".into(),
+            file_id: "f".into(),
+            path: "/tmp/a".into(),
+        }
+        .is_droppable());
     }
 
     #[test]
@@ -427,16 +504,26 @@ mod tests {
             BridgeEvent::DeviceLost {
                 fingerprint: "fp".into(),
             },
-            BridgeEvent::WebSendPrepareDownload {
-                session_id: "s".into(),
+            BridgeEvent::WebAccess {
                 ip: "192.168.1.5".into(),
                 user_agent: None,
+                file_count: 1,
             },
-            BridgeEvent::WebSendFileDownload {
-                session_id: "s".into(),
+            BridgeEvent::WebDownloadStarted {
+                batch_id: "b".into(),
+                ip: "192.168.1.5".into(),
+                user_agent: None,
+                files: Vec::new(),
+            },
+            BridgeEvent::WebDownloadFileDone {
+                batch_id: "b".into(),
                 file_id: "f".into(),
-                file_name: "a.txt".into(),
-                size: 10,
+                total_bytes: 10,
+            },
+            BridgeEvent::WebDownloadEnded {
+                batch_id: "b".into(),
+                outcome: "succeeded".into(),
+                error: None,
             },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
@@ -509,6 +596,30 @@ mod tests {
             assert_eq!(json["type"], expected_type);
             assert!(json["payload"].is_object(), "应包含 payload 字段");
         }
+    }
+
+    #[test]
+    fn test_send_event_critical_does_not_block_without_consumer() {
+        // 通道满且无消费者时，关键事件发送须在超时内返回，不得永久阻塞
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (tx, _rx) = tokio::sync::mpsc::channel::<BridgeEvent>(1);
+            // 占满唯一的槽位（可丢弃事件用 try_send）
+            let _ = tx.try_send(BridgeEvent::UploadProgress {
+                session_id: "s".into(),
+                file_id: "f".into(),
+                direction: "recv".into(),
+                progress: 0.5,
+                speed: 0.0,
+            });
+            let event_tx = Some(tx);
+            let start = std::time::Instant::now();
+            send_event(&event_tx, BridgeEvent::ServerStopped).await;
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(5),
+                "关键事件发送不应阻塞"
+            );
+        });
     }
 
     #[test]
@@ -646,25 +757,52 @@ mod tests {
             BridgeEvent::DeviceLost {
                 fingerprint: "fp".into(),
             },
-            BridgeEvent::WebSendPrepareDownload {
-                session_id: "s".into(),
+            BridgeEvent::WebAccess {
                 ip: "192.168.1.5".into(),
                 user_agent: Some("Mozilla".into()),
+                file_count: 1,
             },
-            BridgeEvent::WebSendFileDownload {
-                session_id: "s".into(),
-                file_id: "f".into(),
-                file_name: "a.txt".into(),
-                size: 10,
+            BridgeEvent::WebDownloadStarted {
+                batch_id: "b".into(),
+                ip: "192.168.1.5".into(),
+                user_agent: Some("Mozilla".into()),
+                files: Vec::new(),
             },
-            BridgeEvent::WebSendProgress {
-                session_id: "s".into(),
+            BridgeEvent::WebDownloadProgress {
+                batch_id: "b".into(),
                 file_id: "f".into(),
                 sent_bytes: 5,
                 total_bytes: 10,
             },
+            BridgeEvent::WebDownloadFileDone {
+                batch_id: "b".into(),
+                file_id: "f".into(),
+                total_bytes: 10,
+            },
+            BridgeEvent::WebDownloadEnded {
+                batch_id: "b".into(),
+                outcome: "failed".into(),
+                error: Some("e".into()),
+            },
             BridgeEvent::WebSendSessionEnd {
                 session_id: "s".into(),
+            },
+            BridgeEvent::WebUploadPrepare {
+                token: "t".into(),
+                ip: "192.168.1.5".into(),
+                user_agent: None,
+                files: vec![],
+            },
+            BridgeEvent::WebUploadProgress {
+                token: "t".into(),
+                file_id: "f".into(),
+                received_bytes: 5,
+                total_bytes: 10,
+            },
+            BridgeEvent::WebUploadDone {
+                token: "t".into(),
+                file_id: "f".into(),
+                path: "/tmp/a".into(),
             },
             BridgeEvent::MtaServerStarted { port: 53317 },
             BridgeEvent::MtaWsConnected,

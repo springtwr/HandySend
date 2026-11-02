@@ -1,0 +1,3660 @@
+<!DOCTYPE html>
+<!-- 自研单页：按 /caps 条件渲染下载/发送页签。
+文案经 /i18n.json 按浏览器语言或页头选择下发（失败回退内置简体中文）。
+主题与语言偏好保存在浏览器本地，主题默认跟随系统。
+下载走浏览器下载管理器（服务端 Content-Disposition，大文件无内存压力）；
+文本类文件无预览字段时用 Range 取前 128KB 内联预览；
+文件与文本合并为一次上传：仅文本时 message.txt 携带 preview（文本消息），
+混合内容时文本作为 message.txt 随文件发送（文本文件）；
+页面隐藏时用 sendBeacon 上报完成回执（发送方据此敢关服务）。 -->
+<html lang="zh-CN" data-theme="light" data-auth="{{AUTH_STATE}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f1f3f5">
+<title>HandySend</title>
+<style>
+/* ========== HarmonyOS 设计 Token（页面内联兜底，深色模式由 data-theme 切换） ========== */
+:root {
+  color-scheme: light;
+  --harmony-brand: rgba(10, 89, 247, 1);
+  --harmony-warning: rgba(232, 64, 38, 1);
+  --harmony-warning-bg: rgba(232, 64, 38, 0.08);
+  --harmony-font-primary: rgba(0, 0, 0, 0.9);
+  --harmony-font-secondary: rgba(0, 0, 0, 0.6);
+  --harmony-font-tertiary: rgba(0, 0, 0, 0.4);
+  --harmony-font-on-primary: rgba(255, 255, 255, 1);
+  --harmony-background-secondary: rgba(241, 243, 245, 1);
+  --harmony-comp-background-primary: rgba(255, 255, 255, 1);
+  --harmony-comp-background-secondary: rgba(0, 0, 0, 0.06);
+  --harmony-comp-background-tertiary: rgba(0, 0, 0, 0.04);
+  --harmony-comp-background-emphasize: rgba(10, 89, 247, 1);
+  --harmony-comp-emphasize-secondary: rgba(10, 89, 247, 0.16);
+  --harmony-comp-emphasize-tertiary: rgba(10, 89, 247, 0.08);
+  --harmony-comp-divider: rgba(0, 0, 0, 0.12);
+  --harmony-warning-bg-hover: rgba(232, 64, 38, 0.14);
+  /* 页面节奏（mobile-scale 档位：16 / 12 / 16） */
+  --page-pad: 16px;
+  --page-max: 640px;
+  --icon-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --section-gap: 16px;
+  --card-gap: 12px;
+  --radius-card: 20px;
+  --radius-control: 20px;
+  --radius-textarea: 12px;
+  --menu-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+  --segment-track-bg: rgba(0, 0, 0, 0.06);
+  --segment-thumb-bg: rgba(255, 255, 255, 1);
+  --segment-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  /* 顶部悬浮渐隐背板（titlebar 模板真值曲线） */
+  --titlebar-gradient: linear-gradient(
+    to bottom,
+    rgba(241, 243, 245, 0.8) 0%,
+    rgba(241, 243, 245, 0.8) 30%,
+    rgba(241, 243, 245, 0.79) 38.5%,
+    rgba(241, 243, 245, 0.74) 51.1%,
+    rgba(241, 243, 245, 0.65) 59.3%,
+    rgba(241, 243, 245, 0.53) 67.5%,
+    rgba(241, 243, 245, 0.32) 76.4%,
+    rgba(241, 243, 245, 0.12) 85.7%,
+    rgba(241, 243, 245, 0) 100%
+  );
+  --titlebar-mask: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 1) 68%,
+    rgba(0, 0, 0, 0.6) 84%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+    --harmony-brand: rgba(49, 122, 247, 1);
+    --harmony-warning: rgba(217, 72, 56, 1);
+    --harmony-warning-bg: rgba(217, 72, 56, 0.16);
+    --harmony-font-primary: rgba(255, 255, 255, 0.9);
+    --harmony-font-secondary: rgba(255, 255, 255, 0.6);
+    --harmony-font-tertiary: rgba(255, 255, 255, 0.4);
+    --harmony-background-secondary: rgba(25, 26, 28, 1);
+    --harmony-comp-background-primary: rgba(32, 34, 36, 1);
+    --harmony-comp-background-secondary: rgba(255, 255, 255, 0.08);
+    --harmony-comp-background-tertiary: rgba(255, 255, 255, 0.05);
+    --harmony-comp-background-emphasize: rgba(49, 122, 247, 1);
+    --harmony-comp-emphasize-secondary: rgba(49, 122, 247, 0.24);
+    --harmony-comp-emphasize-tertiary: rgba(49, 122, 247, 0.12);
+    --harmony-comp-divider: rgba(255, 255, 255, 0.12);
+    --harmony-warning-bg-hover: rgba(217, 72, 56, 0.22);
+    --icon-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    --segment-track-bg: rgba(255, 255, 255, 0.06);
+    --segment-thumb-bg: rgba(255, 255, 255, 0.16);
+    --segment-thumb-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    --titlebar-gradient: linear-gradient(
+      to bottom,
+      rgba(25, 26, 28, 0.82) 0%,
+      rgba(25, 26, 28, 0.82) 30%,
+      rgba(25, 26, 28, 0.8) 38.5%,
+      rgba(25, 26, 28, 0.74) 51.1%,
+      rgba(25, 26, 28, 0.65) 59.3%,
+      rgba(25, 26, 28, 0.53) 67.5%,
+      rgba(25, 26, 28, 0.32) 76.4%,
+      rgba(25, 26, 28, 0.12) 85.7%,
+      rgba(25, 26, 28, 0) 100%
+    );
+  --menu-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* ========== 基础 ========== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--harmony-background-secondary);
+  color: var(--harmony-font-primary);
+  font-family: "HarmonyOS Sans SC", "HarmonyOS Sans", "HarmonyHeiTi", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.noscript-note {
+  margin: 0;
+  padding: 16px;
+  background: var(--harmony-warning-bg);
+  color: var(--harmony-warning);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* ========== 顶部悬浮标题栏：渐隐背板 + 模糊 ========== */
+.app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.app-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--titlebar-gradient);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-mask-image: var(--titlebar-mask);
+  mask-image: var(--titlebar-mask);
+  pointer-events: none;
+}
+
+.app-bar__inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: calc(10px + env(safe-area-inset-top)) var(--page-pad) 12px;
+}
+
+.app-bar__icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--harmony-comp-background-primary);
+  box-shadow: var(--icon-shadow);
+}
+
+.app-bar__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 20px;
+  line-height: 27px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+.app-bar__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.app-bar__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--icon-shadow);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease;
+}
+
+.app-bar__action:hover {
+  background: var(--harmony-comp-background-secondary);
+}
+
+.app-bar__action:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+.theme-icon-system,
+.theme-icon-light,
+.theme-icon-dark {
+  display: none;
+}
+
+#theme-btn:not(.is-light):not(.is-dark) .theme-icon-system {
+  display: block;
+}
+
+#theme-btn.is-light .theme-icon-light {
+  display: block;
+}
+
+#theme-btn.is-dark .theme-icon-dark {
+  display: block;
+}
+
+#lang-btn {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-menu {
+  position: absolute;
+  top: calc(100% - 4px);
+  right: var(--page-pad);
+  z-index: 40;
+  width: 200px;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--harmony-comp-background-primary);
+  box-shadow: var(--menu-shadow);
+  animation: menu-in 0.16s ease both;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-menu__item:hover {
+  background: var(--harmony-comp-background-secondary);
+}
+
+.app-menu__item:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: -2px;
+}
+
+.app-menu__check {
+  color: var(--harmony-brand);
+  font-weight: 700;
+  visibility: hidden;
+}
+
+.app-menu__item[aria-checked="true"] .app-menu__check {
+  visibility: visible;
+}
+
+/* ========== 页面内容 ========== */
+.page {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--section-gap);
+  width: 100%;
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 4px var(--page-pad) 8px;
+}
+
+.page > * {
+  animation: hm-enter 0.26s ease both;
+}
+
+@keyframes hm-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 状态提示条：加载中 / 等待确认 / 失败 / 完成 */
+.status-banner {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+/* 警告语义：请求失败、网络错误、发送失败/中断、确认超时等 */
+.status-banner[data-tone="warning"] {
+  background: var(--harmony-warning-bg);
+  color: var(--harmony-warning);
+}
+
+.status-banner:empty {
+  display: none;
+}
+
+/* 下载分段内通知（列表已更新/错误）与后续操作区留出间距：
+   该容器不是 flex，通知与全选/下载按钮之间不会自动产生 gap */
+#download-status:not(:empty) {
+  margin-bottom: 12px;
+}
+
+/* 访问已结束：保留列表用于回看，但禁用下载入口 */
+.file-list.is-ended .btn--small {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* 下载失败后的显式重试入口（避免轮询自动重复弹确认） */
+button.status-retry {
+  display: block;
+  margin: 8px auto 12px;
+}
+
+/* ========== 分段页签（下载 / 发送） ========== */
+.segment {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  height: 40px;
+  padding: 3px;
+  border-radius: 20px;
+  background: var(--segment-track-bg);
+}
+
+.segment__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 5px);
+  height: 34px;
+  border-radius: 17px;
+  background: var(--segment-thumb-bg);
+  box-shadow: var(--segment-thumb-shadow);
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.segment--upload .segment__thumb {
+  transform: translateX(calc(100% + 4px));
+}
+
+.segment__item {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  border: 0;
+  border-radius: 17px;
+  background: transparent;
+  color: var(--harmony-font-secondary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.18s ease;
+}
+
+.segment__item[aria-selected="true"] {
+  color: var(--harmony-font-primary);
+}
+
+.segment__item:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: -2px;
+}
+
+.segment__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.segment__item[aria-selected="true"] .segment__count {
+  background: var(--harmony-comp-emphasize-tertiary);
+  color: var(--harmony-brand);
+}
+
+/* ========== 面板容器 ========== */
+.panels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+}
+
+/* ========== 按钮 ========== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: filter 0.15s ease, background-color 0.15s ease, color 0.15s ease, transform 0.08s ease;
+}
+
+.btn--primary {
+  background: var(--harmony-comp-background-emphasize);
+  color: var(--harmony-font-on-primary);
+}
+
+.btn--normal {
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-primary);
+}
+
+.btn--tonal {
+  background: var(--harmony-comp-emphasize-secondary);
+  color: var(--harmony-brand);
+}
+
+.btn--quiet {
+  background: transparent;
+  color: var(--harmony-font-secondary);
+}
+
+.btn--quiet:hover {
+  background: var(--harmony-warning-bg-hover);
+  color: var(--harmony-warning);
+  filter: none;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--small {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.btn:hover {
+  filter: brightness(0.96);
+}
+
+.btn:active {
+  filter: brightness(0.9);
+  transform: scale(0.985);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ========== 下载列表 ========== */
+.download-all {
+  margin: 0 0 12px;
+}
+
+/* 全选与“下载所选”同排：全选为小胶囊，下载所选占满剩余宽度 */
+.download-all-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.select-all-pill {
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+}
+
+.select-all-pill[aria-pressed="true"] {
+  background: var(--harmony-comp-emphasize-secondary);
+  color: var(--harmony-brand);
+}
+
+.download-selected-pill {
+  flex: 1 1 auto;
+  height: 40px;
+  border-radius: var(--radius-control);
+}
+
+.file-select {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  /* 从复选框起手时由脚本接管滑选，交给浏览器滚动会中断手势 */
+  touch-action: none;
+}
+
+.tab-dot {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--harmony-brand);
+}
+
+.segment__item {
+  position: relative;
+}
+
+.hint-text {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--harmony-font-tertiary);
+}
+
+.hint-text:empty {
+  display: none;
+}
+
+.hint-banner {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: var(--harmony-warning-bg);
+  color: var(--harmony-warning);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* 下载文件统一收在一张卡片内，和发送卡片保持同一种容器风格 */
+.file-list {
+  background: var(--harmony-comp-background-primary);
+  border-radius: var(--radius-card);
+  padding: 0 12px 4px;
+}
+
+.file-item {
+  border-top: 0.5px solid var(--harmony-comp-divider);
+}
+
+.file-item:first-child {
+  border-top: 0;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.file-badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--harmony-comp-emphasize-tertiary);
+  color: var(--harmony-brand);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 文件名可拖选复制；行内其余区域保持不选中，避免点击勾选时出现文字选区 */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.file-size {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--harmony-font-secondary);
+}
+
+/* 文本内容预览（手动输入文本 / .txt 文件） */
+.file-item:last-child .text-preview {
+  margin-bottom: 4px;
+}
+
+.text-preview {
+  margin: 0 4px 12px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius-textarea);
+  background: var(--harmony-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* 预览标题与操作按钮：全选 / 复制（移动端也可一键完成） */
+.text-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.text-preview-label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--harmony-font-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-preview-tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.text-preview-action {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--harmony-brand);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.text-preview-action:hover {
+  background: var(--harmony-comp-emphasize-tertiary);
+}
+
+.text-preview-action:active {
+  filter: brightness(0.9);
+}
+
+.text-preview-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.text-preview-body {
+  max-height: 180px;
+  overflow-y: auto;
+  border-radius: 4px;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.text-preview-body:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+/* ========== 上传区 ========== */
+.upload-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--harmony-comp-background-primary);
+  border-radius: var(--radius-card);
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+/* 桌面端拖拽提示：仅支持鼠标拖拽的平台展示 */
+.drag-hint {
+  margin: -4px 0 0;
+  color: var(--harmony-font-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* 原生 input 仅作文件选择入口，视觉由 label 承担 */
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.file-input:focus-visible + .pick-btn {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 2px;
+}
+
+.pick-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: var(--radius-control);
+  background: var(--harmony-comp-emphasize-secondary);
+  color: var(--harmony-brand);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.pick-btn:hover {
+  filter: brightness(0.96);
+}
+
+.pick-btn.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.count-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--harmony-comp-background-secondary);
+  color: var(--harmony-font-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.clear-btn {
+  margin-left: auto;
+}
+
+.progress-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.progress-list:empty {
+  display: none;
+}
+
+.upload-item {
+  padding: 12px 0;
+  border-top: 0.5px solid var(--harmony-comp-divider);
+}
+
+.upload-item:first-child {
+  border-top: 0;
+}
+
+.upload-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+}
+
+.upload-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-name {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-size {
+  margin-top: 2px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--harmony-font-secondary);
+}
+
+.file-remove-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--harmony-warning);
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.file-remove-btn:hover {
+  background: var(--harmony-warning-bg-hover);
+  color: var(--harmony-warning);
+}
+
+.upload-card.is-uploading .file-remove-btn {
+  display: none;
+}
+
+.progress {
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 3px;
+  background: var(--harmony-comp-background-secondary);
+  overflow: hidden;
+}
+
+.progress > div {
+  width: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--harmony-brand);
+  transition: width 0.2s ease;
+}
+
+.divider {
+  height: 0;
+  margin: 4px 0;
+  border-top: 0.5px solid var(--harmony-comp-divider);
+}
+
+.text-input {
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--radius-textarea);
+  background: var(--harmony-comp-background-tertiary);
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  resize: vertical;
+}
+
+.text-input::placeholder {
+  color: var(--harmony-font-tertiary);
+}
+
+.text-input:disabled {
+  opacity: 0.6;
+}
+
+.text-input:focus-visible {
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: 0;
+}
+
+/* ========== 拖拽上传提示 ========== */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+}
+
+.drop-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(360px, 100%);
+  padding: 36px 24px;
+  border: 2px dashed var(--harmony-brand);
+  border-radius: var(--radius-card);
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-brand);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+  text-align: center;
+  box-shadow: var(--menu-shadow);
+}
+
+.drop-overlay__card svg {
+  width: 40px;
+  height: 40px;
+}
+
+.drop-overlay__card p {
+  margin: 0;
+}
+
+/* ========== 分享已结束 ========== */
+.empty-state {
+  margin: 0;
+  padding: 40px 24px;
+  border-radius: var(--radius-card);
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+/* ========== 页脚 ========== */
+.footer {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: 20px var(--page-pad) calc(24px + env(safe-area-inset-bottom));
+  text-align: center;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--harmony-font-tertiary);
+}
+
+/* ========== 访问码门禁（进入网页前整页展示） ========== */
+/* 服务端按 Cookie 注入 data-auth：非 open 状态只显示访问码页，内容页不参与渲染 */
+html:not([data-auth="open"]) #app {
+  display: none;
+}
+
+html[data-auth="open"] #gate {
+  display: none;
+}
+
+.gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+  background: var(--harmony-background-secondary);
+}
+
+.gate__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 328px;
+}
+
+.gate__icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: var(--harmony-comp-background-primary);
+  box-shadow: var(--icon-shadow);
+}
+
+.gate__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+.gate__title {
+  margin: 0;
+  color: var(--harmony-font-primary);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-align: center;
+}
+
+.gate__subtitle {
+  margin: 0;
+  color: var(--harmony-font-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.gate__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.gate__input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: 1px solid var(--harmony-comp-divider);
+  border-radius: var(--radius-control);
+  background: var(--harmony-comp-background-primary);
+  color: var(--harmony-font-primary);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 24px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.gate__input::placeholder {
+  color: var(--harmony-font-tertiary);
+}
+
+.gate__input:focus-visible {
+  border-color: transparent;
+  outline: 2px solid var(--harmony-brand);
+  outline-offset: -1px;
+}
+
+.gate__error {
+  margin: 0;
+  color: var(--harmony-warning);
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+}
+
+.gate__error:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate__inner {
+    animation: none;
+  }
+}
+
+/* ========== 宽屏：单列居中，页签仍居中显示 ========== */
+@media (min-width: 1024px) {
+  :root {
+    --page-max: 720px;
+  }
+}
+
+/* ========== 窄屏与触屏：长文件名换行完整展示 ========== */
+@media (max-width: 720px), (hover: none) {
+  .file-name {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: break-word;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+  }
+}
+
+/* ========== 动效减弱偏好 ========== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+</style>
+
+<script>
+(function () {
+  var pref = 'system';
+  try {
+    pref = localStorage.getItem('handysend_theme') || 'system';
+  } catch (_e) {
+  }
+  var dark = pref === 'dark' ||
+    (pref === 'system' && window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  var meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) {
+    meta.setAttribute('content', dark ? '#191a1c' : '#f1f3f5');
+  }
+})();
+</script>
+</head>
+<body>
+<noscript>
+  <p class="noscript-note">本页需要启用 JavaScript，请启用后刷新重试。</p>
+</noscript>
+
+<!-- 访问码门禁：服务端按 Cookie 注入 data-auth，首帧即决定展示此页还是内容页 -->
+<div id="gate" class="gate" role="main">
+  <div class="gate__inner">
+    <img id="gate-icon" class="gate__icon" alt="" aria-hidden="true">
+    <div class="gate__heading">
+      <h1 id="gate-title" class="gate__title">HandySend</h1>
+      <p id="gate-subtitle" class="gate__subtitle">请输入访问码</p>
+    </div>
+    <form id="gate-form" class="gate__form" novalidate>
+      <input id="gate-input" class="gate__input" type="text" inputmode="numeric" maxlength="6"
+        autocomplete="one-time-code" spellcheck="false" aria-label="访问码">
+      <p id="gate-error" class="gate__error" role="alert"></p>
+      <button id="gate-submit" class="btn btn--primary btn--block" type="submit">进入</button>
+    </form>
+  </div>
+</div>
+
+<div id="app">
+  <header class="app-bar">
+    <div class="app-bar__inner">
+      <!-- 应用图标：由 entry/src/main/resources/base/media/startIcon.png 裁剪内联 -->
+      <img class="app-bar__icon" src="data:image/png;base64,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" alt="" aria-hidden="true">
+      <h1 id="app-title" class="app-bar__title">HandySend</h1>
+      <div class="app-bar__actions">
+        <button id="theme-btn" class="app-bar__action" type="button"
+          aria-haspopup="menu" aria-expanded="false" aria-label="主题">
+          <svg class="theme-icon-system" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"></circle>
+            <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor"></path>
+          </svg>
+          <svg class="theme-icon-light" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+          </svg>
+          <svg class="theme-icon-dark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
+          </svg>
+        </button>
+        <button id="lang-btn" class="app-bar__action" type="button"
+          aria-haspopup="menu" aria-expanded="false" aria-label="语言">中</button>
+      </div>
+      <div id="theme-menu" class="app-menu hidden" role="menu" aria-label="主题">
+        <button id="theme-option-system" class="app-menu__item" type="button"
+          role="menuitemradio" data-theme-choice="system" aria-checked="false">
+          <span id="theme-label-system"></span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button id="theme-option-light" class="app-menu__item" type="button"
+          role="menuitemradio" data-theme-choice="light" aria-checked="false">
+          <span id="theme-label-light"></span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button id="theme-option-dark" class="app-menu__item" type="button"
+          role="menuitemradio" data-theme-choice="dark" aria-checked="false">
+          <span id="theme-label-dark"></span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+      </div>
+      <div id="lang-menu" class="app-menu hidden" role="menu" aria-label="语言">
+        <button class="app-menu__item" type="button" role="menuitemradio"
+          data-lang="zh-CN" aria-checked="false">
+          <span>简体中文</span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button class="app-menu__item" type="button" role="menuitemradio"
+          data-lang="zh-TW" aria-checked="false">
+          <span>繁體中文</span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+        <button class="app-menu__item" type="button" role="menuitemradio"
+          data-lang="en" aria-checked="false">
+          <span>English</span>
+          <span class="app-menu__check" aria-hidden="true">✓</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div id="tabs" class="segment hidden" role="tablist">
+      <span class="segment__thumb" aria-hidden="true"></span>
+      <button id="tab-download" class="segment__item" type="button" role="tab"
+        aria-controls="download-section" aria-selected="true">
+        <span id="tab-download-label"></span>
+        <span id="tab-download-count" class="segment__count hidden" aria-hidden="true"></span>
+        <span id="tab-download-dot" class="tab-dot hidden" aria-hidden="true"></span>
+      </button>
+      <button id="tab-upload" class="segment__item" type="button" role="tab"
+        aria-controls="upload-section" aria-selected="false">
+        <span id="tab-upload-label"></span>
+        <span id="tab-upload-dot" class="tab-dot hidden" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <p id="status" class="status-banner" role="status" aria-live="polite"></p>
+    <button id="status-retry" class="btn btn--small btn--tonal status-retry hidden" type="button"></button>
+
+    <div class="panels">
+      <section id="download-section" class="hidden" data-section="download">
+        <div id="download-empty" class="empty-state hidden">
+          <p id="download-empty-text"></p>
+        </div>
+        <div id="download-body">
+          <p id="https-hint" class="hint-banner hidden"></p>
+          <p id="download-status" class="status-banner" role="status" aria-live="polite"></p>
+          <button id="download-status-retry" class="btn btn--small btn--tonal status-retry hidden"
+            type="button"></button>
+          <div id="download-all-wrap" class="download-all hidden">
+            <div class="download-all-bar">
+              <button id="select-all-btn" class="btn btn--normal select-all-pill" type="button"
+                aria-pressed="false"></button>
+              <button class="btn btn--primary download-selected-pill" id="download-selected-btn"
+                type="button"></button>
+            </div>
+            <p class="hint-text" id="download-selected-tip"></p>
+          </div>
+          <div id="file-list" class="file-list"></div>
+        </div>
+      </section>
+
+      <section id="upload-section" class="hidden" data-section="upload">
+        <div id="upload-empty" class="empty-state hidden">
+          <p id="upload-empty-text"></p>
+        </div>
+        <div id="upload-body" class="upload-card">
+          <p id="upload-status" class="status-banner" role="status" aria-live="polite"></p>
+          <button id="upload-status-retry" class="btn btn--small btn--tonal status-retry hidden"
+            type="button"></button>
+          <div class="picker-row">
+            <input type="file" id="upload-picker" class="file-input" multiple>
+            <label id="pick-label" class="pick-btn" for="upload-picker"></label>
+            <span id="file-count-chip" class="count-chip hidden" aria-hidden="true"></span>
+            <button id="clear-btn" class="btn btn--small btn--quiet clear-btn hidden" type="button"></button>
+          </div>
+          <p id="drag-hint" class="drag-hint hidden"></p>
+          <div id="upload-progress" class="progress-list"></div>
+          <div class="divider" aria-hidden="true"></div>
+          <textarea id="text-input" class="text-input" rows="3"></textarea>
+          <button class="btn btn--primary btn--block" id="upload-btn" type="button"></button>
+        </div>
+      </section>
+    </div>
+
+    <section id="stopped-note" class="empty-state hidden" data-section="stopped" role="status">
+      <p id="stopped-text"></p>
+    </section>
+  </main>
+
+  <footer class="footer">Powered by LocalSend</footer>
+  </div>
+
+<!-- 拖拽文件到页面任意位置：仅在上传入口可用时拦截浏览器默认打开行为 -->
+<div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true">
+  <div class="drop-overlay__card">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 16V4M7 9l5-5 5 5"></path>
+      <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path>
+    </svg>
+    <p id="drop-hint"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var BASE = '';
+  var dlToken = sessionStorage.getItem('handysend_dl_token') || '';
+  var ulToken = sessionStorage.getItem('handysend_ul_token') || '';
+  var filesData = {};
+  // 应用暂存列表的展示顺序（文件标识）；为空时回退按文件名排序
+  var fileOrder = [];
+  var i18n = null;
+  var activeTab = 'download';
+  var downloadLoadStarted = false;
+  var downloadLoading = false;
+  var downloadLoadPromise = null;
+  var uploadRetryTimer = -1;
+  var uploadRetryCount = 0;
+  var uploadPreparing = false;
+  // 登录后需要恢复的动作：首次建会话或上传中途被 401 打断
+  var pendingUpload = null;
+  var tabAvailable = { download: false, upload: false };
+  var uploading = false;
+  var statusLoading = false;
+  var capsTimer = -1;
+  var capsPollMs = 0;
+  var fileEvents = null;
+  // SSE 连接健康检查：Safari 首次进入/后台标签页偶发连接未建立或半开，
+  // 原实现只在 fileEvents 为 null 时创建，连接失效后不会重建。
+  var eventsRetryTimer = -1;
+  var eventsWatchdogTimer = -1;
+  var lastEventAt = 0;
+  var lastRevision = -1;
+  // 当前服务实例的分享标识（服务重启后变化）：变化时丢弃旧 revision 基线
+  var lastShareId = '';
+  // 页面展示的列表版本 / 服务端会话快照版本
+  var listRevision = -1;
+  var sessionRevision = -1;
+  // 已至少成功展示过一次列表（用于区分首次加载与后续更新提示）
+  var listLoaded = false;
+  // 收到文件表变化后，列表尚未重拉到最新版本
+  var listStale = false;
+  var listReloadTimer = -1;
+  var listReloadPending = false;
+  var listUpdatedTimer = -1;
+  var selectedDownloadFiles = {};
+  // 连选锚点：最近一次普通勾选的条目；按住 Shift 点击时按展示顺序处理锚点到目标之间的整段
+  var selectionAnchorId = '';
+  // 触摸滑选：只从复选框起手，滑过的行统一应用起手条目的目标状态
+  var touchSelect = null;
+  // 滑选结束后短暂屏蔽浏览器补发的 click，避免起手复选框被再次切换
+  var suppressFileClickUntil = 0;
+  // 文本预览缓存（文件标识 → 源内容），重绘列表时直接复用，避免占位与正文来回切换造成跳动
+  var previewCache = {};
+  var preparedBatchId = '';
+  var preparedSignature = '';
+  var batchPrepareTimer = -1;
+  var batchPreparing = false;
+  var capsInitialized = false;
+  var gateErrorKey = '';
+  var gateCooldownTimer = -1;
+  var isLocked = document.documentElement.getAttribute('data-auth') !== 'open';
+  var THEME_KEY = 'handysend_theme';
+  var LANG_KEY = 'handysend_lang';
+  var themePref = 'system';
+  var langPref = 'zh-CN';
+  var systemTheme = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+  // 内置回退文案（/i18n.json 不可用时）：与服务端简体中文一致。
+  var FALLBACK_ZH = {
+    appName: '便捷快传',
+    theme: '主题',
+    themeSystem: '跟随系统',
+    themeLight: '浅色',
+    themeDark: '深色',
+    language: '语言',
+    loading: '加载中…',
+    stoppedNote: '分享已结束，请让发送方重新开启后刷新页面。',
+    downloadTitle: '下载',
+    uploadTitle: '发送',
+    noDownloadHint: '暂无可下载文件，请等待发送方添加。',
+    uploadOffHint: '对方未开启网页上传功能。',
+    startReceive: '开启接收',
+    pickFirst: '先去选文件',
+    waitingConfirm: '等待对方确认中…（请让对方打开应用确认）',
+    rejected: '对方已拒绝请求。',
+    confirmTimeoutRetry: '对方未及时确认，请让对方打开应用后刷新页面重试。',
+    shareEndedRetry: '分享已结束，请刷新页面重试。',
+    requestFailedRetry: '请求失败，请刷新页面重试。',
+    networkErrorRetry: '网络错误，请检查连接后重试。',
+    retry: '重试',
+    uploadDone: '发送完成。',
+    uploadFailedRetry: '发送失败，请重试。',
+    uploadInterrupted: '网络错误，发送已中断。',
+    pinTitle: '请输入访问码',
+    pinConfirm: '确定',
+    pinError: '访问码错误。',
+    authSubtitle: '请输入发送方面板上显示的 6 位访问码。',
+    authPlaceholder: '访问码',
+    authEnter: '进入',
+    authTooManyCountdown: '尝试次数过多，请等待 %d 秒后重试。',
+    accessEndedReload: '本次网页访问已结束，请刷新页面重新访问。',
+    download: '下载',
+    downloadAll: '全部下载',
+    selectAll: '全选',
+    deselectAll: '取消全选',
+    downloadSelected: '下载所选（%d）',
+    downloadZipHint: '多个文件将打包为一个 zip 压缩文件，下载完成后需解压使用。',
+    listUpdated: '文件列表已更新。',
+    textPreviewLabel: '内容预览',
+    copy: '复制',
+    copied: '已复制',
+    upload: '发送',
+    chooseFile: '选择文件',
+    clear: '清空',
+    remove: '移除',
+    dropHint: '松开鼠标即可添加文件',
+    dragHint: '也可以直接将文件拖入页面添加',
+    nothingToSend: '请选择文件或输入文本。',
+    sendText: '发送文本',
+    textPlaceholder: '输入要发送的文本',
+    textSend: '发送文本',
+    previewLoading: '预览加载中…',
+    previewUnavailable: '预览不可用。',
+    shareUpdatedRetry: '分享内容已更新，请刷新页面重试。',
+    httpsHint: '当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。'
+  };
+
+  function t(key) {
+    if (i18n && i18n[key]) {
+      return i18n[key];
+    }
+    return FALLBACK_ZH[key] || key;
+  }
+
+  function $(id) { return document.getElementById(id); }
+  function show(id) { $(id).classList.remove('hidden'); }
+  function hide(id) { $(id).classList.add('hidden'); }
+  function setStatusTone(element, tone) {
+    if (tone) {
+      element.setAttribute('data-tone', tone);
+    } else {
+      element.removeAttribute('data-tone');
+    }
+  }
+
+  function setStatus(text, tone) {
+    $('status').innerText = text || '';
+    setStatusTone($('status'), tone);
+    statusLoading = false;
+    if (!text) {
+      hide('status-retry');
+    }
+  }
+
+  function setDownloadStatus(text, tone) {
+    $('download-status').innerText = text || '';
+    setStatusTone($('download-status'), tone);
+    if (!text) {
+      hide('download-status-retry');
+    }
+  }
+
+  function setUploadStatus(text, tone) {
+    $('upload-status').innerText = text || '';
+    setStatusTone($('upload-status'), tone);
+    if (!text) {
+      hide('upload-status-retry');
+    }
+  }
+
+  function setSegmentStatus(segment, text, tone) {
+    if (segment === 'download') {
+      setDownloadStatus(text, tone);
+      if (text && activeTab !== 'download') { markTabDot('download'); }
+    } else if (segment === 'upload') {
+      setUploadStatus(text, tone);
+      if (text && activeTab !== 'upload') { markTabDot('upload'); }
+    } else {
+      setStatus(text, tone);
+    }
+  }
+
+  function markTabDot(segment) {
+    var dot = segment === 'download' ? $('tab-download-dot') : $('tab-upload-dot');
+    if (dot) { dot.classList.remove('hidden'); }
+  }
+
+  function clearTabDot(segment) {
+    var dot = segment === 'download' ? $('tab-download-dot') : $('tab-upload-dot');
+    if (dot) { dot.classList.add('hidden'); }
+  }
+
+  // 只标记「加载中」：caps/列表成功后按此标识清除，不覆盖真实状态。
+  function setLoadingStatus() {
+    $('status').innerText = t('loading');
+    hide('status-retry');
+    statusLoading = true;
+  }
+
+  // 仅清除由加载流程写入的公共区「加载中」，不覆盖错误/结束等真实状态。
+  function clearLoadingStatus() {
+    if (statusLoading) {
+      setStatus('');
+    }
+  }
+
+  // 下载失败后的显式重试：不随 caps 轮询自动重复弹确认。
+  function showStatusRetry(text) {
+    setDownloadStatus(text, 'warning');
+    $('download-status-retry').innerText = t('retry');
+    $('download-status-retry').onclick = function () {
+      hide('download-status-retry');
+      downloadLoadStarted = true;
+      loadDownloadList(false, true);
+    };
+    show('download-status-retry');
+  }
+  function esc(text) {
+    return String(text).replace(/[&<>"']/g, function (m) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    });
+  }
+  function formatBytes(n) {
+    if (n < 1024) { return n + ' B'; }
+    if (n < 1024 * 1024) { return (n / 1024).toFixed(1) + ' KB'; }
+    if (n < 1024 * 1024 * 1024) { return (n / 1024 / 1024).toFixed(1) + ' MB'; }
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  // 文件类型角标：取扩展名前 4 个字符，无扩展名回退 FILE。
+  function fileBadge(name) {
+    var text = String(name || '');
+    var dot = text.lastIndexOf('.');
+    if (dot <= 0 || dot === text.length - 1) {
+      return 'FILE';
+    }
+    return text.slice(dot + 1, dot + 5);
+  }
+
+  // ========== 访问码门禁 ==========
+
+  function setLocked(locked) {
+    isLocked = locked;
+    document.documentElement.setAttribute('data-auth', locked ? 'locked' : 'open');
+    if (locked) {
+      stopRealtime();
+    }
+  }
+
+  function showGateError(key) {
+    gateErrorKey = key || '';
+    $('gate-error').innerText = gateErrorKey ? t(gateErrorKey) : '';
+  }
+
+  function showGate(errorKey) {
+    setLocked(true);
+    // 授权失效通常意味着服务已重启：旧 token、旧列表与旧 revision 基线全部失效，
+    // 丢弃后由登录成功的 caps/prepare 重新建立，避免新服务下仍展示上次的文件列表。
+    resetDownloadList();
+    setDownloadToken('');
+    setUploadToken('');
+    showGateError(errorKey);
+    $('gate-input').value = '';
+    setTimeout(function () {
+      try {
+        $('gate-input').focus();
+      } catch (_e) {
+      }
+    }, 30);
+  }
+
+  function hideGate() {
+    setLocked(false);
+    showGateError('');
+    stopGateCooldown();
+    $('gate-input').value = '';
+  }
+
+  function stopGateCooldown() {
+    if (gateCooldownTimer >= 0) {
+      clearInterval(gateCooldownTimer);
+      gateCooldownTimer = -1;
+    }
+    $('gate-input').disabled = false;
+    $('gate-submit').disabled = false;
+  }
+
+  function startGateCooldown(seconds) {
+    stopGateCooldown();
+    var remaining = Math.max(1, seconds);
+    var render = function () {
+      $('gate-error').innerText = t('authTooManyCountdown').replace('%d', String(remaining));
+    };
+    $('gate-input').disabled = true;
+    $('gate-submit').disabled = true;
+    render();
+    gateCooldownTimer = setInterval(function () {
+      remaining--;
+      if (remaining <= 0) {
+        stopGateCooldown();
+        showGateError('');
+        $('gate-input').focus();
+        return;
+      }
+      render();
+    }, 1000);
+  }
+
+  function submitGate() {
+    if (!isLocked) {
+      return;
+    }
+    var code = $('gate-input').value;
+    if (!/^\d{6}$/.test(code)) {
+      showGateError('pinError');
+      $('gate-input').focus();
+      return;
+    }
+    var button = $('gate-submit');
+    button.disabled = true;
+    fetch(BASE + '/web/auth', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: code })
+    }).then(function (response) {
+      if (response.ok) {
+        hideGate();
+        startRealtime();
+        var resume = pendingUpload;
+        pendingUpload = null;
+        if (resume !== null) {
+          if (typeof resume.resume === 'function') {
+            resume.resume();
+          } else {
+            uploadPreparing = false;
+            prepareUpload(resume.dtos, resume.files);
+          }
+          loadCaps(true);
+          return;
+        }
+        var resumeDownload = downloadLoadStarted && Object.keys(filesData).length === 0;
+        loadCaps(false);
+        if (resumeDownload) {
+          loadDownloadList(true);
+        }
+        return;
+      }
+      if (response.status === 401) {
+        showGateError('pinError');
+        $('gate-input').select();
+        return;
+      }
+      if (response.status === 429) {
+        var retryAfter = parseInt(response.headers.get('Retry-After'), 10);
+        startGateCooldown(isNaN(retryAfter) ? 60 : retryAfter);
+        return;
+      }
+      showGateError('requestFailedRetry');
+    }).catch(function () {
+      showGateError('networkErrorRetry');
+    }).then(function () {
+      // 429 倒计时期间保持按钮禁用，由倒计时结束时统一恢复
+      if (gateCooldownTimer < 0) {
+        button.disabled = false;
+      }
+    });
+  }
+
+  $('gate-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    submitGate();
+  });
+
+  // 通用请求：401 切回访问码页（不再在各接口上单独传 PIN）。
+  function request(path, options) {
+    return fetch(BASE + path, options).then(function (response) {
+      if (response.status === 401) {
+        showGate('');
+        var err = new Error('auth');
+        err.authRequired = true;
+        throw err;
+      }
+      return response;
+    });
+  }
+
+  // ========== 文案 ==========
+
+  function applyStaticTexts() {
+    $('app-title').innerText = t('appName');
+    document.title = t('appName');
+    $('theme-label-system').innerText = t('themeSystem');
+    $('theme-label-light').innerText = t('themeLight');
+    $('theme-label-dark').innerText = t('themeDark');
+    $('theme-menu').setAttribute('aria-label', t('theme'));
+    $('lang-menu').setAttribute('aria-label', t('language'));
+    $('stopped-text').innerText = t('stoppedNote');
+    $('upload-btn').innerText = t('upload');
+    $('upload-picker').setAttribute('aria-label', t('chooseFile'));
+    $('pick-label').innerText = t('chooseFile');
+    $('clear-btn').innerText = t('clear');
+    $('drop-hint').innerText = t('dropHint');
+    $('drag-hint').innerText = t('dragHint');
+    $('drag-hint').classList.toggle('hidden', !supportsFileDrag());
+    $('download-empty-text').innerText = t('noDownloadHint');
+    $('upload-empty-text').innerText = t('uploadOffHint');
+    $('text-input').placeholder = t('textPlaceholder');
+    $('text-input').setAttribute('aria-label', t('textPlaceholder'));
+    $('tab-download-label').innerText = t('downloadTitle');
+    $('tab-upload-label').innerText = t('uploadTitle');
+    $('select-all-btn').innerText = t('selectAll');
+    $('download-selected-btn').innerText = t('downloadSelected').replace('%d', '0');
+    $('download-selected-tip').innerText = '';
+    // 访问码门禁
+    $('gate-title').innerText = t('appName');
+    $('gate-subtitle').innerText = t('authSubtitle');
+    $('gate-input').placeholder = t('authPlaceholder');
+    $('gate-input').setAttribute('aria-label', t('authPlaceholder'));
+    $('gate-submit').innerText = t('authEnter');
+    if (gateErrorKey) {
+      $('gate-error').innerText = t(gateErrorKey);
+    }
+    var appIcon = document.querySelector('.app-bar__icon');
+    if (appIcon && !$('gate-icon').getAttribute('src')) {
+      $('gate-icon').setAttribute('src', appIcon.getAttribute('src'));
+    }
+    if (window.location && window.location.protocol === 'https:') {
+      $('https-hint').innerText = t('httpsHint');
+      $('https-hint').classList.remove('hidden');
+    }
+    updateThemeUi();
+    updateLangUi();
+  }
+
+  // 文案先行：失败回退内置简体中文，不阻塞 caps。
+  function loadI18n(lang) {
+    langPref = lang;
+    document.documentElement.lang = lang;
+    return fetch(BASE + '/i18n.json?lang=' + encodeURIComponent(lang), { cache: 'no-store' })
+      .then(function (response) {
+        if (!response.ok) {
+          throw new Error('i18n');
+        }
+        return response.json();
+      })
+      .then(function (data) {
+        i18n = data;
+      })
+      .catch(function () {
+        i18n = null;
+      })
+      .then(applyStaticTexts);
+  }
+
+  // ========== 外观与语言 ==========
+
+  function readStored(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function writeStored(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (_e) {
+    }
+  }
+
+  function detectTheme() {
+    var stored = readStored(THEME_KEY);
+    if (stored === 'light' || stored === 'dark' || stored === 'system') {
+      return stored;
+    }
+    return 'system';
+  }
+
+  function detectLang() {
+    var stored = readStored(LANG_KEY);
+    if (stored === 'zh-CN' || stored === 'zh-TW' || stored === 'en') {
+      return stored;
+    }
+    var nav = (navigator.language || '').toLowerCase().replace(/_/g, '-');
+    if (nav.indexOf('zh') === 0) {
+      return (nav.indexOf('hant') >= 0 || nav.indexOf('tw') >= 0 || nav.indexOf('hk') >= 0)
+        ? 'zh-TW' : 'zh-CN';
+    }
+    if (nav.indexOf('en') === 0) {
+      return 'en';
+    }
+    return 'zh-CN';
+  }
+
+  function themeName(pref) {
+    if (pref === 'dark') {
+      return t('themeDark');
+    }
+    if (pref === 'light') {
+      return t('themeLight');
+    }
+    return t('themeSystem');
+  }
+
+  function updateThemeUi() {
+    var label = t('theme') + ' · ' + themeName(themePref);
+    $('theme-btn').classList.toggle('is-dark', themePref === 'dark');
+    $('theme-btn').classList.toggle('is-light', themePref === 'light');
+    $('theme-btn').setAttribute('aria-label', label);
+    $('theme-btn').title = label;
+    var options = document.querySelectorAll('#theme-menu [data-theme-choice]');
+    for (var i = 0; i < options.length; i++) {
+      options[i].setAttribute('aria-checked',
+        options[i].getAttribute('data-theme-choice') === themePref ? 'true' : 'false');
+    }
+  }
+
+  function applyThemeUi(pref) {
+    themePref = pref;
+    var dark = pref === 'dark' ||
+      (pref === 'system' && !!(systemTheme && systemTheme.matches));
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', dark ? '#191a1c' : '#f1f3f5');
+    }
+    updateThemeUi();
+  }
+
+  function setTheme(pref) {
+    writeStored(THEME_KEY, pref);
+    applyThemeUi(pref);
+  }
+
+  function langName(code) {
+    if (code === 'zh-TW') {
+      return '繁體中文';
+    }
+    if (code === 'en') {
+      return 'English';
+    }
+    return '简体中文';
+  }
+
+  function updateLangUi() {
+    $('lang-btn').innerText = langPref === 'zh-TW' ? '繁' : (langPref === 'en' ? 'EN' : '中');
+    var label = t('language') + ' · ' + langName(langPref);
+    $('lang-btn').setAttribute('aria-label', label);
+    $('lang-btn').title = label;
+    var options = document.querySelectorAll('#lang-menu [data-lang]');
+    for (var i = 0; i < options.length; i++) {
+      options[i].setAttribute('aria-checked',
+        options[i].getAttribute('data-lang') === langPref ? 'true' : 'false');
+    }
+  }
+
+  function closeMenus() {
+    $('theme-menu').classList.add('hidden');
+    $('lang-menu').classList.add('hidden');
+    $('theme-btn').setAttribute('aria-expanded', 'false');
+    $('lang-btn').setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleMenu(name) {
+    var menu = $(name + '-menu');
+    var shouldOpen = menu.classList.contains('hidden');
+    closeMenus();
+    if (shouldOpen) {
+      menu.classList.remove('hidden');
+      $(name + '-btn').setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  // 语言切换后刷新动态生成的文案（文件行、文本预览操作、清空提示等）。
+  function refreshLanguageTexts() {
+    setDownloadStatus('');
+    var links = document.querySelectorAll('#file-list .btn--small');
+    for (var i = 0; i < links.length; i++) {
+      links[i].innerText = t('download');
+    }
+    var labels = document.querySelectorAll('#file-list .text-preview-label');
+    for (var j = 0; j < labels.length; j++) {
+      labels[j].innerText = t('textPreviewLabel');
+    }
+    var actions = document.querySelectorAll('#file-list .text-preview-action');
+    for (var k = 0; k < actions.length; k++) {
+      actions[k].innerText = t('copy');
+    }
+    updateDownloadActions();
+    var removes = document.querySelectorAll('#upload-progress .file-remove-btn');
+    for (var j = 0; j < removes.length; j++) {
+      removes[j].setAttribute('aria-label', t('remove'));
+    }
+    if (!$('status-retry').classList.contains('hidden')) {
+      $('status-retry').innerText = t('retry');
+    }
+  }
+
+  function setLanguage(code) {
+    if (code === langPref) {
+      closeMenus();
+      return;
+    }
+    writeStored(LANG_KEY, code);
+    closeMenus();
+    loadI18n(code).then(refreshLanguageTexts);
+    $('lang-btn').focus();
+  }
+
+  // ========== 能力快照与实时刷新 ==========
+
+  // 页签切换：两个方向常显，未开放的一侧展示对应提示。
+  function activateTab(name) {
+    activeTab = name;
+    $('download-section').classList.toggle('hidden', name !== 'download');
+    $('upload-section').classList.toggle('hidden', name !== 'upload');
+    $('tab-download').setAttribute('aria-selected', name === 'download' ? 'true' : 'false');
+    $('tab-upload').setAttribute('aria-selected', name === 'upload' ? 'true' : 'false');
+    $('tabs').classList.toggle('segment--upload', name === 'upload');
+    if (name === 'download') {
+      clearTabDot('download');
+      ensureDownloadLoaded();
+    } else {
+      clearTabDot('upload');
+    }
+  }
+
+  // 下载列表按需建会话：只在下载内容真正可见时请求。
+  function ensureDownloadLoaded() {
+    if (!tabAvailable.download || downloadLoading || downloadLoadStarted) {
+      return;
+    }
+    downloadLoadStarted = true;
+    loadDownloadList(false);
+  }
+
+  function resetDownloadList() {
+    filesData = {};
+    fileOrder = [];
+    $('file-list').innerHTML = '';
+    $('download-all-wrap').classList.add('hidden');
+    $('tab-download-count').innerText = '';
+    $('tab-download-count').classList.add('hidden');
+    downloadLoadStarted = false;
+    cancelListReload();
+    if (batchPrepareTimer >= 0) {
+      clearTimeout(batchPrepareTimer);
+      batchPrepareTimer = -1;
+    }
+    selectedDownloadFiles = {};
+    selectionAnchorId = '';
+    preparedBatchId = '';
+    preparedSignature = '';
+    // 展示表已清空：版本基线一并失效，后续由 prepare/caps 重建。
+    // 服务重启后 revision 从 0 重新计数，必须清掉旧服务的版本，否则新服务的
+    // 首个变化（版本号更低）会被当作陈旧事件丢弃，只能等轮询兜底。
+    lastRevision = -1;
+    listRevision = -1;
+    sessionRevision = -1;
+    listLoaded = false;
+    listStale = false;
+    lastShareId = '';
+    setDownloadStatus('');
+    clearLoadingStatus();
+  }
+
+  // caps 只读快照，不建会话；轮询用于发现发送方换表/开关变化。
+  function loadCaps(silent) {
+    if (!silent) {
+      setLoadingStatus();
+    }
+    return fetch(BASE + '/caps', { cache: 'no-store' }).then(function (response) {
+      if (response.status === 401) {
+        showGate('');
+        return null;
+      }
+      if (!response.ok) {
+        if (!silent) {
+          setStatus(t('requestFailedRetry') + '（' + response.status + '）', 'warning');
+        }
+        return null;
+      }
+      return response.json();
+    }).then(function (caps) {
+      if (caps) {
+        applyCaps(caps);
+      }
+    }).catch(function () {
+      if (!silent) {
+        setStatus(t('networkErrorRetry'), 'warning');
+      }
+    });
+  }
+
+  function applyCaps(caps) {
+    if (caps.shareState !== 'active') {
+      cancelListReload();
+      resetDownloadList();
+      setStatus('');
+      show('stopped-note');
+      hide('tabs');
+      hide('download-section');
+      hide('upload-section');
+      stopRealtime();
+      return;
+    }
+    hide('stopped-note');
+    if (statusLoading) {
+      setStatus('');
+    }
+    // 较早发出的 caps 请求可能晚到：文件表相关字段以更高 revision 为准。
+    var capsBehind = (listRevision >= 0 && caps.fileRevision < listRevision) ||
+      (lastRevision >= 0 && caps.fileRevision < lastRevision);
+    if (!capsBehind && caps.fileRevision > lastRevision) {
+      lastRevision = caps.fileRevision;
+    }
+    if (!capsBehind) {
+      tabAvailable.download = !!caps.hasDownload;
+      $('download-body').classList.toggle('hidden', !caps.hasDownload);
+      $('download-empty').classList.toggle('hidden', caps.hasDownload);
+    }
+    tabAvailable.upload = !!caps.uploadEnabled;
+    show('tabs');
+    var showUpload = caps.uploadEnabled || uploading;
+    $('upload-body').classList.toggle('hidden', !showUpload);
+    $('upload-empty').classList.toggle('hidden', showUpload);
+    if (!capsBehind) {
+      if (!caps.hasDownload) {
+        // caps 是「已无文件」的权威来源，立即清空旧列表与提示。
+        resetDownloadList();
+      } else if (!downloadLoadStarted) {
+        // 文件重新可用：清掉旧的结束提示，随后按需重建列表。
+        setDownloadStatus('');
+      } else if (caps.fileRevision > listRevision) {
+        // SSE 漏事件或 15 秒兜底看到新版本：静默重拉列表。
+        if (downloadLoading) {
+          listStale = true;
+        } else {
+          scheduleListReload(0);
+        }
+      }
+    }
+    if (!capsInitialized) {
+      capsInitialized = true;
+      var wantUpload = window.location.pathname.replace(/\/$/, '') === '/upload';
+      if (wantUpload && caps.uploadEnabled) {
+        activeTab = 'upload';
+      } else if (caps.hasDownload) {
+        activeTab = 'download';
+      } else if (caps.uploadEnabled) {
+        activeTab = 'upload';
+      } else {
+        activeTab = 'download';
+      }
+    }
+    activateTab(activeTab);
+    startRealtime();
+  }
+
+  // 轮询间隔随 SSE 状态切换：连接正常 15s 兜底；未连接/断开时 3s，
+  // 避免 Safari 首次进入时 SSE 失效后列表要等到下一次 15s 才刷新。
+  function syncCapsPolling() {
+    var desired = (fileEvents !== null && fileEvents.readyState === 1) ? 15000 : 3000;
+    if (capsTimer >= 0 && capsPollMs === desired) {
+      return;
+    }
+    if (capsTimer >= 0) {
+      clearInterval(capsTimer);
+      capsTimer = -1;
+    }
+    capsPollMs = desired;
+    capsTimer = setInterval(function () {
+      if (!document.hidden) {
+        loadCaps(true);
+      }
+    }, desired);
+  }
+
+  function scheduleEventsReconnect(delay) {
+    if (eventsRetryTimer >= 0) {
+      return;
+    }
+    eventsRetryTimer = setTimeout(function () {
+      eventsRetryTimer = -1;
+      openEvents();
+    }, delay === undefined ? 2000 : delay);
+  }
+
+  // 建立/重建 SSE：EventSource 进入 CLOSED 后不会自愈，必须显式重新创建。
+  function openEvents() {
+    if (isLocked || typeof EventSource === 'undefined') {
+      return;
+    }
+    if (fileEvents !== null && fileEvents.readyState !== 2) {
+      return;
+    }
+    if (fileEvents !== null) {
+      try { fileEvents.close(); } catch (_e) { }
+      fileEvents = null;
+    }
+    var source = new EventSource(BASE + '/web/events');
+    fileEvents = source;
+    lastEventAt = Date.now();
+    source.onopen = function () {
+      lastEventAt = Date.now();
+      syncCapsPolling();
+      // 断线期间可能漏掉变化：连上后补一次快照。
+      loadCaps(true);
+    };
+    source.onmessage = function (event) {
+      lastEventAt = Date.now();
+      var change = null;
+      try { change = JSON.parse(event.data); } catch (_e) { change = null; }
+      if (!change || typeof change.revision !== 'number') {
+        var revision = parseInt(event.data, 10);
+        if (!isNaN(revision) && revision !== lastRevision && !document.hidden) {
+          loadCaps(true);
+        }
+        return;
+      }
+      handleFileTableChange(change);
+    };
+    source.addEventListener('session-end', function (event) {
+      lastEventAt = Date.now();
+      handleSessionEnd(event.data);
+    });
+    source.addEventListener('caps', function () {
+      lastEventAt = Date.now();
+      loadCaps(true);
+    });
+    // 服务端每 25s 发一次 ping 事件，用于判断连接是否仍然活着（注释帧不会触发 message）。
+    source.addEventListener('ping', function () {
+      lastEventAt = Date.now();
+    });
+    source.onerror = function () {
+      if (fileEvents !== source) {
+        return;
+      }
+      syncCapsPolling();
+      // CLOSED 表示浏览器已放弃重连（如 401/非 event-stream 响应）：主动重建。
+      if (source.readyState === 2) {
+        try { source.close(); } catch (_e) { }
+        fileEvents = null;
+        scheduleEventsReconnect(2000);
+      }
+    };
+  }
+
+  // 看门狗：连接 OPEN 但长时间没有任何事件/心跳，视为半开并重建。
+  function checkEventsHealth() {
+    if (isLocked) {
+      return;
+    }
+    if (fileEvents === null || fileEvents.readyState === 2) {
+      openEvents();
+      syncCapsPolling();
+      return;
+    }
+    if (fileEvents.readyState === 1 && lastEventAt > 0 && Date.now() - lastEventAt > 70000) {
+      try { fileEvents.close(); } catch (_e) { }
+      fileEvents = null;
+      openEvents();
+      syncCapsPolling();
+    }
+  }
+
+  function startRealtime() {
+    if (isLocked) {
+      return;
+    }
+    openEvents();
+    syncCapsPolling();
+    if (eventsWatchdogTimer < 0) {
+      eventsWatchdogTimer = setInterval(checkEventsHealth, 30000);
+    }
+  }
+
+  function stopRealtime() {
+    hideDropOverlay();
+    if (fileEvents !== null) {
+      fileEvents.close();
+      fileEvents = null;
+    }
+    if (capsTimer >= 0) {
+      clearInterval(capsTimer);
+      capsTimer = -1;
+    }
+    capsPollMs = 0;
+    if (eventsRetryTimer >= 0) {
+      clearTimeout(eventsRetryTimer);
+      eventsRetryTimer = -1;
+    }
+    if (eventsWatchdogTimer >= 0) {
+      clearInterval(eventsWatchdogTimer);
+      eventsWatchdogTimer = -1;
+    }
+  }
+
+  /** 文件表变化只作为触发信号：静默重拉完整列表，实时更新展示。 */
+  function handleFileTableChange(change) {
+    var revision = change.revision;
+    if (typeof revision !== 'number' || revision <= lastRevision) {
+      return;
+    }
+    lastRevision = revision;
+    listStale = true;
+    loadCaps(true);
+    if (activeTab !== 'download') {
+      markTabDot('download');
+    }
+    // 首次列表还在加载/尚未展示：由当前 prepare 或 caps 拉起，不弹更新提示。
+    if (!listLoaded) {
+      return;
+    }
+    scheduleListReload();
+  }
+
+  /** 上传会话结束：只更新上传分段；下载已改用批次 ended 事件。 */
+  function handleSessionEnd(token) {
+    if (!token) {
+      return;
+    }
+    if (token === ulToken) {
+      setUploading(false);
+      $('upload-btn').disabled = true;
+      $('upload-picker').disabled = true;
+      $('text-input').disabled = true;
+      setSegmentStatus('upload', t('accessEndedReload'), 'warning');
+    }
+  }
+
+  function setDownloadToken(token) {
+    dlToken = token || '';
+    if (dlToken) {
+      sessionStorage.setItem('handysend_dl_token', dlToken);
+    } else {
+      sessionStorage.removeItem('handysend_dl_token');
+    }
+  }
+
+  // ========== 下载 ==========
+
+  function downloadUrl(token, fileId) {
+    return BASE + '/web/download?token=' + encodeURIComponent(token) +
+      '&fileId=' + encodeURIComponent(fileId);
+  }
+
+  // 下载列表：prepare 复用/刷新会话快照并下发当前文件表。
+  // notifyUpdate=true 表示由 SSE/caps 变化触发的后台重拉，成功后提示列表已更新。
+  function loadDownloadList(silent, reportErrors, notifyUpdate) {
+    if (downloadLoading) {
+      if (notifyUpdate) {
+        listReloadPending = true;
+      }
+      return downloadLoadPromise || Promise.resolve(undefined);
+    }
+    downloadLoading = true;
+    var ownsLoading = !silent;
+    if (ownsLoading) {
+      setLoadingStatus();
+    }
+    var url = BASE + '/web/prepare-download';
+    if (dlToken) {
+      url += '?token=' + encodeURIComponent(dlToken);
+    }
+    var loadPromise = request(url, { method: 'POST', cache: 'no-store' })
+      .then(function (response) {
+        return handlePrepare(response, notifyUpdate);
+      })
+      .catch(function (err) {
+        if (err && err.authRequired) {
+          // 登录成功后由 caps 流程重新拉起
+          downloadLoadStarted = false;
+          return undefined;
+        }
+        if (!silent || reportErrors) {
+          showStatusRetry(t('networkErrorRetry'));
+        }
+        return undefined;
+      })
+      .then(function (token) {
+        downloadLoading = false;
+        downloadLoadPromise = null;
+        if (ownsLoading) {
+          clearLoadingStatus();
+        }
+        if (listReloadPending || (token && listStale)) {
+          listReloadPending = false;
+          scheduleListReload(0);
+        } else if (token && notifyUpdate && listLoaded &&
+                   Object.keys(filesData).length > 0) {
+          showListUpdatedNotice();
+        }
+        return token;
+      });
+    downloadLoadPromise = loadPromise;
+    return loadPromise;
+  }
+
+  function handlePrepare(response, notifyUpdate) {
+    if (response.status === 401) {
+      showGate('');
+      return undefined;
+    }
+    if (response.status === 403) {
+      setDownloadToken('');
+      resetDownloadList();
+      showStatusRetry(t('accessEndedReload'));
+      loadCaps(true);
+      return undefined;
+    }
+    if (response.status === 404) {
+      // 分享结束或文件已清空：直接进入空态，由 caps 区分停止/暂无文件。
+      resetDownloadList();
+      tabAvailable.download = false;
+      $('download-body').classList.add('hidden');
+      $('download-empty-text').innerText = t('noDownloadHint');
+      $('download-empty').classList.remove('hidden');
+      clearTabDot('download');
+      loadCaps(true);
+      return undefined;
+    }
+    if (response.status === 410) {
+      showStatusRetry(t('shareUpdatedRetry'));
+      return undefined;
+    }
+    if (!response.ok) {
+      showStatusRetry(t('requestFailedRetry') + '（' + response.status + '）');
+      return undefined;
+    }
+    return response.json().then(function (data) {
+      var shareChanged = lastShareId.length > 0 && !!data.shareId && data.shareId !== lastShareId;
+      lastShareId = data.shareId || lastShareId;
+      setDownloadToken(data.token);
+      filesData = data.files || {};
+      fileOrder = Array.isArray(data.fileOrder) ? data.fileOrder : [];
+      downloadLoadStarted = true;
+      listRevision = data.revision;
+      sessionRevision = data.revision;
+      if (shareChanged) {
+        // 新服务实例的 revision 从 0 重新计数，不能沿用旧基线判定「落后」。
+        lastRevision = data.revision;
+        listStale = false;
+        listLoaded = true;
+        selectedDownloadFiles = {};
+        selectionAnchorId = '';
+      } else {
+        // 快照版本至少到 data.revision；请求期间若还有新变化，保留 listStale 供补拉。
+        if (data.revision > lastRevision) {
+          lastRevision = data.revision;
+        }
+        listStale = lastRevision > data.revision;
+        if (!listStale) {
+          listLoaded = true;
+        }
+      }
+      preparedBatchId = '';
+      preparedSignature = '';
+      tabAvailable.download = true;
+      $('download-body').classList.remove('hidden');
+      $('download-empty').classList.add('hidden');
+      setDownloadStatus('');
+      renderFileList(filesData, data.token);
+      startRealtime();
+      // 列表更新后恢复多选预准备，保住 iOS 点击下载的用户手势。
+      if (selectedIds().length > 1) {
+        onSelectionChanged();
+      }
+      return data.token;
+    });
+  }
+
+  function fileKeysSorted(files) {
+    var keys = Object.keys(files);
+    var pos = {};
+    for (var i = 0; i < fileOrder.length; i++) {
+      pos[fileOrder[i]] = i;
+    }
+    return keys.sort(function (a, b) {
+      // 应用下发的顺序优先；顺序缺失的行回退到文件名，保证旧会话仍可稳定展示
+      var pa = pos[a] !== undefined ? pos[a] : Number.MAX_SAFE_INTEGER;
+      var pb = pos[b] !== undefined ? pos[b] : Number.MAX_SAFE_INTEGER;
+      if (pa !== pb) {
+        return pa - pb;
+      }
+      var fa = files[a].fileName || '';
+      var fb = files[b].fileName || '';
+      return fa < fb ? -1 : (fa > fb ? 1 : (a < b ? -1 : 1));
+    });
+  }
+
+  function selectedIds() {
+    var ids = [];
+    var keys = fileKeysSorted(filesData);
+    for (var i = 0; i < keys.length; i++) {
+      if (selectedDownloadFiles[keys[i]]) { ids.push(keys[i]); }
+    }
+    return ids;
+  }
+
+  function selectionSignature(ids) {
+    var parts = [];
+    for (var i = 0; i < ids.length; i++) {
+      var f = filesData[ids[i]];
+      parts.push(ids[i] + ':' + (f ? f.size : 0));
+    }
+    return parts.join('|');
+  }
+
+  function updateDownloadActions() {
+    var keys = fileKeysSorted(filesData);
+    var ids = selectedIds();
+    $('download-all-wrap').classList.toggle('hidden', keys.length === 0);
+    var allSelected = keys.length > 0 && ids.length === keys.length;
+    var selectAllBtn = $('select-all-btn');
+    selectAllBtn.innerText = allSelected ? t('deselectAll') : t('selectAll');
+    selectAllBtn.setAttribute('aria-pressed', allSelected ? 'true' : 'false');
+    selectAllBtn.disabled = keys.length === 0;
+    $('download-selected-btn').innerText = t('downloadSelected').replace('%d', String(ids.length));
+    $('download-selected-tip').innerText = keys.length >= 2 ? t('downloadZipHint') : '';
+    $('download-selected-btn').disabled = ids.length === 0;
+  }
+
+  /**
+   * 只同步勾选态与操作区，不重建列表。
+   * 重建会让文本预览重新拉取并改变行高，导致全选时列表跳动。
+   */
+  function applySelectionToDom() {
+    var boxes = document.querySelectorAll('#file-list [data-select-id]');
+    for (var i = 0; i < boxes.length; i++) {
+      var id = boxes[i].getAttribute('data-select-id');
+      boxes[i].checked = selectedDownloadFiles[id] === true;
+    }
+    updateDownloadActions();
+  }
+
+  /** 文本预览块：标题栏提供「复制」，正文可聚焦后按 Ctrl/Cmd+A 只选中本块。 */
+  function textPreviewHtml(fileId, content) {
+    return '<div class="text-preview">' +
+      '<div class="text-preview-head">' +
+      '<span class="text-preview-label">' + esc(t('textPreviewLabel')) + '</span>' +
+      '<span class="text-preview-tools">' +
+      '<button type="button" class="text-preview-action" data-text-action="copy" data-preview-id="' +
+      esc(fileId) + '">' + esc(t('copy')) + '</button>' +
+      '</span>' +
+      '</div>' +
+      '<div class="text-preview-body" id="preview-' + esc(fileId) +
+      '" tabindex="0" role="region" aria-label="' + esc(t('textPreviewLabel')) + '">' +
+      content + '</div>' +
+      '</div>';
+  }
+
+  /** 预览缓存的有效性键：文件名或大小变化时重新拉取。 */
+  function previewSourceKey(file) {
+    return file.fileName + '|' + file.size;
+  }
+
+  function renderFileList(files, sessionToken) {
+    var keys = fileKeysSorted(files);
+    var valid = {};
+    var html = '';
+    for (var i = 0; i < keys.length; i++) {
+      valid[keys[i]] = true;
+      var file = files[keys[i]];
+      var badge = esc(fileBadge(file.fileName));
+      var checked = selectedDownloadFiles[keys[i]] ? ' checked' : '';
+      html += '<div class="file-item" data-file-item="' + esc(keys[i]) + '">' +
+        '<div class="file-row">' +
+        '<input class="file-select" type="checkbox" data-select-id="' + esc(keys[i]) + '"' + checked +
+        ' aria-label="' + esc(file.fileName) + '">' +
+        '<div class="file-badge" aria-hidden="true">' + badge + '</div>' +
+        '<div class="file-info">' +
+        '<div class="file-name">' + esc(file.fileName) + '</div>' +
+        '<div class="file-size">' + formatBytes(file.size) + '</div>' +
+        '</div>' +
+        '<a class="btn btn--small btn--tonal" data-file-id="' +
+        esc(keys[i]) + '" href="' + downloadUrl(sessionToken, keys[i]) + '">' +
+        esc(t('download')) + '</a>' +
+        '</div>';
+      if (file.preview) {
+        html += textPreviewHtml(keys[i], esc(file.preview));
+      } else if (file.fileName.slice(-4).toLowerCase() === '.txt') {
+        var cached = previewCache[keys[i]];
+        if (cached !== undefined && cached.source === previewSourceKey(file)) {
+          html += textPreviewHtml(keys[i], esc(cached.text));
+        } else {
+          html += textPreviewHtml(keys[i], esc(t('previewLoading')));
+          loadTextPreview(keys[i], sessionToken);
+        }
+      }
+      html += '</div>';
+    }
+    // 清理不存在的勾选与预览缓存
+    var selectedKeys = Object.keys(selectedDownloadFiles);
+    for (var j = 0; j < selectedKeys.length; j++) {
+      if (!valid[selectedKeys[j]]) { delete selectedDownloadFiles[selectedKeys[j]]; }
+    }
+    // 锚点条目随列表更新消失时清空，后续 Shift 点击退化为普通勾选
+    if (selectionAnchorId && !valid[selectionAnchorId]) { selectionAnchorId = ''; }
+    for (var cachedId in previewCache) {
+      if (!valid[cachedId]) { delete previewCache[cachedId]; }
+    }
+    var scrollY = window.scrollY || 0;
+    $('file-list').innerHTML = html;
+    window.scrollTo(0, scrollY);
+    $('download-empty').classList.toggle('hidden', keys.length > 0);
+    $('download-body').classList.toggle('hidden', keys.length === 0);
+    $('tab-download-count').innerText = String(keys.length);
+    $('tab-download-count').classList.toggle('hidden', keys.length === 0);
+    updateDownloadActions();
+  }
+
+  /** 实时刷新完成后短暂提示列表已更新；不覆盖尚未处理的错误提示。 */
+  function showListUpdatedNotice() {
+    if ($('download-status').innerText) {
+      return;
+    }
+    setDownloadStatus(t('listUpdated'));
+    if (activeTab !== 'download') { markTabDot('download'); }
+    if (listUpdatedTimer >= 0) {
+      clearTimeout(listUpdatedTimer);
+    }
+    listUpdatedTimer = setTimeout(function () {
+      listUpdatedTimer = -1;
+      // 期间若被错误提示替换，不清理新提示。
+      if ($('download-status').innerText === t('listUpdated')) {
+        setDownloadStatus('');
+      }
+    }, 3000);
+  }
+
+  /** 合并短时间内的多次文件表变化，静默重拉完整列表。 */
+  function scheduleListReload(delay) {
+    if (!downloadLoadStarted || isLocked) {
+      return;
+    }
+    if (listReloadTimer >= 0) {
+      clearTimeout(listReloadTimer);
+    }
+    listReloadTimer = setTimeout(function () {
+      listReloadTimer = -1;
+      if (!downloadLoadStarted || isLocked) {
+        return;
+      }
+      if (downloadLoading) {
+        listReloadPending = true;
+        return;
+      }
+      loadDownloadList(true, true, listLoaded);
+    }, delay === undefined ? 200 : delay);
+  }
+
+  function cancelListReload() {
+    if (listReloadTimer >= 0) {
+      clearTimeout(listReloadTimer);
+      listReloadTimer = -1;
+    }
+    listReloadPending = false;
+  }
+
+  function onSelectionChanged() {
+    preparedBatchId = '';
+    preparedSignature = '';
+    updateDownloadActions();
+    if (batchPrepareTimer >= 0) { clearTimeout(batchPrepareTimer); }
+    var ids = selectedIds();
+    if (ids.length <= 1 || listStale) { return; }
+    batchPrepareTimer = setTimeout(function () {
+      batchPrepareTimer = -1;
+      prepareBatchIfPossible(ids);
+    }, 300);
+  }
+
+  function prepareBatchIfPossible(ids) {
+    if (!dlToken || listStale || batchPreparing) { return; }
+    var sig = selectionSignature(ids);
+    if (preparedBatchId && preparedSignature === sig) { return; }
+    batchPreparing = true;
+    fetch(BASE + '/web/download-batch?token=' + encodeURIComponent(dlToken), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ files: ids, all: false })
+    }).then(function (response) {
+      if (!response.ok) { throw new Error('batch ' + response.status); }
+      return response.json();
+    }).then(function (data) {
+      if (data && data.batchId && selectionSignature(selectedIds()) === sig) {
+        preparedBatchId = data.batchId;
+        preparedSignature = sig;
+      }
+    }).catch(function () {
+      // 点击时还有一次兜底准备；此处静默失败，不打断勾选
+    }).then(function () {
+      batchPreparing = false;
+    });
+  }
+
+  function triggerZip(batchId) {
+    var a = document.createElement('a');
+    a.href = BASE + '/web/download-batch?batch=' + encodeURIComponent(batchId);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function triggerDownload(token, fileId) {
+    var a = document.createElement('a');
+    a.href = downloadUrl(token, fileId);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function ensureSessionForDownload() {
+    if (dlToken && sessionRevision === listRevision && !listStale) {
+      return Promise.resolve(dlToken);
+    }
+    downloadLoadStarted = true;
+    return loadDownloadList(true);
+  }
+
+  function downloadSelectedFiles() {
+    var ids = selectedIds();
+    if (ids.length === 0) { return; }
+    var sig = selectionSignature(ids);
+    if (ids.length === 1) {
+      if (dlToken && sessionRevision === listRevision && !listStale) {
+        triggerDownload(dlToken, ids[0]);
+        return;
+      }
+      ensureSessionForDownload().then(function (token) {
+        if (token) { triggerDownload(token, ids[0]); }
+      });
+      return;
+    }
+    // 预准备命中时同步触发，保住 iOS 用户手势
+    if (preparedBatchId && preparedSignature === sig && !listStale) {
+      triggerZip(preparedBatchId);
+      return;
+    }
+    ensureSessionForDownload().then(function (token) {
+      if (!token) { return; }
+      fetch(BASE + '/web/download-batch?token=' + encodeURIComponent(token), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ files: ids, all: false })
+      }).then(function (response) {
+        if (!response.ok) { throw new Error('batch ' + response.status); }
+        return response.json();
+      }).then(function (data) {
+        if (data && data.batchId) {
+          preparedBatchId = data.batchId;
+          preparedSignature = sig;
+          triggerZip(data.batchId);
+        }
+      }).catch(function () {
+        showStatusRetry(t('requestFailedRetry'));
+      });
+    });
+  }
+
+  $('select-all-btn').addEventListener('click', function () {
+    var keys = fileKeysSorted(filesData);
+    var allSelected = keys.length > 0 && selectedIds().length === keys.length;
+    if (allSelected) {
+      selectedDownloadFiles = {};
+    } else {
+      for (var i = 0; i < keys.length; i++) {
+        selectedDownloadFiles[keys[i]] = true;
+      }
+    }
+    // 全选/取消全选后不保留旧锚点，避免下一次 Shift 点击范围超出用户预期
+    selectionAnchorId = '';
+    applySelectionToDom();
+    onSelectionChanged();
+  });
+
+  $('download-selected-btn').addEventListener('click', function () {
+    downloadSelectedFiles();
+  });
+
+  /** 焦点是否位于需要保留原生文本操作的控件或预览正文内。 */
+  function isTextEntryTarget(el) {
+    return !!(el && el.closest &&
+      el.closest('input:not([type="checkbox"]), textarea, select, [contenteditable="true"], .text-preview-body'));
+  }
+
+  /** 清空下载列表的全部勾选与连选锚点。 */
+  function clearDownloadSelection() {
+    selectedDownloadFiles = {};
+    selectionAnchorId = '';
+    applySelectionToDom();
+    onSelectionChanged();
+  }
+
+  /**
+   * 下载页快捷键：Esc 取消全部勾选，Ctrl/Cmd+A 全选列表。
+   * 焦点在输入控件或预览正文内时不接管，保留原生文本操作。
+   */
+  document.addEventListener('keydown', function (e) {
+    if (isLocked || activeTab !== 'download' || e.defaultPrevented || isTextEntryTarget(e.target)) { return; }
+    if (e.key === 'Escape') {
+      // 页头菜单打开时 Esc 只关菜单，不取消列表勾选
+      if (!$('theme-menu').classList.contains('hidden') ||
+          !$('lang-menu').classList.contains('hidden')) {
+        return;
+      }
+      if (selectedIds().length === 0) { return; }
+      e.preventDefault();
+      clearDownloadSelection();
+      return;
+    }
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) { return; }
+    var keys = fileKeysSorted(filesData);
+    if (keys.length === 0) { return; }
+    e.preventDefault();
+    for (var i = 0; i < keys.length; i++) {
+      selectedDownloadFiles[keys[i]] = true;
+    }
+    selectionAnchorId = '';
+    applySelectionToDom();
+    onSelectionChanged();
+  });
+
+  /**
+   * Shift 连选：以最近一次普通勾选的条目为锚点，按当前展示顺序把锚点到目标之间整段
+   * 统一改为目标条目的新状态（原未选则整段选中，原已选则整段取消）。
+   */
+  function applyRangeSelection(id) {
+    if (!selectionAnchorId || selectionAnchorId === id) { return false; }
+    var keys = fileKeysSorted(filesData);
+    var from = keys.indexOf(selectionAnchorId);
+    var to = keys.indexOf(id);
+    if (from < 0 || to < 0) { return false; }
+    // click 到达时勾选状态尚未写回模型：按点击前的状态决定整段目标
+    var checked = selectedDownloadFiles[id] !== true;
+    var start = Math.min(from, to);
+    var end = Math.max(from, to);
+    for (var i = start; i <= end; i++) {
+      if (checked) { selectedDownloadFiles[keys[i]] = true; }
+      else { delete selectedDownloadFiles[keys[i]]; }
+    }
+    applySelectionToDom();
+    onSelectionChanged();
+    return true;
+  }
+
+  /** 当前是否有非空文本选区（拖选文件名后松开鼠标仍会触发 click）。 */
+  function hasTextSelection() {
+    var selection = window.getSelection ? window.getSelection() : null;
+    return !!(selection && !selection.isCollapsed && selection.toString());
+  }
+
+  /** 清空文本选区：Shift 连选行时避免留下文件名选中态。 */
+  function clearTextSelection() {
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (selection && !selection.isCollapsed) {
+      selection.removeAllRanges();
+    }
+  }
+
+  /**
+   * 勾选点击：复选框默认切换由浏览器完成、change 事件写回模型，这里只维护 Shift 连选与锚点；
+   * 点击行的其他区域直接切换勾选，整行都是选择目标。
+   */
+  $('file-list').addEventListener('click', function (e) {
+    var target = e.target;
+    // 触摸滑选结束时浏览器可能补发一次 click：本次点击不再切换条目或触发下载
+    if (suppressFileClickUntil) {
+      var suppressed = Date.now() < suppressFileClickUntil;
+      suppressFileClickUntil = 0;
+      if (suppressed) {
+        e.stopImmediatePropagation();
+        // 复选框的默认切换由下方 DOM 同步覆盖；其余目标直接阻止默认动作
+        if (!(target && target.closest && target.closest('[data-select-id]'))) {
+          e.preventDefault();
+        }
+        applySelectionToDom();
+        return;
+      }
+    }
+    if (!target || !target.closest) { return; }
+    var box = target.closest('[data-select-id]');
+    var id = box ? box.getAttribute('data-select-id') : '';
+    if (!id) {
+      // 单文件下载链接保留原行为，不参与行勾选（文本预览位于行外，天然不受影响）
+      if (target.closest('a[data-file-id]')) { return; }
+      var row = target.closest('.file-row');
+      var rowBox = row ? row.querySelector('[data-select-id]') : null;
+      if (!rowBox) { return; }
+      id = rowBox.getAttribute('data-select-id');
+      // 拖选文件名后松开鼠标仍会触发 click：有文本选区时不把它当作勾选
+      if (!e.shiftKey && hasTextSelection()) { return; }
+      if (e.shiftKey) {
+        clearTextSelection();
+        if (applyRangeSelection(id)) { return; }
+      }
+      selectionAnchorId = id;
+      if (selectedDownloadFiles[id]) { delete selectedDownloadFiles[id]; }
+      else { selectedDownloadFiles[id] = true; }
+      applySelectionToDom();
+      onSelectionChanged();
+      return;
+    }
+    if (e.shiftKey && applyRangeSelection(id)) { return; }
+    // 普通点复选框：只更新锚点，勾选状态仍由 change 事件同步
+    selectionAnchorId = id;
+  });
+
+  $('file-list').addEventListener('change', function (e) {
+    var box = e.target && e.target.getAttribute ? e.target : null;
+    if (!box || !box.getAttribute('data-select-id')) { return; }
+    var id = box.getAttribute('data-select-id');
+    if (box.checked) { selectedDownloadFiles[id] = true; } else { delete selectedDownloadFiles[id]; }
+    onSelectionChanged();
+  });
+
+  /** 把滑到的条目写成起手条目的目标状态，并即时同步复选框与操作区。 */
+  function applyTouchSelection(id, box) {
+    if (touchSelect.selected) { selectedDownloadFiles[id] = true; }
+    else { delete selectedDownloadFiles[id]; }
+    box.checked = touchSelect.selected;
+    updateDownloadActions();
+  }
+
+  /**
+   * 移动端滑选：只允许从复选框起手，避免在行上滑动时误触；
+   * 起手后移动超过阈值才进入滑选，普通点按仍走原生 check/change。
+   */
+  $('file-list').addEventListener('touchstart', function (e) {
+    touchSelect = null;
+    if (isLocked || e.touches.length !== 1) { return; }
+    var target = e.target;
+    var box = target && target.closest ? target.closest('[data-select-id]') : null;
+    if (!box) { return; }
+    var id = box.getAttribute('data-select-id');
+    var touch = e.touches[0];
+    touchSelect = {
+      startBox: box,
+      startId: id,
+      // 起手条目未选则整段选中，已选则整段取消
+      selected: selectedDownloadFiles[id] !== true,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastId: '',
+      active: false
+    };
+  }, { passive: true });
+
+  $('file-list').addEventListener('touchmove', function (e) {
+    if (!touchSelect || e.touches.length !== 1) { return; }
+    var touch = e.touches[0];
+    if (!touchSelect.active) {
+      if (Math.abs(touch.clientX - touchSelect.startX) < 8 &&
+          Math.abs(touch.clientY - touchSelect.startY) < 8) {
+        return;
+      }
+      touchSelect.active = true;
+      touchSelect.lastId = touchSelect.startId;
+      applyTouchSelection(touchSelect.startId, touchSelect.startBox);
+    }
+    // 进入滑选后阻止页面滚动
+    e.preventDefault();
+    var el = document.elementFromPoint(touch.clientX, touch.clientY);
+    var row = el && el.closest ? el.closest('.file-row') : null;
+    var box = row ? row.querySelector('[data-select-id]') : null;
+    if (!box) { return; }
+    var id = box.getAttribute('data-select-id');
+    if (id === touchSelect.lastId) { return; }
+    touchSelect.lastId = id;
+    applyTouchSelection(id, box);
+  }, { passive: false });
+
+  /** 结束触摸滑选：实际滑动过时屏蔽随后可能补发的 click，并把锚点移到末条目。 */
+  function finishTouchSelect() {
+    if (!touchSelect) { return; }
+    var active = touchSelect.active;
+    var lastId = touchSelect.lastId;
+    touchSelect = null;
+    if (!active) { return; }
+    suppressFileClickUntil = Date.now() + 400;
+    if (lastId) { selectionAnchorId = lastId; }
+    onSelectionChanged();
+  }
+
+  $('file-list').addEventListener('touchend', finishTouchSelect);
+  $('file-list').addEventListener('touchcancel', finishTouchSelect);
+
+  // 点击单文件下载：先确保会话/快照是最新列表。
+  $('file-list').addEventListener('click', function (e) {
+    var link = e.target && e.target.closest ? e.target.closest('a[data-file-id]') : null;
+    if (!link) { return; }
+    e.preventDefault();
+    var fileId = link.getAttribute('data-file-id');
+    if (dlToken && sessionRevision === listRevision && !listStale) {
+      triggerDownload(dlToken, fileId);
+      return;
+    }
+    ensureSessionForDownload().then(function (token) {
+      if (!token) { return; }
+      triggerDownload(token, fileId);
+    });
+  });
+
+  // 文本预览复制（事件委托，覆盖实时重绘后的新节点）。
+  $('file-list').addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('[data-text-action="copy"]') : null;
+    if (!btn) { return; }
+    copyPreview(btn.getAttribute('data-preview-id'), btn);
+  });
+
+  // 预览正文聚焦时 Ctrl/Cmd+A 只选中本块，不再选中整个网页文本。
+  $('file-list').addEventListener('keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) {
+      return;
+    }
+    var body = e.target && e.target.closest ? e.target.closest('.text-preview-body') : null;
+    if (!body) { return; }
+    e.preventDefault();
+    selectNodeContents(body);
+  });
+
+  // ========== 文本预览：全选 / 复制 ==========
+
+  /** 选中元素内的全部文本：Ctrl/Cmd+A 与「全选」按钮共用。 */
+  function selectNodeContents(el) {
+    var selection = window.getSelection ? window.getSelection() : null;
+    if (!selection) {
+      return;
+    }
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  /** 复制文本：优先 Clipboard API（仅安全上下文），失败回退 execCommand。 */
+  function copyText(text, btn) {
+    if (!text) {
+      return;
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        flashCopyButton(btn);
+      }, function () {
+        fallbackCopyText(text, btn);
+      });
+      return;
+    }
+    fallbackCopyText(text, btn);
+  }
+
+  function fallbackCopyText(text, btn) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      flashCopyButton(btn);
+    } catch (_e) {
+    }
+    document.body.removeChild(ta);
+  }
+
+  function flashCopyButton(btn) {
+    if (!btn) {
+      return;
+    }
+    var old = btn.innerText;
+    btn.innerText = t('copied');
+    btn.disabled = true;
+    setTimeout(function () {
+      btn.innerText = old;
+      btn.disabled = false;
+    }, 1500);
+  }
+
+  /** 复制某条预览的完整内容（不截断；正文最多展示 180px 高度，但内容仍完整）。 */
+  function copyPreview(fileId, btn) {
+    var el = document.getElementById('preview-' + fileId);
+    if (!el) {
+      return;
+    }
+    copyText(el.innerText || el.textContent || '', btn);
+  }
+
+  // 文本预览：Range 取前 128KB，不下完整文件。
+  // 结果按文件缓存，勾选或列表更新重绘时直接复用，避免预览区先显示占位再撑开。
+  function loadTextPreview(fileId, sessionToken) {
+    var source = filesData[fileId];
+    var sourceKey = source !== undefined ? previewSourceKey(source) : '';
+    fetch(BASE + '/web/download?token=' + encodeURIComponent(sessionToken) +
+      '&fileId=' + encodeURIComponent(fileId) + '&preview=1',
+      { headers: { 'Range': 'bytes=0-131071' } }).then(function (response) {
+      if (!response.ok) { throw new Error('preview'); }
+      return response.text();
+    }).then(function (text) {
+      previewCache[fileId] = { source: sourceKey, text: text };
+      var el = document.getElementById('preview-' + fileId);
+      if (el) { el.innerText = text; }
+    }).catch(function () {
+      var text = t('previewUnavailable');
+      previewCache[fileId] = { source: sourceKey, text: text };
+      var el = document.getElementById('preview-' + fileId);
+      if (el) { el.innerText = text; }
+    });
+  }
+
+  // 页签交互：点击切换，左右方向键在可用页签间移动。
+  $('tab-download').addEventListener('click', function () { activateTab('download'); });
+  $('tab-upload').addEventListener('click', function () {
+    hide('status-retry');
+    setStatus('');
+    setSegmentStatus('upload', '');
+    clearTabDot('upload');
+    activateTab('upload');
+  });
+  $('tabs').addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+      return;
+    }
+    var next = activeTab === 'download' ? 'upload' : 'download';
+    e.preventDefault();
+    activateTab(next);
+    $(next === 'download' ? 'tab-download' : 'tab-upload').focus();
+  });
+
+  // ========== 上传（发送） ==========
+
+  var selectedFiles = [];
+
+  // 选择结果与清除入口：文件选择后显示数量与清空按钮。
+  function updateSelectedUi() {
+    var count = selectedFiles.length;
+    $('file-count-chip').innerText = String(count);
+    $('file-count-chip').classList.toggle('hidden', count === 0);
+    $('clear-btn').classList.toggle('hidden', count === 0 || uploading);
+    $('upload-picker').disabled = uploading;
+    $('pick-label').classList.toggle('is-disabled', uploading);
+    $('upload-btn').disabled = uploading;
+    $('text-input').disabled = uploading;
+    $('upload-body').classList.toggle('is-uploading', uploading);
+  }
+
+  function setUploading(value) {
+    uploading = value;
+    updateSelectedUi();
+  }
+
+  // 文件唯一键：同名同大小同修改时间视为同一文件，避免重复追加。
+  function fileKey(file) {
+    return [file.name, file.size, file.lastModified, file.type].join('|');
+  }
+
+  // 追加选择：再次点“选择文件”或拖拽文件都不会清空已有列表，仅补充新文件。
+  function appendSelectedFiles(picked) {
+    if (uploading) {
+      return;
+    }
+    var seen = {};
+    for (var i = 0; i < selectedFiles.length; i++) {
+      seen[fileKey(selectedFiles[i])] = true;
+    }
+    for (var j = 0; j < picked.length; j++) {
+      var key = fileKey(picked[j]);
+      if (!seen[key]) {
+        seen[key] = true;
+        selectedFiles.push(picked[j]);
+      }
+    }
+    updateSelectedUi();
+    renderUploadProgress();
+  }
+
+  $('upload-picker').addEventListener('change', function (e) {
+    appendSelectedFiles(Array.prototype.slice.call(e.target.files));
+    e.target.value = '';
+  });
+
+  // ========== 拖拽上传 ==========
+  // 拖拽深度计数：dragenter/dragleave 会在子元素间反复触发，按进出层数显隐遮罩。
+  var dropDepth = 0;
+
+  /** 支持悬停 + 精细指针（鼠标/触控板）且具备文件拖拽能力时，才展示拖入提示。 */
+  function supportsFileDrag() {
+    return typeof DataTransfer !== 'undefined' && !!window.matchMedia &&
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  }
+
+  function dragHasFiles(e) {
+    return e.dataTransfer !== null && e.dataTransfer !== undefined &&
+      Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0;
+  }
+
+  function canDropFiles() {
+    return !isLocked && tabAvailable.upload && !uploading;
+  }
+
+  function showDropOverlay() {
+    $('drop-overlay').classList.remove('hidden');
+  }
+
+  function hideDropOverlay() {
+    dropDepth = 0;
+    $('drop-overlay').classList.add('hidden');
+  }
+
+  document.addEventListener('dragenter', function (e) {
+    if (!canDropFiles() || !dragHasFiles(e)) {
+      return;
+    }
+    e.preventDefault();
+    dropDepth++;
+    showDropOverlay();
+  });
+
+  document.addEventListener('dragover', function (e) {
+    if (!canDropFiles() || !dragHasFiles(e)) {
+      return;
+    }
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  document.addEventListener('dragleave', function (e) {
+    if (!canDropFiles()) {
+      return;
+    }
+    dropDepth = Math.max(0, dropDepth - 1);
+    // 拖出窗口时浏览器可能只在当前节点触发一次 dragleave，按坐标兜底收起遮罩
+    var outside = e.clientX <= 0 || e.clientY <= 0 ||
+      e.clientX >= window.innerWidth || e.clientY >= window.innerHeight;
+    if (dropDepth === 0 || outside) {
+      hideDropOverlay();
+    }
+  });
+
+  document.addEventListener('drop', function (e) {
+    if (!canDropFiles() || !dragHasFiles(e)) {
+      return;
+    }
+    e.preventDefault();
+    var files = Array.prototype.slice.call(e.dataTransfer.files || []);
+    hideDropOverlay();
+    if (files.length === 0) {
+      return;
+    }
+    appendSelectedFiles(files);
+    activateTab('upload');
+    setStatus('');
+  });
+
+  document.addEventListener('dragend', hideDropOverlay);
+
+  $('clear-btn').addEventListener('click', function () {
+    if (uploading) {
+      return;
+    }
+    selectedFiles = [];
+    $('upload-picker').value = '';
+    $('upload-progress').innerHTML = '';
+    updateSelectedUi();
+  });
+
+  // 单个文件移除：只删当前条目，保留其余选择。
+  $('upload-progress').addEventListener('click', function (e) {
+    var btn = e.target.closest('.file-remove-btn');
+    if (btn === null || uploading) {
+      return;
+    }
+    var index = parseInt(btn.getAttribute('data-index'), 10);
+    if (isNaN(index) || index < 0 || index >= selectedFiles.length) {
+      return;
+    }
+    selectedFiles.splice(index, 1);
+    $('upload-picker').value = '';
+    updateSelectedUi();
+    renderUploadProgress();
+  });
+
+  function renderUploadProgress() {
+    var html = '';
+    for (var i = 0; i < selectedFiles.length; i++) {
+      html += '<div class="upload-item">' +
+        '<div class="upload-row">' +
+        '<div class="file-badge" aria-hidden="true">' + esc(fileBadge(selectedFiles[i].name)) + '</div>' +
+        '<div class="upload-info">' +
+        '<div class="upload-name">' + esc(selectedFiles[i].name) + '</div>' +
+        '<div class="upload-size">' + formatBytes(selectedFiles[i].size) + '</div>' +
+        '</div>' +
+        '<button class="file-remove-btn" type="button" data-index="' + i + '" aria-label="' +
+        esc(t('remove')) + '">\u00D7</button>' +
+        '</div>' +
+        '<div class="progress"><div id="up-bar-' + i + '"></div></div>' +
+        '</div>';
+    }
+    $('upload-progress').innerHTML = html;
+  }
+
+  // 单个发送动作：文件 + 文本一起提交。
+  // 仅文本：单条 text/plain + preview → 接收端按文本消息处理；
+  // 有文件与文本：文本作为 message.txt 随文件一起发送 → 接收端按文本文件处理。
+  $('upload-btn').addEventListener('click', function () {
+    if (uploading) {
+      return;
+    }
+    var text = $('text-input').value;
+    var hasFiles = selectedFiles.length > 0;
+    var hasText = text.length > 0;
+    if (!hasFiles && !hasText) {
+      setSegmentStatus('upload', t('nothingToSend'), 'warning');
+      return;
+    }
+    var files = selectedFiles.slice();
+    if (hasText) {
+      files.push(new File([text], 'message.txt', { type: 'text/plain' }));
+    }
+    var dtos = {};
+    for (var i = 0; i < files.length; i++) {
+      var isText = hasText && i === files.length - 1;
+      dtos['f' + i] = {
+        id: 'f' + i,
+        fileName: isText ? 'message.txt' : files[i].name,
+        size: files[i].size,
+        fileType: isText ? 'text/plain' : (files[i].type || 'application/octet-stream'),
+        preview: isText ? text : undefined
+      };
+    }
+    startUpload(dtos, files);
+  });
+
+  function setUploadToken(token) {
+    ulToken = token || '';
+    if (ulToken) {
+      sessionStorage.setItem('handysend_ul_token', ulToken);
+    } else {
+      sessionStorage.removeItem('handysend_ul_token');
+    }
+  }
+
+  function startUpload(dtos, files) {
+    setUploading(true);
+    uploadRetryCount = 0;
+    pendingUpload = { dtos: dtos, files: files };
+    prepareUpload(dtos, files);
+  }
+
+  function prepareUpload(dtos, files) {
+    if (uploadPreparing) {
+      return;
+    }
+    uploadPreparing = true;
+    var url = BASE + '/web/prepare-upload';
+    if (ulToken) {
+      url += '?token=' + encodeURIComponent(ulToken);
+    }
+    request(url, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: Object.keys(dtos).map(function (id) { return dtos[id]; }) })
+    }).then(function (response) {
+      return handleUploadPrepare(response, dtos, files);
+    }).catch(function (err) {
+      if (err && err.authRequired) {
+        // 保持 uploading；登录后由 pendingUpload 恢复
+        return;
+      }
+      setSegmentStatus('upload', t('networkErrorRetry'), 'warning');
+      scheduleUploadRetry(dtos, files, 5);
+    }).then(function () {
+      uploadPreparing = false;
+    });
+  }
+
+  function scheduleUploadRetry(dtos, files, maxAttempts) {
+    if (uploadRetryTimer >= 0 || uploadRetryCount >= maxAttempts) {
+      failUpload('uploadFailedRetry');
+      return;
+    }
+    uploadRetryCount++;
+    uploadRetryTimer = setTimeout(function () {
+      uploadRetryTimer = -1;
+      if (isLocked || !uploading) {
+        return;
+      }
+      prepareUpload(dtos, files);
+    }, 3000);
+  }
+
+  function clearUploadRetry() {
+    if (uploadRetryTimer >= 0) {
+      clearTimeout(uploadRetryTimer);
+      uploadRetryTimer = -1;
+    }
+    uploadRetryCount = 0;
+  }
+
+  // statusKey 为空时保留调用方已设置的具体状态（拒绝/超时/网络错误等）
+  function failUpload(statusKey) {
+    clearUploadRetry();
+    if (statusKey) {
+      setSegmentStatus('upload', t(statusKey), 'warning');
+    }
+    setUploading(false);
+    pendingUpload = null;
+    setUploadToken('');
+  }
+
+  function handleUploadPrepare(response, dtos, files) {
+    if (response.status === 409) {
+      var pendingToken = response.headers.get('X-Handysend-Token');
+      if (pendingToken) {
+        setUploadToken(pendingToken);
+      }
+      setSegmentStatus('upload', t('waitingConfirm'));
+      scheduleUploadRetry(dtos, files, 25);
+      return undefined;
+    }
+    if (response.status === 403) {
+      failUpload('rejected');
+      return undefined;
+    }
+    if (response.status === 408) {
+      failUpload('confirmTimeoutRetry');
+      return undefined;
+    }
+    if (response.status === 404) {
+      failUpload('shareEndedRetry');
+      return undefined;
+    }
+    if (!response.ok) {
+      setSegmentStatus('upload', t('requestFailedRetry') + '（' + response.status + '）', 'warning');
+      failUpload();
+      return undefined;
+    }
+    return response.json().then(function (data) {
+      clearUploadRetry();
+      pendingUpload = null;
+      setUploadToken(data.token);
+      uploadNext(0, Object.keys(dtos), files, data.token, 0);
+    });
+  }
+
+  function uploadNext(index, ids, files, token, attempt) {
+    if (index >= ids.length) {
+      completeUpload(token);
+      return;
+    }
+    var fileId = ids[index];
+    var file = files[parseInt(fileId.slice(1), 10)];
+    if (file === undefined) {
+      failUpload();
+      return;
+    }
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', BASE + '/web/upload?token=' + encodeURIComponent(token) +
+      '&fileId=' + encodeURIComponent(fileId));
+    xhr.upload.onprogress = function (e) {
+      if (e.lengthComputable) {
+        var bar = document.getElementById('up-bar-' + index);
+        if (bar) { bar.style.width = Math.round(e.loaded / e.total * 100) + '%'; }
+      }
+    };
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) { return; }
+      if (xhr.status === 200) {
+        var bar = document.getElementById('up-bar-' + index);
+        if (bar) { bar.style.width = '100%'; }
+        uploadNext(index + 1, ids, files, token, 0);
+        return;
+      }
+      if (xhr.status === 401) {
+        pendingUpload = {
+          resume: function () {
+            uploadNext(index, ids, files, token, attempt);
+          }
+        };
+        showGate('');
+        return;
+      }
+      if (xhr.status === 413) {
+        setSegmentStatus('upload', t('uploadFailedRetry') + '（413）', 'warning');
+        failUpload();
+        return;
+      }
+      // 单文件失败允许原地重试一次，避免整批重新建会话
+      if (attempt < 1) {
+        setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
+        setTimeout(function () {
+          uploadNext(index, ids, files, token, attempt + 1);
+        }, 1500);
+        return;
+      }
+      setSegmentStatus('upload', t('uploadFailedRetry') + '（' + xhr.status + '）', 'warning');
+      failUpload();
+    };
+    xhr.onerror = function () {
+      if (attempt < 1) {
+        setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
+        setTimeout(function () {
+          uploadNext(index, ids, files, token, attempt + 1);
+        }, 1500);
+        return;
+      }
+      setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
+      failUpload();
+    };
+    xhr.send(file);
+  }
+
+  // 全部文件落盘后通知服务端回收上传会话（只清临时文件，不删已完成文件）。
+  function finishUploadSession(token) {
+    if (!token) {
+      return;
+    }
+    try {
+      navigator.sendBeacon(BASE + '/web/finish?token=' + encodeURIComponent(token));
+    } catch (_e) {
+    }
+  }
+
+  function completeUpload(token) {
+    setSegmentStatus('upload', t('uploadDone'));
+    setUploading(false);
+    pendingUpload = null;
+    clearUploadRetry();
+    finishUploadSession(token);
+    setUploadToken('');
+    // 本次发送完成：清空选择，下一次发送从全新会话开始
+    selectedFiles = [];
+    $('upload-picker').value = '';
+    $('upload-progress').innerHTML = '';
+    $('text-input').value = '';
+    updateSelectedUi();
+  }
+
+  // ========== 主题/语言菜单交互 ==========
+  $('theme-btn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleMenu('theme');
+  });
+  $('lang-btn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleMenu('lang');
+  });
+  var themeOptions = document.querySelectorAll('#theme-menu [data-theme-choice]');
+  for (var i = 0; i < themeOptions.length; i++) {
+    themeOptions[i].addEventListener('click', function () {
+      setTheme(this.getAttribute('data-theme-choice'));
+      closeMenus();
+      $('theme-btn').focus();
+    });
+  }
+  var langOptions = document.querySelectorAll('#lang-menu [data-lang]');
+  for (var j = 0; j < langOptions.length; j++) {
+    langOptions[j].addEventListener('click', function () {
+      setLanguage(this.getAttribute('data-lang'));
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var target = e.target;
+    if (target && target.closest &&
+      (target.closest('.app-menu') || target.closest('.app-bar__action'))) {
+      return;
+    }
+    closeMenus();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') {
+      return;
+    }
+    var themeOpen = !$('theme-menu').classList.contains('hidden');
+    var langOpen = !$('lang-menu').classList.contains('hidden');
+    if (!themeOpen && !langOpen) {
+      return;
+    }
+    closeMenus();
+    if (themeOpen) {
+      $('theme-btn').focus();
+    }
+    if (langOpen) {
+      $('lang-btn').focus();
+    }
+  });
+
+  // 页面关闭/刷新：先标记离开；刷新会在宽限内重新心跳并取消结束。
+  window.addEventListener('pagehide', function () {
+    if (ulToken) {
+      navigator.sendBeacon(BASE + '/web/leave?token=' + encodeURIComponent(ulToken));
+    }
+  });
+
+  // 页面回到前台/从 bfcache 恢复：重建可能已失效的 SSE 并补一次 caps。
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible' || isLocked) {
+      return;
+    }
+    startRealtime();
+    loadCaps(true);
+  });
+
+  window.addEventListener('pageshow', function (event) {
+    if (!event.persisted || isLocked) {
+      return;
+    }
+    startRealtime();
+    loadCaps(true);
+  });
+
+  window.addEventListener('online', function () {
+    if (isLocked) {
+      return;
+    }
+    startRealtime();
+    loadCaps(true);
+  });
+
+  if (systemTheme) {
+    var onSystemTheme = function () {
+      if (themePref === 'system') {
+        applyThemeUi('system');
+      }
+    };
+    if (systemTheme.addEventListener) {
+      systemTheme.addEventListener('change', onSystemTheme);
+    } else if (systemTheme.addListener) {
+      systemTheme.addListener(onSystemTheme);
+    }
+  }
+  themePref = detectTheme();
+  applyThemeUi(themePref);
+  langPref = detectLang();
+  if (isLocked) {
+    setTimeout(function () {
+      try {
+        $('gate-input').focus();
+      } catch (_e) {
+      }
+    }, 30);
+  }
+  loadI18n(langPref).then(function () {
+    if (!isLocked) {
+      loadCaps(false);
+    }
+  });
+})();
+</script>
+</body>
+</html>

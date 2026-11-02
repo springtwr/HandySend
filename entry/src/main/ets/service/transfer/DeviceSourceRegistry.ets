@@ -30,15 +30,17 @@ export function listSources(): Array<DeviceSourceDescriptor> {
 }
 
 /**
- * 过滤出「本次会话曾发现过设备」的来源（按 order 升序）。
- * 从未发现过的来源不展示标签；为空时调用方展示默认空态。
+ * 过滤出发送页可展示的设备来源（按 order 升序）：
+ * 仅设备来源且协议开关开启。集合不随发现结果变化；
+ * 全部来源均无设备时由调用方回退总空态。
  */
-export function filterSeenSources(sources: Array<DeviceSourceDescriptor>,
-  seenKeys: Array<string>): Array<DeviceSourceDescriptor> {
+export function filterEnabledDeviceSources(
+  sources: Array<DeviceSourceDescriptor>): Array<DeviceSourceDescriptor> {
   let result: Array<DeviceSourceDescriptor> = [];
   for (let i = 0; i < sources.length; i++) {
-    if (seenKeys.indexOf(sources[i].key) >= 0) {
-      result.push(sources[i]);
+    let descriptor: DeviceSourceDescriptor = sources[i];
+    if (descriptor.deviceSource && descriptor.enabled()) {
+      result.push(descriptor);
     }
   }
   return result;

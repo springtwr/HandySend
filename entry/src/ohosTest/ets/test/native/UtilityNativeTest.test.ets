@@ -1,7 +1,7 @@
 // UtilityNativeTest：工具函数 NativeBridge 测试
 // 覆盖 nativeSanitizeFileName/nativeGetNetworkInterfaces/
 //        nativeHashFileStream/nativeCancelHash/nativeHashBuffer/nativeCreateCancelToken/
-//        nativeFailFileDownload/nativeFailFileUpload/nativeFlushRustLogs
+//        nativeFailFileUpload/nativeFlushRustLogs
 // 注意：工具函数不需要服务器运行
 // computeFingerprintHash 纯逻辑由 Rust convert.rs 测试覆盖
 import { describe, it, expect } from '@ohos/hypium'
@@ -10,7 +10,6 @@ import {
   nativeGetNetworkInterfaces,
   nativeHashBuffer,
   nativeCreateCancelToken,
-  nativeFailFileDownload,
   nativeFailFileUpload,
   nativeCancelHash,
   nativePollDebugLogWithLevels,
@@ -101,19 +100,6 @@ export default function UtilityNativeTest() {
       expect(hash1.length > 0).assertTrue()
     })
 
-    // ── nativeFailFileDownload ──
-
-    it('failFileDownload_with_invalid_ids_throws', 0, () => {
-      let threw: boolean = false
-      try {
-        nativeFailFileDownload('invalid_session', 'invalid_file')
-      } catch (_e) {
-        threw = true
-      }
-      // 无效 ID 应抛异常
-      expect(threw).assertTrue()
-    })
-
     // ── nativeFailFileUpload ──
 
     it('failFileUpload_with_invalid_ids_throws', 0, () => {
@@ -160,7 +146,7 @@ export default function UtilityNativeTest() {
 
     it('flushRustLogs_empty_and_repeat_calls_do_not_throw', 0, () => {
       // 冒烟验证：先排空缓冲，对空缓冲及连续调用均不应抛异常。
-      // level|message 分割与未知级别降级依赖 Rust 侧注入的日志行，
+      // level|target|message 分割与未知级别降级依赖 Rust 侧注入的日志行，
       // ArkTS 测试无法控制缓冲内容，故此处只覆盖调用安全性。
       let threw: boolean = false
       try {

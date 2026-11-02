@@ -1,6 +1,6 @@
 # 后台传输与通知
 
-> `BackgroundTransferService`（dataTransfer 长时任务 + 实况进度通知）与 `PendingRequestNotifier`（后台待确认请求提示）的实现细节。
+> `BackgroundTransferService`（dataTransfer 长时任务 + 实况进度通知）与 `BackgroundAttentionNotifier`（后台关注通知层）的实现细节。
 >
 > 主文档 `docs/ARCHITECTURE.md` §4.7 / §4.8 保留概述；生命周期编排见主文档 §4.1。
 
@@ -8,7 +8,7 @@
 
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
-后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，
+后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，
 `KEEP_BACKGROUND_RUNNING` 权限），并以实况通知（LIVE_VIEW SlotType + downloadTemplate，typeCode 8）展示聚合进度；全部会话终态后发布终态文案（成功/部分失败/失败三档）并延迟 10 秒停止任务实现通知停留。
 
 服务为模块级单例，由 EntryAbility 生命周期驱动。
@@ -22,7 +22,18 @@
 ### 1.2 传输驱动启停
 
 - 长时任务的申请/保持不再仅依赖 `onBackground` 时机：缓存 `UIAbilityContext`，changeBus 在后台检出进行中传输且任务空闲时主动申请（`ensureTransferTaskForBackground`，幂等）
-- 终态停留期内新传输出现时取消终端停止定时器并复位终态标记，使任务继续有效
+- 传输任务与空闲保活任务分离，各自持有独立的 `dataTransfer` 长时任务、通知 Id 与任务 Id：
+  - 传输任务：后台存在活跃会话时申请，通知显示「后台传输中 / 关闭通知会中断传输」，随真实进度更新；
+  - 保活任务：设置「允许后台接收」开启且网页服务或 LocalSend 服务器运行时，进入后台即申请，
+    通知显示「后台运行中 / 临时保活5分钟，到期后自动关闭」，固定 5 分钟，每 30 秒推进进度，
+    到期先发布 100% 结束帧再立即停止任务（通知随任务消失，与传输任务一致，不触发系统完成提醒）；
+    不因传输开始/结束重置或延长。
+- 传输结束统一发布独立普通终态通知（成功/部分失败/失败三档，不自动撤销，回前台或点击后撤销）；
+  普通通知发布完成后立即停止传输长时任务，避免「后台传输中」通知继续显示。
+  普通终态通知与保活实况通知可并存。
+- 系统可能因 `dataTransfer` 低速率提前取消保活任务（`detailedReason=4`）；保活任务被取消时只结束保活，
+  不影响仍在进行的传输任务。
+- 终态处理期间新传输出现时使在途停止失效并复位终态标记，使传输任务继续有效
 
 ### 1.3 更新机制
 
@@ -49,18 +60,25 @@
 
 - 导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测（聚合断言迁移至 `BackgroundAggregateTest`，经注册表快照验证）
 
-## 2. PendingRequestNotifier — 后台待确认请求提示
+## 2. BackgroundAttentionNotifier — 后台关注通知层
 
-`entry/src/main/ets/service/PendingRequestNotifier.ets`
+`entry/src/main/ets/service/BackgroundAttentionNotifier.ets`
 
-- 应用处于后台时到达「需用户手动确认」的接收/下载请求（LocalSend 接收、Web 分享下载、MTA 互传请求）时，发布一条可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）
-- 提示的发布/撤回按统一注册表的待确认会话计数驱动（`initPendingRequestNotifier` 订阅变更总线；无待确认会话或回到前台即撤回）
-- 请求本身即注册表中的待确认会话，用户在任务确认/拒绝
-- 点击通知携带「任务中心」深链意图（见 §3）
+- 应用处于后台时，把需要用户关注的事件收敛为**一条**系统通知（独立通知 id，与实况进度通知区分）；
+  点击携带「任务中心」深链意图（见 §3）
+- **只展示待确认请求**：LocalSend / MTA 接收、Web 上传；
+  数量取统一注册表的待确认会话计数（`getPendingCount`），`%d` 为等待确认的请求数
+- 网页访问/网页下载不进入该通知：访问只写诊断日志，并通过 `noteWebAccess` 续期网页服务的有界保活；
+  下载批次由后台传输实况通知承载（与上传/其它传输共用的聚合通知）
+- **发布/撤回驱动**：注册表变更订阅 + 退后台补发（前台期间已存在的待确认请求在 `onBackground` 补齐）；
+  回到前台（`onForeground`）撤回；无待确认即撤回
+- **去重**：按「类别 + 数量」签名判重，同一状态不重复 publish；
+  撤回与在途发布之间用代际号兜底回收，避免通知滞留
+- 请求本身仍是注册表中的待确认会话，用户回到前台后在任务页处理
 
 ## 3. 通知点击深链（回任务中心）
 
-进度通知（§1）与待确认提示通知（§2）的点击行为一致：拉起主 Ability 并置于前台，且携带「任务中心」深链意图。
+进度通知（§1）与后台关注通知（§2）的点击行为一致：拉起主 Ability 并置于前台，且携带「任务中心」深链意图。
 
 - **意图载体**：`utils/WantAgentUtil.buildBackToFrontWantAgent(context, navigationTarget?)` 在 `Want.parameters` 写入
   `handysend.navigate`（值 `transferCenter`）；缺省不传目标时保持既有无参调用兼容

@@ -8,15 +8,15 @@
  * 运行时注入：registerAddLog 注入 addLog 回调。
  *
  * Debug 开关策略：
- * - Debug 版本：默认开启 DEBUG 级别，始终输出全量日志
- * - Release 版本：默认仅 INFO 及以上，可通过 setDebugEnabled 临时开启 DEBUG，
- *   重启应用后恢复默认（不持久化）
+ * - Debug 构建默认开启 DEBUG，Release 构建默认仅 INFO 及以上
+ * - 用户可在诊断日志设置中切换「记录详细日志」，选择会持久化
+ * - 未保存过用户选择时，才使用构建默认值
  *
  * 使用方式：
  *   import { getLogger } from '../utils/Logger';
  *   import { LogDomains } from '../common/LogDomains';
  *   const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendRepository', '发送');
- *   logger.info('Send completed');
+ *   logger.info('发送完成');
  *
  * 模块标签：getLogger 的第三个参数为模块级稳定短标签，由 Logger 统一前置为 `[标签] `。
  * 输出形态为 `[标签] [上下文] 内容`；未传标签时退化为 `[上下文] 内容`。
@@ -29,16 +29,31 @@ import { LogContext, composeLogMessage } from '../common/LogFormat';
 
 // ── addLog 回调（运行时注入，避免循环依赖） ──
 
-type AddLogFn = (level: string, msg: string) => void;
+type AddLogFn = (level: string, msg: string, tag: string) => void;
 let addLogFn: AddLogFn | null = null;
 
 export function registerAddLog(fn: AddLogFn): void {
   addLogFn = fn;
 }
 
-function emitLog(level: string, msg: string): void {
+function emitLog(level: string, msg: string, tag: string): void {
   if (addLogFn !== null) {
-    addLogFn(level, msg);
+    addLogFn(level, msg, tag);
+  }
+}
+
+// ── Debug 状态监听（供文件日志通道联动 detail 文件） ──
+
+type DebugStateListener = (enabled: boolean) => void;
+let debugStateListener: DebugStateListener | null = null;
+
+export function registerDebugStateListener(fn: DebugStateListener): void {
+  debugStateListener = fn;
+}
+
+function notifyDebugState(enabled: boolean): void {
+  if (debugStateListener !== null) {
+    debugStateListener(enabled);
   }
 }
 
@@ -62,7 +77,7 @@ class LoggerInstance {
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.debug(this.domain, this.tag, '%{public}s', fullMsg);
     if (debugEnabled) {
-      emitLog('debug', fullMsg);
+      emitLog('debug', composeLogMessage('', context, msg), this.label);
     }
   }
 
@@ -72,7 +87,7 @@ class LoggerInstance {
     }
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.info(this.domain, this.tag, '%{public}s', fullMsg);
-    emitLog('info', fullMsg);
+    emitLog('info', composeLogMessage('', context, msg), this.label);
   }
 
   warn(msg: string, context?: LogContext): void {
@@ -81,7 +96,7 @@ class LoggerInstance {
     }
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.warn(this.domain, this.tag, '%{public}s', fullMsg);
-    emitLog('warn', fullMsg);
+    emitLog('warn', composeLogMessage('', context, msg), this.label);
   }
 
   error(msg: string, context?: LogContext): void {
@@ -90,7 +105,7 @@ class LoggerInstance {
     }
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.error(this.domain, this.tag, '%{public}s', fullMsg);
-    emitLog('error', fullMsg);
+    emitLog('error', composeLogMessage('', context, msg), this.label);
   }
 
   fatal(msg: string, context?: LogContext): void {
@@ -99,7 +114,7 @@ class LoggerInstance {
     }
     let fullMsg = composeLogMessage(this.label, context, msg);
     hilog.fatal(this.domain, this.tag, '%{public}s', fullMsg);
-    emitLog('fatal', fullMsg);
+    emitLog('fatal', composeLogMessage('', context, msg), this.label);
   }
 
   /**
@@ -128,7 +143,7 @@ class LoggerInstance {
 }
 
 // ── Debug 开关 ──
-// Debug 版默认开启，Release 版默认关闭。不持久化，重启恢复默认。
+// 未保存用户选择时，Debug 构建默认开启，Release 构建默认关闭；页面负责持久化用户选择。
 
 let debugEnabled: boolean = false;
 
@@ -137,7 +152,7 @@ export function isDebugEnabled(): boolean {
 }
 
 /**
- * 临时切换 debug 开关（仅内存 + hilog 级别，不持久化，重启恢复默认）。
+ * 运行时切换 debug 开关（内存 + hilog 级别）；持久化由日志设置页负责。
  *
  * 使用 API 21 的 setLogLevel + PREFER_OPEN_LOG 策略：
  * - 开启时 PREFER_OPEN_LOG 取 min(DEBUG, 系统级别)，Release 下也能降级到 DEBUG
@@ -153,19 +168,28 @@ export function setDebugEnabled(enabled: boolean): void {
   } else {
     hilog.setLogLevel(hilog.LogLevel.INFO, hilog.PreferStrategy.UNSET_LOGLEVEL);
   }
+  notifyDebugState(enabled);
 }
 
+// 初始化只生效一次：Ability 重建时不能把用户选择或构建默认值重复覆盖。
+let loggerInitialized: boolean = false;
+
 /**
- * 初始化 Logger：根据编译模式设定默认级别。
- * Debug 版 = DEBUG 全量输出，Release 版 = INFO 及以上。
+ * 初始化 Logger：优先使用用户持久化选择，未保存过选择时使用构建默认值。
+ * Debug 构建默认 DEBUG，Release 构建默认 INFO。
  */
-export function initLogger(): void {
-  debugEnabled = BuildProfile.DEBUG;
+export function initLogger(persistedDebug?: boolean): void {
+  if (loggerInitialized) {
+    return;
+  }
+  loggerInitialized = true;
+  debugEnabled = persistedDebug ?? BuildProfile.DEBUG;
   if (debugEnabled) {
     hilog.setLogLevel(hilog.LogLevel.DEBUG, hilog.PreferStrategy.PREFER_OPEN_LOG);
   } else {
     hilog.setLogLevel(hilog.LogLevel.INFO, hilog.PreferStrategy.UNSET_LOGLEVEL);
   }
+  notifyDebugState(debugEnabled);
 }
 
 // ── getLogger ──

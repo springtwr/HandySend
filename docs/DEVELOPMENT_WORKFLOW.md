@@ -51,14 +51,13 @@ git submodule update --init
 
 ```bash
 ohrs doctor                              # 验证环境（armv7 一项 ✖ 可忽略，鸿蒙无 armv7 设备）
-hvigorw assembleHap                      # 全量构建（HAR + HAP）
+hvigorw assembleHap --mode module      # 全量构建（HAR + HAP）
 hvigorw assembleHar                      # 仅 Rust 原生库
 ```
 
 **⚠️ 增量构建两大坑**：
 
-1. **网页资产不触发 Rust 重建**：`assets/web/` 下的 `download.html`/`upload.html`/`error-403.html`
-   不在增量检查范围。改页面后**必须** `rm -rf localsend_ohrs/package/libs/` 再构建，否则 .so 里仍是旧页面
+1. **网页资产随 Rust 重建**：单页 `localsend_ohrs/rust/bridge/web/assets/single.html` 在增量检查范围内（`localsend_ohrs/rust/`），改页面后正常增量构建即可
 2. **cargo test 需指定 host target**：`cargo test --target x86_64-unknown-linux-gnu`（不指定会按 OHOS target 编译报 E0463）
 
 ## 3. 日常开发
@@ -87,7 +86,7 @@ git commit -m "chore: 更新 submodule 至 <说明>"
 
 ```bash
 rm -rf localsend_ohrs/package/libs/      # 强制重编（见 §2 坑 1）
-hvigorw assembleHap && devecocli run --skip-build
+hvigorw assembleHap --mode module && devecocli run --skip-build
 # 浏览器打开应用内分享链接，验证下载/上传/PIN/文本预览等
 ```
 
@@ -146,14 +145,14 @@ git -C localsend_ohrs/third_party/localsend checkout -b harmony-web-ui origin/ha
 
 ## 5. 升级上游 localsend（按版本节奏，非自动）
 
-1.18.2 起 core 重构了 web 接口（`WebConfig` 拆分），升级主要工作量在 HandySend 桥接层迁移，**不要**对定制分支使用 GitHub 网页的 Sync/Update。
+升级主要工作量在 HandySend 桥接层迁移（浏览器面为自研服务，不依赖上游 web 接口），**不要**对定制分支使用 GitHub 网页的 Sync/Update。
 
 ```bash
 cd localsend_ohrs/third_party/localsend
 git fetch upstream --tags                # 拉上游（含新 tag）
 git checkout -b upgrade-<版本>           # 实验分支，不直接动 harmony-web-ui
 git rebase v1.18.2                       # 或 git rebase upstream/main
-# 解决冲突（重点：core web.rs 结构 + HandySend 桥接 adapter/server.rs WebSend 适配迁移）
+# 解决冲突（重点：core 结构变更在 HandySend 桥接层的对应迁移）
 cargo test --target x86_64-unknown-linux-gnu --features full
 git push -u origin upgrade-<版本>
 # 全量验证（含端到端）通过后，主仓库 gitlink 切到新分支/提交（可回退）
@@ -185,7 +184,7 @@ git submodule update --init # 按 gitlink 检出（不递归初始化 flutter �
 git fetch upstream --tags                # 拉上游 tags（升级用）
 
 # 构建 / 测试
-hvigorw assembleHap                      # 全量构建
+hvigorw assembleHap --mode module      # 全量构建
 rm -rf localsend_ohrs/package/libs       # 强制重编 Rust
 cargo test --target x86_64-unknown-linux-gnu --features full   # core 测试
 ```

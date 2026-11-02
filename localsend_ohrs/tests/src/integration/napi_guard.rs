@@ -287,12 +287,24 @@ fn extract_native_types_case_fields(content: &str) -> HashMap<String, BTreeSet<S
         result.insert(prev, extract_payload_keys(&current_text));
     }
 
-    // prepareUpload 分支委托 parsePrepareUploadEvent——合并其 payload 字段
-    if let Some(fields) = result.get_mut("prepareUpload") {
-        if let Some(pp_start) = content.find("function parsePrepareUploadEvent") {
-            let pp = &content[pp_start..];
-            let pp_end = pp.find("\nfunction ").unwrap_or(pp.len());
-            fields.extend(extract_payload_keys(&pp[..pp_end]));
+    // 部分分支委托独立解析函数——合并其函数体内的 payload 字段，
+    // 否则契约检查会把委托分支误判为“未读取任何 payload 字段”。
+    let delegated: &[(&str, &str)] = &[
+        ("prepareUpload", "parsePrepareUploadEvent"),
+        ("webSendPrepareDownload", "parseWebSendPrepareDownloadEvent"),
+        ("webSendFilesUpdated", "parseWebSendFilesUpdatedEvent"),
+        ("webUploadPrepare", "parseWebUploadPrepareEvent"),
+    ];
+    for (case_name, function_name) in delegated {
+        if let Some(fields) = result.get_mut(*case_name) {
+            let signature: String = format!("function {function_name}");
+            if let Some(fn_start) = content.find(&signature) {
+                let function_body = &content[fn_start..];
+                let fn_end = function_body
+                    .find("\nfunction ")
+                    .unwrap_or(function_body.len());
+                fields.extend(extract_payload_keys(&function_body[..fn_end]));
+            }
         }
     }
 

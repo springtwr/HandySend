@@ -86,7 +86,7 @@ struct SessionSummaryGuard<'a> {
 
 impl Drop for SessionSummaryGuard<'_> {
     fn drop(&mut self) {
-        log::info!(
+        log::debug!(
             "MTA WS 会话结束 收到对端报文数={} 相对耗时={}ms",
             self.ctx.peer_frames.load(Ordering::SeqCst),
             elapsed_ms(self.session_start)
@@ -113,14 +113,14 @@ where
     let mut ws = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
     // 升级握手期间服务器可能已被停止：立即退出，不再发起协商
     if ctx.cancel.is_cancelled() {
-        log::info!("MTA WS 升级完成但服务器已取消，直接终止会话");
+        log::debug!("MTA WS 升级完成但服务器已取消，直接终止会话");
         terminate_session(&mut ws, TerminatePath::Cancel, session_start, false).await;
         return;
     }
     // 本地已登记取消意图（用户在对端接入前取消）：对端刚接入即回送取消状态并收尾，
     // 不推进版本协商与 sendRequest
     if ctx.is_reject_pending() {
-        log::info!("MTA 本地已取消，对端接入后直接回送取消状态");
+        log::debug!("MTA 本地已取消，对端接入后直接回送取消状态");
         reject_peer(&ctx, &mut ws, session_start).await;
         return;
     }
@@ -189,7 +189,7 @@ where
 
     // 取消意图在版本协商后登记：直接回送取消状态，不抢先发送 sendRequest
     if ctx.is_reject_pending() {
-        log::info!("MTA 本地已取消，跳过 sendRequest 直接回送取消状态");
+        log::debug!("MTA 本地已取消，跳过 sendRequest 直接回送取消状态");
         reject_peer(&ctx, &mut ws, session_start).await;
         return;
     }
@@ -299,14 +299,14 @@ where
             // 本地停止服务器：终止会话，不发送失败事件
             // （取消是本地主动行为，UI 已退出传输页）
             _ = ctx.cancel.cancelled() => {
-                log::info!("MTA WS 状态机收到取消，终止会话");
+                log::debug!("MTA WS 状态机收到取消，终止会话");
                 terminate_session(&mut ws, TerminatePath::Cancel, session_start, false).await;
                 return;
             }
             // 本地登记取消意图（对端已连接：协商中/等待确认中/传输中）：立即回送取消状态并收尾
             _ = ctx.reject_notify.notified() => {
                 if ctx.is_reject_pending() {
-                    log::info!("MTA 本地已取消，回送取消状态并结束状态机");
+                    log::debug!("MTA 本地已取消，回送取消状态并结束状态机");
                     reject_peer(&ctx, &mut ws, session_start).await;
                     return;
                 }
@@ -516,7 +516,7 @@ where
             match ws.send(Message::text(ack)).await {
                 Ok(()) => true,
                 Err(e) => {
-                    log::warn!("MTA 回送 ack 失败: {e}");
+                    log::warn!("MTA 回送确认失败：{e}");
                     false
                 }
             }
@@ -558,14 +558,14 @@ where
             // 本地停止服务器：终止会话，不发送失败事件（与主循环的取消分支同语义）；
             // 缺此分支会空等到 ack 超时再误发一次失败事件
             _ = ctx.cancel.cancelled() => {
-                log::info!("MTA WS 握手等待 {name} 确认期间收到取消，终止会话");
+                log::debug!("MTA WS 握手等待 {name} 确认期间收到取消，终止会话");
                 terminate_session(ws, TerminatePath::Cancel, session_start, false).await;
                 return AckOutcome::Cancelled;
             }
             // 本地登记取消意图：立即回送取消状态并收尾，不再等待对端确认
             _ = ctx.reject_notify.notified() => {
                 if ctx.is_reject_pending() {
-                    log::info!("MTA 本地已取消（等待 {name} 确认期间），回送取消状态");
+                    log::debug!("MTA 本地已取消（等待 {name} 确认期间），回送取消状态");
                     reject_peer(ctx, ws, session_start).await;
                     return AckOutcome::Cancelled;
                 }
@@ -644,7 +644,7 @@ async fn fail_ws<S>(
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    log::error!("MTA 发送失败: {reason}");
+    log::error!("MTA 发送失败：{reason}");
     send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
     terminate_session(ws, TerminatePath::Fail, session_start, false).await;
 }
@@ -663,7 +663,7 @@ async fn reject_peer<S>(
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let message = protocol::cancel_status_message(&ctx.task_id);
-    log::info!("MTA 回送取消状态 taskId={}", ctx.task_id);
+    log::debug!("MTA 回送取消状态 taskId={}", ctx.task_id);
     let sent = ws.send(Message::text(message)).await.is_ok();
     terminate_session(ws, TerminatePath::Reject, session_start, sent).await;
     if sent {
@@ -752,7 +752,7 @@ async fn terminate_session<S>(
     // （被对端读取无法在本端直接观测，故以「已写出 + 有界送达宽限」为其可观测代理）；
     // 「终止方式」恒为连接终止；「对端先关」/「宽限内对端结束」描述对端先行关闭快路径与
     // 宽限内的连接结束；「终止前等待」「相对耗时」给出收尾耗时，用于核对不引入可感知额外等待。
-    log::info!(
+    log::debug!(
         "MTA WS 会话终止 path={} 终止方式=连接终止(未发送关闭帧) 指示已送出={} 对端先关={} 宽限内对端结束={} 终止前等待={}ms 相对耗时={}ms",
         path.label(),
         if directive_delivered { "是" } else { "否" },

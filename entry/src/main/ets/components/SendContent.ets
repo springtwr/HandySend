@@ -1,4 +1,3 @@
-import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
@@ -21,10 +20,19 @@ import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
 import { getSheetWidth, isWideWidth } from '../common/Breakpoints';
-import { SendViewModel, SendInitiateResult, FavoriteSendResult, shouldShowProtocolDisabledHint } from '../viewmodel/SendViewModel';
+import {
+  SendViewModel,
+  SendInitiateResult,
+  FavoriteSendResult,
+  shouldShowPartialProtocolDisabledHint,
+  shouldShowProtocolDisabledHint
+} from '../viewmodel/SendViewModel';
 import { FavoriteDevicesViewModel } from '../viewmodel/FavoriteDevicesViewModel';
 import { FavoriteDevicesSheet } from '../views/FavoriteDevicesSheet';
 import { isValidIpAddress } from '../utils/IPValidator';
+import { isLargeTransfer } from '../utils/LargeTransferUtil';
+import { formatSizeDetailed } from '../utils/FormatUtil';
+import { getStringSync } from '../utils/ResourceUtil';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice } from '../model/mta/MtaMainModels';
 import { isDemoDevice } from '../service/demo/DemoDevices';
@@ -38,7 +46,8 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送�
 export struct SendContent {
   // 系统宽度断点（随窗口尺寸变化自动刷新，收藏面板宽度断点化用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
-  @Local viewModel: SendViewModel = new SendViewModel();
+  // 发送页视图模型由页面宿主持有：页签容器跨断点重建时暂存列表等状态不丢失
+  @Require @Param viewModel: SendViewModel
   // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
   @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
@@ -51,8 +60,11 @@ export struct SendContent {
   @Event onNavigateTo: (name: string, param: Object | undefined) => void =
     (_name: string, _param: Object | undefined) => {
     }
-  // 「两个协议均禁用」提示卡的关闭状态：由页面宿主持有并下传（跨 TabContent 重建保持，不持久化）
+  // 协议状态提示卡的关闭状态（部分关闭与全部关闭提示共用）：由页面宿主持有并下传
+  // （跨 TabContent 重建保持，不持久化，重启应用后重新提示）
   @Param protocolHintDismissed: boolean = false
+  // 本次启动是否允许显示「部分传输方式已关闭」提示（同一关闭状态只提示一次）
+  @Param partialProtocolHintVisible: boolean = false
   // 关闭该提示（本次会话内不再显示）
   @Event onDismissProtocolHint: () => void = () => {
   }
@@ -74,6 +86,11 @@ export struct SendContent {
   @Local demoScenarioDevice: DiscoveredDevice | undefined = undefined
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 大文件发送二次确认弹窗文案、待执行发送动作与 Promise 结算回调（关闭时复位）
+  @Local largeFileDialogMessage: string = ''
+  private largeFileDialogId: number = -1
+  private largeFilePendingAction: (() => void) | undefined = undefined
+  private largeFileConfirmResolve: ((ok: boolean) => void) | undefined = undefined
   // 收藏设备面板（半模态）显隐与面板状态
   @Local isShowFavoritesSheet: boolean = false
   @Local favoritesPanelViewModel: FavoriteDevicesViewModel = new FavoriteDevicesViewModel()
@@ -84,9 +101,17 @@ export struct SendContent {
     this.favoritesPanelViewModel.refreshOnlineStatus();
   }
 
+  // 面板关闭时退出多选：面板视图模型的生命周期跟随发送页（@Local 字段）而非面板本身，
+  // bindSheet 关闭只隐藏面板、不销毁该实例，故须在此显式复位，
+  // 否则再次打开面板会直接呈现上次遗留的多选态与勾选。
+  @Monitor('isShowFavoritesSheet')
+  onFavoritesSheetVisibilityChange(): void {
+    if (!this.isShowFavoritesSheet) {
+      this.favoritesPanelViewModel.exitSelection();
+    }
+  }
+
   aboutToAppear(): void {
-    this.viewModel.init(this.getUIContext().getHostContext() as common.UIAbilityContext);
-    this.viewModel.subscribeFavorites();
     // 收藏面板：绑定在线快照来源并订阅收藏变更（新增/重命名/删除面板实时同步）
     this.favoritesPanelViewModel.attach(this.viewModel);
     this.favoritesPanelViewModel.subscribeFavorites();
@@ -103,11 +128,7 @@ export struct SendContent {
 
   /** 方式区动作分发：按注册表方式键执行发送页动作。 */
   onMethodAction(key: string): void {
-    if (key === 'web-send') {
-      this.onShareByLink();
-    } else if (key === 'web-receive') {
-      this.onStartWebReceive();
-    } else if (key === 'by-ip') {
+    if (key === 'by-ip') {
       this.onSendByIp();
     } else if (key === 'favorites') {
       this.onOpenFavorites();
@@ -130,19 +151,21 @@ export struct SendContent {
 
   aboutToDisappear(): void {
     unsubscribe(this.refreshCallback);
-    this.viewModel.unsubscribeFavorites();
     this.favoritesPanelViewModel.unsubscribeFavorites();
   }
 
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
   // 互传发现依赖蓝牙、互传传输依赖 WLAN（有线局域网不可替代），故 WLAN 关闭时
   // 需区分局域网是否可用：不可用时与「未连接局域网」合并为同一提示，可用时只提示互传；
-  // 局域网警告需服务器就绪。互传相关提示受「互传连接提醒」设置控制（关闭时不提示）。
+  // 局域网警告需服务器就绪。互传相关提示受「显示互传提醒」设置控制（关闭时不提示）。
   // 协议总开关关闭的类别不再提示（主动禁用不是故障，改由中性禁用提示行说明）。
   private getConnectionWarningText(): ResourceStr | undefined {
     if (this.viewModel.mtaEnabled && this.viewModel.mtaConnectionWarnings) {
       if (!this.viewModel.mtaWifiOn && this.viewModel.noWifiWarning) {
-        return $r('app.string.mta_wifi_off_warning');
+        // 该合并提示只在 LocalSend 与互传均开启时成立；LocalSend 已关闭时只说明互传自身的 WLAN 依赖
+        return this.viewModel.localSendEnabled ?
+          $r('app.string.wifi_off_lan_and_mta_warning') :
+          $r('app.string.mta_wifi_off_standalone_warning');
       }
       if (!this.viewModel.mtaWifiOn && !this.viewModel.mtaBluetoothOn) {
         return $r('app.string.mta_bt_wifi_off_warning');
@@ -163,6 +186,21 @@ export struct SendContent {
     return undefined;
   }
 
+  // 部分关闭提示文案：动态列出已关闭的传输方式（网页传输默认关闭且面板内自带开启入口，
+  // 不列入本提示；全部关闭时由「所有传输方式均已关闭」提示负责）
+  private partialProtocolHintText(): string {
+    let names: Array<string> = [];
+    if (!this.viewModel.localSendEnabled) {
+      names.push(getStringSync(this.getUIContext(), $r('app.string.localsend_enabled_label')));
+    }
+    if (!this.viewModel.mtaEnabled) {
+      names.push(getStringSync(this.getUIContext(), $r('app.string.mta_enabled_label')));
+    }
+    let template: string = getStringSync(this.getUIContext(),
+      $r('app.string.send_partial_protocols_disabled_hint'));
+    return template.replace('%s', names.join(' / '));
+  }
+
   handlePasteData(text: string): void {
     try {
       if (!this.viewModel.handlePasteData(text)) {
@@ -175,7 +213,7 @@ export struct SendContent {
         .getPromptAction()
         .showToast({ message: $r('app.string.send_clipboard_pasted'), duration: 2000 });
     } catch (e) {
-      logger.error('handlePasteData error: ' + JSON.stringify(e));
+      logger.error('粘贴数据处理失败：' + JSON.stringify(e));
     }
   }
 
@@ -187,7 +225,7 @@ export struct SendContent {
       if (data === undefined) {
         this.isDragOver = false;
         event.setResult(DragResult.DRAG_FAILED);
-        logger.warn('drop rejected: failed to fetch UDMF data');
+        logger.warn('拖放已拒绝：获取 UDMF 数据失败');
         return;
       }
       let records: Array<unifiedDataChannel.UnifiedRecord> = data.getRecords();
@@ -197,14 +235,14 @@ export struct SendContent {
       for (let i = 0; i < records.length; i++) {
         types.push(records[i].getType());
       }
-      logger.info('drop records: count=' + records.length + ' types=' + types.join(','));
+      logger.debug('拖放记录：count=' + records.length + ' types=' + types.join(','));
       let result: DragDropParseResult = parseDroppedRecords(records);
       let added: boolean = this.viewModel.applyDroppedContent(result);
       // 整批均无任何可处理内容（不支持类型）才算失败；重复内容已走暂存去重、语义上仍是已接受
       let unsupported: boolean = result.uris.length === 0 && result.texts.length === 0;
       this.isDragOver = false;
       event.setResult(unsupported ? DragResult.DRAG_FAILED : DragResult.DRAG_SUCCESSFUL);
-      logger.info('drop handled: uris=' + result.uris.length + ' texts=' + result.texts.length +
+      logger.debug('拖放已处理：uris=' + result.uris.length + ' texts=' + result.texts.length +
         ' added=' + added + ' unsupported=' + unsupported);
       if (unsupported) {
         this.getUIContext()
@@ -252,6 +290,110 @@ export struct SendContent {
     })
   }
 
+  // 大文件发送二次确认：暂存总量达到阈值时先弹确认（取消/发送两键），否则直接执行
+  private runAfterLargeFileConfirm(action: () => void): void {
+    let totalBytes: number = this.viewModel.getStagedTotalBytes();
+    if (!isLargeTransfer(totalBytes)) {
+      action();
+      return;
+    }
+    this.largeFilePendingAction = action;
+    this.largeFileConfirmResolve = undefined;
+    this.openLargeFileConfirmDialog(totalBytes);
+  }
+
+  // 大文件发送二次确认（Promise 版，供 async 发送链路使用）：无需确认返回真；
+  // 需确认时弹确认框，确认返回真，取消/关闭返回假
+  private confirmLargeFileIfNeeded(): Promise<boolean> {
+    let totalBytes: number = this.viewModel.getStagedTotalBytes();
+    if (!isLargeTransfer(totalBytes)) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve: (ok: boolean) => void) => {
+      this.largeFilePendingAction = undefined;
+      this.largeFileConfirmResolve = resolve;
+      this.openLargeFileConfirmDialog(totalBytes);
+    });
+  }
+
+  /** 打开大文件确认弹窗（调用方已备好待执行动作或结算回调）。 */
+  private openLargeFileConfirmDialog(totalBytes: number): void {
+    this.largeFileDialogMessage = getStringSync(this.getUIContext(),
+      $r('app.string.large_file_send_confirm_message')).replace('%s', formatSizeDetailed(totalBytes));
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.largeFileConfirmDialog();
+      },
+      onDidDisappear: () => {
+        // 遮罩/返回关闭同样视为取消：结算未完成的 Promise，避免 async 链路悬挂
+        let resolve = this.largeFileConfirmResolve;
+        this.largeFileDialogMessage = '';
+        this.largeFileDialogId = -1;
+        this.largeFilePendingAction = undefined;
+        this.largeFileConfirmResolve = undefined;
+        if (resolve !== undefined) {
+          resolve(false);
+        }
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.largeFileDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  /** 关闭大文件确认弹窗并复位弹窗 id（弹窗 id 尚未就绪时为空操作）。 */
+  private closeLargeFileDialog(): void {
+    if (this.largeFileDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.largeFileDialogId);
+      this.largeFileDialogId = -1;
+    }
+  }
+
+  /** 结算大文件确认（确认执行暂存动作/结算 Promise，取消两者皆不执行）。 */
+  private settleLargeFileConfirm(ok: boolean): void {
+    let pending = this.largeFilePendingAction;
+    let resolve = this.largeFileConfirmResolve;
+    // 先关闭弹窗再执行发送，避免发送刷新与弹窗关闭竞争
+    this.closeLargeFileDialog();
+    this.largeFilePendingAction = undefined;
+    this.largeFileConfirmResolve = undefined;
+    if (ok && pending !== undefined) {
+      pending();
+    }
+    if (resolve !== undefined) {
+      resolve(ok);
+    }
+  }
+
+  /** 大文件发送二次确认弹窗（取消 / 发送两键）。 */
+  @Builder
+  largeFileConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.large_file_send_confirm_title'),
+      content: this.largeFileDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.settleLargeFileConfirm(false);
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.settleLargeFileConfirm(true);
+        }
+      })
+    })
+      // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+      .id('send_large_file_confirm_dialog')
+  }
+
   // 粘贴控件授权成功后的剪贴板读取链路：先预检再读取，避免对空/非纯文本剪贴板发起 getData。
   // 预检采用官方推荐做法——hasData（有内容）与 hasDataType(MIMETYPE_TEXT_PLAIN)（含纯文本），
   // 任一不满足即提示"剪贴板为空"并返回；getPrimaryText 返回 undefined 时规范化为空串，
@@ -280,7 +422,7 @@ export struct SendContent {
       this.handlePasteData(text);
     } catch (e) {
       // 剪贴板服务异常、数据损坏等场景沿用既有兜底提示
-      logger.error('Paste error: ' + JSON.stringify(e));
+      logger.error('剪贴板读取失败：' + JSON.stringify(e));
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.clipboard_read_failed'), duration: 2000 });
@@ -289,8 +431,8 @@ export struct SendContent {
 
   // 刷新旋转使用 springMotion
   refreshDevices(): void {
-    // 扫描中不累加旋转角度（刷新旋转由 LoadingProgress 呈现）
-    if (!this.viewModel.isScanning) {
+    // 扫描中/统一刷新中不累加旋转角度（由 LoadingProgress 或既有扫描反馈呈现）
+    if (!this.viewModel.isRefreshing && !this.viewModel.isScanning) {
       this.getUIContext()
         .animateTo({
           duration: 800,
@@ -299,12 +441,8 @@ export struct SendContent {
           this.viewModel.refreshAngle = this.viewModel.refreshAngle + 360;
         });
     }
-    // 点击始终触发刷新：扫描进行中会合并排队（最多补扫一次）
-    if (this.viewModel.serverReady) {
-      this.viewModel.rescanDevices();
-    }
-    // MTA 发现扫描与 LocalSend 发现同一触发时机（不依赖 LocalSend 服务器就绪）
-    this.viewModel.rescanMtaDevices();
+    // 统一刷新入口：刷新中重复点击由 ViewModel 合并为一次待补刷
+    this.viewModel.refreshAllDevices();
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
@@ -321,14 +459,17 @@ export struct SendContent {
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
       return;
     }
-    // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
-    if (isMtaDevice(device)) {
-      this.sendToMtaDevice(device);
-      return;
-    }
-    // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
-    this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
-      this.showSendInitiateFeedback(result);
+    // 大文件先二次确认（取消/发送两键），确认后按设备类型分发
+    this.runAfterLargeFileConfirm(() => {
+      // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
+      if (isMtaDevice(device)) {
+        this.sendToMtaDevice(device);
+        return;
+      }
+      // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
+      this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
+        this.showSendInitiateFeedback(result);
+      });
     });
   }
 
@@ -364,43 +505,29 @@ export struct SendContent {
     this.viewModel.startMtaSend(params);
   }
 
-  // 点击"用网页分享"菜单项：未暂存文件时居中提示，否则创建分享链接
-  onShareByLink(): void {
-    // LocalSend 总开关关闭时不创建分享链接（菜单入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略网页分享入口');
+  // 点击网页图标：进入统一的「网页传输」面板。
+  // 已挂载同一份暂存内容时直接进入，避免重复挂载重置本次上传免确认。
+  onOpenWebPanel(): void {
+    if (!this.viewModel.webSendAllowed || this.viewModel.stagedFiles.length === 0 ||
+      this.viewModel.isWebShareMounted()) {
+      this.onNavigateTo('ShareLinkPage', undefined);
       return;
     }
-    if (this.viewModel.stagedFiles.length === 0) {
-      this.getUIContext()
-        .getPromptAction()
-        .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
-      return;
-    }
-    this.viewModel.shareByLink().then((shareUrl: string) => {
-      if (shareUrl.length > 0) {
-        let navParam: Record<string, Object> = { 'shareUrl': shareUrl };
-        this.onNavigateTo('ShareLinkPage', navParam);
-      }
+    // 挂载分享同样经大文件二次确认门禁（总量达阈值时先弹确认）
+    this.runAfterLargeFileConfirm(() => {
+      this.viewModel.shareByLink().then((shareUrl: string) => {
+        if (shareUrl.length > 0) {
+          this.onNavigateTo('ShareLinkPage', undefined);
+        }
+      });
     });
-  }
-
-  // 点击「网页接收」菜单项：进入网页接收模式（浏览器上传通道）
-  onStartWebReceive(): void {
-    // LocalSend 总开关关闭时不进入网页接收页（菜单入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略网页接收入口');
-      return;
-    }
-    let navParam: Record<string, Object> = { 'mode': 'receive' };
-    this.onNavigateTo('ShareLinkPage', navParam);
   }
 
   // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
   onSendByIp(): void {
     // LocalSend 总开关关闭时不允许按 IP 发送（菜单入口已置灰，此处为防御纵深）
     if (!this.viewModel.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略按 IP 发送入口');
+      logger.debug('LocalSend 已禁用，忽略按 IP 发送入口');
       return;
     }
     if (this.viewModel.stagedFiles.length === 0) {
@@ -628,8 +755,11 @@ export struct SendContent {
     .width('100%')
   }
 
-  // 指定 IP 分享：connectByIp → 成功走单目标发送流程，失败 Toast 提示
+  // 指定 IP 分享：大文件先二次确认，connectByIp → 成功走单目标发送流程，失败 Toast 提示
   async sendToSpecifiedIp(ip: string): Promise<void> {
+    if (!(await this.confirmLargeFileIfNeeded())) {
+      return;
+    }
     let result: DiscoveredDevice | undefined = await connectByIp(ip, getPort());
     if (result === undefined) {
       this.getUIContext()
@@ -650,7 +780,7 @@ export struct SendContent {
   onOpenFavorites(): void {
     // LocalSend 总开关关闭时不允许打开收藏面板（入口已置灰，此处为防御纵深）
     if (!this.viewModel.localSendEnabled) {
-      logger.warn('LocalSend 已禁用，忽略收藏入口');
+      logger.debug('LocalSend 已禁用，忽略收藏入口');
       return;
     }
     this.favoritesPanelViewModel.refresh();
@@ -683,9 +813,12 @@ export struct SendContent {
     if (!isOnline) {
       this.favoritesPanelViewModel.setProbing(favorite.fingerprint);
     }
-    this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
-      this.favoritesPanelViewModel.clearProbing();
-      this.showFavoriteSendFeedback(result);
+    // 收藏发送同样经大文件二次确认门禁（总量达阈值时先弹确认）
+    this.runAfterLargeFileConfirm(() => {
+      this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
+        this.favoritesPanelViewModel.clearProbing();
+        this.showFavoriteSendFeedback(result);
+      });
     });
   }
 
@@ -728,7 +861,11 @@ export struct SendContent {
       Scroll(this.scroller) {
         Column() {
           if (this.viewModel.localSendEnabled && !this.viewModel.serverReady) {
-            Row() {
+            Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.warning_orange')])
+
               Text($r('app.string.server_offline_warning'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.warning_orange'))
@@ -756,11 +893,16 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
-          // 「两个协议均禁用」中性提示卡：单一协议禁用不提示，仅当已无任何可用路径时才说明。
+          // 「所有传输方式均已关闭」中性提示卡：全部关闭且无任何可用路径时说明；
+          // 仅部分方式关闭时由下方「部分传输方式已关闭」提示卡负责。
           // 主动禁用不是故障，故取中性/信息语义色（非警示橙），并提供「去设置」入口与关闭入口。
           if (shouldShowProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
-            this.protocolHintDismissed)) {
+            this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
             Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.info_circle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.accent_blue_text')])
+
               Text($r('app.string.send_all_protocols_disabled_hint'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_secondary'))
@@ -800,9 +942,62 @@ export struct SendContent {
             .alignItems(VerticalAlign.Center)
           }
 
+          // 「部分传输方式已关闭」中性提示卡：同一关闭状态只在状态变化后的首次启动提示一次，
+          // 避免对特意关闭某种方式的用户反复打扰；可关闭、本次会话内有效。
+          if (this.partialProtocolHintVisible &&
+            shouldShowPartialProtocolDisabledHint(this.viewModel.localSendEnabled, this.viewModel.mtaEnabled,
+              this.viewModel.webSendAllowed, this.protocolHintDismissed)) {
+            Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.info_circle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.accent_blue_text')])
+
+              Text(this.partialProtocolHintText())
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_secondary'))
+                .layoutWeight(1)
+
+              Button($r('app.string.send_protocol_hint_settings'))
+                .fontSize(DesignTokens.font.bodyS)
+                .height(DesignTokens.size.inlineButton)
+                .fontColor($r('app.color.text_on_color'))
+                .backgroundColor($r('app.color.accent_blue'))
+                .borderRadius(DesignTokens.radius.max)
+                .onClick(() => {
+                  this.onOpenSettings();
+                })
+                .id('send_partial_protocol_hint_settings_btn')
+
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.text_secondary')])
+                .responseRegion({
+                  x: -14,
+                  y: -14,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.onDismissProtocolHint();
+                })
+                .id('send_partial_protocol_hint_dismiss')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.accent_blue_bg'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .margin({ top: DesignTokens.space.md })
+            .alignItems(VerticalAlign.Center)
+          }
+
           // 服务器重启警告横幅（LocalSend 总开关关闭时不显示：服务器已停，重启提示无意义）
           if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
-            Row() {
+            Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.warning_orange')])
+
               Text($r('app.string.server_needs_restart'))
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.warning_orange'))
@@ -842,9 +1037,9 @@ export struct SendContent {
           // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠
           // （未连接局域网与未开启 WLAN 在互传场景下是同一件事，故合并为同一条提示）
           if (this.getConnectionWarningText() !== undefined) {
-            Row({ space: DesignTokens.space.tiny }) {
+            Row({ space: DesignTokens.space.sm }) {
               SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-                .fontSize(DesignTokens.font.bodyM)
+                .fontSize(DesignTokens.font.iconInline)
                 .fontColor([$r('app.color.warning_orange')])
               Text(this.getConnectionWarningText())
                 .fontSize(DesignTokens.font.bodyM)
@@ -883,6 +1078,9 @@ export struct SendContent {
             },
             onRefresh: () => {
               this.refreshDevices();
+            },
+            onOpenWeb: () => {
+              this.onOpenWebPanel();
             }
           })
         }

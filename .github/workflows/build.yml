@@ -23,7 +23,7 @@ jobs:
     name: 构建鸿蒙应用
     runs-on: ubuntu-latest
     container:
-      image: springtwr/harmonyos-clt:26.0.0.821
+      image: ghcr.io/springtwr/harmonyos-clt:26.0.0.851-1
       env:
         OHOS_NDK_HOME: /opt/command-line-tools/sdk/default/openharmony
     # 创建 Release 并上传产物需要写权限

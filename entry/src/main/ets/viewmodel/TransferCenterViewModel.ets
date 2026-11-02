@@ -23,7 +23,7 @@ import {
   isTerminalStage,
   resolveSessionActions
 } from '../model/transfer/TransferSession';
-import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
+import { SessionHistoryEntry } from '../model/transfer/SessionHistory';
 import {
   cancel,
   clearHistory as clearSessionHistoryFromRegistry,
@@ -32,14 +32,15 @@ import {
   getAllSessions,
   getClearableCount,
   getHistory,
+  getHistoryRevision,
+  removeEntriesByIds,
   subscribeSessions,
   unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
 import { getSource } from '../service/transfer/DeviceSourceRegistry';
-import { clearSendTextFiles } from '../service/AppService';
 import { getAdapter, isTextSessionDescriptor } from '../service/transfer/adapters/SessionAdapter';
 import { formatTime } from '../utils/FormatUtil';
-import { isTextFile } from '../utils/MimeUtils';
+import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -167,21 +168,11 @@ function percentOfBytes(bytesSent: number, totalBytes: number): number {
 }
 
 /**
- * 任务条目「单文本类文件」判定（纯函数，无副作用）：
- * 恰好一个文件且该文件为文本类时返回真，其余情形（多文件、单非文本、空）返回假。
- * 文本类判定复用统一入口（MimeUtils.isTextFile），不在此处比对 MIME/扩展名。
+ * 行模型文件数量文案（纯函数，无副作用）：只有文本消息会话使用本地化「文本」标签，
+ * 普通文本类文件（如用户选择发送或接收的 .txt）仍按文件数量展示；实时行与历史行共用同一口径。
  */
-export function isSingleTextFileTask(fileCount: number, fileType: string, fileName: string): boolean {
-  return fileCount === 1 && isTextFile(fileType, fileName);
-}
-
-/**
- * 行模型文件数量文案（纯函数，无副作用）：命中「恰好一个文本类文件」时用本地化「文本」标签，
- * 其余情形保持既有文件数量文案；实时行与历史行共用同一口径。
- */
-function fileCountTextOf(fileCount: number, singleFileType: string,
-  singleFileName: string): ResourceStr {
-  if (isSingleTextFileTask(fileCount, singleFileType, singleFileName)) {
+function fileCountTextOf(fileCount: number, isTextMessage: boolean): ResourceStr {
+  if (isTextMessage) {
     return $r('app.string.transfer_center_text_label');
   }
   return $r('app.string.transfer_center_file_count', fileCount);
@@ -232,10 +223,9 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
   if (isText && descriptor !== undefined && descriptor.textPreview !== undefined) {
     preview = descriptor.textPreview;
   }
-  // 文件数量文案：恰好一个文本类文件时用「文本」标签，否则用文件数量（与历史行同口径）
+  // 文件数量文案：文本消息用「文本」标签；普通文本类文件仍按文件数量展示（与历史行同口径）
   let liveFiles: Array<SessionFile> = session.files;
-  let onlyFileType: string = liveFiles.length === 1 ? liveFiles[0].fileType : '';
-  let onlyFileName: string = liveFiles.length === 1 ? liveFiles[0].fileName : '';
+  let isTextMessage: boolean = session.textMessage || isText;
   return {
     key: session.id,
     sessionId: session.id,
@@ -244,7 +234,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     directionLabel: directionLabelFor(session.dataFlow),
     dataFlow: session.dataFlow,
     sourceLabel: sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? ''),
-    fileCountText: fileCountTextOf(liveFiles.length, onlyFileType, onlyFileName),
+    fileCountText: fileCountTextOf(liveFiles.length, isTextMessage),
     timestamp: ts,
     session: session,
     isTextSession: isText,
@@ -255,10 +245,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
 /** 由持久化历史条目构建行模型（无实时对象，保留终态快照）。 */
 export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
   let ts: number = sessionTimestamp(entry.startedAt, entry.finishedAt);
-  // 文件数量文案与实时行同口径：历史逐文件清单恰好一个文本类文件时用「文本」标签
-  let historyFiles: Array<SessionHistoryFileEntry> = entry.files;
-  let onlyFileType: string = historyFiles.length === 1 ? historyFiles[0].fileType : '';
-  let onlyFileName: string = historyFiles.length === 1 ? historyFiles[0].fileName : '';
+  // 文件数量文案与实时行同口径：历史条目的文本消息标记决定是否使用「文本」标签
   return {
     key: entry.sessionId,
     sessionId: entry.sessionId,
@@ -267,7 +254,7 @@ export function historyEntryRow(entry: SessionHistoryEntry): SessionRowModel {
     directionLabel: directionLabelFor(entry.dataFlow),
     dataFlow: entry.dataFlow,
     sourceLabel: sourceLabelForSession(entry.protocolKey, entry.peerDeviceType),
-    fileCountText: fileCountTextOf(entry.fileCount, onlyFileType, onlyFileName),
+    fileCountText: fileCountTextOf(entry.fileCount, entry.textMessage === true),
     timestamp: ts,
     historyStage: stageForOutcome(entry.outcome),
     isTextSession: false,
@@ -308,9 +295,38 @@ export function rowIsTextSession(row: SessionRowModel): boolean {
   return row.isTextSession;
 }
 
+/** 行是否需大文件提示（纯函数）：非终态实时行且会话总量达阈值（行内确认绕过详情页，故行内同样提示）。 */
+export function rowNeedsLargeHint(row: SessionRowModel): boolean {
+  if (row.session === undefined || isTerminalStage(row.session.stage)) {
+    return false;
+  }
+  return isLargeTransfer(row.session.totalBytes);
+}
+
+/**
+ * 行是否可勾选删除（纯函数，无副作用）。
+ * 可勾选范围与「清空任务历史」的清空口径同源：持久化历史行（终态）与已终态可见会话行可勾选，
+ * 进行中与待确认会话不可勾选——这两类会话尚在运行，「删除」对其无意义（对应动作是取消 / 拒绝）。
+ * 入参为可选：行缺失（如虚拟滚动期间行数据不可得）时按不可勾选处理。
+ */
+export function rowDeletable(row?: SessionRowModel): boolean {
+  if (row === undefined) {
+    return false;
+  }
+  return row.session === undefined || isTerminalStage(rowStage(row));
+}
+
 /** 行离散阶段文案（仅实时行有值）。 */
 export function rowStageText(row: SessionRowModel): ResourceStr {
   return row.session !== undefined ? row.session.stageText : '';
+}
+
+/** 行进行中动作文案：网页访问会话为“结束会话”，其余为“取消传输”。 */
+export function rowCancelLabel(row: SessionRowModel): ResourceStr {
+  if (row.session !== undefined && row.session.capabilities.cancelLabel !== undefined) {
+    return row.session.capabilities.cancelLabel;
+  }
+  return $r('app.string.session_detail_cancel');
 }
 
 /** 行是否具备字节级进度且可直接展示百分比（无字节进度或分母为 0 时为假）。 */
@@ -318,8 +334,13 @@ export function rowHasByteProgress(row: SessionRowModel): boolean {
   if (row.session === undefined || !row.session.capabilities.hasByteProgress) {
     return false;
   }
-  // 准备态以准备进度判定（分母为 prepTotalBytes），其余维持传输口径
-  return row.session.totalBytes > 0 || isPreparing(row.session);
+  // 准备态以准备进度判定（分母为 prepTotalBytes）
+  if (isPreparing(row.session)) {
+    return true;
+  }
+  // 还没产生任何字节时不给 0% 进度条：此时「进度」无从度量，
+  // 由阶段文案表达当前状态（如网页下载已确认、等待对方开始下载）
+  return row.session.totalBytes > 0 && row.session.bytesSent > 0;
 }
 
 /** 行整体进度百分比（实时行按会话对象实时计算，历史行恒为 0）；准备态取准备进度口径。 */
@@ -337,22 +358,21 @@ export function rowPercent(row: SessionRowModel): number {
  * 合并可见会话行与历史行：按统一会话标识去重（同一会话在终态可见窗口内只保留可见行）。
  * 实时条目数组先于历史条目数组遍历，故去重保留实时条目，维持「实时条目优先」的既有语义。
  * 本函数只做合并与去重，顺序由后续的确定性排序步骤决定。
+ *
+ * 已出现过的会话标识以集合承载：逐行线性回扫累积结果会使开销随时长成平方，
+ * 而历史条目数可接近保留上限、且列表在传输中被高频刷新。
  */
 export function mergeSessionRows(live: Array<SessionRowModel>,
   history: Array<SessionRowModel>): Array<SessionRowModel> {
   let rows: Array<SessionRowModel> = [];
+  let seen: Set<string> = new Set();
   for (let i = 0; i < live.length; i++) {
     rows.push(live[i]);
+    seen.add(live[i].sessionId);
   }
   for (let i = 0; i < history.length; i++) {
-    let duplicated: boolean = false;
-    for (let k = 0; k < rows.length; k++) {
-      if (rows[k].sessionId === history[i].sessionId) {
-        duplicated = true;
-        break;
-      }
-    }
-    if (!duplicated) {
+    if (!seen.has(history[i].sessionId)) {
+      seen.add(history[i].sessionId);
       rows.push(history[i]);
     }
   }
@@ -366,12 +386,12 @@ export function mergeSessionRows(live: Array<SessionRowModel>,
  * 从结构上保证「同一会话最多一行」。
  */
 export function dedupeSessionRows(rows: Array<SessionRowModel>): Array<SessionRowModel> {
-  let seen: Array<string> = [];
+  let seen: Set<string> = new Set();
   let result: Array<SessionRowModel> = [];
   for (let i = 0; i < rows.length; i++) {
     let row = rows[i];
-    if (seen.indexOf(row.sessionId) < 0) {
-      seen.push(row.sessionId);
+    if (!seen.has(row.sessionId)) {
+      seen.add(row.sessionId);
       result.push(row);
     }
   }
@@ -413,15 +433,19 @@ export interface RowValidationResult {
  * 以「实时会话标识集合 / 历史记录标识集合」为基准，凡不能解析为
  * 「实时会话（行持有会话对象）或历史记录（行标识命中历史集合）」的行一律剔除，
  * 保证列表中的每一条目都可进入详情（实时状态或历史只读摘要）。
+ *
+ * 基准标识以集合承载：逐行线性查找会使开销随时长成平方，同上。
  */
 export function validateSessionRows(rows: Array<SessionRowModel>,
   liveIds: Array<string>, historyIds: Array<string>): RowValidationResult {
   let kept: Array<SessionRowModel> = [];
   let dropped: Array<SessionRowModel> = [];
+  let liveSet: Set<string> = new Set(liveIds);
+  let historySet: Set<string> = new Set(historyIds);
   for (let i = 0; i < rows.length; i++) {
     let row = rows[i];
-    let resolvable: boolean = row.session !== undefined || liveIds.indexOf(row.sessionId) >= 0 ||
-      historyIds.indexOf(row.sessionId) >= 0;
+    let resolvable: boolean = row.session !== undefined || liveSet.has(row.sessionId) ||
+      historySet.has(row.sessionId);
     if (resolvable) {
       kept.push(row);
     } else {
@@ -498,14 +522,23 @@ export function hasDuplicateRowKeys(rows: Array<CenterRow>): boolean {
 export class TransferCenterViewModel {
   // 合并后的完整行序列（条目/空态）：数据变更时整体重建
   @Trace public rows: Array<CenterRow> = []
-  // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清除任务历史」入口的置灰判定依据
+  // 可清除计数（历史条数 + 已终态可见会话数）：标题栏「清空任务历史」入口的置灰判定依据
   @Trace public clearableCount: number = 0
+  // 多选模式：长按条目进入，退出时清空全部勾选
+  @Trace public selectionMode: boolean = false
+  // 已勾选的会话标识集合：行模型在每次 refresh 时整体重建，勾选状态因此独立于行模型保存，
+  // 以会话标识为键，天然跨实时/历史来源切换保持稳定
+  @Trace public selectedIds: Array<string> = []
   private subscribed: boolean = false
   // 变更总线回调需保持同一引用以便退订
   private changeCallback: () => void = (): void => {
   }
   // 上一次输出的行序列转储：内容未变时不再重复输出（进度刷新会高频触发 refresh）
   private lastRowDump: string = ''
+  // 持久化历史行及其标识：内容版本号未变时复用，避免高频刷新重建全量历史行
+  private cachedHistoryRows: Array<SessionRowModel> = []
+  private cachedHistoryIds: Array<string> = []
+  private lastHistoryRevision: number = -1
   // 上一次构建的行序列行数：用于检测「行数相比上次减少」异常信号
   private lastRowCount: number = 0
 
@@ -531,7 +564,6 @@ export class TransferCenterViewModel {
   /** 从注册表重新读取并重建合并列表（数据变更时调用一次，不在渲染中重算）。 */
   refresh(): void {
     let allSessions: Array<TransferSession> = getAllSessions();
-    let allHistory: Array<SessionHistoryEntry> = getHistory();
 
     let liveRows: Array<SessionRowModel> = [];
     let liveIds: Array<string> = [];
@@ -539,11 +571,27 @@ export class TransferCenterViewModel {
       liveRows.push(liveSessionRow(allSessions[i]));
       liveIds.push(allSessions[i].id);
     }
-    let historyRows: Array<SessionRowModel> = [];
-    let historyIds: Array<string> = [];
-    for (let i = 0; i < allHistory.length; i++) {
-      historyRows.push(historyEntryRow(allHistory[i]));
-      historyIds.push(allHistory[i].sessionId);
+    // 历史行与历史标识按内容版本号复用：传输中进度事件会高频触发本方法，
+    // 而历史条目在这些刷新之间完全不变，无需逐次重建全量历史行。
+    // 版本号未变即复用同一数组——行序列构建流水线全程不修改入参（合并、去重、
+    // 排序、校验均产出新数组），故复用安全。
+    let historyRows: Array<SessionRowModel>;
+    let historyIds: Array<string>;
+    let revision: number = getHistoryRevision();
+    if (revision === this.lastHistoryRevision) {
+      historyRows = this.cachedHistoryRows;
+      historyIds = this.cachedHistoryIds;
+    } else {
+      let allHistory: Array<SessionHistoryEntry> = getHistory();
+      historyRows = [];
+      historyIds = [];
+      for (let i = 0; i < allHistory.length; i++) {
+        historyRows.push(historyEntryRow(allHistory[i]));
+        historyIds.push(allHistory[i].sessionId);
+      }
+      this.cachedHistoryRows = historyRows;
+      this.cachedHistoryIds = historyIds;
+      this.lastHistoryRevision = revision;
     }
     // 行序列构建流水线（固定顺序）：合并去重 → 兜底去重 → 确定性排序 → 可进入性校验 → 组装。
     // 去重与排序先于校验，使「同一会话最多一行」与「不可解析条目零展示」两条不变式同时成立。
@@ -571,6 +619,143 @@ export class TransferCenterViewModel {
     }
     // 置灰口径与清除动作同源：可清除计数为零 ⇔ 入口置灰
     this.clearableCount = getClearableCount();
+    this.pruneSelection();
+  }
+
+  // ── 多选状态 ──
+
+  /** 可勾选行数量（纯函数）：仅终态与持久化历史行计入，进行中 / 待确认会话不可勾选。 */
+  private deletableCount(): number {
+    let count: number = 0;
+    for (let i = 0; i < this.rows.length; i++) {
+      let row: CenterRow = this.rows[i];
+      if (row.kind === ROW_SESSION && row.session !== undefined && rowDeletable(row.session)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** 已勾选数量。 */
+  get selectedCount(): number {
+    return this.selectedIds.length;
+  }
+
+  /** 是否全选可勾选行（无可勾选行时为假）。 */
+  get allSelected(): boolean {
+    let total: number = this.deletableCount();
+    return total > 0 && this.selectedIds.length === total;
+  }
+
+  /** 指定会话标识是否已勾选（供行渲染读取）。 */
+  isSelected(sessionId: string): boolean {
+    return this.selectedIds.indexOf(sessionId) >= 0;
+  }
+
+  /**
+   * 剔除已不可勾选的勾选项：会话被回收或转为非终态后其勾选不再有删除意义。
+   * 在每次 refresh 末尾执行，使勾选集合恒为当前可勾选行的子集。
+   */
+  private pruneSelection(): void {
+    let kept: Array<string> = [];
+    for (let i = 0; i < this.selectedIds.length; i++) {
+      let id: string = this.selectedIds[i];
+      let stillDeletable: boolean = false;
+      for (let k = 0; k < this.rows.length; k++) {
+        let row: CenterRow = this.rows[k];
+        if (row.kind === ROW_SESSION && row.session !== undefined && row.session.sessionId === id &&
+          rowDeletable(row.session)) {
+          stillDeletable = true;
+          break;
+        }
+      }
+      if (stillDeletable) {
+        kept.push(id);
+      }
+    }
+    if (kept.length !== this.selectedIds.length) {
+      this.selectedIds = kept;
+    }
+    // 列表中不再有会话行时退出多选：此时只剩空态行，无任何条目可操作。
+    // 注意不能以 rows.length 判定——空态本身也占一行（见 composeRows）。
+    // 仅剩进行中 / 待确认会话时保留多选：行仍在，只是全部不可勾选，
+    // 用户可借此进入多选后勾选后续转为可删的会话。
+    if (!this.hasSessionRow()) {
+      this.selectionMode = false;
+    }
+  }
+
+  /** 行序列中是否存在会话条目行（空态行不计入）。 */
+  private hasSessionRow(): boolean {
+    for (let i = 0; i < this.rows.length; i++) {
+      if (this.rows[i].kind === ROW_SESSION) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ── 多选命令 ──
+
+  /**
+   * 进入多选模式：可勾选行同时勾选自身，不可勾选行（进行中 / 待确认）仅进入多选。
+   * 长按不可勾选行进入多选是刻意保留的入口——用户可借此时机勾选同列表中其他可删除的行，
+   * 无需先找到一条可勾选行。
+   */
+  enterSelection(sessionId: string): void {
+    this.selectionMode = true;
+    this.selectedIds = this.isDeletable(sessionId) ? [sessionId] : [];
+  }
+
+  /** 退出多选模式并清空全部勾选。 */
+  exitSelection(): void {
+    this.selectionMode = false;
+    this.selectedIds = [];
+  }
+
+  /** 切换单行勾选状态（不可勾选的行不响应）。 */
+  toggleSelect(sessionId: string): void {
+    if (!this.isDeletable(sessionId)) {
+      return;
+    }
+    let next: Array<string> = [];
+    for (let i = 0; i < this.selectedIds.length; i++) {
+      if (this.selectedIds[i] !== sessionId) {
+        next.push(this.selectedIds[i]);
+      }
+    }
+    if (next.length === this.selectedIds.length) {
+      next.push(sessionId);
+    }
+    this.selectedIds = next;
+  }
+
+  /** 全选 / 取消全选切换（只作用于可勾选行）。 */
+  toggleSelectAll(): void {
+    if (this.allSelected) {
+      this.selectedIds = [];
+      return;
+    }
+    let next: Array<string> = [];
+    for (let i = 0; i < this.rows.length; i++) {
+      let row: CenterRow = this.rows[i];
+      if (row.kind === ROW_SESSION && row.session !== undefined && rowDeletable(row.session)) {
+        next.push(row.session.sessionId);
+      }
+    }
+    this.selectedIds = next;
+  }
+
+  /** 指定会话标识当前是否可勾选（行渲染与长按判定的唯一依据）。 */
+  private isDeletable(sessionId: string): boolean {
+    for (let i = 0; i < this.rows.length; i++) {
+      let row: CenterRow = this.rows[i];
+      if (row.kind === ROW_SESSION && row.session !== undefined &&
+        row.session.sessionId === sessionId) {
+        return rowDeletable(row.session);
+      }
+    }
+    return false;
   }
 
   /** 输出被剔除条目的结构化诊断（会话标识〔即条目身份〕/ 是否仍持有实时会话对象）。 */
@@ -602,12 +787,12 @@ export class TransferCenterViewModel {
   // ── 交互动作 ──
 
   confirm(sessionId: string): void {
-    logger.debug('confirm session ' + sessionId);
+    logger.debug('确认任务 ' + sessionId);
     confirmSession(sessionId);
   }
 
   decline(sessionId: string): void {
-    logger.debug('decline session ' + sessionId);
+    logger.debug('拒绝任务 ' + sessionId);
     declineSession(sessionId);
   }
 
@@ -616,12 +801,28 @@ export class TransferCenterViewModel {
   }
 
   /**
-   * 清除任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
-   * 历史清除后一并清空发送文本目录（best-effort），使发送暂存列表中的失效文本条目随变更通知被自检移除。
+   * 清空任务历史：清空持久化历史 + 移除已终态可见会话条目；不触碰进行中与待确认会话。
+   * 清空同时删除这些记录对应的应用自建文件（发送文本落盘副本），使其不残留为孤儿；
+   * 用户 picker 选中的原始文件与接收落盘文件均不在此列（后者删除权归文件接收历史页）。
    * 清空动作自身会发布变更总线通知，列表与标题栏入口的置灰状态随通知自动重算。
    */
   clearHistory(): void {
     clearSessionHistoryFromRegistry();
-    clearSendTextFiles();
+  }
+
+  /**
+   * 删除已勾选的任务记录（批量），完成后退出多选模式。
+   * 与「清空任务历史」同一语义口径：移除持久化历史条目 + 移除已终态可见会话条目，
+   * 并删除这些记录对应的应用自建文件；进行中与待确认会话既不可勾选、
+   * 也在领域动作层被跳过，故不受影响。
+   * 列表与标题栏入口的置灰状态随变更通知自动重算。
+   */
+  deleteSelected(): void {
+    if (this.selectedIds.length === 0) {
+      return;
+    }
+    logger.debug('删除所选任务：count=' + this.selectedIds.length);
+    removeEntriesByIds(this.selectedIds);
+    this.exitSelection();
   }
 }

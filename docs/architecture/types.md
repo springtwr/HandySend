@@ -58,14 +58,21 @@
 ## NAPI 层 (model/NativeTypes.ets)
 
 与 Rust `#[napi(object)]` 结构体一一对应：`NativeServerConfig`, `NativeServerHandle`, `NativeServerStatus`, `NativeTargetDevice`, `NativeTransferRequest`,
-`NativeTransferFileInfo`, `NativeFileToSend`, `NativeSendResult`, `NativeShareLinkInfo`, `NativeSecurityContext`, `NativeCancellationToken` 等。
+`NativeTransferFileInfo`, `NativeFileToSend`, `NativeSendResult`, `NativeSecurityContext`, `NativeCancellationToken` 等。
 
 discovery 相关类型：`NativeDiscoveryConfig`, `NativeDiscoveredDevice`, `NativeDeviceChannel`。
 
-Web Share 事件类型：`NativeWebSendPrepareDownloadEvent`（webSendPrepareDownload 事件）、`NativeWebSendFileDownloadEvent`（webSendFileDownload 事件）。
+Web Share 事件类型：
+`NativeWebAccessEvent`（webAccess 访问日志）、`NativeWebDownloadStartedEvent`（批次开始，携带文件清单）、
+`NativeWebDownloadProgressEvent` / `NativeWebDownloadFileDoneEvent` / `NativeWebDownloadEndedEvent`（批次文件进度与终态）、
+`NativeWebSendSessionEndEvent`（webSendSessionEnd，仅上传）、
+`NativeWebUploadPrepareEvent`（webUploadPrepare 事件）、`NativeWebUploadProgressEvent`（webUploadProgress 事件）、
+`NativeWebUploadDoneEvent`（webUploadDone 事件）。
 
 桥接层事件类型（camelCase）定义在 `NativeTypes.ets`：`serverStarted` / `serverStopped` / `register` / `prepareUpload` / `prepareUploadAborted` / `cancelReceived` / `uploadProgress`
-/ `sessionEnd` / `fileUpload` / `deviceFound` / `deviceLost` / `webSendPrepareDownload` / `webSendFileDownload` / `webSendSessionEnd` / `error`。取消通知使用 `cancelReceived` 事件。
+/ `sessionEnd` / `fileUpload` / `deviceFound` / `deviceLost` / `webAccess` / `webDownloadStarted`
+/ `webDownloadProgress` / `webDownloadFileDone` / `webDownloadEnded` / `webSendSessionEnd`
+/ `webUploadPrepare` / `webUploadProgress` / `webUploadDone` / `error`。取消通知使用 `cancelReceived` 事件。
 
 MTA 事件类型（camelCase，载荷契约见 `docs/mta/MTA_PROTOCOL.md` 附录 A）：`mtaServerStarted` / `mtaWsConnected` / `mtaVersionNegotiated` / `mtaSendRequestSent`
 / `mtaRejectSent` / `mtaDownloadStarted` / `mtaSendProgress` / `mtaSendCompleted` / `mtaSendPartial` / `mtaSendRejected` / `mtaSendFailed` / `mtaReceiveProgress`。

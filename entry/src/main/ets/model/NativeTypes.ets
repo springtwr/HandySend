@@ -83,12 +83,6 @@ export interface NativeTransferRequest {
   files: Array<NativeTransferFileInfo>
 }
 
-export interface NativeShareLinkInfo {
-  url: string
-  port: number
-  sessionId: string
-}
-
 export interface NativeCancelTarget {
   ip: string
   port: number
@@ -279,33 +273,76 @@ export interface NativeDeviceLostEvent {
   fingerprint: string
 }
 
-export interface NativeWebSendPrepareDownloadEvent {
-  type: 'webSendPrepareDownload'
-  sessionId: string
+export interface NativeWebAccessEvent {
+  type: 'webAccess'
   ip: string
   userAgent?: string
+  fileCount: number
 }
 
-export interface NativeWebSendFileDownloadEvent {
-  type: 'webSendFileDownload'
-  sessionId: string
-  fileId: string
-  fileName: string
-  size: number
+// 下载批次开始：一批一个任务；files 为该批次完整文件清单
+export interface NativeWebDownloadStartedEvent {
+  type: 'webDownloadStarted'
+  batchId: string
+  ip: string
+  userAgent?: string
+  files: Array<NativeTransferFileInfo>
 }
 
-// Web 下载进度：由 Rust 桥接层在 fd 流式读取处按节流发射
-export interface NativeWebSendProgressEvent {
-  type: 'webSendProgress'
-  sessionId: string
+// 单文件下载进度（zip 内逐条目）
+export interface NativeWebDownloadProgressEvent {
+  type: 'webDownloadProgress'
+  batchId: string
   fileId: string
   sentBytes: number
   totalBytes: number
 }
 
+export interface NativeWebDownloadFileDoneEvent {
+  type: 'webDownloadFileDone'
+  batchId: string
+  fileId: string
+  totalBytes: number
+}
+
+// 下载批次结束：succeeded | failed | cancelled
+export interface NativeWebDownloadEndedEvent {
+  type: 'webDownloadEnded'
+  batchId: string
+  outcome: string
+  error?: string
+}
+
+// 上传会话结束（下载侧已不再使用）
 export interface NativeWebSendSessionEndEvent {
   type: 'webSendSessionEnd'
   sessionId: string
+}
+
+// 浏览器上传请求：待用户确认，含文件清单（与 prepareUpload 同源解析）
+export interface NativeWebUploadPrepareEvent {
+  type: 'webUploadPrepare'
+  token: string
+  ip: string
+  userAgent?: string
+  files: Array<NativeTransferFileInfo>
+}
+
+// 浏览器上传进度：字节口径（与 WebSendProgress 的字节语义一致）
+export interface NativeWebUploadProgressEvent {
+  type: 'webUploadProgress'
+  token: string
+  fileId: string
+  receivedBytes: number
+  totalBytes: number
+}
+
+// 浏览器上传文件落盘完毕：携带最终路径
+export interface NativeWebUploadDoneEvent {
+  type: 'webUploadDone'
+  token: string
+  fileId: string
+  path: string
 }
 
 export interface NativeErrorEvent {
@@ -401,10 +438,15 @@ export type NativeEvent =
   NativeChecksumProgressEvent |
   NativeDeviceFoundEvent |
   NativeDeviceLostEvent |
-  NativeWebSendPrepareDownloadEvent |
-  NativeWebSendFileDownloadEvent |
-  NativeWebSendProgressEvent |
+  NativeWebAccessEvent |
+  NativeWebDownloadStartedEvent |
+  NativeWebDownloadProgressEvent |
+  NativeWebDownloadFileDoneEvent |
+  NativeWebDownloadEndedEvent |
   NativeWebSendSessionEndEvent |
+  NativeWebUploadPrepareEvent |
+  NativeWebUploadProgressEvent |
+  NativeWebUploadDoneEvent |
   NativeMtaServerStartedEvent |
   NativeMtaWsConnectedEvent |
   NativeMtaVersionNegotiatedEvent |
@@ -423,6 +465,9 @@ export type NativeEvent =
  * 各事件类型的必需字段表。payload 来自 Rust 桥接层序列化，正常情况字段必然存在；
  * 缺失说明两侧结构漂移（如 Rust 端改名/漏字段），此时丢弃事件并记日志，
  * 避免 undefined 字段静默注入下游（会话匹配失败、进度 NaN 等）且无从排查。
+ *
+ * 只登记协议必填字段：Rust 侧的 Option 字段取 None 时同样序列化为 null，
+ * 列入本表会让整条事件被丢弃（如浏览器未发 User-Agent 时丢掉上传请求）。
  */
 const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'serverStarted': ['port'],
@@ -436,10 +481,15 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'checksumProgress': ['cancelId', 'hashedBytes'],
   'deviceFound': ['device'],
   'deviceLost': ['fingerprint'],
-  'webSendPrepareDownload': ['sessionId', 'ip'],
-  'webSendFileDownload': ['sessionId', 'fileId', 'fileName', 'size'],
-  'webSendProgress': ['sessionId', 'fileId', 'sentBytes', 'totalBytes'],
+  'webAccess': ['ip', 'fileCount'],
+  'webDownloadStarted': ['batchId', 'ip', 'files'],
+  'webDownloadProgress': ['batchId', 'fileId', 'sentBytes', 'totalBytes'],
+  'webDownloadFileDone': ['batchId', 'fileId', 'totalBytes'],
+  'webDownloadEnded': ['batchId', 'outcome'],
   'webSendSessionEnd': ['sessionId'],
+  'webUploadPrepare': ['token', 'ip', 'files'],
+  'webUploadProgress': ['token', 'fileId', 'receivedBytes', 'totalBytes'],
+  'webUploadDone': ['token', 'fileId', 'path'],
   'mtaServerStarted': ['port'],
   'mtaVersionNegotiated': ['version'],
   'mtaSendRequestSent': ['taskId'],
@@ -457,6 +507,11 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
 /**
  * 解析 Rust 桥接层事件 JSON（{"type":"...","payload":{...}}）。
  * 将 payload 展平到顶层，返回类型化事件；解析失败或必需字段缺失返回 undefined。
+ *
+ * 可选字段约定：Rust 侧 `Option<T>` 为 None 时经 serde 序列化为 JSON null，
+ * 此处必须归一为 undefined（或类型对应的空值），不能只做类型断言——
+ * 声明为 `string | undefined` 的字段若在运行时保留 null，
+ * 下游「!== undefined && .length」之类的判断会被穿透。
  */
 export function parseNativeEvent(json: string): NativeEvent | undefined {
   let obj: Record<string, Object> = {};
@@ -478,7 +533,7 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
     for (let i = 0; i < required.length; i++) {
       let v: Object | undefined = payload[required[i]];
       if (v === undefined || v === null) {
-        logger.warn('event ' + t + ' missing required field "' + required[i] + '", dropped');
+        logger.warn('事件 ' + t + ' 缺少必需字段 "' + required[i] + '"，已丢弃');
         return undefined;
       }
     }
@@ -536,31 +591,69 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
       } as NativeDeviceFoundEvent;
     case 'deviceLost':
       return { type: 'deviceLost', fingerprint: payload['fingerprint'] as string } as NativeDeviceLostEvent;
-    case 'webSendPrepareDownload':
+    case 'webAccess':
       return {
-        type: 'webSendPrepareDownload',
-        sessionId: payload['sessionId'] as string,
+        type: 'webAccess',
         ip: payload['ip'] as string,
-        userAgent: payload['userAgent'] as string | undefined
-      } as NativeWebSendPrepareDownloadEvent;
-    case 'webSendFileDownload':
+        // 浏览器可不带 User-Agent：None 归一为 undefined，见 parseNativeEvent 注释
+        userAgent: (payload['userAgent'] !== undefined && payload['userAgent'] !== null) ?
+          payload['userAgent'] as string : undefined,
+        fileCount: payload['fileCount'] as number
+      } as NativeWebAccessEvent;
+    case 'webDownloadStarted':
       return {
-        type: 'webSendFileDownload',
-        sessionId: payload['sessionId'] as string,
-        fileId: payload['fileId'] as string,
-        fileName: payload['fileName'] as string,
-        size: payload['size'] as number
-      } as NativeWebSendFileDownloadEvent;
-    case 'webSendProgress':
+        type: 'webDownloadStarted',
+        batchId: payload['batchId'] as string,
+        ip: payload['ip'] as string,
+        userAgent: (payload['userAgent'] !== undefined && payload['userAgent'] !== null) ?
+          payload['userAgent'] as string : undefined,
+        files: parseWebFileList(payload['files'])
+      } as NativeWebDownloadStartedEvent;
+    case 'webDownloadProgress':
       return {
-        type: 'webSendProgress',
-        sessionId: payload['sessionId'] as string,
+        type: 'webDownloadProgress',
+        batchId: payload['batchId'] as string,
         fileId: payload['fileId'] as string,
         sentBytes: payload['sentBytes'] as number,
         totalBytes: payload['totalBytes'] as number
-      } as NativeWebSendProgressEvent;
+      } as NativeWebDownloadProgressEvent;
+    case 'webDownloadFileDone':
+      return {
+        type: 'webDownloadFileDone',
+        batchId: payload['batchId'] as string,
+        fileId: payload['fileId'] as string,
+        totalBytes: payload['totalBytes'] as number
+      } as NativeWebDownloadFileDoneEvent;
+    case 'webDownloadEnded':
+      return {
+        type: 'webDownloadEnded',
+        batchId: payload['batchId'] as string,
+        outcome: payload['outcome'] as string,
+        // Rust Option::None 经 serde 序列化为 JSON null，须归一为 undefined：
+        // 下游判断为「!== undefined && .length > 0」，null 会穿透并触发
+        // 「Cannot read property length of null」（下载成功/取消时 error 为 None）
+        error: (payload['error'] !== undefined && payload['error'] !== null) ?
+          payload['error'] as string : undefined
+      } as NativeWebDownloadEndedEvent;
     case 'webSendSessionEnd':
       return { type: 'webSendSessionEnd', sessionId: payload['sessionId'] as string } as NativeWebSendSessionEndEvent;
+    case 'webUploadPrepare':
+      return parseWebUploadPrepareEvent(payload);
+    case 'webUploadProgress':
+      return {
+        type: 'webUploadProgress',
+        token: payload['token'] as string,
+        fileId: payload['fileId'] as string,
+        receivedBytes: payload['receivedBytes'] as number,
+        totalBytes: payload['totalBytes'] as number
+      } as NativeWebUploadProgressEvent;
+    case 'webUploadDone':
+      return {
+        type: 'webUploadDone',
+        token: payload['token'] as string,
+        fileId: payload['fileId'] as string,
+        path: payload['path'] as string
+      } as NativeWebUploadDoneEvent;
     case 'mtaServerStarted':
       return { type: 'mtaServerStarted', port: payload['port'] as number } as NativeMtaServerStartedEvent;
     case 'mtaWsConnected':
@@ -665,6 +758,30 @@ function parseRegisterInfo(obj: Record<string, Object> | undefined): NativeRegis
     port: (obj['port'] !== undefined && obj['port'] !== null) ? obj['port'] as number : 0,
     protocol: (obj['protocol'] !== undefined && obj['protocol'] !== null) ? obj['protocol'] as string : 'https',
   } as NativeRegisterInfo;
+}
+
+function parseWebFileList(raw: Object | undefined): Array<NativeTransferFileInfo> {
+  let files: Array<NativeTransferFileInfo> = [];
+  if (raw !== undefined && Array.isArray(raw)) {
+    let arr = raw as Array<Record<string, Object>>;
+    for (let i = 0; i < arr.length; i++) {
+      files.push(parseTransferFileInfo(arr[i]));
+    }
+  }
+  return files;
+}
+
+function parseWebUploadPrepareEvent(
+  payload: Record<string, Object>): NativeWebUploadPrepareEvent {
+  return {
+    type: 'webUploadPrepare',
+    token: payload['token'] as string,
+    ip: payload['ip'] as string,
+    // 浏览器可不带 User-Agent：None 归一为 undefined，见 parseNativeEvent 注释
+    userAgent: (payload['userAgent'] !== undefined && payload['userAgent'] !== null) ?
+      payload['userAgent'] as string : undefined,
+    files: parseWebFileList(payload['files'])
+  } as NativeWebUploadPrepareEvent;
 }
 
 function parseTransferFileInfo(obj: Record<string, Object> | undefined): NativeTransferFileInfo {

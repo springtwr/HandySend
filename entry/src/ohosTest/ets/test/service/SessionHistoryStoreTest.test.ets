@@ -3,19 +3,40 @@ import {
   buildHistoryEntry,
   clearSessionHistory,
   getSessionHistory,
+  isSameEntries,
+  removeSessionHistoryByIds,
+  repairHistoryTextMessageFlags,
   resetSessionHistoryCache
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
   SESSION_HISTORY_SCHEMA_VERSION,
   SESSION_HISTORY_TIMELINE_CAPACITY,
   SessionHistoryEntry,
+  SessionHistoryFile,
   SessionHistoryFileEntry,
   boundTimeline,
+  collectSelfBuiltFilePaths,
+  emptyHistoryFile,
+  isSelfBuiltFilePath,
+  persistedTimelineOf,
   queryHistory,
+  removeHistoryByIds,
   sanitizeHistory,
   trimHistory,
   upsertHistory
 } from '../../../../main/ets/model/transfer/SessionHistory'
+import {
+  RECEIVE_HISTORY_CAPACITY,
+  RECEIVE_HISTORY_SEGMENT_COUNT,
+  RECEIVE_HISTORY_SEGMENT_SIZE,
+  RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT,
+  SESSION_HISTORY_CAPACITY,
+  SESSION_HISTORY_MAX_ENTRIES,
+  SESSION_HISTORY_MAX_SEGMENT_COUNT,
+  SESSION_HISTORY_SEGMENT_COUNT,
+  SESSION_HISTORY_SEGMENT_SIZE,
+  SESSION_HISTORY_STORAGE_SEGMENT_COUNT
+} from '../../../../main/ets/model/HistoryCapacity'
 import {
   SessionCreateInput,
   SessionDataFlow,
@@ -36,7 +57,8 @@ import {
   resetRegistry,
   updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
-import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
+import { initAllPreferences, sessionHistoryPreferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
+import { segmentKey } from '../../../../main/ets/model/HistorySegments'
 import { getTestAppContext } from '../helper/TestContext'
 
 function entry(id: string, finishedAt: number): SessionHistoryEntry {
@@ -115,6 +137,48 @@ function cleanEntry(id: string, finishedAt: number, sizes: Array<number>): Sessi
   }
 }
 
+/** 按当前段大小把条目写入段键，用于手工构造持久化数据（模拟升级前布局）。 */
+function seedSegments(entries: Array<SessionHistoryEntry>): void {
+  let segmentCount: number = Math.ceil(entries.length / SESSION_HISTORY_SEGMENT_SIZE)
+  for (let s = 0; s < segmentCount; s++) {
+    let start: number = s * SESSION_HISTORY_SEGMENT_SIZE
+    let end: number = start + SESSION_HISTORY_SEGMENT_SIZE
+    if (end > entries.length) {
+      end = entries.length
+    }
+    let file: SessionHistoryFile = {
+      schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+      entries: entries.slice(start, end)
+    }
+    sessionHistoryPreferencesUtil.setString(segmentKey('transferSessionHistory', s),
+      JSON.stringify(file))
+  }
+}
+
+/** 构造携带逐文件路径的历史条目（path 可为 undefined 模拟旧条目缺省）。 */
+function entryWithPaths(id: string, finishedAt: number,
+  paths: Array<string | undefined>): SessionHistoryEntry {
+  let result: SessionHistoryEntry = cleanEntry(id, finishedAt, [1])
+  let files: Array<SessionHistoryFileEntry> = []
+  for (let i = 0; i < paths.length; i++) {
+    let file: SessionHistoryFileEntry = {
+      fileId: 'f' + i,
+      fileName: 'x' + i,
+      fileType: 'text/plain',
+      size: 1,
+      stage: SessionFileStage.completed,
+      checksum: ''
+    }
+    if (paths[i] !== undefined) {
+      file.path = paths[i]
+    }
+    files.push(file)
+  }
+  result.files = files
+  result.fileCount = files.length
+  return result
+}
+
 function terminalInput(): SessionCreateInput {
   return {
     protocolKey: 'test',
@@ -158,6 +222,305 @@ export default function SessionHistoryStoreTest() {
       expect(trimHistory(list, 10).length).assertEqual(1)
     })
 
+    // ── 保留容量常量：上限是持久化行为的一部分，锁定取值避免无声变更 ──
+
+    it('capacity_constants_are_pinned', 0, () => {
+      expect(SESSION_HISTORY_CAPACITY).assertEqual(750)
+      expect(SESSION_HISTORY_MAX_ENTRIES).assertEqual(1000)
+      expect(RECEIVE_HISTORY_CAPACITY).assertEqual(5000)
+      expect(SESSION_HISTORY_SEGMENT_COUNT).assertEqual(3)
+      expect(SESSION_HISTORY_MAX_SEGMENT_COUNT).assertEqual(4)
+      expect(SESSION_HISTORY_SEGMENT_SIZE).assertEqual(250)
+      // 读取/清理需覆盖升级前的旧 8 段，不能随容量一起降到 3
+      expect(SESSION_HISTORY_STORAGE_SEGMENT_COUNT).assertEqual(8)
+      expect(RECEIVE_HISTORY_SEGMENT_COUNT).assertEqual(20)
+      expect(RECEIVE_HISTORY_SEGMENT_SIZE).assertEqual(250)
+      expect(RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT).assertEqual(20)
+      // 归档条目的 schema 版本参与持久化契约，变更需显式确认读侧兼容性
+      expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(5)
+    })
+
+    // ── 分段存储：容量为段大小整数倍，裁剪只丢弃最旧整段 ──
+
+    it('segments_capacityIsMultipleOfSegmentSize', 0, () => {
+      // 容量必须可由整段表达，否则裁剪需段内处理，破坏「只重写末段」的代价假设
+      expect(SESSION_HISTORY_CAPACITY % SESSION_HISTORY_SEGMENT_SIZE).assertEqual(0)
+      expect(SESSION_HISTORY_CAPACITY / SESSION_HISTORY_SEGMENT_SIZE)
+        .assertEqual(SESSION_HISTORY_SEGMENT_COUNT)
+      expect(SESSION_HISTORY_MAX_ENTRIES % SESSION_HISTORY_SEGMENT_SIZE).assertEqual(0)
+      expect(SESSION_HISTORY_MAX_ENTRIES / SESSION_HISTORY_SEGMENT_SIZE)
+        .assertEqual(SESSION_HISTORY_MAX_SEGMENT_COUNT)
+      expect(RECEIVE_HISTORY_CAPACITY % RECEIVE_HISTORY_SEGMENT_SIZE).assertEqual(0)
+      expect(RECEIVE_HISTORY_CAPACITY / RECEIVE_HISTORY_SEGMENT_SIZE)
+        .assertEqual(RECEIVE_HISTORY_SEGMENT_COUNT)
+    })
+
+    it('segments_survivesColdReloadAcrossSegmentBoundary', 0, () => {
+      clearSessionHistory()
+      // 条目数跨过段边界：强制落盘后失效内存缓存，由偏好存储重新读回
+      let total = SESSION_HISTORY_SEGMENT_SIZE + 3
+      for (let i = 0; i < total; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+      }
+      expect(getSessionHistory().length).assertEqual(total)
+      resetSessionHistoryCache()
+      let reloaded = getSessionHistory()
+      expect(reloaded.length).assertEqual(total)
+      // getSessionHistory 按时间倒序返回（展示口径）：分段拼接不引入重复或丢失
+      let seen: Set<string> = new Set()
+      for (let i = 0; i < reloaded.length; i++) {
+        expect(seen.has(reloaded[i].sessionId)).assertFalse()
+        seen.add(reloaded[i].sessionId)
+      }
+      for (let i = 1; i < reloaded.length; i++) {
+        expect(reloaded[i].finishedAt <= reloaded[i - 1].finishedAt).assertTrue()
+      }
+      clearSessionHistory()
+    })
+
+    it('segments_loadOverHardMax_trimsToTargetAndDeletesTailSegments', 0, () => {
+      clearSessionHistory()
+      // 模拟超硬上限的旧布局：1001 条（5 段）
+      let total: number = SESSION_HISTORY_MAX_ENTRIES + 1
+      let entries: Array<SessionHistoryEntry> = []
+      for (let i = 0; i < total; i++) {
+        entries.push(cleanEntry('cap-' + i, i + 1, [1]))
+      }
+      seedSegments(entries)
+      // 读取即按硬上限裁剪：保留最近 750 条，并删除目标段数之后的 3、4 段
+      resetSessionHistoryCache()
+      let loaded: Array<SessionHistoryEntry> = getSessionHistory()
+      expect(loaded.length).assertEqual(SESSION_HISTORY_CAPACITY)
+      expect(loaded[0].sessionId).assertEqual('cap-' + (total - 1))
+      expect(loaded[loaded.length - 1].sessionId)
+        .assertEqual('cap-' + (total - SESSION_HISTORY_CAPACITY))
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 3))).assertFalse()
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 4))).assertFalse()
+      // 再次冷启动仍为裁剪后的结果，不会把残留段拼回来
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(SESSION_HISTORY_CAPACITY)
+      clearSessionHistory()
+    })
+
+    it('segments_belowHardMax_keepsEntriesAndAppendsWithoutTrim', 0, () => {
+      clearSessionHistory()
+      // 900 条（硬上限 1000 以下）：读取不应裁到 750
+      let total: number = SESSION_HISTORY_MAX_ENTRIES - 100
+      let entries: Array<SessionHistoryEntry> = []
+      for (let i = 0; i < total; i++) {
+        entries.push(cleanEntry('soft-' + i, i + 1, [1]))
+      }
+      seedSegments(entries)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(total)
+      // 再归档一条：901 条仍低于硬上限，不触发裁剪
+      let session = createSession(terminalInput())
+      finish(session.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(total + 1)
+      clearSessionHistory()
+    })
+
+    it('segments_atHardMax_appendTriggersBatchTrim', 0, () => {
+      clearSessionHistory()
+      // 恰好 1000 条：本次追加越过硬上限，应一次性裁回目标 750
+      let total: number = SESSION_HISTORY_MAX_ENTRIES
+      let entries: Array<SessionHistoryEntry> = []
+      for (let i = 0; i < total; i++) {
+        entries.push(cleanEntry('full-' + i, i + 1, [1]))
+      }
+      seedSegments(entries)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(total)
+      let session = createSession(terminalInput())
+      finish(session.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(SESSION_HISTORY_CAPACITY)
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 3))).assertFalse()
+      clearSessionHistory()
+    })
+
+    it('segments_writesSegmentKeysNotLegacyKey', 0, () => {
+      clearSessionHistory()
+      let s = createSession(terminalInput())
+      finish(s.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(1)
+      // 落盘形态为段键；老单键不再写入
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      clearSessionHistory()
+    })
+
+    it('segments_clearRemovesAllSegmentKeys', 0, () => {
+      clearSessionHistory()
+      let total = SESSION_HISTORY_SEGMENT_SIZE + 1
+      for (let i = 0; i < total; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+      }
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      // 清除必须删键而非写空段：残留段键会在下次读取时拼接回来使已清空的历史重现
+      clearSessionHistory()
+      for (let i = 0; i < SESSION_HISTORY_STORAGE_SEGMENT_COUNT; i++) {
+        expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', i))).assertFalse()
+      }
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+    })
+
+    it('segments_clearThenReload_staysEmpty', 0, () => {
+      clearSessionHistory()
+      for (let i = 0; i < 3; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+      }
+      clearSessionHistory()
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+    })
+
+    it('segments_staleLegacyKey_removedWhenSegmentsExist', 0, () => {
+      clearSessionHistory()
+      let s = createSession(terminalInput())
+      finish(s.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(1)
+      // 模拟崩溃窗口残留：分段已存在时老键仍在（迁移写入后、删老键前退出）
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', emptyHistoryFile())
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertTrue()
+      // 下次读取以段为准并顺手删除老键，避免清空后老键复活历史
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      clearSessionHistory()
+    })
+
+    it('segments_clearRemovesStaleLegacyKey', 0, () => {
+      clearSessionHistory()
+      let s = createSession(terminalInput())
+      finish(s.id, SessionStage.succeeded)
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', emptyHistoryFile())
+      // 清空删段的同时删除老键：否则段键清空后的下次读取会误命中老键
+      clearSessionHistory()
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+    })
+
+    it('segments_removeAcrossSegments_persists', 0, () => {
+      clearSessionHistory()
+      let ids: string[] = []
+      let total = SESSION_HISTORY_SEGMENT_SIZE + 2
+      for (let i = 0; i < total; i++) {
+        let s = createSession(terminalInput())
+        finish(s.id, SessionStage.succeeded)
+        ids.push(s.id)
+      }
+      // 删除跨越段边界的条目：变更区间覆盖多段，须全部落盘
+      expect(removeSessionHistoryByIds([ids[0], ids[SESSION_HISTORY_SEGMENT_SIZE]])).assertEqual(2)
+      resetSessionHistoryCache()
+      let reloaded = getSessionHistory()
+      expect(reloaded.length).assertEqual(total - 2)
+      for (let i = 0; i < reloaded.length; i++) {
+        expect(reloaded[i].sessionId === ids[0]).assertFalse()
+        expect(reloaded[i].sessionId === ids[SESSION_HISTORY_SEGMENT_SIZE]).assertFalse()
+      }
+      clearSessionHistory()
+    })
+
+    it('segments_migrateFromLegacySingleKey', 0, () => {
+      clearSessionHistory()
+      // 构造分段之前的历史：单键 JSON 数组
+      let legacy: Array<SessionHistoryEntry> = [cleanEntry('legacy-1', 10, [5]),
+        cleanEntry('legacy-2', 20, [7])]
+      let legacyFile: SessionHistoryFile = {
+        schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+        entries: legacy
+      }
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', legacyFile)
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertTrue()
+      // 读取即触发一次性迁移：数据转为段键，老键删除
+      resetSessionHistoryCache()
+      let loaded = getSessionHistory()
+      expect(loaded.length).assertEqual(2)
+      // getSessionHistory 按时间倒序返回：legacy-2（finishedAt 20）在前
+      expect(loaded[0].sessionId).assertEqual('legacy-2')
+      expect(loaded[1].sessionId).assertEqual('legacy-1')
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+      expect(sessionHistoryPreferencesUtil.has(segmentKey('transferSessionHistory', 0))).assertTrue()
+      // 迁移幂等：再次失效缓存重读，数据一致且老键不再出现
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(2)
+      clearSessionHistory()
+    })
+
+    it('segments_migrationIsIdempotentAcrossReloads', 0, () => {
+      clearSessionHistory()
+      let legacy: Array<SessionHistoryEntry> = [cleanEntry('once-1', 10, [5])]
+      let legacyFile: SessionHistoryFile = {
+        schemaVersion: SESSION_HISTORY_SCHEMA_VERSION,
+        entries: legacy
+      }
+      sessionHistoryPreferencesUtil.setObject('transferSessionHistory', legacyFile)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(1)
+      clearSessionHistory()
+    })
+
+    it('segments_emptyStore_noMigration', 0, () => {
+      clearSessionHistory()
+      resetSessionHistoryCache()
+      expect(getSessionHistory().length).assertEqual(0)
+      expect(sessionHistoryPreferencesUtil.has('transferSessionHistory')).assertFalse()
+    })
+
+    // ── 清洗前后等价判定：驱动「仅在清洗确有改动时回写」的落盘分支 ──
+
+    it('isSameEntries_identicalRefs_true', 0, () => {
+      let list: Array<SessionHistoryEntry> = [entry('a', 1), entry('b', 2)]
+      expect(isSameEntries(list, list.slice())).assertTrue()
+    })
+
+    it('isSameEntries_lengthDiff_false', 0, () => {
+      let list: Array<SessionHistoryEntry> = [entry('a', 1)]
+      expect(isSameEntries(list, [entry('a', 1), entry('b', 2)])).assertFalse()
+    })
+
+    it('isSameEntries_cleanEntries_notRewritten', 0, () => {
+      // 聚合字段与逐文件清单一致的条目：清洗保持原引用，判定为「无改动」不触发回写
+      let list: Array<SessionHistoryEntry> = [cleanEntry('a', 1, [10]), cleanEntry('b', 2, [4, 6])]
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(2)
+      expect(isSameEntries(list, sanitized)).assertTrue()
+    })
+
+    it('isSameEntries_rebuiltAggregates_false', 0, () => {
+      // 聚合字段与逐文件清单不一致：清洗重建聚合字段产生新引用，须识别为「已改动」
+      let list: Array<SessionHistoryEntry> = [cleanEntry('a', 1, [10])]
+      list[0].totalBytes = 999
+      list[0].fileCount = 7
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(1)
+      expect(sanitized[0].totalBytes).assertEqual(10)
+      expect(sanitized[0].fileCount).assertEqual(1)
+      expect(isSameEntries(list, sanitized)).assertFalse()
+    })
+
+    it('isSameEntries_droppedDirtyEntry_false', 0, () => {
+      // entry() 构造的是空清单但 fileCount>0 的脏条目：清洗直接剔除，条数变化即已改动
+      let list: Array<SessionHistoryEntry> = [entry('a', 1)]
+      let sanitized: Array<SessionHistoryEntry> = sanitizeHistory(list)
+      expect(sanitized.length).assertEqual(0)
+      expect(isSameEntries(list, sanitized)).assertFalse()
+    })
+
+    it('isSameEntries_emptyArrays_true', 0, () => {
+      expect(isSameEntries([], [])).assertTrue()
+    })
+
     it('upsert_idempotentById', 0, () => {
       let list: Array<SessionHistoryEntry> = [entry('a', 1)]
       let updated = upsertHistory(list, entry('a', 9))
@@ -176,6 +539,78 @@ export default function SessionHistoryStoreTest() {
       expect(filtered.length).assertEqual(0)
     })
 
+    it('isSelfBuiltFilePath_onlyMatchesSendTextDir', 0, () => {
+      let dir = '/data/.../files/text_send/'
+      let recvDir = '/data/.../files/text_recv/'
+      // 自建发送文本目录内的文件：可随记录删除
+      expect(isSelfBuiltFilePath(dir + 'text_1.txt', dir)).assertTrue()
+      // 自建接收文本目录内的文件：同样可随记录删除
+      expect(isSelfBuiltFilePath(recvDir + 'text_1.txt', dir, recvDir)).assertTrue()
+      // 未传入接收目录时接收文本目录不命中（旧调用口径不变）
+      expect(isSelfBuiltFilePath(recvDir + 'text_1.txt', dir)).assertFalse()
+      // picker 选中的用户原始文件：绝不删除
+      expect(isSelfBuiltFilePath('file://media/Photo/100001.jpg', dir, recvDir)).assertFalse()
+      expect(isSelfBuiltFilePath('/storage/Users/me/Documents/report.pdf', dir, recvDir)).assertFalse()
+      // 接收落盘文件：删除权归文件接收历史页，此处不删
+      expect(isSelfBuiltFilePath('/storage/Users/me/Download/HandySend/a.png', dir, recvDir)).assertFalse()
+      // 目录前缀相同但仅字符前缀（无斜杠边界）不算命中，避免误判同级目录
+      expect(isSelfBuiltFilePath('/data/.../files/text_send_backup/a.txt', dir, recvDir)).assertFalse()
+      expect(isSelfBuiltFilePath('/data/.../files/text_recv_backup/a.txt', dir, recvDir)).assertFalse()
+      // 路径缺省 / 空串 / 应用上下文不可得：保守判为不可删
+      expect(isSelfBuiltFilePath(undefined, dir, recvDir)).assertFalse()
+      expect(isSelfBuiltFilePath('', dir, recvDir)).assertFalse()
+      expect(isSelfBuiltFilePath(dir + 'a.txt', '')).assertFalse()
+    })
+
+    it('collectSelfBuiltFilePaths_keepsOnlySelfBuilt_deduped', 0, () => {
+      let dir = '/data/.../files/text_send/'
+      let recvDir = '/data/.../files/text_recv/'
+      let list: Array<SessionHistoryEntry> = [
+        entryWithPaths('a', 1, [dir + 't1.txt']),
+        // 混合：自建文本 + picker 原始文件 + 接收落盘文件
+        entryWithPaths('b', 2, ['file://media/Photo/1.jpg', dir + 't2.txt',
+          '/storage/Users/me/Download/HandySend/x.png']),
+        // 同一路径重复出现只保留首次
+        entryWithPaths('c', 3, [dir + 't1.txt']),
+        // 旧条目无 path
+        entryWithPaths('d', 4, [undefined]),
+        // 接收文本目录文件同样汇集
+        entryWithPaths('e', 5, [recvDir + 'r1.txt'])
+      ]
+      let paths: Array<string> = collectSelfBuiltFilePaths(list, dir, recvDir)
+      expect(paths.length).assertEqual(3)
+      expect(paths[0]).assertEqual(dir + 't1.txt')
+      expect(paths[1]).assertEqual(dir + 't2.txt')
+      expect(paths[2]).assertEqual(recvDir + 'r1.txt')
+      // 应用上下文不可得时一个都不删
+      expect(collectSelfBuiltFilePaths(list, '').length).assertEqual(0)
+    })
+
+    it('removeByIds_dropsMatched_keepsOrderAndUnmatched', 0, () => {
+      let list: Array<SessionHistoryEntry> = [entry('a', 1), entry('b', 5), entry('c', 3)]
+      let removed = removeHistoryByIds(list, ['a', 'c'])
+      // 命中即剔除，未命中条目保持原有相对顺序
+      expect(removed.length).assertEqual(1)
+      expect(removed[0].sessionId).assertEqual('b')
+      // 无命中与空集合：原样返回，不改变内容
+      expect(removeHistoryByIds(list, ['none']).length).assertEqual(3)
+      expect(removeHistoryByIds(list, []).length).assertEqual(3)
+    })
+
+    it('removeSessionHistoryByIds_persistsRemoval', 0, () => {
+      clearSessionHistory()
+      let session = createSession(terminalInput())
+      finish(session.id, SessionStage.succeeded)
+      expect(getSessionHistory().length).assertEqual(1)
+      expect(removeSessionHistoryByIds([session.id])).assertEqual(1)
+      expect(getSessionHistory().length).assertEqual(0)
+      // 空集合与重复移除均为无命中：返回 0 且不产生变更
+      expect(removeSessionHistoryByIds([])).assertEqual(0)
+      expect(removeSessionHistoryByIds([session.id])).assertEqual(0)
+      resetRegistry()
+      clearSessionHistory()
+    })
+
     it('boundTimeline_capsSize', 0, () => {
       let events: Array<SessionTimelineEvent> = []
       for (let i = 0; i < SESSION_HISTORY_TIMELINE_CAPACITY + 10; i++) {
@@ -185,6 +620,55 @@ export default function SessionHistoryStoreTest() {
       expect(bounded.length).assertEqual(SESSION_HISTORY_TIMELINE_CAPACITY)
       // 保留最近的事件（丢弃最早 10 条）
       expect(bounded[0].timestamp).assertEqual(10)
+    })
+
+    // ── 落盘形态时间线：剥离逐事件的会话标识与 detail ──
+
+    it('persistedTimelineOf_stripsSessionIdAndDetail', 0, () => {
+      let events: Array<SessionTimelineEvent> = [
+        { kind: SessionEventKind.created, timestamp: 10, sessionId: 's1', detail: 'localsend' },
+        { kind: SessionEventKind.started, timestamp: 20, sessionId: 's1' },
+        { kind: SessionEventKind.failed, timestamp: 30, sessionId: 's1', detail: '连接中断' }
+      ]
+      let persisted = persistedTimelineOf(events)
+      expect(persisted.length).assertEqual(3)
+      for (let i = 0; i < persisted.length; i++) {
+        expect(persisted[i].sessionId).assertEqual('')
+        expect(persisted[i].detail).assertEqual(undefined)
+      }
+      // 展示与读侧实际消费的字段原样保留，顺序不变
+      expect(persisted[0].kind).assertEqual(SessionEventKind.created)
+      expect(persisted[0].timestamp).assertEqual(10)
+      expect(persisted[2].kind).assertEqual(SessionEventKind.failed)
+      expect(persisted[2].timestamp).assertEqual(30)
+    })
+
+    it('persistedTimelineOf_doesNotMutateSource', 0, () => {
+      let events: Array<SessionTimelineEvent> = [
+        { kind: SessionEventKind.created, timestamp: 1, sessionId: 's1', detail: 'keep' }
+      ]
+      persistedTimelineOf(events)
+      // 内存中的活跃会话时间线不受影响
+      expect(events[0].sessionId).assertEqual('s1')
+      expect(events[0].detail).assertEqual('keep')
+    })
+
+    it('persistedTimelineOf_empty_staysEmpty', 0, () => {
+      expect(persistedTimelineOf([]).length).assertEqual(0)
+    })
+
+    it('persistedTimelineOf_shrinksSerializedSize', 0, () => {
+      // 剥离的收益随事件数放大：满容量时间线的落盘体积应显著小于内存形态
+      let events: Array<SessionTimelineEvent> = []
+      for (let i = 0; i < SESSION_HISTORY_TIMELINE_CAPACITY; i++) {
+        events.push({ kind: SessionEventKind.started, timestamp: 1700000000000 + i,
+          sessionId: 'localsend_1700000000000_42', detail: '一段较长的错误描述文本用于放大体积' })
+      }
+      let full = JSON.stringify(events).length
+      let persisted = JSON.stringify(persistedTimelineOf(events)).length
+      expect(persisted < full).assertTrue()
+      // 剥离后体积降至约一半以内（仅剩 kind 与 timestamp）
+      expect(persisted * 2 < full * 1.5).assertTrue()
     })
 
     it('sanitize_dedupesBySessionIdKeepsNewest', 0, () => {
@@ -250,6 +734,56 @@ export default function SessionHistoryStoreTest() {
         }
       }
       resetRegistry()
+    })
+
+    it('build_entry_preservesTextMessageFlag', 0, () => {
+      resetRegistry()
+      let input: SessionCreateInput = {
+        protocolKey: 'localsend-receive',
+        protocolSessionId: 'p-text',
+        dataFlow: SessionDataFlow.inbound,
+        initiatedBy: SessionInitiator.remote,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f',
+          fileName: 'text_1.txt',
+          fileType: 'text/plain',
+          totalBytes: 6
+        }],
+        capabilities: defaultCapabilities(),
+        textMessage: true
+      }
+      let s = createSession(input)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      expect(current !== undefined).assertTrue()
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.textMessage).assertTrue()
+        }
+      }
+      resetRegistry()
+    })
+
+    it('repairHistoryTextMessageFlags_usesPrivateTextDirs', 0, () => {
+      // 私有文本目录内的单文本类文件 = 文本消息；Download 内的 .txt 仍是普通文件
+      let sendDir: string = '/app/files/text_send/'
+      let recvDir: string = '/app/files/text_recv/'
+      let message = entryWithPaths('repair-msg', 10, ['/app/files/text_recv/message.txt'])
+      message.files[0].fileName = 'message.txt'
+      let textFile = entryWithPaths('repair-file', 11, ['/storage/Download/note.txt'])
+      textFile.files[0].fileName = 'note.txt'
+      let image = entryWithPaths('repair-image', 12, ['/app/files/text_recv/photo.png'])
+      image.files[0].fileName = 'photo.png'
+      image.files[0].fileType = 'image/png'
+      let entries: Array<SessionHistoryEntry> = [message, textFile, image]
+      let repaired: number = repairHistoryTextMessageFlags(entries, sendDir, recvDir)
+      expect(repaired).assertEqual(1)
+      expect(message.textMessage).assertTrue()
+      expect(textFile.textMessage === true).assertFalse()
+      expect(image.textMessage === true).assertFalse()
     })
 
     it('build_entry_assemblesV2Fields', 0, () => {

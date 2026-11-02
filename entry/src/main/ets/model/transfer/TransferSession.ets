@@ -87,6 +87,8 @@ export interface SessionCapabilities {
   hasByteProgress: boolean
   canSaveToGallery: boolean
   hasVerify: boolean
+  // 可选：结束动作文案（如网页访问会话为“结束会话”，缺省为“取消传输”）
+  cancelLabel?: ResourceStr
 }
 
 /** 关键事件时间线（事件携带统一会话标识，供后续按会话检索诊断）。 */
@@ -141,6 +143,9 @@ export interface SessionCreateInput {
   capabilities: SessionCapabilities
   stage?: SessionStage
   stageText?: ResourceStr
+  // 会话是否为手动输入的文本消息（区别于文件选择器选中的 .txt 等文本文件）。
+  // 由协议适配器在创建时显式声明，详情页据此决定是否渲染文本消息卡片。
+  textMessage?: boolean
 }
 
 /**
@@ -173,7 +178,7 @@ export class SessionFile {
   fileName: string = ''
   fileType: string = ''
   totalBytes: number = 0
-  // 同一文件在一次会话内的第几次出现（Web 下载同 IP 多次下载由 burst 会话规避，通常为 1）
+  // 同一文件在一次会话内的第几次出现（Web 下载由访问会话按 token 区分，通常为 1）
   occurrence: number = 1
   // 校验和/哈希（协议或链路提供时记录，未提供为空串）
   checksum: string = ''
@@ -194,6 +199,8 @@ export class TransferSession {
   dataFlow: SessionDataFlow = SessionDataFlow.outbound
   initiatedBy: SessionInitiator = SessionInitiator.local
   @Trace stage: SessionStage = SessionStage.active
+  // 是否为手动输入的文本消息会话（非文本文件）；创建后不变，不参与进度刷新
+  textMessage: boolean = false
   peer: SessionPeer = emptyPeer()
   @Trace files: Array<SessionFile> = []
   @Trace bytesSent: number = 0

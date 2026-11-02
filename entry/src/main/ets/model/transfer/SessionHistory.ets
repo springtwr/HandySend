@@ -6,6 +6,7 @@
  * 与文件级接收历史相互独立。存储后端抽象为接口，本期由应用偏好存储实现。
  */
 
+import { SESSION_HISTORY_CAPACITY } from '../HistoryCapacity';
 import {
   SessionDataFlow,
   SessionFileStage,
@@ -18,11 +19,12 @@ import {
  * 当前任务历史 schema 版本（单一当前版本，读写均按此版本；不实现版本迁移）。
  * v3 新增可选对端 MTA 品牌标识（`peerMtaBrandId`）；读取不校验版本，旧条目缺省该字段，
  * 按「非 MTA / 无品牌」降级，故无需迁移逻辑。
+ * v4 时间线落盘形态剥离逐事件的会话标识与 detail（见 persistedTimelineOf）：
+ * 沿用「读取不校验版本」策略，旧条目仍带这两个字段，直接忽略即可，无需迁移。
+ * v5 新增可选文本消息标记 `textMessage`（区分手输文本消息与 .txt 文本文件）；
+ * 旧条目缺省该字段，展示层按非文本消息降级。
  */
-export const SESSION_HISTORY_SCHEMA_VERSION: number = 3;
-
-/** 任务历史保留条数上限（有界 FIFO，最旧优先裁剪）。 */
-export const SESSION_HISTORY_CAPACITY: number = 200;
+export const SESSION_HISTORY_SCHEMA_VERSION: number = 5;
 
 /** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
 export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;
@@ -62,6 +64,8 @@ export interface SessionHistoryEntry {
   files: Array<SessionHistoryFileEntry>
   fileCount: number
   totalBytes: number
+  // 是否为手动输入的文本消息会话（可选：旧条目缺省按非文本消息降级）
+  textMessage?: boolean
   // ── 结果与错误 ──
   outcome: SessionHistoryOutcome
   errorMessage: string
@@ -82,7 +86,7 @@ export interface SessionHistoryEntry {
   schemaVersion: number
 }
 
-/** 持久化容器（单键 JSON）。 */
+/** 持久化容器（每段一个 JSON，键布局见 HistorySegments）。 */
 export interface SessionHistoryFile {
   schemaVersion: number
   entries: Array<SessionHistoryEntry>
@@ -126,6 +130,27 @@ export function boundTimeline(timeline: Array<SessionTimelineEvent>): Array<Sess
 }
 
 /**
+ * 落盘形态的时间线：只保留展示与读侧真正读取的字段。
+ *
+ * 会话标识在所属历史条目上已有一份，逐事件重复存储纯属冗余；detail 目前
+ * 无任何展示或读侧消费者。二者按事件数成倍放大持久化体积（每条约数十字节，
+ * 单条历史可达数十 KB），故落盘前剥离——保留在内存中的活跃会话时间线不受影响。
+ */
+export function persistedTimelineOf(timeline: Array<SessionTimelineEvent>): Array<SessionTimelineEvent> {
+  let result: Array<SessionTimelineEvent> = [];
+  for (let i = 0; i < timeline.length; i++) {
+    let event: SessionTimelineEvent = {
+      kind: timeline[i].kind,
+      timestamp: timeline[i].timestamp,
+      // 会话标识与所属条目一致，落盘形态以空串占位保持字段形状稳定
+      sessionId: ''
+    };
+    result.push(event);
+  }
+  return result;
+}
+
+/**
  * 按会话标识幂等 upsert：同会话重复终结不产生重复记录。
  * 已存在时以新记录替换（保留原位置），不存在时追加到末尾。
  */
@@ -143,6 +168,73 @@ export function upsertHistory(entries: Array<SessionHistoryEntry>,
   }
   if (!replaced) {
     result.push(entry);
+  }
+  return result;
+}
+
+/**
+ * 判定历史条目中的某个文件路径是否为「随记录失效即应清理的应用自建产物」。
+ *
+ * 以**路径前缀**而非传输方向为判据：`sendTextDir`（filesDir/text_send/）与 `recvTextDir`
+ * （filesDir/text_recv/）是应用为发送/接收文本落盘的目录，其中的文件仅用于详情页预览文本内容，
+ * 记录一旦删除即失去全部引用（文件名仅为内部实现细节，UI 不向用户展示）。
+ * 方向不可靠——发送方向既可能是自建文本也可能是 picker 选中的用户原始文件。
+ *
+ * 该判据天然排除两类不可删文件：picker 原始文件（用户数据）与 Download 落盘文件
+ * （其删除权归文件接收历史页，与本页不重合）。
+ *
+ * @param path 文件路径（可缺省 / 空串）
+ * @param sendTextDir 应用自建发送文本目录（含尾斜杠；空串表示应用上下文不可得）
+ * @param recvTextDir 应用自建接收文本目录（含尾斜杠；缺省或空串表示不判定该目录）
+ * @returns 该文件是否可随记录删除
+ */
+export function isSelfBuiltFilePath(path: string | undefined, sendTextDir: string,
+  recvTextDir: string = ''): boolean {
+  if (path === undefined || path.length === 0) {
+    return false;
+  }
+  if (sendTextDir.length > 0 && path.startsWith(sendTextDir)) {
+    return true;
+  }
+  return recvTextDir.length > 0 && path.startsWith(recvTextDir);
+}
+
+/**
+ * 汇集一组历史条目中可安全删除的自建文件路径（纯函数，无副作用）：按出现顺序去重，
+ * 供删除动作一次性清理。目录前缀相同的文件（如同一会话的多个文本条目）只保留首次出现。
+ * @param entries 待删除的历史条目集合
+ * @param sendTextDir 应用自建发送文本目录（含尾斜杠）
+ * @param recvTextDir 应用自建接收文本目录（含尾斜杠；缺省表示不判定该目录）
+ */
+export function collectSelfBuiltFilePaths(entries: Array<SessionHistoryEntry>,
+  sendTextDir: string, recvTextDir: string = ''): Array<string> {
+  let result: Array<string> = [];
+  for (let i = 0; i < entries.length; i++) {
+    let files: Array<SessionHistoryFileEntry> = entries[i].files;
+    for (let k = 0; k < files.length; k++) {
+      let path: string | undefined = files[k].path;
+      if (isSelfBuiltFilePath(path, sendTextDir, recvTextDir) && result.indexOf(path ?? '') < 0) {
+        result.push(path ?? '');
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * 按会话标识集合移除历史条目（纯函数，无副作用）：命中即剔除，保留其余条目的原有相对顺序；
+ * 集合为空或无命中时原样返回，便于调用方免判空直接落盘。
+ */
+export function removeHistoryByIds(entries: Array<SessionHistoryEntry>,
+  ids: Array<string>): Array<SessionHistoryEntry> {
+  if (ids.length === 0) {
+    return entries;
+  }
+  let result: Array<SessionHistoryEntry> = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (ids.indexOf(entries[i].sessionId) < 0) {
+      result.push(entries[i]);
+    }
   }
   return result;
 }
@@ -231,6 +323,7 @@ function rebuildAggregatesFromFiles(e: SessionHistoryEntry, totalBytes: number):
     files: e.files,
     fileCount: e.files.length,
     totalBytes: totalBytes,
+    textMessage: e.textMessage,
     outcome: e.outcome,
     errorMessage: e.errorMessage,
     errorCode: e.errorCode,

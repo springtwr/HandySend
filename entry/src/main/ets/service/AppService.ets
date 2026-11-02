@@ -1,5 +1,6 @@
 import { common } from '@kit.AbilityKit';
 import { connection } from '@kit.NetworkKit';
+import { wifiManager } from '@kit.ConnectivityKit';
 import {
   verifyNativeVersion,
   getNativeLibraryVersion,
@@ -18,9 +19,15 @@ import {
   NativePrepareUploadAbortedEvent,
   NativeProgressEvent,
   NativeChecksumProgressEvent,
-  NativeWebSendPrepareDownloadEvent,
-  NativeWebSendFileDownloadEvent,
-  NativeWebSendProgressEvent,
+  NativeWebAccessEvent,
+  NativeWebDownloadStartedEvent,
+  NativeWebDownloadProgressEvent,
+  NativeWebDownloadFileDoneEvent,
+  NativeWebDownloadEndedEvent,
+  NativeWebSendSessionEndEvent,
+  NativeWebUploadPrepareEvent,
+  NativeWebUploadProgressEvent,
+  NativeWebUploadDoneEvent,
   NativeErrorEvent,
   NativeSecurityContext
 } from '../model/NativeTypes';
@@ -29,7 +36,7 @@ import { getHistory } from './repository/ReceiveHistoryService';
 import { getSendSessions, isTerminalSendStatus } from './repository/SendRepository';
 import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { initPendingRequestNotifier } from './PendingRequestNotifier';
+import { initBackgroundAttentionNotifier } from './BackgroundAttentionNotifier';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog, triggerRefresh } from './repository/AppCore';
@@ -38,7 +45,8 @@ import {
   getTheme,
   getLocale,
   applyThemeToApp,
-  applyLocaleToApp
+  applyLocaleToApp,
+  getWebHttpsEnabled
 } from './repository/SettingsRepository';
 import { initDeviceIdentity, getDeviceAlias, getDeviceType } from './repository/DeviceRepository';
 import {
@@ -63,11 +71,21 @@ import {
 import { handleDeviceFound, handleRegisterEventTyped } from './repository/DiscoveryRepository';
 import { handleChecksumProgress } from './repository/ChecksumRepository';
 import {
-  handlePrepareDownloadTyped,
-  handleFileDownloadTyped,
-  handleWebSendProgressTyped,
-  hasActiveWebDownloads
-} from './repository/WebShareRepository';
+  handleWebAccessTyped,
+  handleWebDownloadStartedTyped,
+  handleWebDownloadProgressTyped,
+  handleWebDownloadFileDoneTyped,
+  handleWebDownloadEndedTyped,
+  handlePrepareUploadTyped,
+  handleWebUploadProgressTyped,
+  handleWebUploadDoneTyped,
+  handleWebUploadFinished,
+  refreshWebAddress,
+  getWebActualPort,
+  restartWebService,
+  hasActiveWebDownloads,
+  hasActiveWebUploads } from './repository/WebShareRepository';
+import { noteWebAccess } from './BackgroundTransferService';
 
 // ── 协议适配器模块导入（触发模块级自注册；ArkTS 无副作用导入，故引用其键常量） ──
 import { LOCAL_SEND_KEY } from './transfer/adapters/LocalSendSendAdapter';
@@ -75,6 +93,7 @@ import { LOCAL_RECEIVE_KEY } from './transfer/adapters/LocalSendReceiveAdapter';
 import { MTA_SEND_KEY } from './transfer/adapters/MtaSendAdapter';
 import { MTA_RECEIVE_KEY } from './transfer/adapters/MtaReceiveAdapter';
 import { WEB_DOWNLOAD_KEY } from './transfer/adapters/WebDownloadAdapter';
+import { WEB_UPLOAD_KEY } from './transfer/adapters/WebUploadAdapter';
 import { initializeAdapters } from './transfer/adapters/SessionAdapter';
 import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
 
@@ -106,7 +125,7 @@ export { getLogs,
   updateLocalInterfaces,
   saveLogsToFile } from './repository/AppCore';
 
-// SettingsRepository
+// 设置仓储导出
 export { setHttpsEnabled,
   getHttpsEnabled,
   getEncryptedTransfer,
@@ -114,18 +133,14 @@ export { setHttpsEnabled,
   getAutoConfirmMode,
   getReceivePin,
   setReceivePin,
-  setAutoFinish,
-  isAutoFinish,
-  setSaveToHistory,
-  isSaveToHistory,
   setSaveToGallery,
   isSaveToGallery,
+  setBackgroundReceiveEnabled,
+  isBackgroundReceiveEnabled,
   setDestination,
   getDestination,
   setCustomAlias,
   getCustomAlias,
-  setCustomDeviceType,
-  getCustomDeviceType,
   setTheme,
   getTheme,
   setLocale,
@@ -152,12 +167,23 @@ export { setHttpsEnabled,
   getNetworkBlacklist,
   doesServerNeedRestart,
   clearServerNeedsRestart,
-  setAutoAcceptWebDownload,
-  getAutoAcceptWebDownload,
   getLocalSendEnabled,
   setLocalSendEnabled,
   getMtaEnabled,
   setMtaEnabled,
+  getWebSendAllowed,
+  setWebSendAllowed,
+  getWebReceiveAllowed,
+  setWebReceiveAllowed,
+  getWebHttpsEnabled,
+  setWebHttpsEnabled,
+  getWebPort,
+  setWebPort,
+  getWebInterfaceNames,
+  getWebInterfaceBlacklistNames,
+  setWebInterfaces,
+  getWebDisplayAddress,
+  setWebDisplayAddress,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
   getMtaSimulatedBrand,
@@ -165,26 +191,27 @@ export { setHttpsEnabled,
   isMtaConnectionWarnings,
   setMtaConnectionWarnings } from './repository/SettingsRepository';
 
-// DeviceRepository
+// 设备仓储导出
 export { getDeviceAlias,
   getDeviceType,
   getDeviceModel,
   getLocalDeviceInfo,
   refreshDeviceInfo } from './repository/DeviceRepository';
 
-// ServerRepository
+// 服务端仓储导出
 export { isServerRunning,
   getServerError,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   getServerFingerprint,
+  refreshWifiWarning,
   startServer,
   stopServer,
   restartServer,
   restartDiscovery,
   cleanupReceiveCacheDirWithContext } from './repository/ServerRepository';
 
-// DiscoveryRepository
+// 发现仓储导出
 export { getDiscoveredDevices,
   getMulticastError,
   rescanDevices,
@@ -196,19 +223,38 @@ export { getShareLink,
   createShareLink,
   stopShareLink,
   startWebUpload,
-  getPendingWebDownloads,
-  acceptWebDownloadRequest,
-  declineWebDownloadRequest,
-  declineAllPendingWebDownloads,
-  hasActiveWebDownloads } from './repository/WebShareRepository';
+  ensureWebUpload,
+  updateShareFiles,
+  unmountShare,
+  isShareActive,
+  isSharingPath,
+  disableWebUpload,
+  setWebUploadAutoAccept,
+  isWebUploadAutoAccept,
+  getWebAccessCode,
+  hasSharedFiles,
+  getSharedFileCount,
+  isWebUploadEnabled,
+  applyWebSendAllowed,
+  applyWebReceiveAllowed,
+  restoreWebService,
+  getWebAddresses,
+  getSelectedWebAddress,
+  selectWebDisplayAddress,
+  refreshWebAddress,
+  getWebActualPort,
+  isWebPortFallback,
+  restartWebService,
+  hasActiveWebDownloads,
+  hasActiveWebUploads } from './repository/WebShareRepository';
 
-// ChecksumRepository
+// 校验和仓储导出
 export { getChecksumProgress,
   getChecksumTotal,
   calculateChecksumsForFiles,
   handleChecksumProgress } from './repository/ChecksumRepository';
 
-// SendRepository
+// 发送仓储导出
 export { sendResultErrorMessage,
   sendToDevice,
   sendToDeviceMulti,
@@ -231,7 +277,7 @@ export { sendResultErrorMessage,
 
 export type { SendResult } from './repository/SendRepository';
 
-// ReceiveRepository
+// 接收仓储导出
 export { getPendingRequests,
   respondToRequest,
   shouldAutoAccept,
@@ -239,21 +285,31 @@ export { getPendingRequests,
   consumeRecvMediaFiles,
   getPendingRecvMediaPaths } from './repository/ReceiveRepository';
 
-// GallerySaveService
+// 相册保存服务导出
 export { saveMediaToGallery } from './GallerySaveService';
 
 // NativeBridge（传输取消/会话相关）
 export { nativeCancelTransfer,
   nativeCancelTransferLocal,
   nativeCancelLocalSession,
-  nativeGetCurrentSendSessionId } from './NativeBridge';
+  nativeGetCurrentSendSessionId,
+  nativeStartWebService,
+  nativeStopWebService,
+  nativeUpdateWebServiceFiles,
+  nativeSetWebServiceUploadEnabled,
+  nativeSetWebUploadTargets,
+  nativeAcceptWebSession,
+  nativeDeclineWebSession,
+  nativeExpireWebSession,
+  nativeSweepWebSessions } from './NativeBridge';
 
-// ReceiveHistoryService
+// 接收历史服务导出
 export { updateGallerySavedStatus } from './repository/ReceiveHistoryService';
 
 // MtaRepository —— 应用级 MTA 运行时（发现扫描 / 接收服务 / 收发互斥 / 命令门面）
 export { startMtaDiscoveryScan,
   rescanMtaDiscovery,
+  isMtaManualRefreshInFlight,
   stopMtaDiscoveryScan,
   markMtaSendClicked,
   getMtaSendClickedMs,
@@ -273,7 +329,11 @@ export { startMtaDiscoveryScan,
   rejectMtaReceiveRequest,
   cancelMtaReceive,
   getMtaReceiveSnapshot,
+  getLocalMtaDeviceIdHex,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
+
+// MTA 广播名称口径（与广播编码同源）
+export { mtaBroadcastName } from './mta/MtaBleCommon';
 
 // ── 历史记录 / 收藏（薄适配器） ──
 
@@ -303,6 +363,7 @@ export { createSession,
   subscribeSessions,
   unsubscribeSessions,
   getHistory,
+  getHistoryRevision,
   clearHistory,
   getSessionCapabilities,
   resetRegistry } from './transfer/TransferSessionRegistry';
@@ -314,7 +375,7 @@ export { getSessionHistory,
   buildHistoryEntry } from './transfer/SessionHistoryStore';
 
 // 设备来源 / 传输方式 / 设置分组注册表
-export { registerSource, getSource, listSources, filterSeenSources } from './transfer/DeviceSourceRegistry';
+export { registerSource, getSource, listSources, filterEnabledDeviceSources } from './transfer/DeviceSourceRegistry';
 
 export { registerMethod, getMethod, listMethods, listMethodsByGroup } from './transfer/TransferMethodRegistry';
 
@@ -331,7 +392,7 @@ export type { SessionAdapter } from './transfer/adapters/SessionAdapter';
  */
 function initSessionEngine(): void {
   // 引用各适配器键，确保适配器模块已被加载并完成自注册
-  logger.debug('Protocol adapters registered: ' + LOCAL_SEND_KEY + ', ' + LOCAL_RECEIVE_KEY + ', ' +
+  logger.debug('协议适配器已注册：' + LOCAL_SEND_KEY + ', ' + LOCAL_RECEIVE_KEY + ', ' +
     MTA_SEND_KEY + ', ' + MTA_RECEIVE_KEY + ', ' + WEB_DOWNLOAD_KEY);
   // 注册协议默认描述符（设备来源 / 传输方式 / 设置分组）
   registerProtocolDefaults();
@@ -342,12 +403,23 @@ function initSessionEngine(): void {
 // 生命周期编排（整合各仓库的关注点）
 // ════════════════════════════════════════════════════════════
 
+/**
+ * 网络接口变化后的统一刷新：重枚举网卡，更新局域网警告与网页可展示地址。
+ * 系统网络事件覆盖不到热点（SoftAP 不产生连接网络事件），
+ * 由热点状态监听与页面进入时主动调用来补齐。
+ */
+export function refreshWebNetwork(): void {
+  // 先重枚举缓存，警告与地址都基于同一份最新接口列表
+  refreshWifiWarning();
+  refreshWebAddress();
+}
+
 export function initAppService(context: common.UIAbilityContext): void {
   if (appServiceInitialized) {
     // Ability 重建时 context 实例会变化，仍需刷新以免后续操作使用失效上下文；
     // 其余模块级状态（日志/事件订阅/原生身份/网络监听）进程内只初始化一次
     setAppContext(context);
-    logger.debug('initAppService skipped: already initialized');
+    logger.debug('initAppService 已跳过：已初始化');
     return;
   }
   appServiceInitialized = true;
@@ -355,16 +427,16 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 先注册 addLog 回调（打破 Logger → AppCore 的循环依赖）
   registerAddLog(addLog);
 
-  // 初始化日志系统（调试构建 = DEBUG 级别，发布构建 = INFO 级别）
+  // 初始化日志系统：优先使用用户持久化选择，未保存过时使用构建默认级别
   initLogger();
 
   // 启动时校验原生库版本
   try {
     verifyNativeVersion();
-    logger.debug('Native library version: ' + getNativeLibraryVersion());
+    logger.debug('原生库版本：' + getNativeLibraryVersion());
   } catch (e) {
-    logger.error('Native version check failed: ' + e);
-    // 继续执行——版本不匹配只是警告，不是致命错误
+    logger.warn('原生版本检查失败：' + e);
+    // 继续执行——版本不匹配按可恢复降级处理，不是致命错误
   }
 
   // 注册桥接层类型化事件订阅（发现、服务器、Web 分享事件按类型分发）
@@ -397,22 +469,43 @@ export function initAppService(context: common.UIAbilityContext): void {
       // 将其作为取消事件呈现，使传输页作出反应。
       handlePrepareUploadAbortedEventTyped(e as NativePrepareUploadAbortedEvent);
     });
-    onBridgeEvent('webSendPrepareDownload', (e: NativeEvent) => {
-      handlePrepareDownloadTyped(e as NativeWebSendPrepareDownloadEvent);
+    onBridgeEvent('webAccess', (e: NativeEvent) => {
+      let access = e as NativeWebAccessEvent;
+      handleWebAccessTyped(access);
+      noteWebAccess();
     });
-    onBridgeEvent('webSendFileDownload', (e: NativeEvent) => {
-      handleFileDownloadTyped(e as NativeWebSendFileDownloadEvent);
+    onBridgeEvent('webDownloadStarted', (e: NativeEvent) => {
+      handleWebDownloadStartedTyped(e as NativeWebDownloadStartedEvent);
     });
-    onBridgeEvent('webSendProgress', (e: NativeEvent) => {
-      handleWebSendProgressTyped(e as NativeWebSendProgressEvent);
+    onBridgeEvent('webDownloadProgress', (e: NativeEvent) => {
+      handleWebDownloadProgressTyped(e as NativeWebDownloadProgressEvent);
+    });
+    onBridgeEvent('webDownloadFileDone', (e: NativeEvent) => {
+      handleWebDownloadFileDoneTyped(e as NativeWebDownloadFileDoneEvent);
+    });
+    onBridgeEvent('webDownloadEnded', (e: NativeEvent) => {
+      handleWebDownloadEndedTyped(e as NativeWebDownloadEndedEvent);
+    });
+    onBridgeEvent('webSendSessionEnd', (e: NativeEvent) => {
+      // 仅上传会话使用；下载已改用 webDownloadEnded
+      handleWebUploadFinished((e as NativeWebSendSessionEndEvent).sessionId);
+    });
+    onBridgeEvent('webUploadPrepare', (e: NativeEvent) => {
+      handlePrepareUploadTyped(e as NativeWebUploadPrepareEvent);
+    });
+    onBridgeEvent('webUploadProgress', (e: NativeEvent) => {
+      handleWebUploadProgressTyped(e as NativeWebUploadProgressEvent);
+    });
+    onBridgeEvent('webUploadDone', (e: NativeEvent) => {
+      handleWebUploadDoneTyped(e as NativeWebUploadDoneEvent);
     });
     onBridgeEvent('error', (e: NativeEvent) => {
       // 原生错误事件此前已解析但未订阅：订阅后纳入发送失败诊断，不再仅依赖调用返回值
       handleNativeErrorEventTyped(e as NativeErrorEvent);
     });
-    logger.debug('Native bridge events subscribed');
+    logger.debug('原生桥接事件已订阅');
   } catch (e) {
-    logger.error('Failed to subscribe native bridge events: ' + JSON.stringify(e));
+    logger.error('订阅原生桥接事件失败：' + JSON.stringify(e));
   }
 
   setAppContext(context);
@@ -422,11 +515,11 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 初始化统一会话引擎（协议适配器事件订阅；适配器在文件头部导入以完成注册）
   try {
     initSessionEngine();
-    // 后台待确认提示通知改为按注册表待确认会话发布/撤回
-    initPendingRequestNotifier();
-    logger.debug('Session engine initialized');
+    // 后台关注通知按注册表待确认会话与网页访问状态发布/撤回
+    initBackgroundAttentionNotifier();
+    logger.debug('会话引擎已初始化');
   } catch (e) {
-    logger.error('Failed to initialize session engine: ' + JSON.stringify(e));
+    logger.error('初始化会话引擎失败：' + JSON.stringify(e));
   }
 
   // 初始化桥接层：生成/加载 TLS 身份并建立事件通道（幂等）。
@@ -437,10 +530,10 @@ export function initAppService(context: common.UIAbilityContext): void {
   // 显式调用同时保证身份在首次进入 UI 前就已就绪，且事件通道在事件订阅后立即可用。
   try {
     nativeInitWithPersistedIdentity(getDeviceAlias(), getDeviceType(), getReceiveSaveDir());
-    logger.debug('Native bridge initialized: alias=' + getDeviceAlias() +
+    logger.debug('原生桥接已初始化 alias=' + getDeviceAlias() +
       ' type=' + getDeviceType());
   } catch (e) {
-    logger.error('Native bridge init failed: ' + JSON.stringify(e));
+    logger.error('原生桥接初始化失败：' + JSON.stringify(e));
   }
 
   // 立即应用已保存的主题（浅色/深色/跟随系统）
@@ -456,19 +549,25 @@ export function initAppService(context: common.UIAbilityContext): void {
 
     // 网络变化自动扫描的防抖计时器
     let autoScanTimer: number = -1;
+    // 热点状态变化后的补查计时器
+    let hotspotRecheckTimer: number = -1;
 
-    // 辅助：刷新网卡 + 更新 WiFi 警告 + 通知 + 重启发现
+    // 实际应用一次网络变化：刷新网卡/警告/网页地址，服务器运行中则重启发现
+    let applyNetworkChange = (): void => {
+      refreshWebNetwork();
+      // 服务器运行中则重启发现（让组播 socket 适配新接口）
+      if (isServerRunning()) {
+        restartDiscovery();
+      }
+    };
+
+    // 每次网络事件重置 1s 防抖计时器
     let onNetworkChange = (): void => {
-      // 每次网络事件重置 1s 防抖计时器
       if (autoScanTimer >= 0) {
         clearTimeout(autoScanTimer);
       }
       autoScanTimer = setTimeout(() => {
-        refreshWifiWarning();
-        // 服务器运行中则重启发现（让组播 socket 适配新接口）
-        if (isServerRunning()) {
-          restartDiscovery();
-        }
+        applyNetworkChange();
         autoScanTimer = -1;
       }, 1000);
     };
@@ -487,8 +586,27 @@ export function initAppService(context: common.UIAbilityContext): void {
       // 注册时的初始检查
       onNetworkChange();
     });
+
+    // 热点（SoftAP）启停不产生 netAvailable/netLost 等连接网络事件，
+    // 单独监听热点状态，让网页面板与设置页的可用地址随热点开关即时更新。
+    try {
+      wifiManager.on('hotspotStateChange', (state: number): void => {
+        logger.debug('热点状态变化 state=' + state);
+        onNetworkChange();
+        // 热点接口的 IPv4 可能晚于状态事件就绪：稍后补查一次，避免地址短暂缺失后不再更新
+        if (hotspotRecheckTimer >= 0) {
+          clearTimeout(hotspotRecheckTimer);
+        }
+        hotspotRecheckTimer = setTimeout((): void => {
+          hotspotRecheckTimer = -1;
+          applyNetworkChange();
+        }, 3000);
+      });
+    } catch (e) {
+      logger.warn('注册热点状态监听失败：' + String(e));
+    }
   } catch (_e) {
-    logger.warn('Failed to register network change listener');
+    logger.warn('注册网络变化监听失败');
   }
 }
 
@@ -549,18 +667,23 @@ export function getSecurityContext(): NativeSecurityContext {
 
 /**
  * 重置 TLS 证书并持久化。
- * - 存在进行中传输时抛错（不中断文件传输）
- * - 重置成功后若服务器运行中则自动重启，使新证书立即生效
+ * - 存在进行中传输（含网页下载/上传）时抛错（不中断文件传输）
+ * - 重置成功后若 LocalSend 服务器运行中则自动重启；网页 HTTPS 运行中同样重启以应用新证书
  * - 返回重置后的安全上下文
  */
 export async function resetTlsCertificate(): Promise<NativeSecurityContext> {
-  // Web 下载不占用统一传输任务，需单独检查：重启服务器会中断其长连接
-  if (hasActiveTransfers() || hasActiveWebDownloads()) {
+  // Web 传输不占用统一传输任务，需单独检查：重置会换掉网页 HTTPS 复用证书
+  if (hasActiveTransfers() || hasActiveWebDownloads() || hasActiveWebUploads()) {
     throw new Error(RESET_BUSY_ERROR);
   }
   let ctx: NativeSecurityContext = nativeResetSecurityContext();
   if (isServerRunning()) {
     await restartServer();
+  }
+  // 网页服务与 LocalSend 生命周期独立，但 HTTPS 复用桥接层证书：
+  // 正在以 HTTPS 运行时重启一次，使浏览器拿到新证书（HTTP 无需处理）。
+  if (getWebHttpsEnabled() && getWebActualPort() > 0) {
+    await restartWebService();
   }
   return ctx;
 }

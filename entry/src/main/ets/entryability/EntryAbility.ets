@@ -20,14 +20,22 @@ import { systemShare } from '@kit.ShareKit';
 import {
   triggerRefresh,
   setPendingSharedUris,
+  consumePendingSharedUris,
   setPendingSharedTexts,
+  consumePendingSharedTexts,
   setPendingNavigation,
   cleanupSendDirWithContext,
   cleanupReceiveCacheDirWithContext,
   startMtaReceiveIfEnabled,
   stopMtaReceive,
-  stopLocalServer
+  stopLocalServer,
+  addLog
 } from '../service/AppService';
+import {
+  startDiagnosticLogging,
+  flushDiagnosticLog,
+  markDiagnosticSessionEnd
+} from '../service/log/DiagnosticLogService';
 import { NAVIGATION_PARAM_KEY, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
@@ -37,26 +45,142 @@ import { isMtaReceivingActive } from '../service/repository/MtaRepository';
 import {
   initBackgroundTransferService,
   startTransferTaskIfActive,
+  startWebKeepaliveIfEnabled,
   stopTransferTask,
   hasActiveSessions
 } from '../service/BackgroundTransferService';
-import { withdrawPendingRequestNotification } from '../service/PendingRequestNotifier';
-import { requestNotificationPermission, requestBluetoothPermission } from '../service/PermissionService';
+import {
+  refreshBackgroundAttention,
+  withdrawBackgroundAttention
+} from '../service/BackgroundAttentionNotifier';
+import {
+  requestNotificationPermission,
+  requestBluetoothPermission,
+  isPrivacyAgreed
+} from '../service/PermissionService';
 import { DialogService } from '../service/DialogService';
+import { getLogger, initLogger, registerAddLog } from '../utils/Logger';
+import { readJsonString } from '../utils/JsonGuard';
 import { initDemoModule } from '../service/demo/DemoScenarioService';
-import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUtil';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动');
 
+// 分享收件箱上限：多次分享连续到达合并累积，需截断防无界增长
+// 条数上限与文件选择器单次上限同量级；文本总字符上限防超大文本拖慢写入与暂存
+const SHARE_MAX_URIS: number = 20;
+const SHARE_MAX_TEXTS: number = 20;
+const SHARE_MAX_TEXT_CHARS: number = 200000;
+
+// 解析 URI 数组 JSON：非数组/脏数据返回空数组
+function parseShareUriList(json: string): Array<string> {
+  if (json.length === 0) {
+    return [];
+  }
+  try {
+    let parsed: Object = JSON.parse(json);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    let raw: Array<Object> = parsed as Array<Object>;
+    let result: Array<string> = [];
+    for (let i = 0; i < raw.length; i++) {
+      if (typeof raw[i] === 'string') {
+        result.push(raw[i] as string);
+      }
+    }
+    return result;
+  } catch (_e) {
+    return [];
+  }
+}
+
+// 解析文本记录数组 JSON：字段缺失或类型不符的条目按空串补齐
+function parseShareTextList(json: string): Array<Record<string, string>> {
+  let result: Array<Record<string, string>> = [];
+  if (json.length === 0) {
+    return result;
+  }
+  try {
+    let parsed: Object = JSON.parse(json);
+    if (!Array.isArray(parsed)) {
+      return result;
+    }
+    let raw: Array<Object> = parsed as Array<Object>;
+    for (let i = 0; i < raw.length; i++) {
+      let content: string = readJsonString(raw[i], 'content', '');
+      let title: string = readJsonString(raw[i], 'title', '');
+      let utd: string = readJsonString(raw[i], 'utd', '');
+      let record: Record<string, string> = {
+        'content': content,
+        'title': title,
+        'utd': utd
+      };
+      result.push(record);
+    }
+  } catch (_e) {
+  }
+  return result;
+}
+
+// 文本条数与总字符双上限截断（至少保留 1 条，避免全空）
+function truncateShareTexts(texts: Array<Record<string, string>>): Array<Record<string, string>> {
+  let kept: Array<Record<string, string>> = texts.slice(0, SHARE_MAX_TEXTS);
+  let total: number = 0;
+  for (let i = 0; i < kept.length; i++) {
+    total = total + kept[i]['content'].length + kept[i]['title'].length;
+    if (total > SHARE_MAX_TEXT_CHARS) {
+      logger.warn('分享文本超体积上限，截断后续条目');
+      return i > 0 ? kept.slice(0, i) : kept.slice(0, 1);
+    }
+  }
+  return kept;
+}
+
+// 未消费 pending 与本次新增合并（去重后按上限截断），避免后一次分享覆盖前一次
+function mergeShareUriJson(prevJson: string, nextJson: string): string {
+  let merged: Array<string> = parseShareUriList(prevJson);
+  let incoming: Array<string> = parseShareUriList(nextJson);
+  for (let i = 0; i < incoming.length; i++) {
+    if (!merged.includes(incoming[i])) {
+      merged.push(incoming[i]);
+    }
+  }
+  if (merged.length > SHARE_MAX_URIS) {
+    logger.warn('分享文件超条数上限，截断至 ' + SHARE_MAX_URIS);
+    merged = merged.slice(0, SHARE_MAX_URIS);
+  }
+  return JSON.stringify(merged);
+}
+
+function mergeShareTextJson(prevJson: string, nextJson: string): string {
+  let merged: Array<Record<string, string>> = parseShareTextList(prevJson);
+  let incoming: Array<Record<string, string>> = parseShareTextList(nextJson);
+  for (let i = 0; i < incoming.length; i++) {
+    merged.push(incoming[i]);
+  }
+  return JSON.stringify(truncateShareTexts(merged));
+}
+
+// 隐私弹框签署结果公共事件名：用户点击系统标准化隐私弹窗后由应用市场发出
+const PRIVACY_STATE_CHANGED_EVENT: string = 'usual.event.PRIVACY_STATE_CHANGED';
+
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
   // 系统语言/地区变化公共事件的订阅者引用，用于 onDestroy 退订
   private localeSubscriber: commonEventManager.CommonEventSubscriber | null = null;
+  // 隐私签署结果公共事件的订阅者引用，用于 onDestroy 退订
+  private privacySubscriber: commonEventManager.CommonEventSubscriber | null = null;
+  // 本次启动是否已发起权限申请：状态判断与事件两条路径可能先后命中，需去重
+  private startupPermissionRequested: boolean = false;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    logger.debug('Ability onCreate');
+    // 文件日志必须早于其余初始化：首帧前的启动异常也要留下会话记录。
+    let persistedDebug: boolean | undefined = startDiagnosticLogging(this.context);
+    registerAddLog(addLog);
+    initLogger(persistedDebug);
+    logger.info('Ability 创建（onCreate）');
 
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
@@ -105,19 +229,19 @@ export default class EntryAbility extends UIAbility {
       try {
         commonEventManager.subscribe(subscriber, (err: BusinessError) => {
           if (err) {
-            logger.warn('系统语言变化事件回调异常: ' + JSON.stringify(err));
+            logger.warn('系统语言变化事件回调异常：' + JSON.stringify(err));
             return;
           }
           logger.debug('收到系统语言/地区变化事件，同步「跟随系统」语言');
           syncSystemLanguageIfFollowing();
         });
-        logger.info('已订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
+        logger.debug('已订阅系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
       } catch (e) {
-        logger.warn('订阅系统语言变化公共事件失败，跟随系统在非前后台切换场景下将无法同步: ' +
+        logger.warn('订阅系统语言变化公共事件失败，跟随系统在非前后台切换场景下将无法同步：' +
           JSON.stringify(e));
       }
     }).catch((e: BusinessError) => {
-      logger.warn('创建系统语言变化事件订阅者失败，跟随系统在非前后台切换场景下将无法同步: ' +
+      logger.warn('创建系统语言变化事件订阅者失败，跟随系统在非前后台切换场景下将无法同步：' +
         JSON.stringify(e));
     });
   }
@@ -131,13 +255,13 @@ export default class EntryAbility extends UIAbility {
       commonEventManager.unsubscribe(this.localeSubscriber);
       logger.debug('已退订系统语言/地区变化公共事件（COMMON_EVENT_LOCALE_CHANGED）');
     } catch (e) {
-      logger.warn('退订系统语言变化公共事件异常: ' + JSON.stringify(e));
+      logger.warn('退订系统语言变化公共事件异常：' + JSON.stringify(e));
     }
     this.localeSubscriber = null;
   }
 
   onNewWant(want: Want): void {
-    logger.debug('Ability onNewWant');
+    logger.debug('Ability 收到新意图（onNewWant）');
     this.handleShareWant(want);
     this.handleNavigationWant(want);
   }
@@ -171,7 +295,7 @@ export default class EntryAbility extends UIAbility {
         let content: string = record.content ?? '';
         let title: string = record.title ?? '';
         let utd: string = record.utd ?? '';
-        logger.debug('handleShareWant record[' + i + ']: utd=' + utd +
+        logger.debug('handleShareWant 记录[' + i + ']: utd=' + utd +
           ' uri_empty=' + (uri.length === 0) + ' content_empty=' + (content.length === 0));
         if (uri.length > 0) {
           // URI 非空 → 文件 URI 通道
@@ -186,12 +310,19 @@ export default class EntryAbility extends UIAbility {
           texts.push(textRecord);
         }
         // 两者均空则静默跳过
+        if (uris.length >= SHARE_MAX_URIS && texts.length >= SHARE_MAX_TEXTS) {
+          logger.warn('分享条目超上限，截断后续记录');
+          break;
+        }
       }
+      uris = uris.slice(0, SHARE_MAX_URIS);
+      texts = truncateShareTexts(texts);
+      // 与尚未消费的 pending 合并（多次分享连续到达时不覆盖），合并后再按上限截断
       if (uris.length > 0) {
-        setPendingSharedUris(JSON.stringify(uris));
+        setPendingSharedUris(mergeShareUriJson(consumePendingSharedUris(), JSON.stringify(uris)));
       }
       if (texts.length > 0) {
-        setPendingSharedTexts(JSON.stringify(texts));
+        setPendingSharedTexts(mergeShareTextJson(consumePendingSharedTexts(), JSON.stringify(texts)));
       }
       if (uris.length > 0 || texts.length > 0) {
         triggerRefresh();
@@ -200,9 +331,9 @@ export default class EntryAbility extends UIAbility {
       if (want.parameters !== undefined) {
         let sharedParam: Object | undefined = want.parameters['handysend.sharedUris'];
         if (sharedParam !== undefined && typeof sharedParam === 'string') {
-          let json: string = sharedParam as string;
+          let json: string = sharedParam;
           if (json.length > 0) {
-            setPendingSharedUris(json);
+            setPendingSharedUris(mergeShareUriJson(consumePendingSharedUris(), json));
             triggerRefresh();
           }
         }
@@ -211,9 +342,11 @@ export default class EntryAbility extends UIAbility {
   }
 
   onDestroy(): void {
-    logger.debug('Ability onDestroy');
+    logger.info('Ability 销毁（onDestroy）');
     // 退订系统语言/地区变化公共事件（onCreate 中订阅），避免订阅者泄漏
     this.unsubscribeSystemLocaleChanged();
+    // 退订隐私弹框签署结果公共事件（等待用户同意时按需订阅），避免订阅者泄漏
+    this.unsubscribePrivacyStateChanged();
     // 偏好写入为防抖刷盘，进程终止前全部强制落盘，防止 pending 写入丢失
     flushAllPreferences();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
@@ -225,19 +358,21 @@ export default class EntryAbility extends UIAbility {
     stopMtaReceive();
     stopLocalServer().catch((_e: Error) => {
     });
+    // 退出前收尾：写 session-end 并关闭文件，便于导出时识别本次会话正常结束。
+    markDiagnosticSessionEnd();
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    logger.debug('Ability onWindowStageCreate');
+    logger.info('Ability 窗口舞台创建（onWindowStageCreate）');
 
     let targetPage: string = 'pages/MainTabFloating';
 
     windowStage.loadContent(targetPage, (err) => {
       if (err.code) {
-        logger.error('Failed to load the content. Cause: ' + JSON.stringify(err));
+        logger.error('页面内容加载失败，原因：' + JSON.stringify(err));
         return;
       }
-      logger.debug('Succeeded in loading the content.');
+      logger.info('页面内容加载成功');
       try {
         // 将窗口背景色与页面背景对齐并最先设置：内容未绘制/页面转场期间状态栏
         // 和导航条避让区会露出窗口背景色，若不设置则为系统默认背景色，造成闪变
@@ -268,28 +403,108 @@ export default class EntryAbility extends UIAbility {
               familyName: 'MaterialIcons',
               familySrc: $rawfile('materialicons-regular.otf')
             });
-            logger.debug('MaterialIcons font registered');
+            logger.debug('MaterialIcons 字体已注册');
           } catch (e) {
-            logger.error('Failed to cleanup cache dirs/register font. Cause: ' + JSON.stringify(e));
+            logger.warn('清理缓存目录/注册字体失败，原因：' + JSON.stringify(e));
           }
         }, 0);
       } catch (e) {
-        logger.error('Failed to init window/DialogService. Cause: ' + JSON.stringify(e));
+        logger.error('初始化窗口/DialogService 失败，原因：' + JSON.stringify(e));
       }
       // 首次启动申请通知与蓝牙权限：两个接口仅首次弹窗，已授权或用户已拒绝后静默返回；
-      // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突
-      this.requestStartupPermissions();
+      // 经 PermissionService 串行排队，避免启动阶段多个系统弹窗互相冲突；
+      // 隐私声明未签署时先等用户同意（见 requestStartupPermissionsAfterPrivacy）
+      this.requestStartupPermissionsAfterPrivacy();
     });
   }
 
-  // 首次启动按需申请通知与蓝牙权限（串行；已授权或用户已拒绝时不弹窗）
-  private requestStartupPermissions(): void {
+  /**
+   * 首次启动按需申请通知与蓝牙权限，但仅在隐私声明已签署后发起。
+   *
+   * 接入应用市场隐私托管服务后，首次启动由系统先弹标准化隐私弹窗，其优先级高于
+   * 权限申请弹窗：此时申请会被系统丢弃且不再补弹，表现为「必须去设置页手动开启，
+   * 或等第二次冷启动才弹」。已签署（含未接入托管服务的本地调试场景）时立即申请，
+   * 未签署则订阅签署结果公共事件，等用户同意后再申请。
+   */
+  private requestStartupPermissionsAfterPrivacy(): void {
+    if (this.startupPermissionRequested) {
+      return;
+    }
+    if (isPrivacyAgreed()) {
+      this.doRequestStartupPermissions();
+      return;
+    }
+    logger.info('隐私声明尚未签署，等待用户同意后再申请启动权限');
+    this.subscribePrivacyStateChanged();
+  }
+
+  /**
+   * 订阅隐私弹框签署结果公共事件，收到用户签署结果后按状态发起启动权限申请。
+   * 事件仅在用户点击隐私弹窗按钮后发出，此时系统已写入签署结果，故直接复查状态
+   * 而不解析事件负载（负载中的分身索引本应用不涉及）。
+   */
+  private subscribePrivacyStateChanged(): void {
+    if (this.privacySubscriber !== null) {
+      return;
+    }
+    commonEventManager.createSubscriber({
+      events: [PRIVACY_STATE_CHANGED_EVENT]
+    }).then((subscriber: commonEventManager.CommonEventSubscriber) => {
+      this.privacySubscriber = subscriber;
+      try {
+        commonEventManager.subscribe(subscriber, (err: BusinessError) => {
+          if (err) {
+            logger.warn('隐私签署结果事件回调异常：' + JSON.stringify(err));
+            return;
+          }
+          if (isPrivacyAgreed()) {
+            logger.info('用户已同意隐私声明，开始申请启动权限');
+            this.doRequestStartupPermissions();
+          } else {
+            logger.info('用户未同意隐私声明，本次不申请启动权限');
+          }
+        });
+        logger.debug('已订阅隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
+      } catch (e) {
+        logger.warn('订阅隐私签署结果公共事件失败：' + JSON.stringify(e));
+      }
+    }).catch((e: BusinessError) => {
+      logger.warn('创建隐私签署结果公共事件订阅者失败：' + JSON.stringify(e));
+    });
+  }
+
+  /** 发起启动权限申请（幂等：状态判断与事件两条路径可能先后命中，只执行一次） */
+  private doRequestStartupPermissions(): void {
+    if (this.startupPermissionRequested) {
+      return;
+    }
+    this.startupPermissionRequested = true;
     let ctx = this.context;
     requestNotificationPermission(ctx).then((): Promise<boolean> => {
       return requestBluetoothPermission(ctx);
+    }).then((bluetoothGranted: boolean): void => {
+      // onForeground 早于本链路拉起接收服务，其蓝牙申请撞上系统隐私弹窗被丢弃，
+      // 接收服务已在「蓝牙权限被拒绝」分支停止；权限授予后此处补拉起一次
+      if (bluetoothGranted) {
+        startMtaReceiveIfEnabled(ctx);
+      }
     }).catch((e: BusinessError): void => {
-      logger.warn('启动权限申请异常: ' + JSON.stringify(e));
+      logger.warn('启动权限申请异常：' + JSON.stringify(e));
     });
+  }
+
+  /** 退订隐私弹框签署结果公共事件，避免订阅者泄漏；无订阅者时直接返回 */
+  private unsubscribePrivacyStateChanged(): void {
+    if (this.privacySubscriber === null) {
+      return;
+    }
+    try {
+      commonEventManager.unsubscribe(this.privacySubscriber);
+      logger.debug('已退订隐私弹框签署结果公共事件（PRIVACY_STATE_CHANGED）');
+    } catch (e) {
+      logger.warn('退订隐私签署结果公共事件异常：' + JSON.stringify(e));
+    }
+    this.privacySubscriber = null;
   }
 
   /**
@@ -303,22 +518,23 @@ export default class EntryAbility extends UIAbility {
     try {
       windowStage.on('windowStageClose', () => {
         if (!hasActiveSessions()) {
-          logger.info('windowStageClose: no active transfer, exit normally');
+          logger.debug('窗口关闭：无活跃传输，正常退出');
           return false;
         }
-        logger.info('windowStageClose: active transfer, show confirm dialog');
+        logger.debug('窗口关闭：存在活跃传输，弹出确认弹窗');
         DialogService.showCloseConfirmDialog((keepRunning: boolean) => {
           if (!keepRunning) {
-            logger.info('windowStageClose: user chose exit, terminating');
+            logger.debug('窗口关闭：用户选择退出，正在终止应用');
+            flushDiagnosticLog('window-close', true);
             this.context.terminateSelf().catch((_e: BusinessError) => {
             });
           }
         });
         return true;
       });
-      logger.debug('windowStageClose intercept registered (PC/2in1)');
+      logger.debug('窗口关闭拦截已注册（PC/2in1）');
     } catch (e) {
-      logger.warn('register windowStageClose failed: ' + JSON.stringify(e));
+      logger.warn('注册窗口关闭拦截失败：' + JSON.stringify(e));
     }
   }
 
@@ -336,24 +552,26 @@ export default class EntryAbility extends UIAbility {
         minHeight: 640,
         pixelUnit: window.PixelUnit.VP
       }).then((_limits: window.WindowLimits) => {
-        logger.debug('Desktop window limits applied (min 480x640vp)');
+        logger.debug('桌面窗口最小尺寸已生效（最小 480x640vp）');
       }).catch((_e: BusinessError) => {
-        logger.warn('Failed to set desktop window limits: ' + JSON.stringify(_e));
+        logger.warn('设置桌面窗口最小尺寸失败：' + JSON.stringify(_e));
       });
     } catch (e) {
-      logger.warn('Failed to set desktop window limits: ' + JSON.stringify(e));
+      logger.warn('设置桌面窗口最小尺寸失败：' + JSON.stringify(e));
     }
   }
 
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
     this.mainWindow = null;
-    logger.debug('Ability onWindowStageDestroy');
+    logger.info('Ability 窗口舞台销毁（onWindowStageDestroy）');
+    // 随后可能进入 onDestroy 并关闭文件，这里同步落盘，避免异步 flush 与关闭竞态
+    flushDiagnosticLog('window-stage-destroy', true);
   }
 
   onForeground(): void {
     // 应用回到前台
-    logger.debug('Ability onForeground');
+    logger.info('Ability 回到前台（onForeground）');
     // 「跟随系统」语言同步放在回到前台时执行：设置应用语言会触发系统配置变化回调
     // （onConfigurationUpdate），若在该回调内再次同步会形成无限递归并栈溢出；
     // 用户在系统设置中更改语言后返回应用即可跟随。
@@ -362,16 +580,16 @@ export default class EntryAbility extends UIAbility {
     syncSystemLanguageIfFollowing();
     // 回前台停止长时任务（通知随之消失），进度展示交还前台传输页
     stopTransferTask();
-    // 回到前台：撤回后台待确认请求提示通知（用户可在应用内处理请求）
-    withdrawPendingRequestNotification();
+    // 回到前台：撤回后台关注通知（用户可在应用内处理请求）
+    withdrawBackgroundAttention();
     triggerRefresh();
-    // 进入前台按「互传联盟接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
+    // 进入前台按「允许接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);
   }
 
   onBackground(): void {
     // 应用退到后台
-    logger.debug('Ability onBackground');
+    logger.info('Ability 退到后台（onBackground）');
     // 偏好写入为防抖刷盘，退后台时全部立即落盘，防止进程在后台被杀导致 pending 写入丢失
     flushAllPreferences();
     // MTA 接收进行中（建链/下载/落盘）时跳过停止，由长时任务保活继续接收；
@@ -379,12 +597,17 @@ export default class EntryAbility extends UIAbility {
     if (!isMtaReceivingActive()) {
       stopMtaReceive();
     }
-    // 有活跃传输则申请 dataTransfer 长时任务并发布进度通知，无传输不影响既有行为
+    // 有活跃传输则申请 dataTransfer 长时任务并发布进度通知；无传输仍为网页分享保留 5 分钟有界保活
     startTransferTaskIfActive(this.context);
+    startWebKeepaliveIfEnabled(this.context);
+    // 前台期间已存在的待确认请求/网页访问在退后台时补发关注通知
+    refreshBackgroundAttention();
+    // 进程随时可能被系统回收，退后台即把最后一段日志交给文件系统。
+    flushDiagnosticLog('background', false);
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
-    logger.debug('Ability onConfigurationUpdate: colorMode=' + JSON.stringify(newConfig.colorMode));
+    logger.debug('Ability 配置更新（onConfigurationUpdate）：colorMode=' + JSON.stringify(newConfig.colorMode));
     // 深浅色模式切换时同步更新窗口背景色，避免避让区露出与页面不匹配的底色
     this.applyWindowBackgroundColor();
     // 注意：此处不再同步「跟随系统」语言——设置应用语言会触发本回调，若在此再次设置
@@ -403,9 +626,9 @@ export default class EntryAbility extends UIAbility {
       // getColorSync 返回 ARGB 格式，转为 #RRGGBB 字符串
       const hexColor: string = '#' + (colorValue & 0xFFFFFF).toString(16).padStart(6, '0');
       this.mainWindow.setWindowBackgroundColor(hexColor);
-      logger.debug('Window background color set to ' + hexColor);
+      logger.debug('窗口背景色已设置为 ' + hexColor);
     } catch (e) {
-      logger.warn('Failed to set window background color: ' + JSON.stringify(e));
+      logger.warn('设置窗口背景色失败：' + JSON.stringify(e));
     }
   }
 }

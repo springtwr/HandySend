@@ -155,10 +155,10 @@ export class MtaConstants {
   static readonly MAX_THUMBNAIL_BYTES: number = 1024 * 1024;
   /** 接收端进入待确认界面前预取缩略图的等待预算（毫秒）：超时即放行，避免拖延提示弹窗 */
   static readonly THUMBNAIL_PREFETCH_BUDGET_MS: number = 600;
-  /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust；对齐对端单次传输上限） */
-  static readonly MAX_UNZIP_TOTAL_BYTES: number = 20 * 1024 * 1024 * 1024;
-  /** 接收单条目解压后允许的大小上限（字节，防 zip bomb；作为参数传入 Rust；对齐对端单文件上限） */
-  static readonly MAX_UNZIP_ENTRY_BYTES: number = 10 * 1024 * 1024 * 1024;
+  /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust；对端官方口径无大小限制，本上限仅作炸弹防线，落地前另有存储预留检查） */
+  static readonly MAX_UNZIP_TOTAL_BYTES: number = 1024 * 1024 * 1024 * 1024;
+  /** 接收单条目解压后允许的大小上限（字节，防 zip bomb；作为参数传入 Rust；同上，仅作炸弹防线） */
+  static readonly MAX_UNZIP_ENTRY_BYTES: number = 256 * 1024 * 1024 * 1024;
   /** 接收解压后允许的条目数上限（防 zip bomb；作为参数传入 Rust；对齐对端文件数上限） */
   static readonly MAX_UNZIP_ENTRY_COUNT: number = 10000;
   /** 解压总量容差下限（字节）：对端声明总大小不可全信，允许在此额度内偏差 */
@@ -273,10 +273,11 @@ export class MtaConstants {
 
   /** 发送端 ZIP 条目数上限（对齐对端文件数上限） */
   static readonly MAX_SEND_ENTRY_COUNT: number = 10000;
-  /** 发送端 ZIP 总大小上限（字节，与接收端口径一致，对齐对端单次传输上限） */
-  static readonly MAX_SEND_TOTAL_BYTES: number = 20 * 1024 * 1024 * 1024;
-  /** 发送端单文件大小上限（字节，对齐对端单文件上限） */
-  static readonly MAX_SEND_FILE_BYTES: number = 10 * 1024 * 1024 * 1024;
+  /**
+   * 大文件提示阈值（字节）：总大小或单文件达到该值时提示用户大文件传输可能失败，
+   * 仅提示、不拦截（功能上限已取消；防 zip bomb 安全上限不受影响）。
+   */
+  static readonly LARGE_FILE_WARN_BYTES: number = 10 * 1024 * 1024 * 1024;
   /** 发送进度节流间隔（毫秒） */
   static readonly PROGRESS_THROTTLE_MS: number = 200;
   // ── 发送端：预览缩略图 ──

@@ -186,7 +186,7 @@ export class MtaTransferClient {
   /** 处理版本协商：校验对端版本后回复 ack（version=1, threadLimit=5），不兼容则报错断开 */
   private handleVersionNegotiation(message: WsMessage): void {
     if (!isVersionNegotiationSupported(message.payload, MtaConstants.PROTOCOL_VERSION)) {
-      logger.warn(`对端协议版本不兼容: ${message.payload}`);
+      logger.warn(`对端协议版本不兼容：${message.payload}`);
       if (this.handlers !== null) {
         this.handlers.onError('WS', `对端协议版本不兼容: ${message.payload}`);
       }
@@ -268,7 +268,7 @@ export class MtaTransferClient {
       ws.off('error');
       await ws.close();
     } catch (e) {
-      logger.warn('WS 关闭失败: ' + errorText(e));
+      logger.warn('WS 关闭失败：' + errorText(e));
     }
   }
 
@@ -389,7 +389,7 @@ export class MtaTransferClient {
         metas.push(meta);
       }
     } catch (e) {
-      logger.warn('解析接收落盘元数据失败: ' + errorText(e));
+      logger.warn('解析接收落盘元数据失败：' + errorText(e));
     }
     return metas;
   }
@@ -403,7 +403,7 @@ export class MtaTransferClient {
     try {
       nativeCancelTransferLocal(taskId);
     } catch (e) {
-      logger.warn('取消下载失败: ' + errorText(e));
+      logger.warn('取消下载失败：' + errorText(e));
     }
   }
 }

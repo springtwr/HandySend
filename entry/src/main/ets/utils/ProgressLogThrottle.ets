@@ -1,8 +1,8 @@
 // ProgressLogThrottle：传输进度日志节流（纯逻辑，无 UI / 系统 IO 依赖，可单元测试）。
-// 发送与接收两侧共用同一口径：进行中的进度日志「每秒最多 1 条」，终态日志由调用方
-// 无条件输出（不受节流限制）。节流状态按「会话标识 + 文件标识」维度记录，会话终结时清理。
+// 发送与接收两侧共用同一口径：进行中的进度日志按共享实例配置的间隔输出，终态日志由调用方
+// 无条件输出（不受节流限制）。节流状态按调用方给定的维度键记录，会话终结时清理。
 
-/** 进度日志节流间隔（毫秒）：每秒最多 1 条 */
+/** 默认节流间隔（毫秒）：纯逻辑默认值，测试与独立使用可覆盖 */
 const PROGRESS_LOG_INTERVAL_MS: number = 1000;
 
 /**
@@ -22,7 +22,7 @@ export class ProgressLogThrottle {
   /**
    * 判断该维度当前是否应输出进行中进度日志：
    * 首次输出无条件允许，其后同一维度在最小间隔内一律抑制。
-   * @param key 维度键（会话标识 + 文件标识）
+   * @param key 维度键（发送/接收进度使用会话标识）
    * @param now 当前时间（毫秒）
    */
   shouldLog(key: string, now: number): boolean {
@@ -54,5 +54,8 @@ export class ProgressLogThrottle {
   }
 }
 
-/** 传输进度日志共享节流器：发送与接收两侧使用同一实例，保证口径一致 */
-export const progressLogThrottle: ProgressLogThrottle = new ProgressLogThrottle();
+/**
+ * 传输进度日志共享节流器：发送与接收两侧按「会话」维度限制为每 5 秒最多一条，
+ * 逐文件进度不再单独刷日志，避免多文件传输时按文件数放大日志量。
+ */
+export const progressLogThrottle: ProgressLogThrottle = new ProgressLogThrottle(5000);

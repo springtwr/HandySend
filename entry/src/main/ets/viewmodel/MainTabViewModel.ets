@@ -20,7 +20,7 @@ const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab', '主页');
  *
  * 待确认请求由协议适配器登记为注册表中的待确认会话，主页不再经 TransferPage
  * 做接收路由，也不再消费一次性事件队列；收到新的接收请求（新的待确认会话）时，
- * 经 `autoOpenSessionId` 通知主页面在应用前台任意页面之上弹出新传输提示弹窗，供用户「查看」或「稍后」。
+ * 经 `autoOpenSessionId` 通知主页面在应用前台任意页面之上弹出新传输提示弹窗，供用户「查看」或「拒绝」。
  *
  * 接收完成不触发任何自动跳转（尤其不得以会话标识进入详情页）：
  * 接收结果由任务与会话详情页按需展示，避免以未就绪/已回收的会话进入空白详情页。
@@ -70,7 +70,7 @@ export class MainTabViewModel {
     this.detectNewPendingSession();
     // 仅在待确认计数实际变化时输出，与行序列转储同策（见注释 lastLoggedPendingCount）
     if (this.pendingCount > 0 && this.pendingCount !== this.lastLoggedPendingCount) {
-      logger.debug('pending sessions: ' + this.pendingCount);
+      logger.debug('待确认任务数：' + this.pendingCount);
     }
     this.lastLoggedPendingCount = this.pendingCount;
   }
@@ -96,7 +96,7 @@ export class MainTabViewModel {
     // 取舍声明：多个新待确认会话同帧并发到达时只提示最后一个
     // （提示仅为便捷引导，任务列表可见全部待确认会话）
     if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
-      logger.debug('new pending session: ' + newSessionId.substring(0, 8));
+      logger.debug('新的待确认任务：' + newSessionId.substring(0, 8));
       this.autoOpenSessionId = newSessionId;
     }
   }

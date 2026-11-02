@@ -16,41 +16,48 @@ import {
 import {
   LANGUAGE_LIST, LanguageOption
 } from '../../common/LanguageConstants';
-import { TabSegmentButtonV2, SegmentButtonV2Items, uiObserver } from '@kit.ArkUI';
+import { uiObserver } from '@kit.ArkUI';
 import { DEFAULT_THEME } from '../../model/SettingsDefaults';
 
-// 主题模式枚举固定顺序：与 segmentedItems 下标一一对应
-const THEME_VALUES: Array<string> = ['light', 'dark', 'system'];
+interface ThemeOption {
+  value: string
+  label: Resource
+}
 
-// 外观设置分组（主题/动画/语言，从 SettingsContent 拆出）。
+// 主题模式选项：顺序即弹窗列表顺序，跟随系统为默认项，排在最前
+const THEME_OPTIONS: Array<ThemeOption> = [
+  { value: 'system', label: $r('app.string.theme_system') },
+  { value: 'light', label: $r('app.string.theme_light') },
+  { value: 'dark', label: $r('app.string.theme_dark') }
+];
+
+// 外观设置分组（主题/语言/滚动隐藏页签，从 SettingsContent 拆出）。
 @ComponentV2
 export struct AppearanceSettingsSection {
   // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Require @Param viewModel: SettingsViewModel
   @Local isShowLanguageSheet: boolean = false
-  // 官方分段按钮（TabSegmentButtonV2）：主题模式三选一（浅色 / 深色 / 系统）
-  private segmentedItems: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: $r('app.string.theme_light') },
-    { text: $r('app.string.theme_dark') },
-    { text: $r('app.string.theme_system') }
-  ]);
+  @Local isShowThemeSheet: boolean = false
 
-  // 当前主题对应的分段下标
-  private getThemeIndex(): number {
-    for (let i = 0; i < THEME_VALUES.length; i++) {
-      if (THEME_VALUES[i] === this.viewModel.theme) {
-        return i;
+  // 当前主题的显示名
+  private getThemeLabel(): ResourceStr {
+    for (let i = 0; i < THEME_OPTIONS.length; i++) {
+      if (THEME_OPTIONS[i].value === this.viewModel.theme) {
+        return THEME_OPTIONS[i].label;
       }
     }
-    // 回落下标由默认值常量驱动（常量未登记时兜底 2，与原默认选项位置一致）
-    let fallback: number = THEME_VALUES.indexOf(DEFAULT_THEME);
-    return fallback >= 0 ? fallback : 2;
+    // 回退项由默认值常量驱动（常量未登记时取首项，即默认选项所在位置）
+    for (let i = 0; i < THEME_OPTIONS.length; i++) {
+      if (THEME_OPTIONS[i].value === DEFAULT_THEME) {
+        return THEME_OPTIONS[i].label;
+      }
+    }
+    return THEME_OPTIONS[0].label;
   }
 
   // 切换主题：仅在新值与当前值不同时生效，避免初始化回灌时重复调用系统 API
-  private applyTheme(index: number): void {
-    let next = THEME_VALUES[index];
+  private applyTheme(next: string): void {
     if (next === this.viewModel.theme) {
       return;
     }
@@ -66,6 +73,58 @@ export struct AppearanceSettingsSection {
       }
     } catch (_e) {
     }
+  }
+
+  // 主题半屏弹窗：系统标题 + 卡片列表，选中项仅文字高亮
+  @Builder
+  themeSheetBuilder(): void {
+    Column() {
+      // 卡片容器：列表项 + Divider 分隔线
+      Column() {
+        List({ space: 0 }) {
+          ForEach(THEME_OPTIONS, (item: ThemeOption, index: number) => {
+            ListItem() {
+              Column() {
+                Row() {
+                  Text(item.label)
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor(
+                      this.viewModel.theme === item.value ? $r('app.color.accent_blue') : $r('app.color.text_primary'))
+                    .fontWeight(this.viewModel.theme === item.value ? FontWeight.Bold : FontWeight.Normal)
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .padding({
+                  left: DesignTokens.space.lg,
+                  right: DesignTokens.space.lg,
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+                .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  this.applyTheme(item.value);
+                  this.isShowThemeSheet = false;
+                })
+                .id('settings_theme_option')
+
+                if (index < THEME_OPTIONS.length - 1) {
+                  Divider().color($r('app.color.border_light'))
+                }
+              }
+              .width('100%')
+            }
+          }, (item: ThemeOption) => item.value)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .backgroundColor($r('app.color.card_background'))
+      .borderRadius(DesignTokens.radius.lg)
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+    }
+    .width('100%')
+    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
   }
 
   // 语言半屏弹窗：系统标题 + 卡片列表，选中项仅文字高亮
@@ -124,51 +183,49 @@ export struct AppearanceSettingsSection {
     Column() {
       // 卡片（标题由设置分组统一渲染）
       Column() {
-        // 主题模式（三选一，使用官方 SegmentButton 分段控件）
+        // 主题模式入口（半屏弹窗三选一）
         Row() {
           Text($r('app.string.theme_label'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
+
+          Row() {
+            Text(this.getThemeLabel())
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
+              .margin({ right: DesignTokens.space.xxs })
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.subtitleL)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.End)
         }
         .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-        .alignItems(VerticalAlign.Center)
-
-        TabSegmentButtonV2({
-          items: this.segmentedItems,
-          selectedIndex: this.getThemeIndex(),
-          $selectedIndex: (index: number) => {
-            this.applyTheme(index);
-          },
-          enableStateAnimation: true
-        })
-          .width('100%')
-          .id('settings_theme_segment')
-
-        // 滚动时隐藏页签开关
-        Row() {
-          Text($r('app.string.hide_tab_bar_on_scroll_label'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideTabBarOnScroll })
-            .onChange((isOn: boolean) => {
-              this.viewModel.setHideTabBarOnScrollEnabled(isOn);
-            })
-            .id('settings_hide_tab_bar_toggle')
-        }
-        .width('100%')
-        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
-
-        Text($r('app.string.hide_tab_bar_on_scroll_desc'))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.text_secondary'))
-          .alignSelf(ItemAlign.Start)
-          .margin({ bottom: DesignTokens.space.tiny })
+        .onClick(() => {
+          this.isShowThemeSheet = true;
+        })
+        .id('settings_theme_entry')
+        .bindSheet($$this.isShowThemeSheet, this.themeSheetBuilder(), {
+          height: SheetSize.MEDIUM,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
+          blurStyle: BlurStyle.Regular,
+          title: {
+            title: $r('app.string.theme_label'),
+            subtitle: ''
+          },
+          showClose: true
+        })
 
         // 语言选择入口（半屏弹窗）
         Row() {
@@ -185,8 +242,9 @@ export struct AppearanceSettingsSection {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .textAlign(TextAlign.End)
               .layoutWeight(1)
+              .margin({ right: DesignTokens.space.xxs })
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
           .layoutWeight(1)
@@ -213,6 +271,30 @@ export struct AppearanceSettingsSection {
           showClose: true,
           keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL
         })
+
+        // 滚动时隐藏页签开关
+        Row() {
+          Text($r('app.string.hide_tab_bar_on_scroll_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Toggle({ type: ToggleType.Switch, isOn: this.viewModel.hideTabBarOnScroll })
+            .onChange((isOn: boolean) => {
+              this.viewModel.setHideTabBarOnScrollEnabled(isOn);
+            })
+            .id('settings_hide_tab_bar_toggle')
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+
+        Text($r('app.string.hide_tab_bar_on_scroll_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .alignSelf(ItemAlign.Start)
+          .margin({ bottom: DesignTokens.space.tiny })
       }
       .width('100%')
       .padding({

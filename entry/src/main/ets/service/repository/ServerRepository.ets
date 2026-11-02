@@ -33,15 +33,15 @@ import {
   getLocalSendEnabled
 } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
+import { isInterfaceEnabled } from '../../utils/NetworkInterfaceRules';
 import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } from './DeviceRepository';
 import { triggerStagedDiscover, clearDiscoveryState, resetScanState } from './DiscoveryRepository';
-import { getShareLink, stopShareLink } from './WebShareRepository';
 import { getPendingRecvMediaPaths } from './ReceiveRepository';
 import { refreshMtaReceiveIdentity } from './MtaRepository';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository', '服务端');
 
-// 网络黑名单解析：读取用户配置的黑名单接口名（如 wlan0,ancowlan0），
+// 网络黑名单解析：读取用户配置的黑名单接口名（如 wlan0,eth0），
 // 对匹配接口名的本地接口生成精确 IP 列表，传给 Rust 层 InterfaceFilter。
 // 无黑名单配置时返回 undefined（Rust 层不排除）。
 function resolveNetworkBlacklist(): Array<string> | undefined {
@@ -64,7 +64,7 @@ function resolveNetworkBlacklist(): Array<string> | undefined {
     }
   }
   if (result.length > 0) {
-    logger.debug('黑名单: [' + blacklistedNames.join(', ') + '] -> IP 列表: [' + result.join(', ') + ']');
+    logger.debug('黑名单：[' + blacklistedNames.join(', ') + '] -> IP 列表：[' + result.join(', ') + ']');
     return result;
   }
   return undefined;
@@ -85,45 +85,21 @@ export function subnetPattern(ip: string, prefixLength: number): string {
 }
 
 // 计算 discovery 网络白名单（纯函数）：
-// 用户白名单存储接口名（如 wlan0,eth0），将匹配接口名的接口映射为网段通配，
+// 用户白名单存储接口名（如 wlan0,eth0），将启用的接口映射为网段通配，
 // 使 Rust 只在这些局域网接口上绑定组播 socket。
-// - 白名单为空或无匹配接口 → 返回 []（空列表，Rust 侧忽略全部接口，不扫描）
-// - 黑名单接口优先排除（即使同时出现在白名单中）
+// - 黑名单接口优先排除
+// - 两者都未列出的接口按类型取默认（WiFi/以太网放行），与网络接口弹窗开关、本机 IP 选取同源
+// - 无启用接口 → 返回 []（空列表，Rust 侧忽略全部接口，不扫描）
 // - 网段通配去重
 export function computeDiscoveryWhitelistFrom(
   whitelistedNames: Array<string>,
   blacklistedNames: Array<string>,
   interfaces: Array<NetworkInterface>
 ): Array<string> {
-  // 白名单为空 → 不扫描任何接口
-  if (whitelistedNames.length === 0) {
-    return [];
-  }
   let result: Array<string> = [];
   for (let i = 0; i < interfaces.length; i++) {
     let iface = interfaces[i];
-
-    // 黑名单接口优先排除（即使同时出现在白名单中）
-    let isBlacklisted = false;
-    for (let j = 0; j < blacklistedNames.length; j++) {
-      if (blacklistedNames[j] === iface.name) {
-        isBlacklisted = true;
-        break;
-      }
-    }
-    if (isBlacklisted) {
-      continue;
-    }
-
-    // 按白名单接口名匹配
-    let shouldInclude = false;
-    for (let j = 0; j < whitelistedNames.length; j++) {
-      if (whitelistedNames[j] === iface.name) {
-        shouldInclude = true;
-        break;
-      }
-    }
-    if (!shouldInclude) {
+    if (!isInterfaceEnabled(iface.name, iface.type, whitelistedNames, blacklistedNames)) {
       continue;
     }
     let pattern = subnetPattern(iface.ip, iface.prefixLength);
@@ -145,7 +121,7 @@ function computeDiscoveryWhitelist(): Array<string> {
     interfaces
   );
   logger.debug(
-    '接口列表: ' + interfaces.map((iface) =>
+    '接口列表：' + interfaces.map((iface) =>
     iface.name + '(' + iface.ip + '/' + iface.prefixLength + ', ' + iface.type + ')').join(', ') +
       ' -> whitelist([' + (whitelistedNames !== undefined ? whitelistedNames.join(', ') : '') +
       ']): [' + result.join(', ') + ']');
@@ -183,7 +159,7 @@ export function getServerFingerprint(): string {
 
 // Rust 服务器 save_dir（{filesDir}/HandySend/，持久目录）：
 // Rust 层用于 TLS 身份持久化（identity.pem，见 localsend_ohrs/rust/bridge/identity.rs），
-// 接收文件不落此处（普通文件与文本消息均经 fd-direct 落 Download/<包名>/）。
+// 接收文件不落此处（普通文件经 fd-direct 落 Download/<包名>/，文本消息落 filesDir/text_recv/）。
 export function getReceiveSaveDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
@@ -193,7 +169,8 @@ export function getReceiveSaveDir(): string {
 }
 
 // 接收相关临时目录（{cacheDir}/receive/，带尾斜杠）：
-// fd-direct 流程下接收产物落 Download/<包名>/，此处仅作旧路径回退与孤儿文件清扫；
+// fd-direct 流程下普通接收文件落 Download/<包名>/、文本消息落 filesDir/text_recv/，
+// 此处仅作旧路径回退与孤儿文件清扫；
 // 异常退出残留属应用缓存，可经系统存储设置清除。
 export function getReceiveCacheDir(): string {
   let appContext = getAppContext();
@@ -369,9 +346,9 @@ export async function restartDiscovery(): Promise<void> {
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = signature;
-    logger.info('Discovery restarted with updated network interfaces');
+    logger.debug('Discovery 已用新网络接口重启');
   } catch (e) {
-    logger.error('Discovery restart failed: ' + e);
+    logger.error('设备发现重启失败：' + e);
   }
 
   // 立即通知 UI 更新警告状态（allInterfacesDisabled/noWifiWarning 可能已变化）
@@ -438,7 +415,7 @@ async function doRestartServer(): Promise<void> {
   try {
     refreshMtaReceiveIdentity();
   } catch (e) {
-    logger.warn('同步 MTA 接收对外身份失败: ' + String(e));
+    logger.warn('同步 MTA 接收对外身份失败：' + String(e));
   }
 }
 
@@ -447,12 +424,12 @@ async function doRestartServer(): Promise<void> {
 export async function startLocalServer(): Promise<string> {
   // LocalSend 总开关关闭时不启动服务器（含设备发现与网页分享，两者依赖服务器）
   if (!getLocalSendEnabled()) {
-    logger.info('LocalSend 已关闭，跳过服务器启动');
+    logger.debug('LocalSend 已关闭，跳过服务器启动');
     return '';
   }
   let appContext = getAppContext();
   if (appContext === undefined) {
-    logger.error('AppService not initialized');
+    logger.error('应用服务未初始化');
     return '';
   }
 
@@ -460,7 +437,7 @@ export async function startLocalServer(): Promise<string> {
   updateLocalInterfaces();
   // 首次启动时确保白名单/黑名单有默认值（wifi/ethernet 入白名单，其他入黑名单）
   ensureDefaultNetworkLists(getLocalInterfaces());
-  logger.info(`Local interfaces: ${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
+  logger.debug(`本地网卡：${getLocalInterfaces().map(i => `${i.ip}(${i.type})`).join(', ')}`);
 
   // 检查局域网可用性——仅在没有 WiFi 和以太网时给出警告
   refreshLanWarningState();
@@ -498,7 +475,7 @@ export async function startLocalServer(): Promise<string> {
       logger.error(portMsg);
     } else {
       serverErrorMsg = errorMsg;
-      logger.error('Server start failed: ' + errorMsg);
+      logger.error('服务器启动失败：' + errorMsg);
     }
     return '';
   }
@@ -508,20 +485,21 @@ export async function startLocalServer(): Promise<string> {
   serverRunning = true;
   // 服务器以当前设置运行——无需重启
   clearServerNeedsRestart();
-  logger.info('Server started, fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
+  logger.info('服务器已启动');
+  logger.debug('服务器 fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
 
   // 启动 Rust 核心发现
   try {
     let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
-    logger.debug('start v2: port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
+    logger.debug('启动 v2 port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
     await nativeStartDiscoveryV2(discoveryConfig);
     nativeDiscoverySetAnswerAnnouncements(true);
     lastDiscoverySignature = computeDiscoverySignature(discoveryConfig);
-    logger.info('Rust discovery started');
+    logger.debug('Rust 发现已启动');
   } catch (e) {
-    logger.error('Discovery start failed: ' + e);
+    logger.error('设备发现启动失败：' + e);
   }
   // 启动扫描：discover_staged 是唯一入口
   // （内部：announce + 收藏设备探测 + 宽限期后的条件子网扫描）
@@ -542,23 +520,18 @@ export async function stopLocalServer(): Promise<void> {
     resetScanState();
   } catch (_e) {
   }
-  // 分享链接活跃时先停分享：Rust stop_share_server 会以正常模式重启服务器，
-  // 若先 nativeStopServer 再 stopShareLink，服务器会被重新拉起，
-  // 而 ArkTS 侧已置 isServerRunning=false（表现为「停止后仍在监听端口」）
-  if (getShareLink().length > 0) {
-    await stopShareLink();
-  }
+  // 网页服务由独立原生服务承载，与 LocalSend 服务器生命周期无关，此处不得联动停止
   try {
     await nativeStopServer();
   } catch (e) {
     // 停止失败仍继续清理本地状态（保持两侧一致性由下次启动收口），
     // 但必须留痕：Rust 侧服务器可能仍在运行占用端口，否则无从排查
-    logger.error('nativeStopServer failed: ' + String(e));
+    logger.warn('停止原生服务器失败：' + String(e));
   }
   serverRunning = false;
   setServerFingerprint('');
   serverErrorMsg = '';
   clearDiscoveryState();
-  logger.info('Server stopped');
+  logger.info('服务器已停止');
   notifyChange();
 }

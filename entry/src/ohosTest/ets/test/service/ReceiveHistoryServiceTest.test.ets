@@ -1,13 +1,20 @@
 import { describe, it, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import {
-  addEntry,
+  addEntries,
   removeEntry,
   clearAll,
   getHistory,
-  updateGallerySavedStatus
+  initHistory,
+  repairTextMessageFlags,
+  updateGallerySavedStatus,
+  updateGallerySavedStatusById,
+  updateGallerySavedStatusByPath
 } from '../../../../main/ets/service/repository/ReceiveHistoryService'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
+import { RECEIVE_HISTORY_CAPACITY } from '../../../../main/ets/model/HistoryCapacity'
+import { segmentKey } from '../../../../main/ets/model/HistorySegments'
+import { receiveHistoryPreferencesUtil } from '../../../../main/ets/utils/PreferencesUtil'
 import { getMimeForFileName } from '../../../../main/ets/utils/MimeUtils'
 import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
 import { getTestAppContext } from '../helper/TestContext'
@@ -31,19 +38,43 @@ export default function ReceiveHistoryServiceTest() {
   describe('ReceiveHistoryServiceTest', () => {
     it('addEntry_appends_and_preserves_fields', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-add-1', 'a.png'))
-      addEntry(makeEntry('h-add-2', 'b.png'))
+      addEntries([makeEntry('h-add-1', 'a.png')])
+      addEntries([makeEntry('h-add-2', 'b.png')])
       expect(getHistory().length).assertEqual(2)
       expect(getHistory()[0].id).assertEqual('h-add-1')
       expect(getHistory()[0].fileName).assertEqual('a.png')
     })
 
-    it('addEntry_exceeds_max_removes_oldest', 0, () => {
+    it('repairTextMessageFlags_fixesMessagesInTextDirOnly', 0, () => {
+      // 接收文本消息目录内的 text/plain 条目：旧版本误写为 false，读取时修复
+      let textMessage = makeEntry('h-repair-1', 'message.txt')
+      textMessage.fileType = 'text/plain'
+      textMessage.path = '/app/files/text_recv/message.txt'
+      // 普通 .txt 文件位于 Download：保持文件语义
+      let textFile = makeEntry('h-repair-2', 'note.txt')
+      textFile.fileType = 'text/plain'
+      textFile.path = '/storage/Download/note.txt'
+      // 非文本类型即使路径命中也不改
+      let image = makeEntry('h-repair-3', 'photo.png')
+      image.path = '/app/files/text_recv/photo.png'
+      let entries: Array<ReceiveHistoryEntry> = [textMessage, textFile, image]
+      let repaired: number = repairTextMessageFlags(entries, '/app/files/text_recv/')
+      expect(repaired).assertEqual(1)
+      expect(textMessage.isMessage).assertTrue()
+      expect(textFile.isMessage).assertFalse()
+      expect(image.isMessage).assertFalse()
+    })
+
+    it('addEntries_exceeds_max_removes_oldest', 0, () => {
       clearAll()
-      for (let i = 0; i < 201; i++) {
-        addEntry(makeEntry('h-max-' + i, 'file-' + i + '.png'))
+      // 单批超过上限一条：保留最新的 RECEIVE_HISTORY_CAPACITY 条，最旧一条被 FIFO 丢弃。
+      // 用单批追加而非逐条循环：5000 条逐条落盘会让每个用例产生 O(n²) 的序列化开销。
+      let batch: Array<ReceiveHistoryEntry> = []
+      for (let i = 0; i < RECEIVE_HISTORY_CAPACITY + 1; i++) {
+        batch.push(makeEntry('h-max-' + i, 'file-' + i + '.png'))
       }
-      expect(getHistory().length).assertEqual(200)
+      addEntries(batch)
+      expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
       let firstIdStillPresent: boolean = false
       let list: Array<ReceiveHistoryEntry> = getHistory()
       for (let i = 0; i < list.length; i++) {
@@ -52,13 +83,14 @@ export default function ReceiveHistoryServiceTest() {
         }
       }
       expect(firstIdStillPresent).assertFalse()
-      expect(getHistory()[199].id).assertEqual('h-max-200')
+      expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
+        .assertEqual('h-max-' + RECEIVE_HISTORY_CAPACITY)
     })
 
     it('removeEntry_deletes_by_id', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-rm-1', 'a.png'))
-      addEntry(makeEntry('h-rm-2', 'b.png'))
+      addEntries([makeEntry('h-rm-1', 'a.png')])
+      addEntries([makeEntry('h-rm-2', 'b.png')])
       removeEntry('h-rm-1')
       expect(getHistory().length).assertEqual(1)
       expect(getHistory()[0].id).assertEqual('h-rm-2')
@@ -66,27 +98,86 @@ export default function ReceiveHistoryServiceTest() {
 
     it('clearAll_empties_history', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-clear-1', 'a.png'))
-      addEntry(makeEntry('h-clear-2', 'b.png'))
+      addEntries([makeEntry('h-clear-1', 'a.png')])
+      addEntries([makeEntry('h-clear-2', 'b.png')])
       clearAll()
       expect(getHistory().length).assertEqual(0)
     })
 
     it('removeEntry_nonexistent_no_effect', 0, () => {
       clearAll()
-      addEntry(makeEntry('h-rm-none-1', 'a.png'))
+      addEntries([makeEntry('h-rm-none-1', 'a.png')])
       removeEntry('h-ghost-id')
       expect(getHistory().length).assertEqual(1)
     })
 
-    it('addEntry_exactly_max_keeps_all', 0, () => {
+    it('addEntries_exactly_max_keeps_all', 0, () => {
       clearAll()
-      for (let i = 0; i < 200; i++) {
-        addEntry(makeEntry('h-exact-' + i, 'file-' + i + '.png'))
+      // 单批恰好达到上限：不触发丢弃，顺序保持不变
+      let batch: Array<ReceiveHistoryEntry> = []
+      for (let i = 0; i < RECEIVE_HISTORY_CAPACITY; i++) {
+        batch.push(makeEntry('h-exact-' + i, 'file-' + i + '.png'))
       }
-      expect(getHistory().length).assertEqual(200)
+      addEntries(batch)
+      expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
       expect(getHistory()[0].id).assertEqual('h-exact-0')
-      expect(getHistory()[199].id).assertEqual('h-exact-199')
+      expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
+        .assertEqual('h-exact-' + (RECEIVE_HISTORY_CAPACITY - 1))
+    })
+
+    // ── 批量追加：一次传输的多个文件只落盘一次，结果与逐条追加一致 ──
+
+    it('addEntries_batch_appends_all_in_order', 0, () => {
+      clearAll()
+      addEntries([makeEntry('h-batch-1', 'a.png'), makeEntry('h-batch-2', 'b.png'),
+        makeEntry('h-batch-3', 'c.png')])
+      expect(getHistory().length).assertEqual(3)
+      expect(getHistory()[0].id).assertEqual('h-batch-1')
+      expect(getHistory()[1].id).assertEqual('h-batch-2')
+      expect(getHistory()[2].id).assertEqual('h-batch-3')
+    })
+
+    it('addEntries_batch_result_equals_single_appends', 0, () => {
+      clearAll()
+      addEntries([makeEntry('h-eq-1', 'a.png')])
+      addEntries([makeEntry('h-eq-2', 'b.png')])
+      addEntries([makeEntry('h-eq-3', 'c.png')])
+      let sequential: Array<string> = []
+      for (let i = 0; i < getHistory().length; i++) {
+        sequential.push(getHistory()[i].id)
+      }
+      clearAll()
+      addEntries([makeEntry('h-eq-1', 'a.png'), makeEntry('h-eq-2', 'b.png'),
+        makeEntry('h-eq-3', 'c.png')])
+      let batched: Array<string> = []
+      for (let i = 0; i < getHistory().length; i++) {
+        batched.push(getHistory()[i].id)
+      }
+      expect(batched.length).assertEqual(sequential.length)
+      for (let i = 0; i < sequential.length; i++) {
+        expect(batched[i]).assertEqual(sequential[i])
+      }
+    })
+
+    it('addEntries_empty_is_noop', 0, () => {
+      clearAll()
+      addEntries([])
+      expect(getHistory().length).assertEqual(0)
+    })
+
+    it('addEntries_single_batch_over_max_trims_to_capacity', 0, () => {
+      clearAll()
+      // 单批条目数即超上限：整批写入后裁剪到上限，且不发生中间态残留
+      let batch: Array<ReceiveHistoryEntry> = []
+      for (let i = 0; i < RECEIVE_HISTORY_CAPACITY + 50; i++) {
+        batch.push(makeEntry('h-bulk-' + i, 'file-' + i + '.png'))
+      }
+      addEntries(batch)
+      expect(getHistory().length).assertEqual(RECEIVE_HISTORY_CAPACITY)
+      // 保留的是本批最后 CAPACITY 条
+      expect(getHistory()[0].id).assertEqual('h-bulk-50')
+      expect(getHistory()[RECEIVE_HISTORY_CAPACITY - 1].id)
+        .assertEqual('h-bulk-' + (RECEIVE_HISTORY_CAPACITY + 49))
     })
 
     // ── MTA 接收历史真实类型：按扩展名解析的 MIME 被如实保存，非通用二进制类型 ──
@@ -97,8 +188,8 @@ export default function ReceiveHistoryServiceTest() {
       jpg.fileType = getMimeForFileName(jpg.fileName)
       let pdf: ReceiveHistoryEntry = makeEntry('mta-1_1', 'doc.pdf')
       pdf.fileType = getMimeForFileName(pdf.fileName)
-      addEntry(jpg)
-      addEntry(pdf)
+      addEntries([jpg])
+      addEntries([pdf])
       expect(getHistory()[0].fileType).assertEqual('image/jpeg')
       expect(getHistory()[1].fileType).assertEqual('application/pdf')
       expect(getHistory()[0].fileType === 'application/octet-stream').assertFalse()
@@ -108,7 +199,7 @@ export default function ReceiveHistoryServiceTest() {
       clearAll()
       let unknown: ReceiveHistoryEntry = makeEntry('mta-2_0', 'data.xyz')
       unknown.fileType = getMimeForFileName(unknown.fileName)
-      addEntry(unknown)
+      addEntries([unknown])
       expect(getHistory()[0].fileType).assertEqual('application/octet-stream')
     })
 
@@ -116,13 +207,121 @@ export default function ReceiveHistoryServiceTest() {
 
     it('updateGallerySavedStatus_marks_matching_session_entries', 0, () => {
       clearAll()
-      addEntry(makeEntry('gallery_1_0', 'a.jpg'))
-      addEntry(makeEntry('gallery_1_1', 'b.mp4'))
-      addEntry(makeEntry('gallery_2_0', 'c.jpg'))
+      addEntries([makeEntry('gallery_1_0', 'a.jpg')])
+      addEntries([makeEntry('gallery_1_1', 'b.mp4')])
+      addEntries([makeEntry('gallery_2_0', 'c.jpg')])
       updateGallerySavedStatus('gallery_1', true)
       expect(getHistory()[0].savedToGallery).assertTrue()
       expect(getHistory()[1].savedToGallery).assertTrue()
       expect(getHistory()[2].savedToGallery).assertFalse()
+    })
+
+    it('updateGallerySavedStatusById_marks_only_target_entry', 0, () => {
+      clearAll()
+      addEntries([makeEntry('single_1_0', 'a.jpg'), makeEntry('single_1_1', 'b.jpg')])
+      updateGallerySavedStatusById('single_1_1', true)
+      // 单文件保存只标记对应条目，同会话未保存的文件不被误标
+      expect(getHistory()[0].savedToGallery).assertFalse()
+      expect(getHistory()[1].savedToGallery).assertTrue()
+    })
+
+    it('updateGallerySavedStatusByPath_marks_matching_entries', 0, () => {
+      clearAll()
+      let a: ReceiveHistoryEntry = makeEntry('path_1_0', 'a.jpg')
+      a.path = '/data/storage/el2/base/files/Download/a.jpg'
+      let b: ReceiveHistoryEntry = makeEntry('path_1_1', 'b.jpg')
+      b.path = '/data/storage/el2/base/files/Download/b.jpg'
+      addEntries([a, b])
+      updateGallerySavedStatusByPath('/data/storage/el2/base/files/Download/a.jpg', true)
+      expect(getHistory()[0].savedToGallery).assertTrue()
+      expect(getHistory()[1].savedToGallery).assertFalse()
+    })
+
+    it('updateGallerySavedStatusById_unknown_id_no_effect', 0, () => {
+      clearAll()
+      addEntries([makeEntry('ghost_1_0', 'a.jpg')])
+      updateGallerySavedStatusById('ghost-unknown', true)
+      expect(getHistory()[0].savedToGallery).assertFalse()
+    })
+
+    it('updateGallerySavedStatus_persistsAcrossReload', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      // 标记更新须落盘：重载后仍可见，否则脏区间引用比对会漏掉原地修改
+      initHistory(ctx)
+      clearAll()
+      addEntries([makeEntry('reload_1_0', 'a.jpg')])
+      updateGallerySavedStatus('reload_1', true)
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(1)
+      expect(getHistory()[0].savedToGallery).assertTrue()
+      expect(getHistory()[0].fileName).assertEqual('a.jpg')
+      clearAll()
+    })
+
+    it('staleLegacyKey_removedWhenSegmentsExist', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      initHistory(ctx)
+      clearAll()
+      addEntries([makeEntry('seg_1', 'a.jpg')])
+      // 模拟崩溃窗口残留：分段已存在时老键仍在
+      receiveHistoryPreferencesUtil.setString('receiveHistory', '[]')
+      expect(receiveHistoryPreferencesUtil.has('receiveHistory')).assertTrue()
+      // 下次加载以段为准并顺手删除老键，避免清空后老键复活历史
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(1)
+      expect(receiveHistoryPreferencesUtil.has('receiveHistory')).assertFalse()
+      expect(receiveHistoryPreferencesUtil.has(segmentKey('receiveHistory', 0))).assertTrue()
+      clearAll()
+    })
+
+    it('clearAll_removesStaleLegacyKey', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      initHistory(ctx)
+      clearAll()
+      addEntries([makeEntry('seg_2', 'b.jpg')])
+      receiveHistoryPreferencesUtil.setString('receiveHistory', '[]')
+      // 清空删段的同时删除老键：否则段键清空后的下次加载会误命中老键
+      clearAll()
+      expect(receiveHistoryPreferencesUtil.has('receiveHistory')).assertFalse()
+      expect(receiveHistoryPreferencesUtil.has(segmentKey('receiveHistory', 0))).assertFalse()
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(0)
+    })
+
+    it('legacyTextContent_strippedFromMemoryAndStorage', 0, () => {
+      let ctx = getTestAppContext()
+      if (ctx === undefined) {
+        expect(true).assertTrue()
+        return
+      }
+      initHistory(ctx)
+      clearAll()
+      // 模拟旧版 Web 上传文本消息：接收历史段中带有无消费者的 textContent 正文
+      let legacy: ReceiveHistoryEntry = makeEntry('legacy_text_1', 'message.txt')
+      legacy.fileType = 'text/plain'
+      legacy.isMessage = true
+      legacy.textContent = '旧版正文'
+      receiveHistoryPreferencesUtil.setString(segmentKey('receiveHistory', 0),
+        JSON.stringify([legacy]))
+      // 重新初始化：读取时剥离字段并全量回写，磁盘上不再保留正文
+      initHistory(ctx)
+      expect(getHistory().length).assertEqual(1)
+      expect(getHistory()[0].textContent === undefined).assertTrue()
+      let raw: string = receiveHistoryPreferencesUtil.getString(segmentKey('receiveHistory', 0), '[]')
+      expect(raw.indexOf('textContent') < 0).assertTrue()
+      clearAll()
     })
 
     it('deleteTextFileLinkage_andLegacyTextIgnored', 0, () => {
@@ -152,7 +351,7 @@ export default function ReceiveHistoryServiceTest() {
         senderAlias: 'p',
         timestamp: 1
       }
-      addEntry(textEntry)
+      addEntries([textEntry])
       expect(fs.accessSync(textPath)).assertTrue()
       removeEntry('hist-text_0', true)
       expect(fs.accessSync(textPath)).assertFalse()
@@ -173,7 +372,7 @@ export default function ReceiveHistoryServiceTest() {
       let itemVm = new ReceiveHistoryItemViewModel(legacy)
       expect(itemVm.canViewFullText).assertFalse()
       // 清空历史同样删除文本文件
-      addEntry(textEntry)
+      addEntries([textEntry])
       let file2 = fs.openSync(textPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY)
       fs.closeSync(file2)
       clearAll(true)

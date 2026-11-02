@@ -7,8 +7,6 @@ import {
   KEY_ENCRYPTED_TRANSFER,
   KEY_AUTO_CONFIRM_MODE,
   KEY_RECEIVE_PIN,
-  KEY_AUTO_FINISH,
-  KEY_SAVE_TO_HISTORY,
   KEY_SAVE_TO_GALLERY,
   KEY_DESTINATION,
   KEY_THEME,
@@ -23,22 +21,28 @@ import {
   KEY_DISCOVERY_TIMEOUT,
   KEY_NETWORK_WHITELIST,
   KEY_NETWORK_BLACKLIST,
-  KEY_AUTO_ACCEPT_WEB_DOWNLOAD,
   KEY_LOCALSEND_ENABLED,
   KEY_MTA_ENABLED,
+  KEY_WEB_SEND_ENABLED,
+  KEY_WEB_RECEIVE_ENABLED,
+  KEY_WEB_HTTPS_ENABLED,
+  KEY_WEB_PORT,
+  KEY_WEB_INTERFACES,
+  KEY_WEB_INTERFACE_BLACKLIST,
+  KEY_WEB_DISPLAY_ADDRESS,
   KEY_MTA_RECEIVE_ENABLED,
   KEY_MTA_SIMULATED_BRAND,
-  KEY_MTA_CONNECTION_WARNINGS
+  KEY_MTA_CONNECTION_WARNINGS,
+  KEY_PROTOCOL_HINT_SIGNATURE,
+  KEY_BACKGROUND_RECEIVE
 } from '../../utils/PreferencesUtil';
-import { AutoConfirmMode, NetworkType, NetworkInterface } from '../../model/Types';
+import { AutoConfirmMode, NetworkInterface } from '../../model/Types';
+import { isEnabledByDefault } from '../../utils/NetworkInterfaceRules';
 import { normalizeMtaBrandId } from '../../model/mta/MtaBrandRegistry';
 import {
   DEFAULT_ENCRYPTED_TRANSFER,
   DEFAULT_AUTO_CONFIRM_MODE,
   DEFAULT_RECEIVE_PIN,
-  DEFAULT_AUTO_FINISH,
-  DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD,
-  DEFAULT_SAVE_TO_HISTORY,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
   DEFAULT_THEME,
@@ -55,9 +59,20 @@ import {
   DEFAULT_AUTO_CLEAR_STAGED,
   DEFAULT_LOCALSEND_ENABLED,
   DEFAULT_MTA_ENABLED,
+  DEFAULT_WEB_SEND_ENABLED,
+  DEFAULT_WEB_RECEIVE_ENABLED,
+  DEFAULT_WEB_HTTPS_ENABLED,
+  DEFAULT_WEB_PORT,
+  DEFAULT_WEB_LAST_PORT,
+  DEFAULT_WEB_INTERFACES,
+  DEFAULT_WEB_INTERFACE_BLACKLIST,
+  DEFAULT_WEB_DISPLAY_ADDRESS,
+  WEB_PORT_MIN,
+  WEB_PORT_MAX,
   DEFAULT_MTA_RECEIVE_ENABLED,
   DEFAULT_MTA_SIMULATED_BRAND,
-  DEFAULT_MTA_CONNECTION_WARNINGS
+  DEFAULT_MTA_CONNECTION_WARNINGS,
+  DEFAULT_BACKGROUND_RECEIVE
 } from '../../model/SettingsDefaults';
 import { getAppContext, notifyChange } from './AppCore';
 import { LANGUAGE_LIST } from '../../common/LanguageConstants';
@@ -69,9 +84,6 @@ const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '�
 let httpsEnabled: boolean = DEFAULT_ENCRYPTED_TRANSFER;
 let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
 let receivePin: string = DEFAULT_RECEIVE_PIN;
-let autoFinish: boolean = DEFAULT_AUTO_FINISH;
-let autoAcceptWebDownload: boolean = DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD;
-let saveToHistory: boolean = DEFAULT_SAVE_TO_HISTORY;
 let saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY;
 let destination: string = DEFAULT_DESTINATION;
 let theme: string = DEFAULT_THEME;
@@ -86,9 +98,18 @@ let discoveryTimeout: number = DEFAULT_DISCOVERY_TIMEOUT;
 let serverNeedsRestart: boolean = false;
 let localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED;
 let mtaEnabled: boolean = DEFAULT_MTA_ENABLED;
+let webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED;
+let webReceiveAllowed: boolean = DEFAULT_WEB_RECEIVE_ENABLED;
+let webHttpsEnabled: boolean = DEFAULT_WEB_HTTPS_ENABLED;
+let webPort: number = DEFAULT_WEB_PORT;
+let webLastPort: number = DEFAULT_WEB_LAST_PORT;
+let webInterfaces: string = DEFAULT_WEB_INTERFACES;
+let webInterfaceBlacklist: string = DEFAULT_WEB_INTERFACE_BLACKLIST;
+let webDisplayAddress: string = DEFAULT_WEB_DISPLAY_ADDRESS;
 let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
 let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
+let backgroundReceiveEnabled: boolean = DEFAULT_BACKGROUND_RECEIVE;
 
 // ── 服务器重启标志（与 ServerRepository 共享） ──
 
@@ -114,10 +135,8 @@ export function loadFromPreferences(): void {
     savedAutoConfirm as AutoConfirmMode : DEFAULT_AUTO_CONFIRM_MODE;
 
   receivePin = preferencesRepo.getString(KEY_RECEIVE_PIN, DEFAULT_RECEIVE_PIN);
-  autoFinish = preferencesRepo.getBoolean(KEY_AUTO_FINISH, DEFAULT_AUTO_FINISH);
-  autoAcceptWebDownload = preferencesRepo.getBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD);
-  saveToHistory = preferencesRepo.getBoolean(KEY_SAVE_TO_HISTORY, DEFAULT_SAVE_TO_HISTORY);
   saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
+  backgroundReceiveEnabled = preferencesRepo.getBoolean(KEY_BACKGROUND_RECEIVE, DEFAULT_BACKGROUND_RECEIVE);
   destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
   theme = preferencesRepo.getString(KEY_THEME, DEFAULT_THEME);
   locale = preferencesRepo.getString(KEY_LOCALE, DEFAULT_LOCALE);
@@ -130,6 +149,20 @@ export function loadFromPreferences(): void {
   discoveryTimeout = preferencesRepo.getNumber(KEY_DISCOVERY_TIMEOUT, DEFAULT_DISCOVERY_TIMEOUT);
   localSendEnabled = preferencesRepo.getBoolean(KEY_LOCALSEND_ENABLED, DEFAULT_LOCALSEND_ENABLED);
   mtaEnabled = preferencesRepo.getBoolean(KEY_MTA_ENABLED, DEFAULT_MTA_ENABLED);
+  webSendAllowed = preferencesRepo.getBoolean(KEY_WEB_SEND_ENABLED, DEFAULT_WEB_SEND_ENABLED);
+  webReceiveAllowed = preferencesRepo.getBoolean(KEY_WEB_RECEIVE_ENABLED, DEFAULT_WEB_RECEIVE_ENABLED);
+  // 网页独立安全项：与 LocalSend 互不影响，加密传输默认关闭
+  webHttpsEnabled = preferencesRepo.getBoolean(KEY_WEB_HTTPS_ENABLED, DEFAULT_WEB_HTTPS_ENABLED);
+  webPort = preferencesRepo.getNumber(KEY_WEB_PORT, DEFAULT_WEB_PORT);
+  if (webPort < WEB_PORT_MIN || webPort > WEB_PORT_MAX) {
+    webPort = DEFAULT_WEB_PORT;
+  }
+  // 上次实际端口只在进程内复用：不持久化，避免下次启动沿用临时端口
+  webLastPort = DEFAULT_WEB_LAST_PORT;
+  webInterfaces = preferencesRepo.getString(KEY_WEB_INTERFACES, DEFAULT_WEB_INTERFACES);
+  webInterfaceBlacklist = preferencesRepo.getString(KEY_WEB_INTERFACE_BLACKLIST,
+    DEFAULT_WEB_INTERFACE_BLACKLIST);
+  webDisplayAddress = preferencesRepo.getString(KEY_WEB_DISPLAY_ADDRESS, DEFAULT_WEB_DISPLAY_ADDRESS);
   mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, DEFAULT_MTA_RECEIVE_ENABLED);
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
   mtaSimulatedBrand = normalizeMtaBrandId(
@@ -146,7 +179,7 @@ export function setHttpsEnabled(enabled: boolean): void {
   preferencesRepo.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
   preferencesRepo.flushNow();
   logger.debug(
-    'persisted: key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' flushed');
+    '已持久化 key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' 已刷盘');
   markServerNeedsRestart();
   notifyChange();
 }
@@ -183,26 +216,6 @@ export function setReceivePin(pin: string): void {
   notifyChange();
 }
 
-export function setAutoFinish(enabled: boolean): void {
-  autoFinish = enabled;
-  preferencesRepo.setBoolean(KEY_AUTO_FINISH, enabled);
-  notifyChange();
-}
-
-export function isAutoFinish(): boolean {
-  return autoFinish;
-}
-
-export function setSaveToHistory(enabled: boolean): void {
-  saveToHistory = enabled;
-  preferencesRepo.setBoolean(KEY_SAVE_TO_HISTORY, enabled);
-  notifyChange();
-}
-
-export function isSaveToHistory(): boolean {
-  return saveToHistory;
-}
-
 export function setSaveToGallery(enabled: boolean): void {
   saveToGallery = enabled;
   preferencesRepo.setBoolean(KEY_SAVE_TO_GALLERY, enabled);
@@ -211,6 +224,16 @@ export function setSaveToGallery(enabled: boolean): void {
 
 export function isSaveToGallery(): boolean {
   return saveToGallery;
+}
+
+export function setBackgroundReceiveEnabled(enabled: boolean): void {
+  backgroundReceiveEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_BACKGROUND_RECEIVE, enabled);
+  notifyChange();
+}
+
+export function isBackgroundReceiveEnabled(): boolean {
+  return backgroundReceiveEnabled;
 }
 
 // ── 协议总开关 ──
@@ -233,6 +256,120 @@ export function setMtaEnabled(enabled: boolean): void {
 
 export function getMtaEnabled(): boolean {
   return mtaEnabled;
+}
+
+// ── 网页发送/接收允许开关（持久化意图；运行时状态由 WebShareRepository 持有）──
+
+export function setWebSendAllowed(enabled: boolean): void {
+  webSendAllowed = enabled;
+  preferencesRepo.setBoolean(KEY_WEB_SEND_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getWebSendAllowed(): boolean {
+  return webSendAllowed;
+}
+
+export function setWebReceiveAllowed(enabled: boolean): void {
+  webReceiveAllowed = enabled;
+  preferencesRepo.setBoolean(KEY_WEB_RECEIVE_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getWebReceiveAllowed(): boolean {
+  return webReceiveAllowed;
+}
+
+// ── 协议提示状态（非用户设置：记录已提示过的关闭状态签名）──
+
+/** 已提示过的 LocalSend/互传关闭状态签名；为空表示尚未提示。 */
+export function getNotifiedProtocolSignature(): string {
+  return preferencesRepo.getString(KEY_PROTOCOL_HINT_SIGNATURE, '');
+}
+
+export function setNotifiedProtocolSignature(signature: string): void {
+  preferencesRepo.setString(KEY_PROTOCOL_HINT_SIGNATURE, signature);
+  // 提示签名需跨重启保持：立即落盘，避免提示展示后马上退出导致下次启动重复提示
+  preferencesRepo.flushNow();
+}
+
+// ── 网页独立安全项：加密 / PIN / 端口 / 网卡 ──
+
+export function setWebHttpsEnabled(enabled: boolean): void {
+  webHttpsEnabled = enabled;
+  preferencesRepo.setBoolean(KEY_WEB_HTTPS_ENABLED, enabled);
+  notifyChange();
+}
+
+export function getWebHttpsEnabled(): boolean {
+  return webHttpsEnabled;
+}
+
+/** 写入网页端口；端口变化时清空进程内的“上次实际端口”，使新端口优先尝试。 */
+export function setWebPort(port: number): void {
+  webPort = port;
+  webLastPort = DEFAULT_WEB_LAST_PORT;
+  preferencesRepo.setNumber(KEY_WEB_PORT, port);
+  notifyChange();
+}
+
+export function getWebPort(): number {
+  return webPort;
+}
+
+/**
+ * 记录网页服务实际绑定端口（启动成功后调用；不触发变更通知）。
+ * 仅进程内复用，重启服务时保持同一端口；应用重启后仍优先配置端口，
+ * 不会被上次回退的临时端口带走。
+ */
+export function setWebLastPort(port: number): void {
+  webLastPort = port;
+}
+
+export function getWebLastPort(): number {
+  return webLastPort;
+}
+
+/** 写入网页网络接口白/黑名单（空数组表示未显式指定，按类型默认）。 */
+export function setWebInterfaces(whitelist: Array<string>, blacklist: Array<string>): void {
+  webInterfaces = whitelist.join(',');
+  webInterfaceBlacklist = blacklist.join(',');
+  preferencesRepo.setString(KEY_WEB_INTERFACES, webInterfaces);
+  preferencesRepo.setString(KEY_WEB_INTERFACE_BLACKLIST, webInterfaceBlacklist);
+  notifyChange();
+}
+
+function parseInterfaceList(text: string): Array<string> {
+  if (text.length === 0) {
+    return [];
+  }
+  let result: Array<string> = [];
+  let parts: Array<string> = text.split(',');
+  for (let i = 0; i < parts.length; i++) {
+    let name: string = parts[i].trim();
+    if (name.length > 0) {
+      result.push(name);
+    }
+  }
+  return result;
+}
+
+export function getWebInterfaceNames(): Array<string> {
+  return parseInterfaceList(webInterfaces);
+}
+
+export function getWebInterfaceBlacklistNames(): Array<string> {
+  return parseInterfaceList(webInterfaceBlacklist);
+}
+
+export function setWebDisplayAddress(ip: string): void {
+  webDisplayAddress = ip;
+  preferencesRepo.setString(KEY_WEB_DISPLAY_ADDRESS, ip);
+  notifyChange();
+}
+
+export function getWebDisplayAddress(): string {
+  return webDisplayAddress;
 }
 
 // ── 互传联盟（MTA）接收开关 ──
@@ -261,9 +398,9 @@ export function getMtaSimulatedBrand(): number {
   return mtaSimulatedBrand;
 }
 
-// ── 互传联盟（MTA）连接提醒 ──
+// ── 互传联盟（MTA）显示互传提醒 ──
 
-/** 互传连接提醒开关：关闭后主页面不再显示互传相关的蓝牙/WLAN 警告横幅 */
+/** 显示互传提醒开关：关闭后发送页不再显示互传相关的蓝牙/WLAN 警告横幅 */
 export function setMtaConnectionWarnings(enabled: boolean): void {
   mtaConnectionWarnings = enabled;
   preferencesRepo.setBoolean(KEY_MTA_CONNECTION_WARNINGS, enabled);
@@ -286,7 +423,7 @@ export function getDestination(): string {
 
 // ── 主题 / 语言 / 外观 ──
 
-// 设备身份（customAlias/customDeviceType）
+// 设备身份（customAlias）
 
 export function setCustomAlias(alias: string): void {
   preferencesRepo.setCustomAlias(alias);
@@ -294,14 +431,6 @@ export function setCustomAlias(alias: string): void {
 
 export function getCustomAlias(): string {
   return preferencesRepo.getCustomAlias();
-}
-
-export function setCustomDeviceType(deviceType: string): void {
-  preferencesRepo.setCustomDeviceType(deviceType);
-}
-
-export function getCustomDeviceType(): string {
-  return preferencesRepo.getCustomDeviceType();
 }
 
 // 应用主题色模式到应用上下文（浅色/深色/跟随系统）。theme 应用逻辑的唯一实现。
@@ -319,7 +448,7 @@ export function applyThemeToApp(mode: string): void {
       }
     }
   } catch (_e) {
-    logger.warn('applyColorMode failed');
+    logger.warn('应用配色模式失败');
   }
 }
 
@@ -347,7 +476,7 @@ export function applyLocaleToApp(lang: string): void {
       try {
         systemLang = i18n.System.getSystemLanguage();
       } catch (_e) {
-        logger.warn('getSystemLanguage failed');
+        logger.warn('获取系统语言失败');
       }
       bcp47 = systemLang.length > 0 ? systemLang : 'default';
     } else {
@@ -368,7 +497,7 @@ export function applyLocaleToApp(lang: string): void {
       applyingLocale = false;
     }
   } catch (_e) {
-    logger.warn('setAppPreferredLanguage failed');
+    logger.warn('设置应用首选语言失败');
   }
 }
 
@@ -379,44 +508,44 @@ export function applyLocaleToApp(lang: string): void {
 export function syncSystemLanguageIfFollowing(): void {
   // 重入守卫：正在应用语言时直接返回，不重复设置
   if (applyingLocale) {
-    logger.debug('sysLangSync: 跳过（正在应用语言，重入守卫）');
+    logger.debug('系统语言同步：跳过（正在应用语言，重入守卫）');
     return;
   }
   let currentLocale = getLocale();
   if (currentLocale !== '') {
     // 用户未选择「跟随系统」，此处不应同步，打一条说明便于比对
-    logger.debug('sysLangSync: 跳过（非跟随系统）locale=\'' + currentLocale + '\'');
+    logger.debug('系统语言同步：跳过（非跟随系统）locale=\'' + currentLocale + '\'');
     return;
   }
   try {
     let systemLang = i18n.System.getSystemLanguage();
     if (systemLang.length === 0) {
-      logger.debug('sysLangSync: 跳过（系统语言为空）systemLang=\'\'');
+      logger.debug('系统语言同步：跳过（系统语言为空）systemLang=\'\'');
       return;
     }
     // 仅用于诊断：提前取一次当前已设语言以便聚合打印（读取无副作用，判定条件不变）
     let appPreferred = i18n.System.getAppPreferredLanguage();
-    logger.debug('sysLangSync: locale=\'\' systemLang=\'' + systemLang +
+    logger.debug('系统语言同步：locale=\'\' systemLang=\'' + systemLang +
       '\' appPreferred=\'' + appPreferred + '\' lastRequested=\'' + lastRequestedLocaleBcp47 + '\'');
     // 防回环：系统语言与"最近一次请求设置的语言"相同，或与当前已设语言相同，均无需重复设置
     if (lastRequestedLocaleBcp47 === systemLang) {
-      logger.debug('sysLangSync: 跳过（与最近一次请求设置的语言相同）');
+      logger.debug('系统语言同步：跳过（与最近一次请求设置的语言相同）');
       return;
     }
     if (appPreferred === systemLang) {
-      logger.debug('sysLangSync: 跳过（与当前已设语言相同）');
+      logger.debug('系统语言同步：跳过（与当前已设语言相同）');
       return;
     }
     applyingLocale = true;
     try {
       i18n.System.setAppPreferredLanguage(systemLang);
       lastRequestedLocaleBcp47 = systemLang;
-      logger.info('sysLangSync: 已应用系统语言 \'' + systemLang + '\'');
+      logger.info('已应用系统语言：' + systemLang);
     } finally {
       applyingLocale = false;
     }
   } catch (_e) {
-    logger.warn('syncSystemLanguageIfFollowing failed');
+    logger.warn('跟随系统语言同步失败');
   }
 }
 
@@ -450,18 +579,6 @@ export function setHideTabBarOnScroll(enabled: boolean): void {
 
 export function isHideTabBarOnScroll(): boolean {
   return hideTabBarOnScroll;
-}
-
-// ── 自动确认下载请求（仅 Web 分享下载生效） ──
-
-export function setAutoAcceptWebDownload(enabled: boolean): void {
-  autoAcceptWebDownload = enabled;
-  preferencesRepo.setBoolean(KEY_AUTO_ACCEPT_WEB_DOWNLOAD, enabled);
-  notifyChange();
-}
-
-export function getAutoAcceptWebDownload(): boolean {
-  return autoAcceptWebDownload;
 }
 
 // ── 校验和设置 ──
@@ -582,7 +699,8 @@ export function getNetworkListAsArray(key: string): Array<string> | undefined {
 }
 
 // 确保白名单/黑名单有默认值：首次启动时（两者都为空），
-// 根据当前接口类型自动设置——wifi/ethernet 入白名单，其他入黑名单。
+// 根据当前接口类型自动设置——WiFi/以太网入白名单，其他入黑名单。
+// 默认策略见 utils/NetworkInterfaceRules，与接口过滤、弹窗开关同源。
 // 必须在 updateLocalInterfaces() 之后调用（依赖接口列表数据）。
 export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): void {
   let currentWhitelist = getNetworkWhitelist();
@@ -598,8 +716,7 @@ export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): 
     if (name.length === 0) {
       continue;
     }
-    let ifaceType = interfaces[i].type;
-    if (ifaceType === NetworkType.wifi || ifaceType === NetworkType.ethernet) {
+    if (isEnabledByDefault(interfaces[i].type)) {
       whitelistNames.push(name);
     } else {
       blacklistNames.push(name);
@@ -607,6 +724,6 @@ export function ensureDefaultNetworkLists(interfaces: Array<NetworkInterface>): 
   }
   setNetworkWhitelist(whitelistNames.join(','));
   setNetworkBlacklist(blacklistNames.join(','));
-  logger.debug('首次初始化: 白名单=[' +
+  logger.debug('首次初始化：白名单=[' +
     whitelistNames.join(', ') + '] 黑名单=[' + blacklistNames.join(', ') + ']');
 }

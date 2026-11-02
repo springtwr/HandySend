@@ -23,7 +23,7 @@ jobs:
     name: 构建鸿蒙应用
     runs-on: [ubuntu-latest, x64, medium]
     container:
-      image: springtwr/harmonyos-clt:26.0.0.821
+      image: springtwr/harmonyos-clt:26.0.0.851-1
       env:
         OHOS_NDK_HOME: /opt/command-line-tools/sdk/default/openharmony
     timeout-minutes: 120

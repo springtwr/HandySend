@@ -4,7 +4,7 @@
  * 汇聚主流程所需的 MTA 关注点：
  * - 发现扫描：持有一个仅用于扫描的 MtaBleClient 实例（每轮一次性、非常驻），
  *   把发现的 MTA 设备按 BLE 标识去重合并，供发送页并入统一设备列表；
- * - 接收服务单例：持有 MtaReceiveService，按「互传联盟接收」设置与应用前后台
+ * - 接收服务单例：持有 MtaReceiveService，按「允许接收」设置与应用前后台
  *   生命周期启停（前台自动运行，后台停止）；
  * - 事件总线：把接收请求到达与状态快照转成订阅通知，供页面导航与渲染；
  * - 命令门面：accept/reject/cancel 转发给接收服务；
@@ -17,7 +17,7 @@ import { common } from '@kit.AbilityKit';
 import { wifiManager } from '@kit.ConnectivityKit';
 import { DiscoveredDevice, MediaFileInfo } from '../../model/Types';
 import { MtaBleClient } from '../mta/MtaBleClient';
-import { isBluetoothEnabled, queryMtaBluetoothStatus } from '../mta/MtaBleCommon';
+import { isBluetoothEnabled, loadOrCreateMtaDeviceIdHex, queryMtaBluetoothStatus } from '../mta/MtaBleCommon';
 import { MtaBleClientEventHandlers, MtaDiscoveredDevice, mtaDeviceIdentityKey } from '../../model/mta/MtaSendModels';
 import {
   MtaBluetoothStatus,
@@ -33,7 +33,8 @@ import {
   mtaClearSceneText,
   shouldAttemptMtaScanRearm,
   shouldPruneStaleDevices,
-  shouldTriggerScanRecovery
+  shouldTriggerScanRecovery,
+  scanRecoveryDelayMs
 } from '../../model/mta/MtaDiscoveryModels';
 import { MtaReceiveService, setMtaReceiveTextSavedNotifier } from '../mta/MtaReceiveService';
 import {
@@ -83,11 +84,31 @@ const MTA_SCAN_RETRY_COOLDOWN_MS: number = 10000;
 const MTA_SCAN_REARM_INTERVAL_MS: number = 5000;
 
 /**
- * 扫描静默停顿判定阈值（毫秒）：不小于设备存活期 TTL。
- * 取值与 TTL 相同，确保「暂停前先剔光」不会发生——一旦距最近发现结果达到该阈值即判为疑似停顿，
- * 转而触发恢复并跳过剔除，而不是让既有条目先被 TTL 剔除至空。
+ * 扫描静默停顿判定阈值（毫秒）：曾发现过设备、随后长时间无新结果时使用。
+ * 取值与设备存活期 TTL 相同，确保不会在既有条目被 TTL 剔光之后才判定停顿——
+ * 达到该阈值即先判疑似停顿并跳过剔除，再触发恢复。
  */
 const MTA_SCAN_STALL_THRESHOLD_MS: number = MTA_DEVICE_TTL_MS;
+
+/**
+ * 冷启动无发现宽限（毫秒）：本次扫描会话从未发现任何设备时，等待更久才判疑似停顿。
+ * 空环境下无发现是正常结果，不能按故障频繁重启扫描；用户可主动刷新立即恢复。
+ */
+const MTA_SCAN_COLD_START_GRACE_MS: number = 120000;
+
+/** 扫描恢复退避（毫秒）：连续恢复仍无结果时逐级拉长间隔，封顶取最后一档 */
+const MTA_SCAN_RECOVERY_BACKOFF_MS: Array<number> = [60000, 120000, 300000];
+
+/** 用户主动刷新冷却（毫秒）：与确认窗口同量级，防止连续点击反复重启扫描 */
+const MTA_MANUAL_RESCAN_COOLDOWN_MS: number = 3000;
+
+/**
+ * 当前列表对应的冷启动宽限：仅列表为空时使用较长宽限；列表非空说明已经有设备条目，
+ * 继续用普通停顿阈值，避免新扫描会话把已缓存条目保留过久。
+ */
+function coldStartGraceForCurrentList(): number {
+  return scannedDevices.length === 0 ? MTA_SCAN_COLD_START_GRACE_MS : MTA_SCAN_STALL_THRESHOLD_MS;
+}
 
 /** 整组清空诊断同类事件节流窗口（毫秒）：窗口内同类原因的事件去重，避免刷屏 */
 const MTA_CLEAR_DIAG_THROTTLE_MS: number = 5000;
@@ -120,6 +141,13 @@ let lastScanResultMs: number = 0;
 let scanSessionStartMs: number = 0;
 // 最近一次触发扫描停顿恢复的时刻（恢复节流）：避免疑似停顿反复重启扫描
 let lastScanStallRecoveryMs: number = 0;
+// 连续扫描恢复次数：用于逐级退避，发现结果/新扫描会话/手动刷新时清零
+let scanRecoveryStreak: number = 0;
+// 最近一次用户主动刷新时刻：冷却期内忽略重复点击
+let lastManualRescanMs: number = 0;
+// 手动刷新结算窗口：为统一刷新按钮提供“MTA 刷新是否仍在进行”的完成信号
+let manualRefreshInFlight: boolean = false;
+let manualRefreshSettleTimer: number = -1;
 // 清空诊断节流状态：记录上次输出原因与时刻，并对同类事件计数抑制次数
 let clearDiagLastMs: number = 0;
 let clearDiagLastReason: MtaDeviceListClearReason = MtaDeviceListClearReason.UNKNOWN;
@@ -190,6 +218,11 @@ function getLocalReceiveSenderIdHex(): string {
   return service.getLocalSenderIdHex().trim().toLowerCase();
 }
 
+/** 本机 MTA 发送者 ID（16 字节的十六进制文本）：与广播、发送共用同一持久化值，不依赖接收服务是否运行 */
+export function getLocalMtaDeviceIdHex(): string {
+  return loadOrCreateMtaDeviceIdHex().trim().toLowerCase();
+}
+
 /**
  * 按「设备身份键」去重合并扫描到的 MTA 设备（更新 lastSeen），并通知 UI。
  * 合并前丢弃与本机接收广播身份相同的条目，避免本机出现在自身列表中。
@@ -197,12 +230,15 @@ function getLocalReceiveSenderIdHex(): string {
 function mergeScannedDevice(device: MtaDiscoveredDevice): void {
   let localSenderId = getLocalReceiveSenderIdHex();
   if (localSenderId.length > 0 && device.senderIdHex.trim().toLowerCase() === localSenderId) {
-    logger.debug('发现过滤本机广播: ' + device.bleAddress);
+    logger.debug('发现过滤本机广播：' + device.bleAddress);
     return;
   }
   device.lastSeen = Date.now();
   // 扫描健康度跟踪：记录最近一次有新发现结果的时刻（停顿判定的单一基准）
   lastScanResultMs = device.lastSeen;
+  // 收到新结果即视为本轮停顿已恢复：清零退避，下一次停顿重新从短间隔开始
+  scanRecoveryStreak = 0;
+  lastScanStallRecoveryMs = 0;
   let key = mtaDeviceIdentityKey(device);
   let updated: Array<MtaDiscoveredDevice> = [];
   let found = false;
@@ -243,7 +279,14 @@ function emitMtaClearDiagnostic(reason: MtaDeviceListClearReason, countBefore: n
   clearDiagLastMs = now;
   clearDiagLastReason = reason;
   clearDiagSuppressedCount = 0;
-  logger.warn(formatMtaDeviceListClearedLog(event) + suffix);
+  let line: string = formatMtaDeviceListClearedLog(event) + suffix;
+  // 蓝牙关闭与超时剔除属预期内的列表收敛；状态误判、扫描停顿与未知原因才需告警
+  if (reason === MtaDeviceListClearReason.BLUETOOTH_DISABLED ||
+    reason === MtaDeviceListClearReason.STALE_PRUNE) {
+    logger.debug(line);
+  } else {
+    logger.warn(line);
+  }
 }
 
 /** 清空互传设备列表：仅在确有「非空→空」跃迁时经统一诊断出口记录 */
@@ -266,9 +309,14 @@ function pruneStaleDevices(scene: MtaDeviceListClearScene): number {
   if (scannedDevices.length === 0) {
     return 0;
   }
+  // 扫描已停止：健康判定必然不通过，直接静默返回，避免每次页面/可见性停扫都留下一条
+  // “跳过陈旧条目剔除”的 debug 日志；此处不改变列表。
+  if (!scanning) {
+    return 0;
+  }
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
-    MTA_SCAN_STALL_THRESHOLD_MS);
+    MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
   if (!shouldPruneStaleDevices(health)) {
     logger.debug('跳过陈旧条目剔除：扫描不健康 扫描中=' + (health.scanning ? '是' : '否') +
       ' 疑似停顿=' + (health.suspectedStall ? '是' : '否') + ' 条目数=' + scannedDevices.length);
@@ -303,17 +351,20 @@ function pruneStaleDevices(scene: MtaDeviceListClearScene): number {
 function runScanHealthCheck(): void {
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
-    MTA_SCAN_STALL_THRESHOLD_MS);
+    MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
   if (health.suspectedStall) {
     if (scannedDevices.length > 0) {
       // 列表非空时，疑似停顿可能演变为整组清空：经统一诊断出口按「扫描停顿」原因记录
       emitMtaClearDiagnostic(MtaDeviceListClearReason.SCAN_STALL, scannedDevices.length,
         MtaDeviceListClearScene.SCAN_STALL);
-    } else {
-      logger.debug('互传发现扫描疑似静默停顿（当前无条目）：跳过剔除并尝试恢复');
     }
-    if (shouldTriggerScanRecovery(health, now, lastScanStallRecoveryMs, MTA_SCAN_STALL_THRESHOLD_MS)) {
+    let recoveryDelay: number = scanRecoveryDelayMs(scanRecoveryStreak, MTA_SCAN_RECOVERY_BACKOFF_MS);
+    if (shouldTriggerScanRecovery(health, now, lastScanStallRecoveryMs, recoveryDelay)) {
       lastScanStallRecoveryMs = now;
+      scanRecoveryStreak++;
+      if (scannedDevices.length === 0) {
+        logger.debug('互传发现扫描冷启动无结果，按退避触发恢复 连续恢复次数=' + scanRecoveryStreak);
+      }
       triggerScanRecovery();
     }
     return;
@@ -344,7 +395,7 @@ function triggerScanRecovery(): void {
     logger.debug('发现扫描恢复已启动');
   }).catch((e: Object): void => {
     scanRetryBlockedUntil = Date.now() + MTA_SCAN_RETRY_COOLDOWN_MS;
-    logger.error('发现扫描恢复失败: ' + String(e));
+    logger.warn('发现扫描恢复失败，进入冷却：' + String(e));
   });
   scheduleStalePrune();
 }
@@ -419,7 +470,7 @@ function settleRescanPrune(): void {
   }
   let now = Date.now();
   let health: MtaScanHealth = buildMtaScanHealth(scanning, lastScanResultMs, scanSessionStartMs, now,
-    MTA_SCAN_STALL_THRESHOLD_MS);
+    MTA_SCAN_STALL_THRESHOLD_MS, coldStartGraceForCurrentList());
   if (!shouldPruneStaleDevices(health)) {
     logger.debug('跳过主动刷新确认剔除：扫描不健康 扫描中=' + (health.scanning ? '是' : '否') +
       ' 疑似停顿=' + (health.suspectedStall ? '是' : '否') + ' 条目数=' + scannedDevices.length);
@@ -447,6 +498,25 @@ function settleRescanPrune(): void {
   }
 }
 
+/** 手动刷新结算窗口是否进行中：供发送页统一刷新按钮判断 MTA 侧是否完成。 */
+export function isMtaManualRefreshInFlight(): boolean {
+  return manualRefreshInFlight;
+}
+
+/** 开启手动刷新结算窗口：3 秒后结束并通知，供统一刷新按钮恢复。 */
+function beginManualRefreshWindow(): void {
+  manualRefreshInFlight = true;
+  if (manualRefreshSettleTimer >= 0) {
+    clearTimeout(manualRefreshSettleTimer);
+  }
+  manualRefreshSettleTimer = setTimeout((): void => {
+    manualRefreshSettleTimer = -1;
+    manualRefreshInFlight = false;
+    notifyChange();
+  }, MTA_RESCAN_SETTLE_MS);
+  notifyChange();
+}
+
 /** 用户主动刷新：重置失败冷却并重新收集；在线设备保留、离线设备经确认窗口即时剔除（无需等满 TTL） */
 export function rescanMtaDiscovery(): void {
   if (!getMtaEnabled()) {
@@ -458,11 +528,36 @@ export function rescanMtaDiscovery(): void {
     logger.debug('发送暂停中，主动刷新仅记录可见性期望');
     return;
   }
+  // 共享刷新按钮同时触发 LocalSend 与 MTA：此处仅对 MTA 做冷却，
+  // LocalSend 仍按原有「扫描中合并排队一次」逻辑接收每次点击，行为不变。
+  let now = Date.now();
+  if (now - lastManualRescanMs < MTA_MANUAL_RESCAN_COOLDOWN_MS) {
+    logger.debug('主动刷新已忽略：冷却中 距上次=' + (now - lastManualRescanMs) + 'ms');
+    return;
+  }
+  lastManualRescanMs = now;
+  beginManualRefreshWindow();
   scanRetryBlockedUntil = 0;
   if (scanning) {
+    let client = scanClient;
+    // 空列表是用户最可能反复点击刷新的场景：强制停/起扫描，立即重置底层状态；
+    // 非空列表保持既有软刷新，避免让正在展示的设备先消失。
+    if (client !== undefined && scannedDevices.length === 0) {
+      logger.debug('主动刷新：空列表，强制重启扫描并重置停顿退避');
+      scanRecoveryStreak = 0;
+      lastScanStallRecoveryMs = 0;
+      client.resetReportDedupe();
+      clearRescanSettleTimer();
+      client.stopScan().then((): void => {
+        beginScan();
+      }).catch((e: Object): void => {
+        logger.warn('主动刷新停止扫描失败，按普通起扫重试：' + String(e));
+        beginScan();
+      });
+      return;
+    }
     // 已在扫描：不清空列表（清空会让既有设备"先消失"）；先重置扫描上报去重使在线设备在
     // 下一轮结果中重新上报，再布置确认窗口剔除窗口内未再上报的离线设备
-    let client = scanClient;
     if (client !== undefined) {
       client.resetReportDedupe();
     }
@@ -536,6 +631,8 @@ function beginScan(): void {
   // 重置本次扫描会话基准：健康度判定从会话起始时刻起算，避免沿用上一会话的陈旧发现时刻
   scanSessionStartMs = Date.now();
   lastScanResultMs = 0;
+  scanRecoveryStreak = 0;
+  lastScanStallRecoveryMs = 0;
   scanning = true;
   notifyChange();
   client.startScan().then((): void => {
@@ -550,7 +647,7 @@ function beginScan(): void {
     // 使冷却结束（如蓝牙权限随后授予）后能自动起扫，无需用户手动刷新或切页
     scanRetryBlockedUntil = Date.now() + MTA_SCAN_RETRY_COOLDOWN_MS;
     scheduleScanRearm();
-    logger.error('发现扫描启动失败: ' + String(e));
+    logger.warn('发现扫描启动失败，安排自愈重试：' + String(e));
     notifyChange();
   });
   scheduleStalePrune();
@@ -583,7 +680,7 @@ function stopMtaDiscoveryScanInternal(): void {
   let client = scanClient;
   if (client !== undefined) {
     client.stopScan().catch((e: Object): void => {
-      logger.error('停止扫描失败: ' + String(e));
+      logger.warn('停止扫描失败：' + String(e));
     });
   }
   // 停止收尾：扫描已停（健康判定为不健康），此处不会剔除任何条目，保持既有列表不被清空
@@ -686,7 +783,7 @@ function handleBluetoothDisabled(): void {
   }
   if (receiveRunning) {
     stopReceiveServiceInternal().catch((e: Object): void => {
-      logger.error('蓝牙关闭后停止 MTA 接收服务异常: ' + String(e));
+      logger.warn('蓝牙关闭后停止 MTA 接收服务异常：' + String(e));
     });
   }
   logger.debug('蓝牙已关闭：停止互传发现扫描并清空设备列表，接收服务复位');
@@ -695,9 +792,11 @@ function handleBluetoothDisabled(): void {
 /** 蓝牙开启：清除失败冷却后按需恢复发现扫描与接收服务 */
 function handleBluetoothEnabled(): void {
   let scanStarted = false;
+  // 蓝牙恢复视为新的扫描环境：重置恢复退避，异常重新从短间隔开始
+  scanRecoveryStreak = 0;
+  lastScanStallRecoveryMs = 0;
   if (shouldScanDesired() && !scanning) {
     scanRetryBlockedUntil = 0;
-    lastScanStallRecoveryMs = 0;
     logger.debug('蓝牙已开启：恢复互传发现扫描');
     // beginScan 内部已通知 UI
     beginScan();
@@ -739,7 +838,7 @@ export function isMtaWifiOn(): boolean {
     return wifiManager.isWifiActive();
   } catch (e) {
     // 查询失败时不误报：按已开启处理
-    logger.warn('查询 WLAN 开关状态失败: ' + String(e));
+    logger.warn('查询 WLAN 开关状态失败：' + String(e));
     return true;
   }
 }
@@ -800,10 +899,10 @@ export function startMtaReceiveIfEnabled(context: common.Context): void {
 export function applyMtaEnabled(): void {
   if (getMtaEnabled()) {
     // 扫描由发送页可见性驱动（含总开关检查），此处仅恢复接收
-    logger.info('MTA 总开关已开启，按接收开关恢复接收');
+    logger.info('MTA 总开关已开启');
     applyMtaReceiveEnabled();
   } else {
-    logger.info('MTA 总开关已关闭，停止接收服务与发现扫描');
+    logger.info('MTA 总开关已关闭');
     stopMtaReceive();
     stopMtaDiscoveryScan();
   }
@@ -851,7 +950,7 @@ async function performStartReceive(): Promise<void> {
     receiveRunning = service.getState().serviceRunning;
     notifyChange();
   } catch (e) {
-    logger.error('启动 MTA 接收服务异常: ' + String(e));
+    logger.error('启动 MTA 接收服务异常：' + String(e));
   }
 }
 
@@ -865,7 +964,7 @@ export function refreshMtaReceiveIdentity(): void {
     return;
   }
   service.refreshIdentity(getDeviceAlias()).catch((e: Object): void => {
-    logger.error('刷新 MTA 接收对外身份异常: ' + String(e));
+    logger.warn('刷新 MTA 接收对外身份异常：' + String(e));
   });
 }
 
@@ -885,7 +984,7 @@ function stopReceiveServiceInternal(): Promise<void> {
   let pending: Promise<void> = receiveOpChain.then((): Promise<void> => performStopReceive());
   // 停止失败不得阻断链上后续操作，捕获后继续
   receiveOpChain = pending.catch((e: Object): void => {
-    logger.error('停止 MTA 接收服务异常: ' + String(e));
+    logger.warn('停止 MTA 接收服务异常：' + String(e));
   });
   return pending;
 }
@@ -901,7 +1000,7 @@ async function performStopReceive(): Promise<void> {
   } catch (e) {
     // 停止失败也复位运行标志：服务可能已部分停止，
     // 保持「运行中」会使后续启动被幂等守卫拒绝而永远无法再启动
-    logger.error('停止 MTA 接收服务异常: ' + String(e));
+    logger.warn('停止 MTA 接收服务异常：' + String(e));
   }
   receiveRunning = false;
   notifyChange();
@@ -916,7 +1015,7 @@ export function stopMtaReceive(): void {
     service.suppressWarmReuse();
   }
   stopReceiveServiceInternal().catch((e: Object): void => {
-    logger.error('停止 MTA 接收服务异常: ' + String(e));
+    logger.warn('停止 MTA 接收服务异常：' + String(e));
   });
 }
 
@@ -953,7 +1052,7 @@ export async function suspendMtaReceiveForSend(): Promise<void> {
     resumeReceiveAfterSend = true;
     // 停止失败不阻断发送：按已释放处理，发送侧外设启动失败也只会降级而不阻断发送
     await stopReceiveServiceInternal().catch((e: Object): void => {
-      logger.error('暂停 MTA 接收服务异常: ' + String(e));
+      logger.warn('暂停 MTA 接收服务异常：' + String(e));
     });
   }
   // 点击设备后的第一段隐藏耗时：暂停接收服务（停广播/GATT/WS/P2P）本身也占时
@@ -1003,7 +1102,7 @@ export function acceptMtaReceiveRequest(): void {
     return;
   }
   service.acceptRequest().catch((e: Object): void => {
-    logger.error('接受 MTA 接收请求异常: ' + String(e));
+    logger.error('接受 MTA 接收请求异常：' + String(e));
   });
 }
 
@@ -1014,7 +1113,7 @@ export function acceptMtaReceiveText(): void {
     return;
   }
   service.acceptTextRequest().catch((e: Object): void => {
-    logger.error('接受 MTA 文本接收请求异常: ' + String(e));
+    logger.error('接受 MTA 文本接收请求异常：' + String(e));
   });
 }
 
@@ -1025,7 +1124,7 @@ export function rejectMtaReceiveRequest(): void {
     return;
   }
   service.rejectRequest().catch((e: Object): void => {
-    logger.error('拒绝 MTA 接收请求异常: ' + String(e));
+    logger.error('拒绝 MTA 接收请求异常：' + String(e));
   });
 }
 

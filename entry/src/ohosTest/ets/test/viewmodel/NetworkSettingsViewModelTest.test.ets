@@ -40,7 +40,11 @@ export default function NetworkSettingsViewModelTest() {
 
     it('getNetworkTypePriority_order', 0, () => {
       expect(vm.getNetworkTypePriority(NetworkType.wifi) < vm.getNetworkTypePriority(NetworkType.ethernet)).assertTrue()
-      expect(vm.getNetworkTypePriority(NetworkType.ethernet) < vm.getNetworkTypePriority(NetworkType.unknown))
+      expect(vm.getNetworkTypePriority(NetworkType.ethernet) < vm.getNetworkTypePriority(NetworkType.vpn))
+        .assertTrue()
+      expect(vm.getNetworkTypePriority(NetworkType.vpn) < vm.getNetworkTypePriority(NetworkType.bridge))
+        .assertTrue()
+      expect(vm.getNetworkTypePriority(NetworkType.bridge) < vm.getNetworkTypePriority(NetworkType.unknown))
         .assertTrue()
       expect(vm.getNetworkTypePriority(NetworkType.unknown) < vm.getNetworkTypePriority(NetworkType.cellular))
         .assertTrue()
@@ -77,17 +81,26 @@ export default function NetworkSettingsViewModelTest() {
       expect(vm.interfacesEqual(a, [asDefault])).assertFalse()
     })
 
-    it('isInterfaceBlacklisted', 0, () => {
-      expect(vm.isInterfaceBlacklisted('wlan0', ['eth0', 'wlan0'])).assertTrue()
-      expect(vm.isInterfaceBlacklisted('wlan0', ['eth0'])).assertFalse()
-      expect(vm.isInterfaceBlacklisted('wlan0', [])).assertFalse()
+    it('isInList', 0, () => {
+      expect(vm.isInList('wlan0', ['eth0', 'wlan0'])).assertTrue()
+      expect(vm.isInList('wlan0', ['eth0'])).assertFalse()
+      expect(vm.isInList('wlan0', [])).assertFalse()
     })
 
-    it('isInterfaceWhitelisted_blacklistWins', 0, () => {
-      expect(vm.isInterfaceWhitelisted('wlan0', ['wlan0'], [])).assertTrue()
-      expect(vm.isInterfaceWhitelisted('wlan0', [], [])).assertFalse()
-      // 黑名单优先：同时在两名单中视为不在白名单
-      expect(vm.isInterfaceWhitelisted('wlan0', ['wlan0'], ['wlan0'])).assertFalse()
+    it('isInterfaceEnabled_blacklistWins', 0, () => {
+      expect(vm.isInterfaceEnabled('wlan0', NetworkType.wifi, ['wlan0'], [])).assertTrue()
+      // 黑名单优先：同时在两名单中视为关闭
+      expect(vm.isInterfaceEnabled('wlan0', NetworkType.wifi, ['wlan0'], ['wlan0'])).assertFalse()
+    })
+
+    it('isInterfaceEnabled_defaultByType', 0, () => {
+      // 两名单都未列出：WiFi/以太网/VPN 默认开启，容器网桥/蜂窝/未知默认关闭
+      expect(vm.isInterfaceEnabled('wlan1', NetworkType.wifi, [], [])).assertTrue()
+      expect(vm.isInterfaceEnabled('eth0', NetworkType.ethernet, [], [])).assertTrue()
+      expect(vm.isInterfaceEnabled('tun0', NetworkType.vpn, [], [])).assertTrue()
+      expect(vm.isInterfaceEnabled('ancowlan0', NetworkType.bridge, [], [])).assertFalse()
+      expect(vm.isInterfaceEnabled('rmnet0', NetworkType.cellular, [], [])).assertFalse()
+      expect(vm.isInterfaceEnabled('anc0', NetworkType.unknown, [], [])).assertFalse()
     })
 
     it('removeFromList', 0, () => {
@@ -112,7 +125,7 @@ export default function NetworkSettingsViewModelTest() {
         makeInterface('eth0', NetworkType.ethernet)
       ]
       // 存储值与本地状态一致：无修改
-      expect(vm.hasUnsavedChanges('wlan0', '', ['wlan0', 'eth0'], [], ifaces)).assertFalse()
+      expect(vm.hasUnsavedChanges('wlan0,eth0', '', ['wlan0', 'eth0'], [], ifaces)).assertFalse()
       expect(vm.hasUnsavedChanges('wlan0', 'eth0', ['wlan0'], ['eth0'], ifaces)).assertFalse()
     })
 
@@ -124,15 +137,15 @@ export default function NetworkSettingsViewModelTest() {
       expect(vm.hasUnsavedChanges('', '', [], ['wlan0'], ifaces)).assertTrue()
     })
 
-    it('hasUnsavedChanges_newInterfaceDefaultNotDirty', 0, () => {
-      // 新出现的接口（不在存储值中）按默认规则（wifi/ethernet → 白）不算修改
+    it('hasUnsavedChanges_newInterfaceNotDirty', 0, () => {
+      // 新出现的接口既不落存储也不写入本地状态（默认状态按类型推导）：不算修改
       let ifaces: Array<NetworkInterface> = [
         makeInterface('wlan0', NetworkType.wifi),
         makeInterface('cell0', NetworkType.cellular)
       ]
-      expect(vm.hasUnsavedChanges('', '', ['wlan0'], ['cell0'], ifaces)).assertFalse()
-      // 用户把默认白名单的 wifi 接口移入黑名单：算修改
-      expect(vm.hasUnsavedChanges('', '', [], ['wlan0', 'cell0'], ifaces)).assertTrue()
+      expect(vm.hasUnsavedChanges('wlan0', '', ['wlan0'], [], ifaces)).assertFalse()
+      // 用户把新接口移入黑名单：算修改
+      expect(vm.hasUnsavedChanges('wlan0', '', ['wlan0'], ['cell0'], ifaces)).assertTrue()
     })
 
     it('hasUnsavedChanges_ignoresVanishedInterfaceResidue', 0, () => {
@@ -147,7 +160,7 @@ export default function NetworkSettingsViewModelTest() {
         makeInterface('wlan0', NetworkType.wifi),
         makeInterface('', NetworkType.wifi)
       ]
-      expect(vm.hasUnsavedChanges('', '', ['wlan0'], [], ifaces)).assertFalse()
+      expect(vm.hasUnsavedChanges('wlan0', '', ['wlan0'], [], ifaces)).assertFalse()
     })
   })
 }

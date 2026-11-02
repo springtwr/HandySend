@@ -8,7 +8,13 @@
  */
 
 import { common } from '@kit.AbilityKit';
-import { promptAction, CustomContentDialogV2, AdvancedDialogV2Button, uiObserver } from '@kit.ArkUI';
+import {
+  ComponentContent,
+  promptAction,
+  CustomContentDialogV2,
+  AdvancedDialogV2Button,
+  uiObserver
+} from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
@@ -25,17 +31,21 @@ import { SessionFileList } from '../views/transfer/SessionFileList';
 import { SessionActions } from '../views/transfer/SessionActions';
 import { SessionMetaSection } from '../views/transfer/SessionMetaSection';
 import { SessionTimeline } from '../views/transfer/SessionTimeline';
-import { VerifyPageParams } from '../model/Types';
+import { buildGallerySaveDialog, GallerySaveDialogParams } from '../views/SaveToGalleryDialog';
+import { GallerySaveResult, MediaFileInfo, VerifyPageParams } from '../model/Types';
 import { SessionFile } from '../model/transfer/TransferSession';
 import { hasDisplayText } from '../service/transfer/adapters/SessionAdapter';
-import { getServerFingerprint } from '../service/AppService';
+import { getServerFingerprint, saveMediaToGallery } from '../service/AppService';
 import { formatSizeDetailed, formatSpeed, formatDuration } from '../utils/FormatUtil';
+import { gallerySaveLocalPath, isGalleryImage } from '../utils/GallerySavePolicy';
 import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
 import { isUrl } from '../utils/IPValidator';
 import { copyText } from '../utils/ClipboardUtil';
+import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import {
   FileOpenResult,
+  isFileMissing,
   normalizeFileLocation,
   openContainingFolder,
   openWithOtherApp
@@ -45,9 +55,6 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话详情');
-
-// 自动完成（自动返回）延迟：会话进入终态后约 2s 返回（与旧传输页一致）
-const AUTO_FINISH_DELAY_MS: number = 2000;
 
 // 悬浮底部操作区的滚动预留高度（按钮 + 上下内边距 + 与末条的间距）：
 // 操作区悬浮于内容之上，内容需预留该高度以保证末张卡片可完整滚出操作区之上
@@ -63,14 +70,15 @@ export struct SessionDetailPage {
   // 内容滚动控制器：绑定到子页面容器以驱动标题栏滚动模糊
   private scroller: Scroller = new Scroller()
   private context: common.UIAbilityContext | undefined = undefined
-  private autoFinishTimer: number = -1
-  private autoFinishDone: boolean = false
-  // 多文件时的「点击预览」弹窗：预读到的文本内容与不可用标记
+  // 多文件时的「点击预览」弹窗：预读到的文本内容、不可用标记与截断标记
   @Local filePreviewText: string = ''
   @Local filePreviewUnavailable: boolean = false
+  @Local filePreviewTruncated: boolean = false
   // 预览弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local filePreviewContentWidth: number = 0
   private filePreviewDialogId: number = -1
+  // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
+  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
 
   aboutToAppear(): void {
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -80,42 +88,6 @@ export struct SessionDetailPage {
 
   aboutToDisappear(): void {
     this.viewModel.unload();
-    this.clearAutoFinishTimer();
-  }
-
-  private clearAutoFinishTimer(): void {
-    if (this.autoFinishTimer >= 0) {
-      clearTimeout(this.autoFinishTimer);
-      this.autoFinishTimer = -1;
-    }
-  }
-
-  /** 请求自动返回：已返回过则忽略。 */
-  private requestAutoFinish(): void {
-    if (this.autoFinishDone) {
-      return;
-    }
-    this.clearAutoFinishTimer();
-    this.autoFinishTimer = setTimeout(() => {
-      this.autoFinishTimer = -1;
-      if (this.autoFinishDone) {
-        return;
-      }
-      this.autoFinishDone = true;
-      logger.debug('auto finish: exit detail page');
-      this.goBack();
-    }, AUTO_FINISH_DELAY_MS);
-  }
-
-  /** 会话进入终态且「自动完成」开启时自动返回（文本消息阅读时不返回）。 */
-  @Monitor('viewModel.autoFinishRequested')
-  onAutoFinishRequested(): void {
-    if (!this.viewModel.autoFinishRequested) {
-      return;
-    }
-    // 消费信号，避免重复触发
-    this.viewModel.autoFinishRequested = false;
-    this.requestAutoFinish();
   }
 
   // ── 多文件条目操作菜单的三项执行与提示 ──
@@ -133,6 +105,9 @@ export struct SessionDetailPage {
   private openResultMessage(result: FileOpenResult): ResourceStr {
     if (result === FileOpenResult.fileMissing) {
       return $r('app.string.history_open_file_missing');
+    }
+    if (result === FileOpenResult.accessDenied) {
+      return $r('app.string.history_open_file_access_denied');
     }
     if (result === FileOpenResult.noApp) {
       return $r('app.string.session_file_open_no_app');
@@ -174,16 +149,107 @@ export struct SessionDetailPage {
       });
   }
 
-  /** 点击文本类条目：按需读取该文件内容并弹出全文弹窗；读取失败明确提示不可用。 */
-  private openFilePreview(file: SessionFile): void {
-    // 超过预览阈值的文本类文件不读取内容（避免卡顿），改为明确提示原因
-    if (needsOverLimitHint(this.viewModel.isTextFileEntry(file), file.path, file.totalBytes)) {
-      this.showToast($r('app.string.session_file_preview_over_limit'));
+  /**
+   * 保存单个媒体文件到相册：菜单点击仅作入口，实际写入需用户在弹窗内点击 SaveButton
+   * 获取临时授权（应用未申请 WRITE_IMAGEVIDEO 受限权限）。
+   */
+  private handleSaveToGallery(file: SessionFile): void {
+    let context = this.context;
+    if (context === undefined) {
       return;
     }
+    // 与「打开所在位置」同口径：点击时探测源文件，缺失则明确提示，不打开无意义的保存弹窗
+    if (isFileMissing(normalizeFileLocation(file.path))) {
+      this.showToast($r('app.string.history_open_file_missing'));
+      return;
+    }
+    let mediaFile: MediaFileInfo = {
+      // 保存服务按本机路径转 file URI；file:// 形式的条目先归一为本机路径
+      filePath: gallerySaveLocalPath(file.path),
+      fileName: file.fileName,
+      fileType: file.fileType,
+      isImage: isGalleryImage(file.fileType, file.fileName)
+    };
+    let params = new GallerySaveDialogParams();
+    params.mediaFiles = [mediaFile];
+    params.mediaCountText = this.buildGalleryMediaCountText(1);
+    params.onPerformSave = (files: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      let hostContext = this.context;
+      if (hostContext === undefined) {
+        let failed: GallerySaveResult = { successCount: 0, failCount: files.length, errors: ['no context'] };
+        return Promise.resolve(failed);
+      }
+      return saveMediaToGallery(hostContext, files);
+    };
+    params.onSaveComplete = (result: GallerySaveResult): void => {
+      this.showToast(result.successCount > 0 ? $r('app.string.gallery_save_success') :
+        $r('app.string.gallery_save_failed'));
+      if (result.successCount > 0) {
+        // 回写接收历史：接收历史页的文件级条目据此显示相册图标并置灰保存项
+        this.viewModel.markSavedToGallery(file);
+      }
+    };
+    params.onDismiss = (): void => {
+      this.galleryContentNode = null;
+    };
+    params.onCloseDialog = (): void => {
+      this.closeGallerySaveDialog();
+    };
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
+    this.galleryContentNode = contentNode;
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(contentNode, {
+        autoCancel: true,
+        alignment: DialogAlignment.Center
+      })
+      .catch(() => {
+        this.galleryContentNode = null;
+      });
+  }
+
+  /** 相册保存弹窗的媒体数量文案（单文件固定为 1，复用既有资源）。 */
+  private buildGalleryMediaCountText(count: number): string {
+    return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count'))
+      .replace('%d', String(count));
+  }
+
+  private closeGallerySaveDialog(): void {
+    if (this.galleryContentNode !== null) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
+      this.galleryContentNode = null;
+    }
+  }
+
+  /** 复制多文件条目的文本内容：读取文件本身（缺省上限截断，超限明确提示截断）。 */
+  private copyFileText(file: SessionFile): void {
+    let content = readTextOfLocation(file.path);
+    if (content === undefined) {
+      this.showToast($r('app.string.session_file_preview_unavailable'));
+      return;
+    }
+    if (!copyText(content)) {
+      this.showToast($r('app.string.copy_failed'));
+      return;
+    }
+    if (file.totalBytes > TEXT_READ_MAX_BYTES) {
+      let hint: string = getStringSync(this.getUIContext(), $r('app.string.copy_truncated_message'))
+        .replace('%s', formatSizeDetailed(TEXT_READ_MAX_BYTES));
+      this.showToast(hint);
+      return;
+    }
+    this.showToast($r('app.string.copy_success'));
+  }
+
+  /** 点击文本类条目：按需读取该文件内容并弹出全文弹窗；超限时截断预览并挂截断说明，读取失败明确提示不可用。 */
+  private openFilePreview(file: SessionFile): void {
+    // 超阈值截断预览（读取量与渲染量均不超过阈值）；失败仍明确提示不可用
+    let truncated: boolean =
+      needsOverLimitHint(this.viewModel.isTextFileEntry(file), file.path, file.totalBytes);
     let content = this.viewModel.readFileText(file);
     this.filePreviewUnavailable = content === undefined;
     this.filePreviewText = content !== undefined ? content : '';
+    this.filePreviewTruncated = content !== undefined && truncated;
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
         this.filePreviewDialog();
@@ -191,6 +257,7 @@ export struct SessionDetailPage {
       onDidDisappear: () => {
         this.filePreviewText = '';
         this.filePreviewUnavailable = false;
+        this.filePreviewTruncated = false;
         this.filePreviewContentWidth = 0;
       }
     };
@@ -211,6 +278,7 @@ export struct SessionDetailPage {
     }
     this.filePreviewText = '';
     this.filePreviewUnavailable = false;
+    this.filePreviewTruncated = false;
     this.filePreviewContentWidth = 0;
   }
 
@@ -242,24 +310,34 @@ export struct SessionDetailPage {
         .fontColor($r('app.color.text_secondary'))
         .textAlign(TextAlign.Center)
     } else {
-      Scroll() {
-        Text(this.filePreviewText)
-          .width('100%')
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .textAlign(this.filePreviewTextAlign())
-          .wordBreak(WordBreak.BREAK_ALL)
-          .copyOption(CopyOptions.LocalDevice)
-          .onAreaChange((_oldValue: Area, newValue: Area) => {
-            // 记录内容区可用宽度（vp），供单行/多行对齐判定
-            if (typeof newValue.width === 'number') {
-              this.filePreviewContentWidth = newValue.width;
-            }
-          })
+      Column({ space: DesignTokens.space.xxs }) {
+        // 截断预览时明确说明，避免误当全文
+        if (this.filePreviewTruncated) {
+          Text($r('app.string.session_file_preview_over_limit'))
+            .width('100%')
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.warning_orange'))
+        }
+        Scroll() {
+          Text(this.filePreviewText)
+            .width('100%')
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .textAlign(this.filePreviewTextAlign())
+            .wordBreak(WordBreak.BREAK_ALL)
+            .copyOption(CopyOptions.LocalDevice)
+            .onAreaChange((_oldValue: Area, newValue: Area) => {
+              // 记录内容区可用宽度（vp），供单行/多行对齐判定
+              if (typeof newValue.width === 'number') {
+                this.filePreviewContentWidth = newValue.width;
+              }
+            })
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 320 })
+        .scrollBar(BarState.Auto)
       }
       .width('100%')
-      .constraintSize({ maxHeight: 320 })
-      .scrollBar(BarState.Auto)
     }
   }
 
@@ -309,29 +387,33 @@ export struct SessionDetailPage {
   }
 
   /**
-   * 内联预览文件超过预览阈值：不读取内容、不渲染全文，改为明确说明「文件过大、不支持预览」，
-   * 并保留「打开所在位置」与「用其他应用打开」两条出口。
+   * 内联预览文件超过预览阈值：截断预览前 128KB 并挂截断说明（避免误当全文）；
+   * 沙箱文本仅「打开所在位置」无意义（私有目录无可导航位置），「用其他应用打开」走应用文件分享机制保留。
    */
   @Builder
   previewOverLimitCard() {
     Column({ space: DesignTokens.space.md }) {
       Text($r('app.string.session_file_preview_over_limit'))
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_secondary'))
-        .textAlign(TextAlign.Center)
+        .fontSize(DesignTokens.font.bodyS)
+        .fontColor($r('app.color.warning_orange'))
         .width('100%')
         .id('session_detail_preview_over_limit')
 
+      this.previewScrollableText()
+
       Row({ space: DesignTokens.space.sm }) {
-        Button($r('app.string.history_open_directory'))
-          .layoutWeight(1)
-          .height(DesignTokens.size.thumbSm)
-          .backgroundColor($r('app.color.page_background'))
-          .fontColor($r('app.color.text_primary'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.openInlineFileLocation();
-          })
+        // 沙箱私有目录无文件管理器可导航位置，该出口不渲染
+        if (!this.isInlineFileSandboxText()) {
+          Button($r('app.string.history_open_directory'))
+            .layoutWeight(1)
+            .height(DesignTokens.size.thumbSm)
+            .backgroundColor($r('app.color.page_background'))
+            .fontColor($r('app.color.text_primary'))
+            .borderRadius(DesignTokens.radius.max)
+            .onClick(() => {
+              this.openInlineFileLocation();
+            })
+        }
         Button($r('app.string.session_file_open_with_app'))
           .layoutWeight(1)
           .height(DesignTokens.size.thumbSm)
@@ -352,13 +434,20 @@ export struct SessionDetailPage {
     .alignItems(HorizontalAlign.Center)
   }
 
+  /** 内联预览文件是否为应用私有文本（沙箱落盘，仅目录出口无意义）。 */
+  private isInlineFileSandboxText(): boolean {
+    let file = this.inlinePreviewFile();
+    return file !== undefined && this.viewModel.isSandboxTextFile(file);
+  }
+
   /** 复制文本消息内容：写剪贴板成功后由协议适配器完成收尾（对照原 MTA 文本接收流程）。 */
   private copyTextMessage(): void {
-    let text: string = this.viewModel.textPreview();
-    if (text.length === 0) {
+    // 复制口径与多文件清单/接收历史一致：文件优先（200KB 上限截断）、描述符兜底
+    let result = this.viewModel.copyableTextMessage();
+    if (result.text.length === 0) {
       return;
     }
-    if (!copyText(text)) {
+    if (!copyText(result.text)) {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.copy_failed'), duration: 2000 });
@@ -366,6 +455,12 @@ export struct SessionDetailPage {
     }
     // 协议收尾：文本消息会话经适配器 confirm 回接受 ack，不进入下载流程
     this.viewModel.confirm();
+    if (result.truncated) {
+      let hint: string = getStringSync(this.getUIContext(), $r('app.string.copy_truncated_message'))
+        .replace('%s', formatSizeDetailed(TEXT_READ_MAX_BYTES));
+      this.showToast(hint);
+      return;
+    }
     this.getUIContext()
       .getPromptAction()
       .showToast({ message: $r('app.string.copy_success'), duration: 2000 });
@@ -408,7 +503,7 @@ export struct SessionDetailPage {
    * 文本消息会话仅在待确认（canConfirm）时占用底部操作区，其余阶段不占位。
    */
   private hasActions(): boolean {
-    if (this.viewModel.hasTextPreview()) {
+    if (this.viewModel.isTextMessageSession()) {
       return this.viewModel.canConfirm();
     }
     return this.viewModel.canConfirm() || this.viewModel.canDecline() || this.viewModel.canCancel();
@@ -416,7 +511,8 @@ export struct SessionDetailPage {
 
   /**
    * 标题栏菜单：指纹验证（次级入口，不占用底部动作区）。
-   * 「保存到相册」由设置项驱动、在接收成功后自动提示，不在本页保留入口。
+   * 「保存到相册」不设整会话入口：接收成功后由设置项驱动自动提示；单个媒体文件的保存入口
+   * 位于文件清单条目的操作菜单（按文件精确标记，见 SessionFileList）。
    * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
    * 返回箭头由组件承载，保持系统默认尺寸。
    */
@@ -455,11 +551,6 @@ export struct SessionDetailPage {
     });
   }
 
-  /** 终态返回：仅退出详情页，不改变会话状态（返回不取消会话）。 */
-  private goBack(): void {
-    this.pathStack.pop();
-  }
-
   /** 打开文本消息内容中的链接（仅内容为 URL 时可达）。 */
   private openTextLink(): void {
     let url: string = this.viewModel.textPreview().trim();
@@ -468,7 +559,7 @@ export struct SessionDetailPage {
       return;
     }
     context.openLink(url).catch((e: Object): void => {
-      logger.warn('open text link failed: ' + String(e));
+      logger.warn('打开文本链接失败：' + String(e));
     });
   }
 
@@ -548,6 +639,37 @@ export struct SessionDetailPage {
   }
 
   /**
+   * 内联文本内容块（文本预览卡与超限截断卡共用）：内容超出时可滚动查看（不再限制显示行数）。
+   * 两卡互斥渲染，同一时刻只挂载一份节点。
+   */
+  @Builder
+  previewScrollableText() {
+    Column() {
+      Scroll() {
+        Text(this.viewModel.textPreview())
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_primary'))
+          .lineHeight(20)
+          .width('100%')
+          // 内联文本预览支持长按自由选择复制（排版与不可用降级不变）
+          .copyOption(CopyOptions.LocalDevice)
+          .id('session_detail_text_content')
+      }
+      .scrollable(ScrollDirection.Vertical)
+      .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
+      .align(Alignment.Top)
+      .width('100%')
+      .constraintSize({ maxHeight: 240 })
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+  }
+
+  /**
    * 文本消息预览卡片（文本会话不展示文件清单与字节进度）：
    * 可滚动文本区 + 内容为 URL 时的「打开链接」入口。
    */
@@ -563,29 +685,7 @@ export struct SessionDetailPage {
         .id('session_detail_text_title')
 
       // 文本卡片：内容超出时可滚动查看（不再限制显示行数）
-      Column() {
-        Scroll() {
-          Text(this.viewModel.textPreview())
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .lineHeight(20)
-            .width('100%')
-            // 内联文本预览支持长按自由选择复制（排版与不可用降级不变）
-            .copyOption(CopyOptions.LocalDevice)
-            .id('session_detail_text_content')
-        }
-        .scrollable(ScrollDirection.Vertical)
-        .scrollBar(BarState.Auto)
-        .edgeEffect(EdgeEffect.Spring)
-        .align(Alignment.Top)
-        .width('100%')
-        .constraintSize({ maxHeight: 240 })
-      }
-      .width('100%')
-      .padding(DesignTokens.space.md)
-      .backgroundColor($r('app.color.card_background'))
-      .borderRadius(DesignTokens.radius.lg)
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+      this.previewScrollableText()
 
       if (isUrl(this.viewModel.textPreview())) {
         Button($r('app.string.open_link'))
@@ -642,6 +742,18 @@ export struct SessionDetailPage {
                 peerFingerprint: this.viewModel.meta.peerFingerprint
               })
 
+              // ── 大文件提示：待确认且达到阈值时展示风险提示（纯展示，不拦截确认） ──
+              if (this.viewModel.needsLargeFileHint()) {
+                Text($r('app.string.large_file_receive_hint'))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.warning_orange'))
+                  .width('100%')
+                  .padding(DesignTokens.space.sm)
+                  .backgroundColor($r('app.color.warning_bg'))
+                  .borderRadius(DesignTokens.radius.md)
+                  .id('session_detail_large_file_hint')
+              }
+
               if (this.viewModel.isInlinePreview()) {
                 // ── 会话仅一个文本类文件：内联预览卡片（不渲染文件清单与字节进度）；
                 //    内容不可用时明确提示 ──
@@ -670,6 +782,12 @@ export struct SessionDetailPage {
                     },
                     onOpenWithApp: (file: SessionFile) => {
                       this.handleOpenWithApp(file);
+                    },
+                    onCopyText: (file: SessionFile) => {
+                      this.copyFileText(file);
+                    },
+                    onSaveToGallery: (file: SessionFile) => {
+                      this.handleSaveToGallery(file);
                     }
                   })
                 }
@@ -733,8 +851,10 @@ export struct SessionDetailPage {
             canConfirm: this.viewModel.canConfirm(),
             canDecline: this.viewModel.canDecline(),
             canCancel: this.viewModel.canCancel(),
-            // 是否为文本消息会话（与阶段无关）；动作为「关闭」+「复制」，关闭＝直接接受，复制＝写剪贴板成功后接受
-            isTextSession: this.viewModel.hasTextPreview(),
+            cancelLabel: this.viewModel.cancelLabel(),
+            // 是否为对端发来的文本消息（与阶段无关）；动作为「关闭」+「复制」，关闭＝直接接受，复制＝写剪贴板成功后接受。
+            // 本机外发方向（如网页下载本机分享的文本）走常规「拒绝」+「确认」
+            isTextSession: this.viewModel.isTextMessageSession(),
             onConfirm: () => {
               this.viewModel.confirm();
             },

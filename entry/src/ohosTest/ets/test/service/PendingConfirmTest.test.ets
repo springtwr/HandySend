@@ -7,7 +7,6 @@ import {
   declineSession,
   getSession,
   resetRegistry,
-  cancel,
   findByProtocol
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
@@ -15,10 +14,6 @@ import {
   finishLocalReceiveSession,
   setLocalReceiveInvokers
 } from '../../../../main/ets/service/transfer/adapters/LocalSendReceiveAdapter'
-import {
-  beginWebDownloadBurst,
-  markWebDownloadDeclined
-} from '../../../../main/ets/service/transfer/adapters/WebDownloadAdapter'
 import { handleMtaReceiveState } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import { ReceiverStage, ReceiverState, ReceiveRequest } from '../../../../main/ets/model/mta/MtaProtocolModels'
 
@@ -108,34 +103,6 @@ export default function PendingConfirmTest() {
       let cancelled = getSession(id)
       if (cancelled !== undefined) {
         expect(cancelled.stage).assertEqual(SessionStage.cancelled)
-      }
-      resetRegistry()
-    })
-
-    it('web_pendingThenDecline', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('10.0.0.9', true)
-      let pending = getSession(id)
-      expect(pending !== undefined).assertTrue()
-      if (pending !== undefined) {
-        expect(pending.stage).assertEqual(SessionStage.awaitingConfirmation)
-      }
-      markWebDownloadDeclined('10.0.0.9')
-      let declined = getSession(id)
-      if (declined !== undefined) {
-        expect(declined.stage).assertEqual(SessionStage.declined)
-      }
-      resetRegistry()
-    })
-
-    it('web_pendingCancel_isIdempotent', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('10.0.0.10', true)
-      // Web 下载不支持进行中取消：cancel 为空操作，待确认状态保持不变
-      cancel(id)
-      let still = getSession(id)
-      if (still !== undefined) {
-        expect(still.stage).assertEqual(SessionStage.awaitingConfirmation)
       }
       resetRegistry()
     })

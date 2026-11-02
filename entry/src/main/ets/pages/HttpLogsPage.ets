@@ -8,17 +8,23 @@ import {
 } from '@kit.UIDesignKit';
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { HttpLogsViewModel, SaveLogsResult } from '../viewmodel/HttpLogsViewModel';
-import { LogEntry } from '../model/Types';
+import { LogViewEntry } from '../model/Types';
+import { formatLocalClockTime } from '../utils/LogFileFormat';
 import { DesignTokens } from '../common/DesignTokens';
 import { EmptyState } from '../components/EmptyState';
-import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
+import {
+  getPageContentMaxWidth,
+  getPageMargin,
+  getSheetWidth,
+  isWideWidth
+} from '../common/Breakpoints';
 import { common } from '@kit.AbilityKit';
 import { getStringSyncFromContext } from '../utils/ResourceUtil';
 
 /**
  * HttpLogsPage
- * 诊断日志页。进入时加载当前日志快照，之后订阅日志通道实时增量刷新。
- * 保存时从 AppCore 拉最新日志，保证导出的是当前数据。
+ * 诊断日志页。固定只读 detail 当前文件尾部，之后按偏移增量刷新。
+ * 详细日志开关只决定后续是否追加 debug，页面不切换数据源。
  */
 @ComponentV2
 export struct HttpLogsPage {
@@ -31,6 +37,8 @@ export struct HttpLogsPage {
   private scroller: Scroller = new Scroller()
   // 是否处于「跟随最新」模式：默认跟随；用户上滑脱离底部即暂停
   @Local isFollowing: boolean = true
+  // 日志设置弹层
+  @Local showLogSettings: boolean = false
 
   aboutToAppear(): void {
     this.viewModel.loadLogs();
@@ -53,14 +61,13 @@ export struct HttpLogsPage {
   }
 
   /**
-   * 标题栏结束端菜单：保存日志与清空日志。
-   * 图标以资源引用传入、档位留空（组件默认档位），尺寸与返回箭头相当；
-   * 返回箭头由组件承载，保持系统默认尺寸。
+   * 标题栏结束端菜单：导出全部日志、清空日志、日志设置。
+   * 日志开关不再作为菜单项，改由「日志设置」弹层承载真实 Toggle 与说明。
    */
   private buildTitleMenu(): HdsNavigationMenuContentOptions {
     let saveItem: HdsNavigationMenuItemOptions = {
       content: {
-        icon: $r('sys.symbol.arrow_down'),
+        icon: $r('sys.symbol.save'),
         label: $r('app.string.save_logs_button'),
         action: () => {
           this.saveLogs();
@@ -76,65 +83,96 @@ export struct HttpLogsPage {
         }
       }
     };
-    let items: Array<HdsNavigationMenuItemOptions> = [saveItem, clearItem];
-    return { value: items };
+    let settingsItem: HdsNavigationMenuItemOptions = {
+      content: {
+        icon: $r('sys.symbol.gearshape_fill'),
+        label: $r('app.string.log_settings_title'),
+        action: () => {
+          this.showLogSettings = true;
+        }
+      }
+    };
+    let items: Array<HdsNavigationMenuItemOptions> = [saveItem, clearItem, settingsItem];
+    return { value: items, maxCount: 2 };
   }
 
-  /**
-   * 标题栏底部自定义区域：详细日志（DEBUG）开关行。
-   * 位于标题栏内、常驻可见，不随日志列表滚动离开视野；状态不持久化，重启复位。
-   */
+  /** 日志设置弹层：唯一的「记录详细日志」开关及用途说明。 */
   @Builder
-  debugLogToggleBuilder() {
-    Column() {
+  logSettingsSheet() {
+    Column({ space: DesignTokens.space.md }) {
       Row() {
-        Text($r('app.string.debug_log_label'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+        Column({ space: DesignTokens.space.tiny }) {
+          Text($r('app.string.debug_log_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+
+          Text($r('app.string.debug_log_desc'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
 
         Toggle({ type: ToggleType.Switch, isOn: this.viewModel.debugLogEnabled })
           .onChange((isOn: boolean) => {
             this.viewModel.setDebugLogEnabled(isOn);
           })
+          .margin({ left: DesignTokens.space.md })
           .id('logs_debug_log_toggle')
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center)
+      .alignItems(VerticalAlign.Top)
 
-      // 简短说明：开启后记录更详细的调试信息、重启后自动关闭
-      Text($r('app.string.debug_log_desc'))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Column({ space: DesignTokens.space.tiny }) {
+        Text($r('app.string.log_settings_info_title'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+
+        Text($r('app.string.log_settings_info_desc'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
+      .width('100%')
+      .padding(DesignTokens.space.md)
+      .backgroundColor($r('app.color.card_background'))
+      .borderRadius(DesignTokens.radius.lg)
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    // 左右内边距与页面内容一致，使开关行与日志列表对齐
     .padding({
       left: getPageMargin(this.breakpointInfo.widthBreakpoint),
-      right: getPageMargin(this.breakpointInfo.widthBreakpoint)
+      right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.lg
     })
   }
 
   /**
-   * 保存日志
+   * 导出全部诊断日志
    */
   private async saveLogs(): Promise<void> {
     let result: SaveLogsResult = await this.viewModel.saveLogs(this.context);
-    switch (result) {
+    switch (result.status) {
       case 'empty':
         this.getUIContext()
           .getPromptAction()
           .showToast({ message: $r('app.string.no_logs'), duration: 2000 });
         break;
       case 'success':
-        let appNameStr: string = getStringSyncFromContext(this.context, $r('app.string.EntryAbility_label'));
         this.getUIContext()
           .getPromptAction()
-          .showToast({ message: $r('app.string.save_success', appNameStr), duration: 2000 });
+          .showToast({
+            message: $r('app.string.save_success',
+              getStringSyncFromContext(this.context, $r('app.string.EntryAbility_label')),
+              result.fileName),
+            duration: 3500
+          });
         break;
       case 'failed':
         this.getUIContext()
@@ -157,7 +195,29 @@ export struct HttpLogsPage {
     HdsNavDestination() {
       Row() {
         Column() {
-          if (this.viewModel.logEntries.length === 0) {
+          if (this.viewModel.fileError.length > 0) {
+            Text($r('app.string.log_file_unavailable'))
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.danger_red'))
+              .width('100%')
+              .padding({
+                left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+                top: DesignTokens.space.md,
+                bottom: DesignTokens.space.xxs
+              })
+          }
+
+          if (this.viewModel.loading && this.viewModel.logEntries.length === 0) {
+            Column() {
+              LoadingProgress()
+                .width(48)
+                .height(48)
+            }
+            .width('100%')
+            .layoutWeight(1)
+            .justifyContent(FlexAlign.Center)
+          } else if (this.viewModel.logEntries.length === 0) {
             // 整页空态：占满标题栏下方剩余区域并居中
             EmptyState({
               mainText: $r('app.string.no_logs'),
@@ -166,10 +226,10 @@ export struct HttpLogsPage {
           } else {
             Stack({ alignContent: Alignment.BottomEnd }) {
               List({ scroller: this.scroller }) {
-                Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogEntry>) => {
+                Repeat(this.viewModel.logEntries).each((ri: RepeatItem<LogViewEntry>) => {
                   ListItem() {
                     Row() {
-                      Text(new Date(ri.item.timestamp).toLocaleTimeString())
+                      Text(formatLocalClockTime(ri.item.timestamp))
                         .fontSize(DesignTokens.font.captionM)
                         .fontColor($r('app.color.text_tertiary'))
                         .width('17%')
@@ -183,7 +243,7 @@ export struct HttpLogsPage {
                         .maxLines(1)
                         .textAlign(TextAlign.Start)
 
-                      Text(ri.item.message)
+                      Text((ri.item.tag.length > 0 ? '[' + ri.item.tag + '] ' : '') + ri.item.message)
                         .fontSize(DesignTokens.font.bodyS)
                         .fontColor($r('app.color.text_primary'))
                         .layoutWeight(1)
@@ -200,20 +260,21 @@ export struct HttpLogsPage {
                     })
                   }
                 })
-                // 稳定唯一键：时间戳 + 全局单调序号（不含数组下标），
-                // 使实时增量追加与缓冲裁剪都不改变既有条目的键
-                  .key((item: LogEntry, index: number) => this.viewModel.keyFor(item, index))
+                // 文件模式使用字节偏移、内存回退使用加载序号作为稳定键，
+                // 尾部追加不会改变既有条目的键
+                  .key((item: LogViewEntry, index: number) => this.viewModel.keyFor(item, index))
                   // 开启虚拟滚动：仅加载可见区与预加载区内的条目，控制长日志列表的渲染与内存开销
                   .virtualScroll()
               }
               .width('100%')
               .height('100%')
+              // 顶部与同类列表页保持同一首元素间距（space.md）
+              .padding({ top: DesignTokens.space.md })
               // 滚动容器不裁剪：滚动中的条目可绘制到标题栏区域内，使毛玻璃背板有内容可透出
               .clip(false)
               // 与不裁剪配套：预加载条目一并参与绘制，避免条目离开视口即被回收，
               // 表现为内容尚未到达标题栏区域便消失
               .cachedCount(3, true)
-              .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
               // 末项可见即视为在底部：恢复跟随；否则暂停跟随（用户上滑浏览历史）
               .onScrollIndex((_start: number, end: number, _center: number) => {
                 let lastIndex: number = this.viewModel.logEntries.length - 1;
@@ -254,13 +315,11 @@ export struct HttpLogsPage {
             .width('100%')
             .layoutWeight(1)
             .height('100%')
-            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
           }
         }
         .width('100%')
         .height('100%')
         .constraintSize({ maxWidth: this.getContentMaxWidth() })
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
       .width('100%')
       .height('100%')
@@ -268,17 +327,26 @@ export struct HttpLogsPage {
       // 内容从顶部排列，避免内容不满一屏时被交叉轴默认居中
       .alignItems(VerticalAlign.Top)
       .backgroundColor($r('app.color.page_background'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      // 与其他设置弹窗一致：绑定在页面内容子组件上，而不是 HdsNavDestination 根节点；
+      // 高度使用 MEDIUM，避免单个开关配 FIT_CONTENT 时弹层过矮
+      .bindSheet($$this.showLogSettings, this.logSettingsSheet(), {
+        // 内容已包含开关与日志文件说明，使用 FIT_CONTENT 避免宽屏中心弹窗留下大片空白
+        height: SheetSize.FIT_CONTENT,
+        width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+        // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+        preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
+        showClose: true,
+        blurStyle: BlurStyle.Regular,
+        title: {
+          title: $r('app.string.log_settings_title')
+        }
+      })
     }
     // 子页面容器背景覆盖至标题栏区域：无内容经过时标题栏底色与页面背景一致，不露出系统默认底色
     .backgroundColor($r('app.color.page_background'))
     .titleBar(buildImmersiveTitleBar({
       title: $r('app.string.diagnostic_logs_title'),
-      menu: this.buildTitleMenu(),
-      // 底部自定义区域承载「详细日志（DEBUG）」开关，常驻标题栏、不随列表滚动离开视野
-      bottomBuilder: (): void => {
-        this.debugLogToggleBuilder();
-      }
+      menu: this.buildTitleMenu()
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])

@@ -34,8 +34,8 @@ const WRITE_BUFFER_SIZE: usize = 1024 * 1024;
 /// 网络数据块合并阈值（256 KiB）：小块累积到阈值再整体交付解析线程，
 /// 减少逐小块拷贝与线程交接；取值为写盘缓冲的约数以保持数据粒度一致
 const BODY_MERGE_THRESHOLD: usize = 256 * 1024;
-/// 接收诊断日志最小输出间隔（约 1 s）
-const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(1);
+/// 接收诊断日志最小输出间隔（约 10 s）：逐秒速率对排障价值低，终态另有汇总
+const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(10);
 /// 字节速率换算用的每 MiB
 const BYTES_PER_MIB: f64 = 1024.0 * 1024.0;
 /// 缺省连接超时
@@ -306,7 +306,8 @@ pub async fn receive_download(
                 true,
             )
             .await;
-            log::info!(
+            log::info!("MTA 接收完成，共 {} 个条目", entries.len());
+            log::debug!(
                 "MTA 接收完成 taskId={task_id} 条目数={} 解压字节={received} 网络字节={network_bytes}",
                 entries.len()
             );
@@ -406,6 +407,13 @@ pub async fn fetch_thumbnail(
         anyhow::bail!("缩略图超出上限: {} 字节", bytes.len());
     }
     let extension = sniff_image_extension(&bytes);
+    // 任务标识仅允许安全字符，防止路径穿越
+    if !task_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        anyhow::bail!("任务标识非法");
+    }
     let path = format!("{target_dir}/mta_thumb_{task_id}.{extension}");
     std::fs::write(&path, &bytes).map_err(|e| anyhow::anyhow!("写入缩略图失败 {path}: {e}"))?;
     log::debug!(
@@ -465,7 +473,7 @@ impl ZipEntryHandler for FileEntryHandler<'_> {
 
         if info.modified_unix_ms > 0 {
             if let Err(e) = set_modified_time(&path, info.modified_unix_ms) {
-                log::warn!("还原文件修改时间失败 {}: {e}", path.display());
+                log::warn!("MTA 还原文件修改时间失败 {}: {e}", path.display());
             }
         }
 

@@ -16,6 +16,7 @@ import {
   finish,
   getSession,
   resetRegistry,
+  setSessionFiles,
   updateProtocolSessionId,
   updateSessionFilePath
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
@@ -32,6 +33,7 @@ import { copyText } from '../../../../main/ets/utils/ClipboardUtil'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
 import { getTestAppContext } from '../helper/TestContext'
 import { writeTestFileToSandbox } from '../helper/TestHelper'
+import { TEXT_READ_MAX_BYTES } from '../../../../main/ets/utils/FileTextUtil'
 
 const DETAIL_KEY: string = 'test-detail'
 const TEXT_DETAIL_KEY: string = 'test-text-detail'
@@ -151,7 +153,9 @@ function textInput(): SessionCreateInput {
       totalBytes: 5
     }],
     capabilities: textCapabilities(),
-    stage: SessionStage.awaitingConfirmation
+    stage: SessionStage.awaitingConfirmation,
+    // 文本消息会话（区别于文件选择器选中的 .txt 文件）
+    textMessage: true
   }
 }
 
@@ -499,16 +503,15 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
-    it('previewMode_singleTextInline_multiOrBinaryList', 0, () => {
+    it('decidePreviewMode_singleTextShapeInline_multiOrBinaryList', 0, () => {
       let text = new SessionFile()
       text.fileType = 'text/plain'
       text.fileName = 'a.txt'
       let binary = new SessionFile()
       binary.fileType = 'application/octet-stream'
       binary.fileName = 'a.bin'
-      // 单文本文件 → 内联预览
+      // 形状判定：单文本类文件 → 内联候选（是否为文本消息由详情 VM 的标记再判定）
       expect(decidePreviewMode([text])).assertEqual(SessionPreviewMode.inline)
-      // 用户经文件选择器选中的 .txt 与文本消息表现一致（不做区分）
       let picked = new SessionFile()
       picked.fileType = ''
       picked.fileName = 'note.txt'
@@ -520,10 +523,10 @@ export default function SessionDetailTest() {
       expect(decidePreviewMode([])).assertEqual(SessionPreviewMode.list)
     })
 
-    it('previewMode_historyState_sameRule_andUnavailableByPath', 0, () => {
+    it('previewMode_historyTextFile_listsInsteadOfTextCard', 0, () => {
       resetRegistry()
       resetSessionHistoryCache()
-      // 历史态：逐文件条目仅带 fileType/fileName（无实时对象），同一规则判定
+      // 历史态：单文本文件但不是文本消息 → 按文件清单展示，不显示「来自某设备的文本」
       let createInput = input()
       createInput.protocolSessionId = ''
       let s = createSession(createInput)
@@ -532,16 +535,15 @@ export default function SessionDetailTest() {
       let vm = new SessionDetailViewModel()
       vm.load(s.id)
       expect(vm.isReadOnly()).assertTrue()
-      // 单文本文件：内联模式；无路径 → 内容不可用（明确标记，不空白）
-      expect(vm.isInlinePreview()).assertTrue()
-      expect(vm.previewUnavailable).assertTrue()
-      expect(vm.textPreview()).assertEqual('')
+      expect(vm.previewMode()).assertEqual(SessionPreviewMode.list)
+      expect(vm.isInlinePreview()).assertFalse()
+      expect(vm.isTextMessageContent()).assertFalse()
       vm.unload()
       resetRegistry()
       resetSessionHistoryCache()
     })
 
-    it('previewMode_pendingPlaceholderLists_terminalStaysInline_textMessageInline', 0, () => {
+    it('previewMode_textFileLists_textMessageInline', 0, () => {
       // 待确认阶段：单条文本类文件但无路径（协议未提供内容）→ 文件清单模式，且不误报「内容不可用」
       registerAdapter(testAdapter)
       resetRegistry()
@@ -555,14 +557,15 @@ export default function SessionDetailTest() {
       expect(pendingVm.previewUnavailable).assertFalse()
       pendingVm.unload()
 
-      // 终态单文本文件无路径：保持内联预览并标记「内容不可用」（不回归既有语义）
+      // 终态单文本文件（非文本消息）：按文件清单展示，不再进入文本消息卡片
       resetRegistry()
       let terminal = createSession(input())
       finish(terminal.id, SessionStage.succeeded)
       let terminalVm = new SessionDetailViewModel()
       terminalVm.load(terminal.id)
-      expect(terminalVm.isInlinePreview()).assertTrue()
-      expect(terminalVm.previewUnavailable).assertTrue()
+      expect(terminalVm.previewMode()).assertEqual(SessionPreviewMode.list)
+      expect(terminalVm.isInlinePreview()).assertFalse()
+      expect(terminalVm.isTextMessageContent()).assertFalse()
       terminalVm.unload()
 
       // 文本消息会话：即便处于待确认，也保持内联文本预览
@@ -571,8 +574,48 @@ export default function SessionDetailTest() {
       let textVm = new SessionDetailViewModel()
       textVm.load(textSession.id)
       expect(textVm.isInlinePreview()).assertTrue()
+      expect(textVm.isTextMessageContent()).assertTrue()
       expect(textVm.textPreview()).assertEqual(TEXT_PREVIEW)
       textVm.unload()
+
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('copyableText_prefersFileOverDescriptor_withTruncationFlag', 0, () => {
+      registerAdapter(textAdapter)
+      resetRegistry()
+      // 无路径：回退描述符全文（待确认预预览阶段唯一来源，不截断）
+      let s = createSession(textInput())
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      let noPath = vm.copyableTextMessage()
+      expect(noPath.text).assertEqual(TEXT_PREVIEW)
+      expect(noPath.truncated).assertFalse()
+      vm.unload()
+      // 有路径：读文件本身（与描述符不同内容时以文件为准）
+      let path = writeTestFileToSandbox('session_detail_copy.txt', '落盘文本内容')
+      expect(updateSessionFilePath(s.id, 'f1', path)).assertTrue()
+      let vm2 = new SessionDetailViewModel()
+      vm2.load(s.id)
+      let landed = vm2.copyableTextMessage()
+      expect(landed.text).assertEqual('落盘文本内容')
+      expect(landed.truncated).assertFalse()
+      vm2.unload()
+      // 声明超限：截断标记置位（复制上限 200KB，与多文件清单/接收历史同口径）
+      setSessionFiles(s.id, [{
+        fileId: 'f1',
+        fileName: 'message.txt',
+        fileType: 'text/plain',
+        totalBytes: TEXT_READ_MAX_BYTES + 1,
+        path: path
+      }])
+      let vm3 = new SessionDetailViewModel()
+      vm3.load(s.id)
+      let overLimit = vm3.copyableTextMessage()
+      expect(overLimit.text).assertEqual('落盘文本内容')
+      expect(overLimit.truncated).assertTrue()
+      vm3.unload()
 
       resetRegistry()
       resetSessionHistoryCache()

@@ -13,6 +13,7 @@ import { MtaConstants } from './MtaConstants';
 import {
   decodeUtf8,
   loadOrCreateMtaDeviceIdHex,
+  mtaBroadcastName,
   profileStateText,
   registerBluetoothStateEvent,
   toArrayBuffer,
@@ -34,19 +35,13 @@ function encodeNameField(deviceName: string): Uint8Array {
   if (deviceName.length === 0) {
     return field;
   }
-  let encoded = new util.TextEncoder().encodeInto(deviceName);
-  if (encoded.length <= MtaConstants.DEVICE_NAME_MAX_BYTES) {
-    // 名称放得下（≤16 字节）：原样放入，其余补 0x00（参考实现同此阈值）
-    field.set(encoded, 0);
-    return field;
+  // 编码口径与「本机信息」展示共用 mtaBroadcastName
+  let name = mtaBroadcastName(deviceName);
+  let encoded = new util.TextEncoder().encodeInto(name);
+  field.set(encoded, 0);
+  if (name !== deviceName) {
+    field[encoded.length] = MtaConstants.NAME_FIELD_TRUNCATION_MARK;
   }
-  // 放不下：截到 15 字节（末字节留给 \t 截断标记），截断处落在 UTF-8 续字节（0b10xxxxxx）上则回退
-  let take = MtaConstants.DEVICE_NAME_MAX_BYTES - 1;
-  while (take > 0 && (encoded[take] & 0xc0) === 0x80) {
-    take--;
-  }
-  field.set(encoded.slice(0, take), 0);
-  field[take] = MtaConstants.NAME_FIELD_TRUNCATION_MARK;
   return field;
 }
 
@@ -336,7 +331,7 @@ export class MtaBleReceiver {
           try {
             server.close();
           } catch (closeErr) {
-            logger.warn('GATT Server 关闭失败: ' + errorText(closeErr));
+            logger.warn('GATT 服务端关闭失败：' + errorText(closeErr));
           }
         }
         reject(errorText(e));
@@ -362,7 +357,7 @@ export class MtaBleReceiver {
     try {
       server.sendResponse(resp);
     } catch (e) {
-      logger.warn('sendResponse(读) 失败: ' + errorText(e));
+      logger.warn('蓝牙读请求响应失败：' + errorText(e));
     }
   }
 
@@ -405,7 +400,7 @@ export class MtaBleReceiver {
       try {
         server.sendResponse(resp);
       } catch (e) {
-        logger.warn('sendResponse(写) 失败: ' + errorText(e));
+        logger.warn('蓝牙写请求响应失败：' + errorText(e));
       }
     }
   }

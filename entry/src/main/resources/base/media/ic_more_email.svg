@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="24"
+   height="24"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="ic_more_email.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="32.916667"
+     inkscape:cx="12"
+     inkscape:cy="12"
+     inkscape:window-width="1920"
+     inkscape:window-height="1002"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <rect
+     width="24"
+     height="24"
+     opacity="0"
+     id="rect1" />
+  <g
+     id="g1"
+     style="fill:#e84026;fill-opacity:1">
+    <path
+       d="M12 13.87Q11.21 13.87 10.49 13.57Q9.77 13.27 9.24 12.72L2.88 6.14Q2.64 5.93 2.65 5.62Q2.66 5.3 2.88 5.09Q3.12 4.87 3.43 4.87Q3.74 4.87 3.96 5.09L10.32 11.66Q10.75 12.12 11.38 12.28Q12 12.43 12.62 12.28Q13.25 12.12 13.68 11.66L20.04 5.09Q20.26 4.87 20.57 4.87Q20.88 4.87 21.1 5.09Q21.34 5.3 21.34 5.62Q21.34 5.93 21.12 6.14L14.76 12.72Q14.23 13.27 13.5 13.57Q12.77 13.87 12 13.87ZM3.74 3Q3 3 2.38 3.37Q1.75 3.74 1.38 4.38Q1.01 5.02 1.01 5.76L1.01 18.24Q1.01 18.98 1.38 19.62Q1.75 20.26 2.38 20.63Q3 21 3.74 21L20.26 21Q21 21 21.62 20.63Q22.25 20.26 22.62 19.62Q22.99 18.98 22.99 18.24L22.99 5.76Q22.99 5.02 22.62 4.38Q22.25 3.74 21.62 3.37Q21 3 20.26 3L3.74 3Z"
+       fill="rgba(232,64,38,1)"
+       id="path1"
+       style="fill:#e84026;fill-opacity:1" />
+  </g>
+</svg>

@@ -15,7 +15,7 @@ import {
   SessionPeer,
   SessionStage
 } from '../../../model/transfer/TransferSession';
-import { DiscoveredDevice, SendFileItem } from '../../../model/Types';
+import { DiscoveredDevice, SendFileItem, SendSessionStatus } from '../../../model/Types';
 import { isSingleTextMessageSend } from '../../../model/SendTextPreparation';
 import { nativeCancelTransfer, nativeCancelTransferLocal, nativeGetCurrentSendSessionId } from '../../NativeBridge';
 import { NativeCancelTarget } from '../../../model/NativeTypes';
@@ -134,7 +134,8 @@ export function beginLocalSendSession(businessSessionId: string, device: Discove
     initiatedBy: SessionInitiator.local,
     peer: buildPeer(device),
     files: descriptors,
-    capabilities: capabilitiesFor(files)
+    capabilities: capabilitiesFor(files),
+    textMessage: isSingleTextMessageSend(files)
   });
   contexts.set(session.id, { device: device, businessSessionId: businessSessionId, files: files });
   return session.id;
@@ -160,7 +161,15 @@ export function finishLocalSend(unifiedSessionId: string, success: boolean, erro
   if (session === undefined || session.protocolKey !== LOCAL_SEND_KEY) {
     return;
   }
-  finish(unifiedSessionId, success ? SessionStage.succeeded : SessionStage.failed, errorMessage, errorCode);
+  // 拒收/取消是独立终态：调用方以 errorCode 透传发送状态（见 SendRepository 的终态错误码约定），
+  // 此处还原为 declined/cancelled 展示为拒收/已取消，其余非成功终态仍为失败
+  let stage: SessionStage = success ? SessionStage.succeeded : SessionStage.failed;
+  if (!success && errorCode === SendSessionStatus.declined) {
+    stage = SessionStage.declined;
+  } else if (!success && errorCode === SendSessionStatus.cancelled) {
+    stage = SessionStage.cancelled;
+  }
+  finish(unifiedSessionId, stage, errorMessage, errorCode);
 }
 
 function releaseContext(unifiedId: string): void {
@@ -177,13 +186,20 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return emptyDisplayDescriptor();
     }
+    // 手输文本消息在发送期也携带内容预览；文件选择器选取的 .txt 不带 preview。
+    let ctx: SendContext | undefined = contexts.get(sessionId);
+    let text: string = '';
+    if (ctx !== undefined && isSingleTextMessageSend(ctx.files)) {
+      text = ctx.files[0].preview ?? '';
+    }
     return {
       peerTitle: session.peer.displayName,
       peerSubtitle: session.peer.ip ?? '',
       badges: session.peer.badges,
       deviceType: session.peer.deviceType ?? 'mobile',
       directionLabel: $r('app.string.session_direction_send'),
-      supportsTextPreview: false
+      supportsTextPreview: text.length > 0,
+      textPreview: text
     };
   },
   confirm: (): void => {
@@ -195,7 +211,7 @@ const adapter: SessionAdapter = {
     let cancelPrep = prepCancels.get(sessionId);
     if (cancelPrep !== undefined) {
       prepCancels.delete(sessionId);
-      logger.info('准备期取消：中止校验和计算 统一会话=' + sessionId);
+      logger.debug('准备期取消：中止校验和计算 统一会话=' + sessionId);
       try {
         cancelPrep();
       } catch (e) {
@@ -211,13 +227,13 @@ const adapter: SessionAdapter = {
     // 取不到协议标识说明发送链路已不在活动状态：不下发并留痕，绝不回退到内部业务编号。
     let target = decideCancelTarget(nativeGetCurrentSendSessionId());
     if (target.length === 0) {
-      logger.warn('取消下发跳过：未取得协议标识（发送链路可能已不在活动状态） 统一会话=' + sessionId);
+      logger.debug('取消下发跳过：未取得协议标识（发送链路可能已不在活动状态） 统一会话=' + sessionId);
       return;
     }
-    logger.info('取消下发目标 协议标识=' + target + ' 统一会话=' + sessionId);
+    logger.debug('取消下发目标 协议标识=' + target + ' 统一会话=' + sessionId);
     try {
       nativeCancelTransferLocal(target);
-      logger.info('本地取消下发完成 协议标识=' + target);
+      logger.debug('本地取消下发完成 协议标识=' + target);
     } catch (e) {
       logger.warn('本地取消下发失败 协议标识=' + target + ' 原因=' + String(e));
     }
@@ -228,9 +244,9 @@ const adapter: SessionAdapter = {
       protocol: ctx.device.protocol
     };
     nativeCancelTransfer(cancelTarget, target).then((): void => {
-      logger.info('远端取消下发完成 协议标识=' + target);
+      logger.debug('对端取消下发完成 协议标识=' + target);
     }).catch((e: Object): void => {
-      logger.warn('远端取消下发失败 协议标识=' + target + ' 原因=' + String(e));
+      logger.warn('对端取消下发失败 协议标识=' + target + ' 原因=' + String(e));
     });
   },
   retry: (sessionId: string): void => {

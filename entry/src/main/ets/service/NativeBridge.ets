@@ -7,11 +7,6 @@ import {
   pollPendingRequests,
   respondTransfer,
   sendFiles,
-  createShareLink,
-  stopShareServer,
-  acceptWebDownload,
-  declineWebDownload,
-  startWebUpload,
   cancelTransferRemote,
   cancelTransfer,
   cancelLocalSession,
@@ -19,6 +14,7 @@ import {
   registerRecvFileFd,
   discardRecvFileFds,
   pollDebugLog,
+  setLogLevel as nativeSetLogLevelFn,
   getNativeVersion,
   getProtocolVersion,
   sanitizeFileName,
@@ -37,8 +33,18 @@ import {
   hashFileStreamFd,
   cancelHash,
   hashBuffer,
-  failFileDownload,
   failFileUpload,
+  startWebService,
+  stopWebService,
+  markWebServiceStopped,
+  updateWebServiceFiles,
+  setWebServiceUploadEnabled,
+  setWebUploadTargets,
+  acceptWebSession,
+  declineWebSession,
+  expireWebSession,
+  cancelWebDownload,
+  sweepWebSessions,
   registerEventListener as nativeRegisterEventListener,
   nativeMtaStartServer as nativeMtaStartServerFn,
   nativeMtaStopServer as nativeMtaStopServerFn,
@@ -50,7 +56,6 @@ import {
   ServerHandle,
   ServerStatus,
   SendResult,
-  ShareLinkInfo,
   SecurityContext,
   getSecurityContext,
   resetSecurityContext,
@@ -69,7 +74,6 @@ import {
   NativeFileToSend,
   NativeSendResult,
   NativeHttpError,
-  NativeShareLinkInfo,
   NativeCancelTarget,
   NativeDiscoveryConfig,
   NativeDiscoveredDevice,
@@ -83,9 +87,12 @@ import {
 
 import { DeviceChannel, DiscoveredDevice } from '../model/Types';
 import { getLogger } from '../utils/Logger';
+import { readJsonField } from '../utils/JsonGuard';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:NativeBridge', '桥接');
+// Rust 网页传输日志专用输出器：Rust target 位于 bridge::web 下的行归入网页传输模块。
+const rustWebLogger = getLogger(LogDomains.TRANSFER, 'HandySend:RustWeb', '网页传输');
 
 // 期望的原生库版本（必须与 Cargo.toml 和 oh-package.json5 一致）
 const EXPECTED_NATIVE_VERSION = '1.18.1';
@@ -167,7 +174,7 @@ function ensureNativeEventListener(): void {
   nativeEventListenerRegistered = true;
   nativeRegisterEventListener((err: Error | null, eventJson: string) => {
     if (err !== null) {
-      logger.error('Native event callback error: ' + String(err));
+      logger.error('原生事件回调异常：' + String(err));
       return;
     }
     dispatchNativeEvent(eventJson);
@@ -195,7 +202,7 @@ function dispatchNativeEvent(eventJson: string): void {
     try {
       snapshot[j](event);
     } catch (e) {
-      logger.error('Native event handler error: ' + String(e));
+      logger.error('原生事件处理异常：' + String(e));
     }
   }
 }
@@ -272,37 +279,65 @@ export function nativePollPendingRequests(): Array<NativeTransferRequest> {
   return result;
 }
 
-export async function nativeCreateShareLink(files: Array<NativeFileToSend>,
-  alias: string, appLanguage: string): Promise<NativeShareLinkInfo> {
-  let info: ShareLinkInfo = await createShareLink(JSON.stringify(files), alias, appLanguage);
-  let result: NativeShareLinkInfo = {
-    url: info.url,
-    port: info.port,
-    sessionId: info.sessionId
-  };
-  return result;
+// ── 自研 Web 服务（与 LocalSend/MTA 同级，独立端口；token 会话） ──
+
+/** 启动自研网页服务，返回实际绑定端口（配置为 JSON，字段见 Rust WebServiceConfig）。 */
+export async function nativeStartWebService(configJson: string): Promise<number> {
+  return await startWebService(configJson);
 }
 
-export async function nativeStopShareServer(): Promise<void> {
-  // 必须 await：底层 stopShareServer 返回 Promise（Rust 侧停止+正常模式重启），
-  // 丢弃会导致调用方在服务器实际停止前就继续执行，与后续操作竞争端口
-  await stopShareServer();
+/** 停止自研网页服务（幂等）。 */
+export function nativeStopWebService(): void {
+  stopWebService();
 }
 
-export function nativeAcceptWebDownload(sessionId: string): void {
-  acceptWebDownload(sessionId);
+/** 将网页分享标记为停止但保留服务，供页面显示结束态；由调用方延时硬停止。 */
+export function nativeMarkWebServiceStopped(): void {
+  markWebServiceStopped();
 }
 
-export function nativeDeclineWebDownload(sessionId: string): void {
-  declineWebDownload(sessionId);
+/** 就地替换自研网页服务的分享文件表，返回生效的文件数。 */
+export function nativeUpdateWebServiceFiles(filesJson: string): number {
+  return updateWebServiceFiles(filesJson);
 }
 
-export async function nativeStartWebUpload(appLanguage: string): Promise<number> {
-  return await startWebUpload(appLanguage);
+/** 设置自研网页服务的浏览器上传入口开关。 */
+export function nativeSetWebServiceUploadEnabled(enabled: boolean): void {
+  setWebServiceUploadEnabled(enabled);
 }
 
-export async function nativeRespondTransfer(sessionId: string, accept: boolean,
-  acceptedFileIds: Array<string> = []): Promise<void> {
+/** 设置浏览器上传的落盘目标（确认前调用；返回实际生效条目数）。 */
+export function nativeSetWebUploadTargets(token: string, targetsJson: string): number {
+  return setWebUploadTargets(token, targetsJson);
+}
+
+/** 取消指定网页下载批次。 */
+export function nativeCancelWebDownload(batchId: string): void {
+  cancelWebDownload(batchId);
+}
+
+/** 接受待确认的浏览器上传会话。 */
+export function nativeAcceptWebSession(token: string): void {
+  acceptWebSession(token);
+}
+
+/** 拒绝待确认的浏览器上传会话。 */
+export function nativeDeclineWebSession(token: string): void {
+  declineWebSession(token);
+}
+
+/** 令待确认的浏览器上传会话过期（浏览器收 408）。 */
+export function nativeExpireWebSession(token: string): void {
+  expireWebSession(token);
+}
+
+/** 触发自研网页服务的全量惰性打扫（供 ArkTS 侧超时驱动调用）。 */
+export async function nativeSweepWebSessions(): Promise<void> {
+  await sweepWebSessions();
+}
+
+export function nativeRespondTransfer(sessionId: string, accept: boolean,
+  acceptedFileIds: Array<string> = []): void {
   // 底层 respondTransfer 为同步 void，无需 await
   respondTransfer(sessionId, accept, acceptedFileIds);
 }
@@ -359,16 +394,29 @@ export function nativeGetCurrentSendSessionId(): string {
 
 /**
  * 轮询 Rust 日志缓冲并按原始级别输出到 hilog（非 MTA 链路的统一入口）。
- * 缓冲元素带 `level|message` 前缀（首个 `|` 为分隔符），
+ * 缓冲元素为 `level|target|message`（前两个 `|` 为分隔符，target 用于按子系统归并），
  * 级别 token 与 common/LogLevels.ets 一致；无前缀的旧格式按 info 兜底。
  */
 export function nativeFlushRustLogs(): void {
   let lines: Array<string> = pollDebugLog();
   for (let i = 0; i < lines.length; i++) {
     let line = lines[i];
+    // 缓冲格式 `level|target|message`：两级分隔，message 内可含 `|`
     let sep = line.indexOf('|');
     let level = sep >= 0 ? line.substring(0, sep) : 'info';
-    let message = sep >= 0 ? line.substring(sep + 1) : line;
+    let rest = sep >= 0 ? line.substring(sep + 1) : line;
+    let target = '';
+    let message = rest;
+    let targetSep = rest.indexOf('|');
+    if (targetSep >= 0) {
+      target = rest.substring(0, targetSep);
+      message = rest.substring(targetSep + 1);
+    }
+    // 网页传输子系统（Rust target 位于 bridge::web 下）归入 [网页传输]
+    if (target.includes('::bridge::web')) {
+      rustWebLogger.log(level, 'Rust: ' + message);
+      continue;
+    }
     if (level === 'error') {
       logger.error('Rust: ' + message);
     } else if (level === 'warn') {
@@ -383,11 +431,16 @@ export function nativeFlushRustLogs(): void {
 }
 
 /**
- * 带级别的 Rust 日志轮询：元素格式为 `level|message`（首个 `|` 为分隔符）。
+ * 带级别的 Rust 日志轮询：元素格式为 `level|target|message`（前两个 `|` 为分隔符）。
  * 供 MTA 链路按原始级别还原展示，替代文本启发式降级。
  */
 export function nativePollDebugLogWithLevels(): Array<string> {
   return pollDebugLog();
+}
+
+/** 同步 Rust 日志级别（debug/info），供诊断日志开关联动。 */
+export function nativeSetRustLogLevel(level: string): void {
+  nativeSetLogLevelFn(level);
 }
 
 // ── 加密 / 安全 NAPI 包装 ──
@@ -555,11 +608,7 @@ export function nativeCreateCancelToken(): NativeCancellationToken {
   return result;
 }
 
-// ── 失败文件下载/上传 NAPI 包装 ──
-
-export function nativeFailFileDownload(sessionId: string, fileId: string): void {
-  failFileDownload(sessionId, fileId);
-}
+// ── 失败文件上传 NAPI 包装 ──
 
 export function nativeFailFileUpload(sessionId: string, fileId: string): void {
   failFileUpload(sessionId, fileId);
@@ -615,8 +664,8 @@ export async function nativeMtaFetchThumbnail(goIp: string, port: number, taskId
 
 export async function nativeMtaStartServer(config: NativeMtaServerConfig): Promise<number> {
   let resultJson: string = await nativeMtaStartServerFn(JSON.stringify(config));
-  let parsed = JSON.parse(resultJson) as Record<string, Object>;
-  let portValue = parsed['port'];
+  let parsed: Object = JSON.parse(resultJson);
+  let portValue: Object | undefined = readJsonField(parsed, 'port');
   return typeof portValue === 'number' ? portValue : 0;
 }
 

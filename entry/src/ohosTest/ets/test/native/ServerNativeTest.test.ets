@@ -20,7 +20,7 @@ import {
   stopServer,
   createTestServerConfig,
   allocateTestPort,
-  sleep
+  waitUntil
 } from '../helper/TestHelper'
 
 export default function ServerNativeTest() {
@@ -114,7 +114,8 @@ export default function ServerNativeTest() {
       let stopStartPort: number = allocateTestPort()
       await startServer(createTestServerConfig(undefined, stopStartPort))
       await stopServer()
-      await sleep(200)
+      // 停止为异步收尾，轮询状态而非固定等待
+      await waitUntil((): boolean => !nativeGetServerStatus().running, 5000)
       let status: NativeServerStatus = nativeGetServerStatus()
       expect(status.running).assertFalse()
       done()

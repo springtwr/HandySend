@@ -24,7 +24,7 @@ pub fn init(alias: String, device_type: String, _log_level: Option<String>) -> R
     // 确保事件通道存在（幂等）
     env.ensure_event_channel();
 
-    log::debug!("Bridge initialized");
+    log::debug!("桥接层已初始化");
     Ok(())
 }
 
@@ -45,7 +45,7 @@ pub fn init_with_persisted_identity(
     // 确保事件通道存在（幂等）
     env.ensure_event_channel();
 
-    log::debug!("Bridge initialized with persisted identity");
+    log::debug!("桥接层已使用持久化身份初始化");
     Ok(())
 }
 
@@ -126,8 +126,7 @@ pub async fn hash_file_stream_fd(fd: i32, cancel_id: Option<String>) -> Result<S
 #[napi]
 pub fn cancel_hash(cancel_id: String) -> Result<()> {
     let state = NapiEnv::global().state;
-    let s = lock(state);
-    identity::cancel_hash(&s, &cancel_id)
+    identity::cancel_hash(state, &cancel_id)
         .map_err(|e| Error::from_reason(format!("Cancel hash failed: {e:#}")))
 }
 
@@ -156,8 +155,18 @@ pub fn get_protocol_version() -> String {
     localsend::model::discovery::PROTOCOL_VERSION_V2.to_string()
 }
 
-/// 排空并返回调试日志缓冲。元素格式为 `level|message`（旧格式无前缀时由调用方按 info 兜底）。
+/// 排空并返回调试日志缓冲。元素格式为 `level|target|message`（无前缀时由调用方按 info 兜底）。
 #[napi]
 pub fn poll_debug_log() -> Vec<String> {
     identity::drain_rust_log_buf_with_levels()
+}
+
+/// 同步 Rust 日志级别：诊断日志开启时放开 debug，关闭时只保留 info 及以上。
+#[napi]
+pub fn set_log_level(level: String) {
+    let filter = match level.as_str() {
+        "debug" => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Info,
+    };
+    log::set_max_level(filter);
 }

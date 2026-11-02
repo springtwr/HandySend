@@ -28,61 +28,80 @@ export struct TroubleshootPage {
   // 各 FAQ 条目的展开状态，默认全部折叠（与 faqItems 一一对应）
   @Local expandedItems: boolean[] = [
     false, false, false, false,
-    false, false, false, false,
-    false, false
+    false, false, false, false, false,
+    false,
+    false, false, false, false
   ];
-  // FAQ 条目数据数组：按「通用问题 / LocalSend 专属 / MTA 专属」三组排列，
+  // FAQ 条目数据数组：按「通用问题 / LocalSend 专属 / MTA 专属 / 网页专属」四组排列，
   // 每组首条的 groupTitleRes 非空，渲染时在该条之前显示分组标题
   private faqItems: FaqItem[] = [
-    // ── 通用问题（两个协议共有的症状） ──
+    // ── 通用问题（各传输方式共有的症状） ──
     {
       groupTitleRes: $r('app.string.troubleshoot_group_general'),
       titleRes: $r('app.string.troubleshoot_discovery_title'),
       descRes: $r('app.string.troubleshoot_discovery_desc'),
       hintRes: $r('app.string.troubleshoot_discovery_service_hint')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_duplicate_title'),
       descRes: $r('app.string.troubleshoot_duplicate_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_transfer_interrupt_title'),
       descRes: $r('app.string.troubleshoot_transfer_interrupt_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_offline_title'),
       descRes: $r('app.string.troubleshoot_offline_desc')
-    } as FaqItem,
-    // ── LocalSend 专属（仅局域网协议机制才会有） ──
+    },
     {
+      // ── LocalSend 专属（仅局域网协议机制才会有） ──
       groupTitleRes: $r('app.string.troubleshoot_group_localsend'),
       titleRes: $r('app.string.troubleshoot_firewall_title'),
       descRes: $r('app.string.troubleshoot_firewall_desc'),
       needPortSubst: true
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_connection_title'),
       descRes: $r('app.string.troubleshoot_connection_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_protocol_title'),
       descRes: $r('app.string.troubleshoot_protocol_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_multi_interface_title'),
       descRes: $r('app.string.troubleshoot_multi_interface_desc')
-    } as FaqItem,
+    },
     {
       titleRes: $r('app.string.troubleshoot_remote_title'),
       descRes: $r('app.string.troubleshoot_remote_desc')
-    } as FaqItem,
-    // ── MTA 专属（仅互传联盟机制才会有） ──
+    },
     {
+      // ── MTA 专属（仅互传联盟机制才会有） ──
       groupTitleRes: $r('app.string.troubleshoot_group_mta'),
       titleRes: $r('app.string.troubleshoot_mta_transfer_title'),
       descRes: $r('app.string.troubleshoot_mta_transfer_desc'),
       hintRes: $r('app.string.troubleshoot_mta_transfer_hint')
-    } as FaqItem,
+    },
+    {
+      // ── 网页专属（仅网页传输机制才会有） ──
+      groupTitleRes: $r('app.string.troubleshoot_group_web'),
+      titleRes: $r('app.string.troubleshoot_web_usage_title'),
+      descRes: $r('app.string.troubleshoot_web_usage_desc')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_web_unreachable_title'),
+      descRes: $r('app.string.troubleshoot_web_unreachable_desc')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_web_encryption_title'),
+      descRes: $r('app.string.troubleshoot_web_encryption_desc')
+    },
+    {
+      titleRes: $r('app.string.troubleshoot_web_background_title'),
+      descRes: $r('app.string.troubleshoot_web_background_desc')
+    },
   ];
 
   // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽

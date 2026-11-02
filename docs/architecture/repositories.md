@@ -20,15 +20,15 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 文件 | 职责 |
 |------|------|
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
-| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化） |
+| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化）、协议部分关闭提示的已展示签名 |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
 | `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、<br>Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
-| `ReceiveTargets.ets` | 接收直写目标（fd-direct）登记：Download/<包名>/ 目录授权 URI 缓存、会话目标路径登记表（sessionId → fileId → 最终路径），供取消/失败清理与相册保存读取 |
+| `ReceiveTargets.ets` | 接收直写目标登记：Download 目录授权缓存、接收文本目录与目标路径登记表，供取消/失败清理与相册保存读取 |
 | `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
-| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件、下载请求确认队列（accept/decline）；浏览器下载突发经 `WebDownloadAdapter` 建模为一个统一会话（见注 5） |
+| `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与会话登记；下载任务经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
 | `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询（独立存储文件 `handysend_receive_history`） |
@@ -45,22 +45,24 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > 逻辑会话标识唯一（时间戳 + 单调计数），并为其派生会话内唯一的文件标识，
 > `beginLocalSendSession` 返回的统一标识记入会话状态，进度与终态一律按该统一标识归属
 > （不做按逻辑标识的首匹配查找）；成功/失败/异常/取消各路径均保证终态落地。发送零拷贝：
-> prepareSendFiles 不落沙箱副本，sendToDevice 每次发送前 openSync 源文件并携带 fd
-> （fd-direct）；文本消息准备：prepareSendFiles 对命中「手动文本来源」入参的条目读取文本
+> prepareSendFiles 不落沙箱副本，暂存阶段已打开的源句柄随条目下传，sendToDevice 发送前
+> 优先 dup 该句柄（缺失/失效时按路径异步打开）并携带 fd（fd-direct），
+> Rust 侧以 pread 从文件头读取，多个会话并发复用同一句柄也不受共享偏移影响；
+> 文本消息准备：prepareSendFiles 对命中「手动文本来源」入参的条目读取文本
 > 内容填入 preview（见「文本消息准备」）。
 >
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收
-> 时预创建 Download/`<包名>/` 文件并注册 fd；取消/失败时删除预创建的不完整文件；文本消息
-> 与普通文件同落 Download/`<包名>/`）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
-> 三模式 + 文本消息拦截，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
+> 时预创建目标文件并注册 fd（普通文件落 Download/`<包名>/`，文本消息落 `filesDir/text_recv/`；落盘前先做存储预留检查，不足直接拒绝）；取消/失败时删除预创建的不完整文件；文本消息
+> 落沙箱后文件名仅为内部实现细节，UI 不再展示）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
+> 三模式，文本消息同样按模式决策，纯文本消息自动接收时复制到剪贴板并在屏幕中央提示，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
 > 注册表，确认/拒绝入口由中心经适配器回调本仓库。
 >
 > **注 4**：对外身份刷新详见 `docs/mta/MTA_PROTOCOL.md` 附录 A（本项目实现映射）；接收阶段经
 > `MtaReceiveAdapter` 翻译为统一会话操作，确认/拒绝/取消入口由中心经适配器回调本仓库。
 >
-> **注 5**：`WebDownloadAdapter` 以静默窗口/无活动超时判定终态，确认/拒绝经适配器回调
-> 本仓库。
+> **注 5**：`WebDownloadAdapter` 以下载批次维护任务：一个批次一个任务（单文件或 zip），
+> 服务端批次事件驱动进度与终态；网页访问只记日志，不建任务；取消按 `batchId` 停止响应。
 >
 > **注 6**：接收历史、收藏等服务因隔离性直接使用 `PreferencesUtil`，并按用途使用各自独立
 > 存储文件（设置 `handysend_settings`、任务历史 `handysend_session_history`、接收历史
@@ -89,17 +91,17 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | 文件 | 职责 |
 |------|------|
 | `TransferSessionRegistry.ets` | 会话注册表（SSOT）：会话与文件的全生命周期管理、可见窗口与回收、看门狗、聚合快照、清除历史与诊断（见注 7） |
-| `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（独立存储文件；单键 JSON、FIFO 有界、按会话标识幂等归档）（见注 8） |
+| `SessionHistoryStore.ets` | 任务历史存储：抽象接口 + `PreferencesUtil` 实现（独立存储文件；分段 JSON、FIFO 有界、按会话标识幂等归档）（见注 8） |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
-| `TransferMethodRegistry.ets` | 传输方式注册表（网页发送/网页接收/指定 IP，按「网页」与「其它方式」分组） |
+| `TransferMethodRegistry.ets` | 传输方式注册表（网页传输/指定 IP，按「网页」与「其它方式」分组） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |
-| `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，空发现数据源使其不成为发送页来源标签） |
+| `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，`deviceSource=false` 使其不成为发送页来源标签） |
 | `adapters/SessionAdapter.ets` | 适配器契约（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、资源释放）与适配器注册表；可选成员见注 9 |
 | `adapters/LocalSendSendAdapter.ets` | LocalSend 发送：会话创建/进度/终态/取消/重试 |
 | `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/cancelReceived/prepareUploadAborted → 终态；待确认超时终结与资源清理 |
 | `adapters/MtaSendAdapter.ets` | MTA 发送：承接 `MtaSendService` 生命周期、收发互斥与取消/重试，并把阶段文案/进度/终态翻译为注册表操作 |
 | `adapters/MtaReceiveAdapter.ets` | MTA 接收：REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态；文本消息与文件会话细节见注 10 |
-| `adapters/WebDownloadAdapter.ets` | Web 下载 burst 模型：静默窗口 + 接受后无活动超时；匿名对端描述符兜底 |
+| `adapters/WebDownloadAdapter.ets` | Web 下载批次：一个批次一个任务（单文件/zip），服务端批次事件驱动进度与终态，支持按 batchId 取消；匿名对端描述符兜底 |
 | `adapters/StubAdapter.ets` | 最小桩协议：验证「仅注册适配器与描述符即可被中心/详情页渲染并可取消」的扩展点；仅测试期由用例显式调用 `registerStubProtocol()`，不进入生产注册流程 |
 
 > **注 7**：`TransferSessionRegistry` 提供创建/追加文件/进度/状态/终结/取消/重试/查询、
@@ -115,8 +117,8 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 > （未提供时页面回退既有接收媒体信号）。
 >
 > **注 10**：文本消息会话经描述符携带文本，正向动作为「接受文本（不复制）」（回接受 ack，
-> 不进入下载流程；剪贴板写入由界面在用户选择「复制」时独立完成）；文件会话经
-> `getGalleryMediaFiles` 提供相册媒体。
+> 不进入下载流程，落盘完成通知回填真实路径后再按成功收尾；剪贴板写入由界面在用户选择「复制」时
+> 独立完成）；文件会话经 `getGalleryMediaFiles` 提供相册媒体。
 
 ## 事件回调机制
 
@@ -131,8 +133,14 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 | `sessionEnd` / `cancelReceived` | 会话结束/取消通知 |
 | `uploadProgress` | 传输进度实时推送（direction: recv/send） |
 | `prepareUploadAborted` | 发送方在确认前丢弃 prepare-upload 请求 |
-| `webSendPrepareDownload` | Web 分享时浏览器请求下载文件（需 accept/decline） |
-| `webSendFileDownload` | Web 分享时浏览器正在下载文件（Rust 侧自动处理文件流） |
+| `webAccess` | 网页访问（IP/UA/文件数）；只记日志与续期保活，不建任务 |
+| `webDownloadStarted` | 下载批次开始（`batchId` + 文件清单），应用建一个任务 |
+| `webDownloadProgress` / `webDownloadFileDone` | 批次内单文件进度/完成 |
+| `webDownloadEnded` | 下载批次终态（succeeded/failed/cancelled） |
+| `webSendSessionEnd` | 上传会话终结（仅上传） |
+| `webUploadPrepare` | 浏览器请求上传文件（需 accept/decline，载荷含 token 与声明清单） |
+| `webUploadProgress` | 浏览器上传字节进度 |
+| `webUploadDone` | 浏览器上传文件落盘完毕（载荷含最终路径） |
 
 ## 进度推送机制
 
@@ -162,12 +170,12 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 
 LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接收端据此把该条目识别为「文本消息」而非普通 `.txt` 文件。
 
-- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页分享）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
+- `SendRepository.prepareSendFiles(uris, manualTextUris?)` 是全部 LocalSend 发送入口（单目标点击设备、指定 IP 分享、多目标内联发送、网页传输）唯一的条目构造点，preview 补设归位于此，不再有第二处实现。
 - 「哪些条目属于手动文本」的筛选由 `entry/src/main/ets/model/SendTextPreparation.ets` 的纯函数 `collectManualTextUris(stagedFiles)` 唯一提供：仅收集 `isManualText === true`
   的条目源定位，保持输入相对顺序，不依赖系统 API / 原生桥接 / UI 上下文（由 `entry/src/ohosTest/ets/test/model/SendTextPreparationTest.test.ets` 的纯函数用例覆盖）。
 - 同模块的纯函数 `isAllManualText(stagedFiles)` 唯一提供「全部暂存条目是否均为手动文本」判定：集合非空且每个条目均为手动文本时为真，空集合为假（沿用既有约定并由上述纯函数用例锁定），存在任一
   未标记来源的条目（`undefined` 或显式 `false`）即为假。发送参数构建（`SendViewModel.buildMtaSendParams`）调用该函数，不再自行构建布尔数组或内联累算。
-- 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页分享路径 `shareByLink`）
+- 调用方（`SendViewModel` 的预准备缓存路径 `prepareAndCacheItems`、网页传输路径 `shareByLink`）
   均调用该纯函数取得源定位列表并作为 `manualTextUris` 传入 `prepareSendFiles`；未传入该入参时不补设任何 preview（向后兼容）。
 - 补设按条目独立进行：手动文本条目携带 preview，用户主动选择的 `.txt` 文件不带 preview（`StagedFile.isManualText` 是区分二者的唯一依据），混合内容互不影响。
 - 文本临时文件缺失/不可读时 preview 留空，条目仍按普通文件发送，不影响发送流程完成。
@@ -182,17 +190,19 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 文本内容在所有链路上都是**文件**，会话与历史上只保留路径与元数据：
 
-- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 对文本与普通接收文件使用**同一目标目录**（`Download/<包名>/`）
-  与**同一重名规则**（`uniquePath`，同名自动加序号、不覆盖）；接收完成处理不再"读全文后删除缓存文件"，文本文件长期保留在接收目录。
-- **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**把文本写入接收目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
+- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 按条目是否文本消息分流目标目录——普通文件落 `Download/<包名>/`，
+  文本消息落应用私有接收文本目录（`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供），重名规则一致（`uniquePath`，同名自动加序号、不覆盖）；
+  接收完成处理不再"读全文后删除缓存文件"，文本文件长期保留在接收文本目录。
+- **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**先做存储预留检查、再把文本写入接收文本目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
 - **发送**：局域网手输文本（`SendViewModel.stageTextFile`）与互传发送文本（`MtaSendService.writeSharedTextFile`）写入应用**私有持久目录** `filesDir/text_send/`，
   路径统一由 `SendRepository.sendTextDir` 提供；未发起发送的暂存文本在移出/清空暂存时仍按既有规则删除，已发起发送的文本（`StagedFile.persisted`）不被暂存清理删除。
-  **清除与清理边界**：用户确认「清除任务历史」时由 `SendRepository.clearSendTextFiles` 清空该目录（best-effort），发送暂存列表随变更通知自检移除底层文件已消失的手动文本条目；
+  **清除与清理边界**：用户确认「清空任务历史」时由 `SendRepository.clearSendTextFiles` 清空该目录（best-effort），发送暂存列表随变更通知自检移除底层文件已消失的手动文本条目；
   该目录**不在**冷启动清理范围内（冷启动清理只针对手动文本暂存临时目录 `{cacheDir}/send/` 与旧版本遗留的 `{filesDir}/send/`，见 `SendRepository.cleanupSendDirWithContext`），
-  故每次启动都不会破坏已发送文本的预览，文件只在用户主动清除任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
+  故每次启动都不会破坏已发送文本的预览，文件只在用户主动清空任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
 - **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经 `LocalSendReceiveAdapter.updateReceiveSessionFilePath` 在会话终结前写入逐文件路径；
   发送侧由发送适配器在会话创建时携带。归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
-- **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时忽略）；`ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
+- **文件级接收历史**：`ReceiveHistoryEntry` 不再写入正文字段（旧数据中的该字段读取时剥离并全量回写一次）；
+  `ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
   接收历史页的查看全文/复制改为经共用工具 `utils/FileTextUtil.readTextOfLocation` 读取文件（沙箱路径直读、选择器 URI 经文件描述符读取，失败返回不可用并由界面明确提示）。
 
 ## 预准备结果缓存与失效

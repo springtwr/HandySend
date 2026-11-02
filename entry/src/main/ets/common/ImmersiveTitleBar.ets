@@ -93,7 +93,7 @@ function resolveMaterialLevel(): hdsMaterial.MaterialLevel {
         level = hdsMaterial.MaterialLevel.SMOOTH;
       }
     } catch (e) {
-      logger.warn('query system material types failed, fallback to adaptive level: ' + String(e));
+      logger.warn('查询系统材质类型失败，回退到自适应档位：' + String(e));
     }
   }
   cachedMaterialLevel = level;

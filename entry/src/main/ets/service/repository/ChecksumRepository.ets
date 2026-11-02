@@ -1,7 +1,7 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { SendFileItem } from '../../model/Types';
 import {
-  nativeCreateCancelToken, nativeHashFileStreamFd
+  nativeCreateCancelToken, nativeHashFileStreamFd, nativeCancelHash
 } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
@@ -72,9 +72,9 @@ export function shouldEmitChecksumAggregate(aggregateBytes: number, totalBytes: 
 }
 
 export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
-  options?: ChecksumRunOptions): Promise<void> {
+  options?: ChecksumRunOptions): Promise<Array<string>> {
   if (!isCreateChecksums()) {
-    return;
+    return [];
   }
   // 过滤出需要计算 hash 的文件（跳过已有 hash 的），并累计本次待哈希字节总量
   let needHash: Array<number> = [];
@@ -87,7 +87,7 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     }
   }
   if (needHash.length === 0) {
-    return;
+    return [];
   }
   checksumTotal = files.length;
   checksumProgress = files.length - needHash.length;
@@ -97,6 +97,8 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     options.onAggregate(0, pendingTotalBytes);
   }
   let completedBytes: number = 0;
+  // 本轮哈希失败的文件索引：循环结束后统一剔除（循环内直接删除会使 needHash 索引错位）
+  let failedIndices: Array<number> = [];
   for (let idx = 0; idx < needHash.length; idx++) {
     // 批次中止判定：全部参与会话终态时不再继续剩余文件
     if (options !== undefined && !options.shouldContinue()) {
@@ -104,12 +106,41 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
     }
     let i = needHash[idx];
     let cancelId: string = '';
+    // 哈希是否已移交 Rust：仅移交后 Rust 负责令牌收尾；此前失败由本层取消令牌
+    let hashStarted: boolean = false;
     try {
-      // fd-direct：源文件为 picker URI/沙箱路径，先 openSync 拿到 fd 再交给 Rust 流式哈希
-      // （fd 所有权移交 Rust，计算完成或取消后由 Rust 关闭，本层不 close）
-      let file = fs.openSync(files[i].filePath, fs.OpenMode.READ_ONLY);
+      // fd-direct：源文件为 picker URI/沙箱路径，先建取消令牌再异步 open 拿 fd 交给 Rust 流式哈希。
+      // 句柄归属：open 成功后该 fd 的所有权即移交 Rust（由 Rust 在计算完成或取消后关闭），
+      // 本层任何路径（成功/失败/取消）都不再 close，避免双关；open 本身抛错时无句柄可关。
+      // 令牌先建：建令牌抛错时尚未打开句柄，无泄漏。
       let token = nativeCreateCancelToken();
       cancelId = token.id;
+      // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）。
+      // dup 副本与暂存句柄共享文件偏移：读取前归位到文件头，
+      // 否则复用上一次读完（停在末尾）的偏移会算出空内容的哈希
+      let file: fs.File | undefined = undefined;
+      let knownFd: number | undefined = files[i].sourceFd;
+      if (knownFd !== undefined) {
+        let duped: fs.File | undefined = undefined;
+        try {
+          duped = fs.dup(knownFd);
+          // 与发送链路同一校验：句柄编号可能已被其他文件复用，大小不一致则回退按路径打开
+          if (fs.statSync(duped.fd).size === files[i].size) {
+            fs.lseek(duped.fd, 0, fs.WhenceType.SEEK_SET);
+            file = duped;
+          }
+        } catch (_dupErr) {
+        }
+        if (file === undefined && duped !== undefined) {
+          try {
+            fs.closeSync(duped);
+          } catch (_closeErr) {
+          }
+        }
+      }
+      if (file === undefined) {
+        file = await fs.open(files[i].filePath, fs.OpenMode.READ_ONLY);
+      }
       if (options !== undefined) {
         activeRuns.set(cancelId, {
           runTotalBytes: pendingTotalBytes,
@@ -122,14 +153,22 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
         options.onCancelIdChanged(cancelId);
       }
       let hash = await nativeHashFileStreamFd(file.fd, token.id);
+      hashStarted = true;
       files[i].hash = hash;
-      logger.debug('checksum[' + i + ']: path=' + files[i].filePath + ' sha256=' +
-        (hash.length > 0 ? hash.substring(0, 16) + '...' : '(empty)'),
+      logger.debug('校验和[' + i + ']: path=' + files[i].filePath + ' sha256=' +
+        (hash.length > 0 ? hash.substring(0, 16) + '...' : '（空）'),
         { fileId: files[i].fileId });
     } catch (e) {
-      // 打开/哈希失败置空哈希并继续，但须留痕以区分"未计算"与"计算失败"
+      // 打开/哈希失败：记空哈希留痕后登记剔除——不可读的文件发送亦必失败，
+      // 继续携带会导致发送阶段报错，提前剔除并计数
       files[i].hash = '';
-      logger.warn('checksum[' + i + '] 失败: path=' + files[i].filePath + ' error=' + String(e),
+      failedIndices.push(i);
+      if (!hashStarted && cancelId.length > 0) {
+        // 哈希未移交 Rust：令牌无人收尾，本层取消以回收（已收尾时忽略不存在错误）
+        nativeCancelHash(cancelId).catch((_cancelErr: Object): void => {
+        });
+      }
+      logger.warn('校验和[' + i + '] 失败：path=' + files[i].filePath + ' error=' + String(e),
         { fileId: files[i].fileId });
     } finally {
       // 该文件运行态结束：注销并清空适配器的准备取消登记
@@ -151,9 +190,19 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
   }
   // 清空在途运行态，避免批次结束后残留
   activeRuns.clear();
+  // 剔除哈希失败的文件（倒序删除保证索引有效；调用方回填按路径匹配，不依赖本数组索引对齐）
+  let failedPaths: Array<string> = [];
+  if (failedIndices.length > 0) {
+    for (let r = failedIndices.length - 1; r >= 0; r--) {
+      failedPaths.push(files[failedIndices[r]].filePath);
+      files.splice(failedIndices[r], 1);
+    }
+    logger.warn('已剔除哈希失败文件 ' + failedIndices.length + ' 个');
+  }
   checksumTotal = 0;
   checksumProgress = 0;
   notifyChange();
+  return failedPaths;
 }
 
 /**

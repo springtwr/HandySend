@@ -3,11 +3,11 @@ import { fileIo as fs } from '@kit.CoreFileKit'
 import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/ets/model/Types'
 import {
   SessionDataFlow,
-  SessionEventKind,
   SessionInitiator,
   SessionStage
 } from '../../../../main/ets/model/transfer/TransferSession'
 import {
+  LOCAL_SEND_KEY,
   beginLocalSendSession,
   updateLocalSendProgress,
   finishLocalSend
@@ -17,7 +17,8 @@ import {
   ensureReceiveSession,
   finishLocalReceiveSession,
   markReceiveActive,
-  updateReceiveProgress
+  updateReceiveProgress,
+  updateReceiveSessionFilePath
 } from '../../../../main/ets/service/transfer/adapters/LocalSendReceiveAdapter'
 import { getAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
 import {
@@ -41,12 +42,18 @@ import {
   setMtaReceiveInvokers
 } from '../../../../main/ets/service/transfer/adapters/MtaReceiveAdapter'
 import {
+  WEB_UPLOAD_KEY,
+  beginWebUploadBurst,
+  handleWebUploadDone,
+  handleWebUploadProgress,
+  isWebUploadTextMessage
+} from '../../../../main/ets/service/transfer/adapters/WebUploadAdapter'
+import {
   WEB_DOWNLOAD_KEY,
-  beginWebDownloadBurst,
-  handleWebFileDownload,
-  handleWebDownloadProgress,
-  markWebDownloadAccepted,
-  markWebDownloadDeclined
+  beginWebDownloadBatch,
+  handleWebDownloadEnded,
+  handleWebDownloadFileDone,
+  handleWebDownloadProgress
 } from '../../../../main/ets/service/transfer/adapters/WebDownloadAdapter'
 import {
   ReceivedFileEntry,
@@ -63,7 +70,8 @@ import {
   declineSession,
   querySessions,
   resetRegistry,
-  updateSessionFilePath
+  updateSessionFilePath,
+  updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { uniquePath } from '../../../../main/ets/service/repository/ReceiveTargets'
 import { isTextFile } from '../../../../main/ets/utils/MimeUtils'
@@ -74,6 +82,7 @@ import {
 } from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import { createSendSession } from '../../../../main/ets/service/repository/SendRepository'
 import { liveSessionRow, rowHasByteProgress } from '../../../../main/ets/viewmodel/TransferCenterViewModel'
+import { SessionHistoryEntry } from '../../../../main/ets/model/transfer/SessionHistory'
 
 function device(): DiscoveredDevice {
   return {
@@ -101,6 +110,17 @@ function textReceiveState(senderName: string, text: string): ReceiverState {
   request.textContent = text
   state.receiveRequest = request
   return state
+}
+
+/** 取任务历史中某会话首个文件的归档路径（无条目、无文件或无路径时返回空串）。 */
+function historyPathOf(sessionId: string): string {
+  let entries: Array<SessionHistoryEntry> = getHistory();
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].sessionId === sessionId && entries[i].files.length > 0) {
+      return entries[i].files[0].path ?? '';
+    }
+  }
+  return '';
 }
 
 export default function AdaptersTest() {
@@ -137,6 +157,56 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('localsendSend_declinedAndCancelledTerminal', 0, () => {
+      resetRegistry()
+      // 拒收终态经 errorCode 透传发送状态：展示为拒收而非失败
+      let declinedId = beginLocalSendSession('single_declined', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      finishLocalSend(declinedId, false, '对方拒绝接收', 'declined')
+      let declined = getSession(declinedId)
+      if (declined !== undefined) {
+        expect(declined.stage).assertEqual(SessionStage.declined)
+      }
+      // 本地取消终态同理：展示为已取消而非失败
+      let cancelledId = beginLocalSendSession('single_cancelled', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/b',
+          fileName: 'b',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      finishLocalSend(cancelledId, false, '对方已取消接收', 'cancelled')
+      let cancelled = getSession(cancelledId)
+      if (cancelled !== undefined) {
+        expect(cancelled.stage).assertEqual(SessionStage.cancelled)
+      }
+      // 其他失败仍为失败终态
+      let failedId = beginLocalSendSession('single_failed', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/c',
+          fileName: 'c',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      finishLocalSend(failedId, false, '连接失败', 'finishedWithErrors')
+      let failed = getSession(failedId)
+      if (failed !== undefined) {
+        expect(failed.stage).assertEqual(SessionStage.failed)
+      }
+      resetRegistry()
+    })
+
     it('localsendSend_textMessage_noByteProgress', 0, () => {
       resetRegistry()
       // 单条文本消息走「仅预览送达」路径：接收端不上传文件、无字节进度事件，
@@ -155,7 +225,16 @@ export default function AdaptersTest() {
       expect(textSession !== undefined).assertTrue()
       if (textSession !== undefined) {
         expect(textSession.capabilities.hasByteProgress).assertFalse()
+        expect(textSession.textMessage).assertTrue()
         expect(rowHasByteProgress(liveSessionRow(textSession))).assertFalse()
+      }
+      // 发送期即按文本消息展示（内容来自发送条目 preview），不再是普通文件
+      let sendAdapter = getAdapter(LOCAL_SEND_KEY)
+      expect(sendAdapter !== undefined).assertTrue()
+      if (sendAdapter !== undefined) {
+        let display = sendAdapter.getDisplayDescriptor(textId)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('你好')
       }
       // 普通文件发送（不承载文本内容）保持字节进度
       let fileId = beginLocalSendSession('file_1', device(), [
@@ -171,7 +250,15 @@ export default function AdaptersTest() {
       expect(fileSession !== undefined).assertTrue()
       if (fileSession !== undefined) {
         expect(fileSession.capabilities.hasByteProgress).assertTrue()
+        expect(fileSession.textMessage).assertFalse()
+        // 尚未产生字节时不显示 0% 进度条（改由阶段文案表达），产生字节后进入字节进度口径
+        expect(rowHasByteProgress(liveSessionRow(fileSession))).assertFalse()
+        updateFileProgress(fileId, 'f2', 40, 100)
         expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
+      }
+      if (sendAdapter !== undefined) {
+        let fileDisplay = sendAdapter.getDisplayDescriptor(fileId)
+        expect(fileDisplay.supportsTextPreview).assertFalse()
       }
       resetRegistry()
     })
@@ -227,6 +314,11 @@ export default function AdaptersTest() {
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('你好')
       }
+      // 接受时预写最终路径、全部完成后才终结：归档条目携带路径，详情页可读取正文
+      let textSavedPath = '/storage/text_recv/message.txt'
+      updateReceiveSessionFilePath('sess-txt', 'f1', textSavedPath)
+      finishLocalReceiveSession('sess-txt', SessionStage.succeeded)
+      expect(historyPathOf(id)).assertEqual(textSavedPath)
       // 无文本内容的普通文件：不产生文本预览
       let plainId = ensureReceiveSession('sess-bin', 'Sender', '10.0.0.3', 'fp', 'mobile', 'Model',
         [{
@@ -340,6 +432,24 @@ export default function AdaptersTest() {
       let done = getSession(id)
       if (done !== undefined) {
         expect(done.stage).assertEqual(SessionStage.partiallyFailed)
+      }
+      resetRegistry()
+    })
+
+    it('mtaSend_rejectedTerminalShowsDeclined', 0, () => {
+      resetRegistry()
+      // 对端拒绝终态：展示为拒收而非失败
+      let id = beginMtaSendSession('task-reject', 'MtaPeer', 'mobile', 'Model', 'Brand',
+        [{
+          fileId: 'f1',
+          fileName: 'a',
+          fileType: '',
+          totalBytes: 200
+        }])
+      finishMtaSendSession(id, MtaSendTerminal.rejected, '对方拒绝接收', 'rejected')
+      let done = getSession(id)
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.declined)
       }
       resetRegistry()
     })
@@ -891,54 +1001,105 @@ export default function AdaptersTest() {
       resetSessionHistoryCache()
     })
 
-    it('webDownload_burstPendingThenDecline', 0, () => {
+    it('webDownload_batchCreatesOneTask', 0, () => {
       resetRegistry()
-      let id = beginWebDownloadBurst('192.168.1.50', true)
+      let id = beginWebDownloadBatch('batch-1', '192.168.1.50', [{
+        fileId: 'f1',
+        fileName: 'report.pdf',
+        fileType: 'application/pdf',
+        totalBytes: 100
+      }, {
+        fileId: 'f2',
+        fileName: 'photo.jpg',
+        fileType: 'image/jpeg',
+        totalBytes: 200
+      }])
       let s = getSession(id)
       expect(s !== undefined).assertTrue()
       if (s !== undefined) {
-        expect(s.stage).assertEqual(SessionStage.awaitingConfirmation)
+        expect(s.stage).assertEqual(SessionStage.active)
         expect(s.dataFlow).assertEqual(SessionDataFlow.outbound)
         expect(s.initiatedBy).assertEqual(SessionInitiator.remote)
+        expect(s.files.length).assertEqual(2)
       }
-      // 同 IP 再次请求复用同一突发会话
-      let again = beginWebDownloadBurst('192.168.1.50', true)
+      // 同 batchId 幂等复用，不重复建任务
+      let again = beginWebDownloadBatch('batch-1', '192.168.1.50', [])
       expect(again).assertEqual(id)
-      handleWebFileDownload('192.168.1.50', 'f1', 'report.pdf', 100)
-      handleWebDownloadProgress('192.168.1.50', 'f1', 100, 100)
-      let mid = getSession(id)
-      if (mid !== undefined) {
-        expect(mid.files.length).assertEqual(1)
-        expect(mid.files[0].fileName).assertEqual('report.pdf')
-        expect(mid.bytesSent).assertEqual(100)
-      }
-      // 对端条目只显示纯 IP：标题为 IP、副标题为空（网页来源由来源徽标表达）
-      let adapter = getAdapter(WEB_DOWNLOAD_KEY)
-      expect(adapter !== undefined).assertTrue()
-      if (adapter !== undefined) {
-        let display = adapter.getDisplayDescriptor(id)
-        expect(display.peerTitle).assertEqual('192.168.1.50')
-        expect(display.peerSubtitle).assertEqual('')
-      }
-      markWebDownloadDeclined('192.168.1.50')
-      let declined = getSession(id)
-      if (declined !== undefined) {
-        expect(declined.stage).assertEqual(SessionStage.declined)
+      handleWebDownloadProgress('batch-1', 'f1', 100, 100)
+      handleWebDownloadFileDone('batch-1', 'f1', 100)
+      handleWebDownloadEnded('batch-1', 'succeeded')
+      let done = getSession(id)
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.succeeded)
       }
       resetRegistry()
     })
 
-    it('webDownload_partiallyFailedNotReused', 0, () => {
+    it('webDownload_textPreviewOnlyForDeclaredTextMessage', 0, () => {
       resetRegistry()
-      // 部分失败属终态：同 IP 新请求须新建突发，不得复用旧会话
-      let id = beginWebDownloadBurst('192.168.1.60', true)
-      markWebDownloadAccepted('192.168.1.60')
-      finish(id, SessionStage.partiallyFailed, '')
-      let next = beginWebDownloadBurst('192.168.1.60', true)
-      expect(next === id).assertFalse()
-      let s = getSession(next)
-      if (s !== undefined) {
-        expect(s.stage).assertEqual(SessionStage.awaitingConfirmation)
+      // 普通 .txt 分享：文件表不带 preview → 不按文本消息展示
+      let fileId = beginWebDownloadBatch('batch-txt', '192.168.1.52', [{
+        fileId: 'f1',
+        fileName: 'note.txt',
+        fileType: 'text/plain',
+        totalBytes: 10
+      }])
+      let fileSession = getSession(fileId)
+      expect(fileSession !== undefined).assertTrue()
+      if (fileSession !== undefined) {
+        expect(fileSession.textMessage).assertFalse()
+      }
+      let adapter = getAdapter(WEB_DOWNLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(fileId)
+        expect(display.supportsTextPreview).assertFalse()
+      }
+      resetRegistry()
+
+      // 手输文本消息：文件表携带 preview → 保留文本消息语义
+      let textId = beginWebDownloadBatch('batch-text', '192.168.1.53', [{
+        fileId: 'f1',
+        fileName: 'text_1.txt',
+        fileType: 'text/plain',
+        totalBytes: 5,
+        path: '/storage/text_send/text_1.txt'
+      }], '你好')
+      let textSession = getSession(textId)
+      expect(textSession !== undefined).assertTrue()
+      if (textSession !== undefined) {
+        expect(textSession.textMessage).assertTrue()
+      }
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(textId)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('你好')
+      }
+      // 批次结束归档：分享源路径随描述符写入历史（详情页可读取正文）
+      handleWebDownloadEnded('batch-text', 'succeeded')
+      expect(historyPathOf(textId)).assertEqual('/storage/text_send/text_1.txt')
+      resetRegistry()
+    })
+
+    it('webDownload_partialFailureMapsPartiallyFailed', 0, () => {
+      resetRegistry()
+      let id = beginWebDownloadBatch('batch-2', '192.168.1.51', [{
+        fileId: 'f1',
+        fileName: 'a.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 10
+      }, {
+        fileId: 'f2',
+        fileName: 'b.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 10
+      }])
+      handleWebDownloadProgress('batch-2', 'f1', 10, 10)
+      handleWebDownloadFileDone('batch-2', 'f1', 10)
+      handleWebDownloadEnded('batch-2', 'failed', '网络中断')
+      let failed = getSession(id)
+      if (failed !== undefined) {
+        expect(failed.stage).assertEqual(SessionStage.partiallyFailed)
       }
       resetRegistry()
     })
@@ -1030,47 +1191,6 @@ export default function AdaptersTest() {
       expect(back.abandoned).assertFalse()
     })
 
-    it('webDownload_acceptAdvancesViaRegistry', 0, () => {
-      resetRegistry()
-      let id = beginWebDownloadBurst('192.168.1.51', true)
-      let pending = getSession(id)
-      if (pending !== undefined) {
-        expect(pending.stage).assertEqual(SessionStage.awaitingConfirmation)
-      }
-      // 接受经注册表推进：状态转进行中并补记 confirmed / started 时间线
-      markWebDownloadAccepted('192.168.1.51')
-      let accepted = getSession(id)
-      if (accepted !== undefined) {
-        expect(accepted.stage).assertEqual(SessionStage.active)
-        let confirmed = 0
-        let started = 0
-        for (let i = 0; i < accepted.timeline.length; i++) {
-          if (accepted.timeline[i].kind === SessionEventKind.confirmed) {
-            confirmed++
-          }
-          if (accepted.timeline[i].kind === SessionEventKind.started) {
-            started++
-          }
-        }
-        expect(confirmed).assertEqual(1)
-        expect(started).assertEqual(1)
-      }
-      // 幂等：重复接受不重复推进、不重复补记时间线
-      markWebDownloadAccepted('192.168.1.51')
-      let again = getSession(id)
-      if (again !== undefined) {
-        expect(again.stage).assertEqual(SessionStage.active)
-        let confirmedAgain = 0
-        for (let i = 0; i < again.timeline.length; i++) {
-          if (again.timeline[i].kind === SessionEventKind.confirmed) {
-            confirmedAgain++
-          }
-        }
-        expect(confirmedAgain).assertEqual(1)
-      }
-      resetRegistry()
-    })
-
     it('mtaReceive_textAccept_noBehaviorChange', 0, () => {
       let acceptedDownload = 0
       let acceptedText = 0
@@ -1102,9 +1222,16 @@ export default function AdaptersTest() {
         let display = adapter.getDisplayDescriptor(copyId.id)
         expect(display.supportsTextPreview).assertTrue()
         expect(display.textPreview).assertEqual('你好')
-        adapter.confirm(copyId.id)
+        confirmSession(copyId.id)
         expect(acceptedText).assertEqual(1)
         expect(acceptedDownload).assertEqual(0)
+        // 落盘通知到达前保持进行中：路径尚未归档，不提前终结（否则历史条目缺路径）
+        let copying = getSession(copyId.id)
+        if (copying !== undefined) {
+          expect(copying.stage).assertEqual(SessionStage.active)
+        }
+        // 落盘完成通知回填真实路径后，按成功收尾
+        notifyMtaTextSaved('/storage/recv/text_recv/sharedText.txt')
         let copied = getSession(copyId.id)
         if (copied !== undefined) {
           expect(copied.stage).assertEqual(SessionStage.succeeded)
@@ -1117,8 +1244,9 @@ export default function AdaptersTest() {
       let closeId = findByProtocol('mta-receive', 'mta-receive-session')
       expect(closeId !== undefined).assertTrue()
       if (closeId !== undefined && adapter !== undefined) {
-        adapter.confirm(closeId.id)
+        confirmSession(closeId.id)
         expect(acceptedText).assertEqual(2)
+        notifyMtaTextSaved('/storage/recv/text_recv/sharedText (1).txt')
         let closed = getSession(closeId.id)
         if (closed !== undefined) {
           expect(closed.stage).assertEqual(SessionStage.succeeded)
@@ -1185,10 +1313,15 @@ export default function AdaptersTest() {
       expect(findByProtocol('mta-receive', 'mta-receive-session') !== undefined).assertTrue()
       resetRegistry()
 
-      // 网页下载：协议层无会话标识概念 → 为空；内部突发身份不上屏
-      let webId = beginWebDownloadBurst('192.168.1.60', true)
+      // 网页下载：batchId 即协议会话标识
+      let webId = beginWebDownloadBatch('batch-7', '192.168.1.60', [{
+        fileId: 'f1',
+        fileName: 'a.bin',
+        fileType: 'application/octet-stream',
+        totalBytes: 10
+      }])
       let web = getSession(webId)
-      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('')
+      expect(web !== undefined ? web.protocolSessionId : 'x').assertEqual('batch-7')
 
       resetRegistry()
     })
@@ -1290,6 +1423,104 @@ export default function AdaptersTest() {
       resetSessionHistoryCache()
     })
 
+    it('mtaReceiveText_acceptThenSaved_pathArchived', 0, () => {
+      resetRegistry()
+      resetSessionHistoryCache()
+      setMtaReceiveInvokers(
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): Array<MediaFileInfo> => []
+      )
+      handleMtaReceiveState(textReceiveState('MtaSender', '落盘后归档'))
+      let session = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(session !== undefined).assertTrue()
+      if (session === undefined) {
+        resetRegistry()
+        resetSessionHistoryCache()
+        return
+      }
+      // 走统一确认入口（与界面一致）：注册表先把阶段推进到进行中，再触发适配器接受文本
+      confirmSession(session.id)
+      // 接受后先落盘：通知到达前会话保持进行中，避免在真实路径可得前先行归档
+      let activeSession = getSession(session.id)
+      expect(activeSession !== undefined ? activeSession.stage : SessionStage.failed)
+        .assertEqual(SessionStage.active)
+
+      // 落盘通知：回填真实路径后按成功收尾，历史条目同样携带该路径（详情页可读取内容）
+      let savedPath = '/storage/recv/text_recv/sharedText.txt'
+      notifyMtaTextSaved(savedPath)
+      let done = getSession(session.id)
+      expect(done !== undefined ? done.stage : SessionStage.failed).assertEqual(SessionStage.succeeded)
+      expect(done !== undefined ? done.files[0].path : '').assertEqual(savedPath)
+      let entries = getHistory()
+      let matched = false
+      for (let i = 0; i < entries.length; i++) {
+        if (entries[i].sessionId === session.id) {
+          matched = true
+          expect(entries[i].files[0].path).assertEqual(savedPath)
+        }
+      }
+      expect(matched).assertTrue()
+      resetRegistry()
+      resetSessionHistoryCache()
+    })
+
+    it('mtaReceive_resetSnapshot_noGhostConfirm', 0, () => {
+      resetRegistry()
+      setMtaReceiveInvokers(
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): void => {
+        },
+        (): Array<MediaFileInfo> => []
+      )
+      handleMtaReceiveState(textReceiveState('MtaSender', '复位快照'))
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      confirmSession(found.id)
+      notifyMtaTextSaved('/storage/text_recv/sharedText.txt')
+      let beforeReset: number = querySessions({ protocolKey: MTA_RECEIVE_KEY }).length
+      // 文本收尾复位：receiveRequest 已清空、阶段仍停留在 REQUEST_RECEIVED（服务真实通知顺序）
+      let resetState = new ReceiverState()
+      resetState.stage = ReceiverStage.REQUEST_RECEIVED
+      handleMtaReceiveState(resetState)
+      let afterReset: number = querySessions({ protocolKey: MTA_RECEIVE_KEY }).length
+      expect(afterReset).assertEqual(beforeReset)
+      resetRegistry()
+    })
+
+    it('mtaReceive_serviceReset_finishesPending', 0, () => {
+      resetRegistry()
+      handleMtaReceiveState(textReceiveState('MtaSender', '等待确认'))
+      let found = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found === undefined) {
+        resetRegistry()
+        return
+      }
+      // 服务决策超时/停止后回到 SERVICE_RUNNING：待确认会话已不可能被接受，应立即按已取消收口
+      let resetState = new ReceiverState()
+      resetState.stage = ReceiverStage.SERVICE_RUNNING
+      handleMtaReceiveState(resetState)
+      let done = getSession(found.id)
+      expect(done !== undefined ? done.stage : SessionStage.active).assertEqual(SessionStage.cancelled)
+      resetRegistry()
+    })
+
     it('mtaReceive_thumbnailFastPath_createdWithPreview', 0, () => {
       resetRegistry()
       // 快路径：预取在预算内完成，待确认状态创建时即携带非空缩略图路径，
@@ -1344,6 +1575,127 @@ export default function AdaptersTest() {
       expect(after !== undefined).assertTrue()
       if (after !== undefined) {
         expect(after.peer.previewImagePath).assertEqual('/cache/thumb-slow.jpg')
+      }
+      resetRegistry()
+    })
+
+    it('web_upload_textPreview_availableBeforeDone', 0, () => {
+      resetRegistry()
+      let id = beginWebUploadBurst('web-text-1', false, [{
+        fileId: 'f0',
+        fileName: 'message.txt',
+        fileType: 'text/plain',
+        totalBytes: 5
+      }], '10.0.0.12', 'hello')
+      let adapter = getAdapter(WEB_UPLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(id)
+        expect(display.supportsTextPreview).assertTrue()
+        expect(display.textPreview).assertEqual('hello')
+      }
+      // 落盘完成不能丢弃文本消息标记：接收历史归档仍据此区分文本消息与 .txt 文件
+      handleWebUploadProgress('web-text-1', 'f0', 5, 5)
+      handleWebUploadDone('web-text-1', 'f0', '/storage/text_recv/message.txt')
+      expect(isWebUploadTextMessage(id)).assertTrue()
+      if (adapter !== undefined) {
+        let after = adapter.getDisplayDescriptor(id)
+        expect(after.supportsTextPreview).assertTrue()
+        expect(after.textPreview).assertEqual('hello')
+      }
+      // 落盘完成先回填路径再终结：归档条目携带路径，历史态详情页可读取正文
+      expect(historyPathOf(id)).assertEqual('/storage/text_recv/message.txt')
+      resetRegistry()
+    })
+
+    it('web_upload_txtFile_isNotTextMessage', 0, () => {
+      resetRegistry()
+      // 用户从文件选择器上传的单个 .txt：没有浏览器声明的 preview，
+      // 即使文件名恰好为 message.txt 也不能按文本消息展示。
+      let id = beginWebUploadBurst('web-txt-1', false, [{
+        fileId: 'f0',
+        fileName: 'note.txt',
+        fileType: 'text/plain',
+        totalBytes: 6
+      }], '10.0.0.12')
+      handleWebUploadProgress('web-txt-1', 'f0', 6, 6)
+      handleWebUploadDone('web-txt-1', 'f0', '/storage/Download/note.txt')
+      let adapter = getAdapter(WEB_UPLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let display = adapter.getDisplayDescriptor(id)
+        expect(display.supportsTextPreview).assertFalse()
+        expect(display.textPreview === undefined || display.textPreview === '').assertTrue()
+      }
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.textMessage).assertFalse()
+      }
+      expect(isWebUploadTextMessage(id)).assertFalse()
+      resetRegistry()
+    })
+
+    it('web_upload_galleryMedia_afterDone', 0, () => {
+      resetRegistry()
+      let id = beginWebUploadBurst('web-photo-1', false, [{
+        fileId: 'f0',
+        fileName: 'photo.jpg',
+        fileType: 'image/jpeg',
+        totalBytes: 10
+      }], '10.0.0.12')
+      handleWebUploadProgress('web-photo-1', 'f0', 10, 10)
+      handleWebUploadDone('web-photo-1', 'f0', '/storage/Download/photo.jpg')
+      let adapter = getAdapter(WEB_UPLOAD_KEY)
+      expect(adapter !== undefined).assertTrue()
+      if (adapter !== undefined) {
+        let gallery = adapter.getGalleryMediaFiles
+        expect(gallery !== undefined).assertTrue()
+        if (gallery !== undefined) {
+          let media: Array<MediaFileInfo> = gallery(id)
+          expect(media.length).assertEqual(1)
+          expect(media[0].filePath).assertEqual('/storage/Download/photo.jpg')
+          expect(media[0].isImage).assertTrue()
+        }
+      }
+      // 声明清单全部落盘即成功，不再等待静默窗口
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.stage).assertEqual(SessionStage.succeeded)
+      }
+      resetRegistry()
+    })
+
+    it('web_upload_finishesWhenAllDeclaredFilesDone', 0, () => {
+      resetRegistry()
+      let id = beginWebUploadBurst('web-batch-1', false, [
+        {
+          fileId: 'f0',
+          fileName: 'a.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 4
+        },
+        {
+          fileId: 'f1',
+          fileName: 'b.txt',
+          fileType: 'text/plain',
+          totalBytes: 2
+        }
+      ], '10.0.0.12')
+      handleWebUploadProgress('web-batch-1', 'f0', 4, 4)
+      handleWebUploadDone('web-batch-1', 'f0', '/storage/Download/a.jpg')
+      let mid = getSession(id)
+      expect(mid !== undefined).assertTrue()
+      if (mid !== undefined) {
+        expect(mid.stage).assertEqual(SessionStage.active)
+      }
+      handleWebUploadProgress('web-batch-1', 'f1', 2, 2)
+      handleWebUploadDone('web-batch-1', 'f1', '/storage/Download/b.txt')
+      let done = getSession(id)
+      expect(done !== undefined).assertTrue()
+      if (done !== undefined) {
+        expect(done.stage).assertEqual(SessionStage.succeeded)
       }
       resetRegistry()
     })

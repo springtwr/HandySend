@@ -24,7 +24,7 @@ pub async fn start_discovery_v2(config: String) -> Result<()> {
     discovery::start_discovery_v2(state, &config)
         .await
         .map_err(|e| Error::from_reason(format!("Start discovery v2 failed: {e:#}")))?;
-    log::info!("Discovery v2 started");
+    log::info!("发现已启动");
     Ok(())
 }
 
@@ -91,7 +91,7 @@ pub fn discovery_set_answer_announcements(answer: bool) -> Result<()> {
 pub fn discovery_stop() -> Result<()> {
     let state = NapiEnv::global().state;
     discovery::stop_discovery(state);
-    log::info!("Discovery stopped");
+    log::info!("发现已停止");
     Ok(())
 }
 

@@ -45,6 +45,7 @@ import {
   totalFileBytes
 } from '../../../../main/ets/model/mta/MtaSendModels'
 import { shouldRescanPeerAddress } from '../../../../main/ets/service/mta/MtaBleClient'
+import { maxSingleFileBytes } from '../../../../main/ets/service/mta/MtaSendService'
 import { isValidMtaDeviceIdHex } from '../../../../main/ets/service/mta/MtaBleCommon'
 import {
   MTA_BRAND_ID_THIRD_PARTY,
@@ -996,6 +997,7 @@ export default function MtaSendProtocolTest() {
       expect(mtaSenderStageOrder(MtaSenderStage.IDLE)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.COMPLETED)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.FAILED)).assertEqual(-1)
+      expect(mtaSenderStageOrder(MtaSenderStage.REJECTED)).assertEqual(-1)
       expect(mtaSenderStageOrder(MtaSenderStage.CANCELLED)).assertEqual(-1)
     })
 
@@ -1004,6 +1006,7 @@ export default function MtaSendProtocolTest() {
       expect(isMtaSenderStageForward(MtaSenderStage.COMPLETED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
       expect(isMtaSenderStageForward(MtaSenderStage.CANCELLED, MtaSenderStage.GATT_CONNECTING)).assertTrue()
       expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.FAILED)).assertTrue()
+      expect(isMtaSenderStageForward(MtaSenderStage.WAITING_PEER_CONFIRM, MtaSenderStage.REJECTED)).assertTrue()
       expect(isMtaSenderStageForward(MtaSenderStage.TRANSFERRING, MtaSenderStage.CANCEL_NOTIFYING)).assertTrue()
     })
 
@@ -1024,6 +1027,23 @@ export default function MtaSendProtocolTest() {
       // 无记录地址（缺省或空白）：首次即需重扫取当前地址
       expect(shouldRescanPeerAddress('', 1)).assertTrue()
       expect(shouldRescanPeerAddress('   ', 1)).assertTrue()
+    })
+
+    // ── 大文件提示：最大单文件字节数 ──
+
+    it('max_single_file_bytes_empty_returns_zero', 0, () => {
+      expect(maxSingleFileBytes([])).assertEqual(0)
+    })
+
+    it('max_single_file_bytes_returns_max', 0, () => {
+      let a = new MtaSendFile()
+      a.sizeBytes = 100
+      let b = new MtaSendFile()
+      b.sizeBytes = 900
+      let c = new MtaSendFile()
+      c.sizeBytes = 300
+      expect(maxSingleFileBytes([a, b, c])).assertEqual(900)
+      expect(maxSingleFileBytes([a])).assertEqual(100)
     })
   })
 }

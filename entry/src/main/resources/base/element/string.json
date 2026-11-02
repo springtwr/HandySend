@@ -25,8 +25,8 @@
       "value": "Files"
     },
     {
-      "name": "send_image",
-      "value": "Images"
+      "name": "send_media",
+      "value": "Gallery"
     },
     {
       "name": "send_justify",
@@ -45,14 +45,6 @@
       "value": "Please make sure the target is connected to the same Wi-Fi network"
     },
     {
-      "name": "auto_accept_download_label",
-      "value": "Auto-accept downloads"
-    },
-    {
-      "name": "auto_accept_download_desc",
-      "value": "Only applies when files are sent via web share (browser)"
-    },
-    {
       "name": "auto_confirm_title",
       "value": "Auto confirm requests"
     },
@@ -69,6 +61,22 @@
       "value": "On"
     },
     {
+      "name": "auto_confirm_off_desc",
+      "value": "Ask for confirmation before each transfer"
+    },
+    {
+      "name": "auto_confirm_favorites_desc",
+      "value": "Auto-accept requests from favorites; text-only messages are copied to the clipboard"
+    },
+    {
+      "name": "auto_confirm_on_desc",
+      "value": "Auto-accept requests from any device on this network; text-only messages are copied to the clipboard"
+    },
+    {
+      "name": "received_text_copied_toast",
+      "value": "Text message received and copied to clipboard"
+    },
+    {
       "name": "favorite_devices_title",
       "value": "Favorite List"
     },
@@ -78,31 +86,19 @@
     },
     {
       "name": "share_link_title",
-      "value": "Web Share"
+      "value": "Web Send"
     },
     {
       "name": "receive_link_title",
       "value": "Web Receive"
     },
     {
-      "name": "share_link_address_label",
-      "value": "Local network address"
-    },
-    {
       "name": "share_link_qr_hint",
-      "value": "Scan QR code or open link in browser"
+      "value": "Scan the QR code to enter."
     },
     {
       "name": "share_link_disabled_hint",
-      "value": "Web sharing is unavailable because LocalSend is turned off"
-    },
-    {
-      "name": "stop_share",
-      "value": "Stop sharing"
-    },
-    {
-      "name": "stop_receive",
-      "value": "Stop Receiving"
+      "value": "Web service is off."
     },
     {
       "name": "device_type_mobile",
@@ -253,6 +249,26 @@
       "value": "Go Sponsor"
     },
     {
+      "name": "rate_label",
+      "value": "Rate"
+    },
+    {
+      "name": "rate_description",
+      "value": "Rate HandySend"
+    },
+    {
+      "name": "rate_message",
+      "value": "If you find it useful, rate HandySend on AppGallery to help the project grow"
+    },
+    {
+      "name": "rate_hint",
+      "value": "Your review keeps the developer going"
+    },
+    {
+      "name": "rate_go",
+      "value": "Rate Now"
+    },
+    {
       "name": "settings_network",
       "value": "Network"
     },
@@ -305,18 +321,6 @@
       "value": "Require the sender to enter a PIN when sending files to you. Leave empty to disable"
     },
     {
-      "name": "auto_finish_label",
-      "value": "Auto-finish"
-    },
-    {
-      "name": "auto_finish_desc",
-      "value": "Automatically leave the transfer page when the transfer completes"
-    },
-    {
-      "name": "save_to_history_label",
-      "value": "Save to history"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "Save to gallery"
     },
@@ -350,11 +354,11 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "Settings will take effect after restarting the server"
+      "value": "LocalSend settings have changed. Restart the service to apply them."
     },
     {
       "name": "restart_server",
-      "value": "Restart"
+      "value": "Restart service"
     },
     {
       "name": "localsend_enabled_label",
@@ -362,7 +366,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "Master switch for the LocalSend protocol. Turning it off also disables web sharing and device discovery"
+      "value": "Turning it off disables file transfer with LocalSend."
     },
     {
       "name": "server_status_running",
@@ -378,7 +382,7 @@
     },
     {
       "name": "start_server",
-      "value": "Start"
+      "value": "Start service"
     },
     {
       "name": "stop_server",
@@ -398,7 +402,7 @@
     },
     {
       "name": "theme_system",
-      "value": "System"
+      "value": "Follow system"
     },
     {
       "name": "hide_tab_bar_on_scroll_label",
@@ -418,7 +422,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "Receive History"
+      "value": "File Receive History"
     },
     {
       "name": "receive_history_empty",
@@ -470,7 +474,7 @@
     },
     {
       "name": "troubleshoot_title",
-      "value": "Troubleshooting"
+      "value": "FAQ"
     },
     {
       "name": "troubleshoot_group_general",
@@ -483,6 +487,10 @@
     {
       "name": "troubleshoot_group_mta",
       "value": "MTA (Mutual Transfer Alliance)"
+    },
+    {
+      "name": "troubleshoot_group_web",
+      "value": "Web"
     },
     {
       "name": "troubleshoot_firewall_title",
@@ -498,11 +506,11 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "[LocalSend] Ensure both devices are on the same Wi-Fi network, running LocalSend or a compatible app, and using the same port.\n[MTA] The MTA device list only appears when there are Mutual Transfer Alliance member devices nearby with their brand's sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.)."
+      "value": "[LocalSend]\n1. Both devices are on the same Wi-Fi network;\n2. Both are running LocalSend or a compatible app;\n3. Both use the same port.\n\n[MTA]\n1. Enable Bluetooth and WLAN on this device (no network connection is needed);\n2. A Mutual Transfer Alliance member device nearby has its brand sharing feature enabled (e.g., Honor Share, Xiaomi Share, OPPO Share, etc.);\n3. MTA devices are only scanned while the Send page is visible; switching tabs or moving to the background pauses scanning."
     },
     {
       "name": "troubleshoot_discovery_service_hint",
-      "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started. If devices cannot be discovered, clear it from the background and reopen the app."
+      "value": "LocalSend on iOS/Android sometimes appears open but its service has not actually started.\nIf devices cannot be discovered, clear it from the background and reopen the app."
     },
     {
       "name": "troubleshoot_connection_title",
@@ -510,7 +518,7 @@
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "Check if the target device is running and the IP address is correct. Ensure no VPN is interfering with local network access."
+      "value": "Check whether the target device is running and the IP address is correct.\nMake sure no VPN is interfering with local network access."
     },
     {
       "name": "troubleshoot_protocol_title",
@@ -518,7 +526,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "Both devices must have compatible encryption settings to communicate. If one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other. Make sure the encryption settings match on both sides (Settings > LocalSend > Advanced settings > Encrypted transfer)."
+      "value": "Both devices must have compatible encryption settings to communicate.\nIf one uses HTTPS and the other uses HTTP, they cannot discover or connect to each other.\nMake sure the encryption settings match on both sides (Settings > LocalSend > Advanced settings > Encrypted transfer)."
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -526,7 +534,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues, as broadcasts may go through the wrong interface. Disable unnecessary interfaces or select the correct one in Settings > LocalSend > Advanced settings > Network interface."
+      "value": "Having multiple network interfaces enabled simultaneously (e.g., Ethernet + Wi-Fi or dual Wi-Fi) may cause device discovery issues: broadcasts may go through the wrong interface.\nDisable unnecessary interfaces or select the correct one in Settings > LocalSend > Advanced settings > Network interface."
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -534,7 +542,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "[LocalSend] Transfers may be interrupted if the receiving device locks the screen, switches to the background, or experiences network fluctuations. Keep the app in the foreground during transfers and ensure a stable network. Retry if a transfer fails.\n[MTA] MTA transfers require both Bluetooth and WLAN to stay enabled and the receiving app to stay in the foreground; switching networks or leaving the app in the background may interrupt the transfer. Retry if it fails."
+      "value": "[LocalSend]\n- While the app is in the background or the screen is locked, an ongoing transfer is protected by a background long-running task and keeps running;\n- Do not close the transfer notification or force-stop the app, or the transfer will be interrupted;\n- Network fluctuations or the peer exiting the app can also cause failures; retry if a transfer fails.\n\n[MTA]\n- Bluetooth and WLAN must stay enabled;\n- Keep the receiving app in the foreground; moving to the background stops its receive service and prevents new MTA receives;\n- Switching networks or network fluctuations during a transfer may interrupt it; retry if it fails."
     },
     {
       "name": "troubleshoot_remote_title",
@@ -542,7 +550,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "HandySend works within the same local network by default. For cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN, then enable the corresponding network interface in Settings > LocalSend > Advanced settings > Network interface."
+      "value": "HandySend works within the same local network by default.\nFor cross-network transfers, use a virtual networking tool (e.g., EasyTier) to create a virtual LAN:\n1. Enable the corresponding network interface in Settings > LocalSend > Advanced settings > Network interface;\n2. For web transfer, also allow that interface in Settings > Web Transfer > Advanced settings > Network interface and select the matching address."
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -550,7 +558,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "[LocalSend] If the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list. Tap the refresh button to refresh the device list and resolve this.\n[MTA] MTA devices are distinguished by their Bluetooth identifier; duplicates may briefly appear if the peer's Bluetooth identifier changes, and devices that stop advertising are removed automatically. You can also tap the refresh button to rescan and clear duplicates immediately."
+      "value": "[LocalSend]\nIf the other party resets their security certificate (device fingerprint), the same device will appear with a different identity, causing duplicates in the list.\nTap the refresh button to refresh the device list and resolve this.\n\n[MTA]\nMTA devices are distinguished by their Bluetooth identifier; duplicates may briefly appear if the peer's Bluetooth identifier changes, and devices that stop advertising are removed automatically.\nYou can also tap the refresh button to rescan and clear duplicates immediately."
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -558,11 +566,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "MTA (Mutual Transfer Alliance) has not yet been fully tested across all brands. If a transfer fails, collect the logs and report the issue as follows:\n1. Tap the More (⋯) menu at the top right of the Send page and choose \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings → Feedback → Code Repository to file an issue and attach the exported log file."
+      "value": "MTA (Mutual Transfer Alliance) has not yet been fully tested across all brands.\nIf a transfer fails, collect the logs and report the issue as follows:\n1. Tap the More (⋯) menu at the top right of the Send page and choose \"Diagnostic Logs\";\n2. Turn on the \"Detailed logging (DEBUG)\" switch on the log page;\n3. Run the MTA transfer once more to reproduce the problem;\n4. Save (export) the logs to a file from the log page;\n5. Go to Settings > More > Feedback and choose \"Email\" or \"Code Repository\" to report the issue, attaching the exported log file."
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "The \"Detailed logging (DEBUG)\" switch turns off automatically after the app restarts. Please reproduce the problem right after enabling it and do not restart the app in the meantime."
+      "value": "The \"Detailed logging (DEBUG)\" switch turns off automatically after the app restarts.\nReproduce the problem right after enabling it and do not restart the app in the meantime."
     },
     {
       "name": "troubleshoot_offline_title",
@@ -570,7 +578,39 @@
     },
     {
       "name": "troubleshoot_offline_desc",
-      "value": "Offline devices do not disappear from Nearby Devices immediately. A LAN (LocalSend) device is removed after a refresh confirmation once it stops announcing; an MTA (Mutual Transfer Alliance) device relies on BLE advertisements for its online status and is removed automatically after about 30 seconds without any advertisement, reappearing in real time once it comes back online. To save power, MTA discovery scanning only runs while the Send page is visible."
+      "value": "Offline devices do not disappear from Nearby Devices immediately.\n- A LAN (LocalSend) device is removed after a refresh confirmation once it stops announcing;\n- An MTA (Mutual Transfer Alliance) device relies on BLE advertisements for its online status and is removed automatically after about 30 seconds without any advertisement, reappearing in real time once it comes back online.\nTo save power, MTA discovery scanning only runs while the Send page is visible."
+    },
+    {
+      "name": "troubleshoot_web_usage_title",
+      "value": "How to Use Web Transfer"
+    },
+    {
+      "name": "troubleshoot_web_usage_desc",
+      "value": "1. Stage files on the Send page, then tap the Web icon to open the Web Transfer panel;\n2. The other device scans the QR code, or opens the shown address in a browser and enters the 6-digit access code to download, with no app required.\n\nThe address only works within the same local network; web uploads require \"Allow uploads\" to be enabled in Settings > Web Transfer."
+    },
+    {
+      "name": "troubleshoot_web_unreachable_title",
+      "value": "Web Address Does Not Open or Access Code Is Invalid"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_desc",
+      "value": "The web address is only reachable within the same local network and is valid for this sharing session only.\n- Stopping web transfer, restarting the web service, or restarting the app invalidates the current access code;\n- The address may also change after a port fallback or network change;\n- The other device needs to scan again, or use the address and access code currently shown in the panel.\n\nIf it still does not open, check:\n- Whether both devices are on the same network;\n- Whether the full address shown in the panel was entered correctly (default port 53310, a temporary port is used when it is occupied);\n- Whether the router has guest network isolation enabled or blocks the connection."
+    },
+    {
+      "name": "troubleshoot_web_encryption_title",
+      "value": "Why Is Web Transfer Unencrypted by Default"
+    },
+    {
+      "name": "troubleshoot_web_encryption_desc",
+      "value": "Encrypted web transfer is off by default and is independent of the LocalSend encryption setting.\nTo enable it, go to Settings > Web Transfer > Advanced settings > Encrypted transfer.\nIt uses a self-signed certificate, which browsers or ad-blocking extensions may block.\nIf downloads fail, temporarily disable encryption or turn off the extension and retry."
+    },
+    {
+      "name": "troubleshoot_web_background_title",
+      "value": "Web Page Is Unreachable After Switching to the Background"
+    },
+    {
+      "name": "troubleshoot_web_background_desc",
+      "value": "The web service runs as long as the app does.\nWith \"Allow background receiving\" enabled in Settings > General, the app stays in the background for about 5 minutes when no transfer is running, and the web page remains reachable during that time.\nAfter it times out, or after web transfer is stopped manually, the page cannot be opened; keep the app in the foreground for long sharing sessions."
     },
     {
       "name": "protocol_version_label",
@@ -586,7 +626,15 @@
     },
     {
       "name": "network_type_ethernet",
-      "value": "Ethernet"
+      "value": "Wired network"
+    },
+    {
+      "name": "network_type_vpn",
+      "value": "VPN"
+    },
+    {
+      "name": "network_type_bridge",
+      "value": "Container bridge"
     },
     {
       "name": "network_type_unknown",
@@ -594,7 +642,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "No LAN connection. Other devices may not discover this device"
+      "value": "Not connected to a LAN. LocalSend devices may not discover this device."
     },
     {
       "name": "diagnostic_logs_title",
@@ -638,11 +686,11 @@
     },
     {
       "name": "save_logs_button",
-      "value": "Save"
+      "value": "Export all logs"
     },
     {
       "name": "save_success",
-      "value": "Logs saved to Download/%s"
+      "value": "Logs saved to:\nDownload/%s/%s\nTurn off detailed logging after troubleshooting."
     },
     {
       "name": "save_failed",
@@ -650,7 +698,7 @@
     },
     {
       "name": "clear_logs_button",
-      "value": "Clear"
+      "value": "Clear logs"
     },
     {
       "name": "no_logs",
@@ -667,10 +715,6 @@
     {
       "name": "link_share_button",
       "value": "Receive via web"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "History"
     },
     {
       "name": "receive_details_title",
@@ -695,10 +739,6 @@
     {
       "name": "info_label",
       "value": "Info"
-    },
-    {
-      "name": "send_audio",
-      "value": "Audio"
     },
     {
       "name": "checksum_create_desc",
@@ -769,6 +809,10 @@
       "value": "Waiting"
     },
     {
+      "name": "session_waiting_peer_download",
+      "value": "Waiting for peer to download"
+    },
+    {
       "name": "session_status_checksum",
       "value": "Checksum..."
     },
@@ -813,8 +857,16 @@
       "value": "Add"
     },
     {
+      "name": "send_no_source_title",
+      "value": "No nearby devices yet"
+    },
+    {
+      "name": "send_no_source_subtitle",
+      "value": "Make sure network and Bluetooth are on"
+    },
+    {
       "name": "server_offline_warning",
-      "value": "Server is not running"
+      "value": "LocalSend service is not running"
     },
     {
       "name": "verify_button",
@@ -830,7 +882,11 @@
     },
     {
       "name": "feedback_desc",
-      "value": "Share your feedback via the app store or code repository"
+      "value": "Share your feedback via email or code repository"
+    },
+    {
+      "name": "feedback_email",
+      "value": "Email"
     },
     {
       "name": "feedback_appgallery",
@@ -839,6 +895,58 @@
     {
       "name": "feedback_repo",
       "value": "Code Repository"
+    },
+    {
+      "name": "contact_developer_title",
+      "value": "Contact developer"
+    },
+    {
+      "name": "contact_developer_copy",
+      "value": "Copy address"
+    },
+    {
+      "name": "contact_developer_send",
+      "value": "Send email"
+    },
+    {
+      "name": "contact_developer_attach_logs",
+      "value": "Attach diagnostic logs (device and transfer info)"
+    },
+    {
+      "name": "feedback_mail_subject",
+      "value": "HandySend user feedback"
+    },
+    {
+      "name": "feedback_mail_body_intro",
+      "value": "Describe your suggestion or the problem you ran into here:"
+    },
+    {
+      "name": "feedback_mail_body_meta_title",
+      "value": "—— The following helps locate the issue ——"
+    },
+    {
+      "name": "feedback_mail_body_version",
+      "value": "App version: %s"
+    },
+    {
+      "name": "feedback_mail_body_device",
+      "value": "Device type: %s"
+    },
+    {
+      "name": "feedback_mail_body_steps",
+      "value": "Steps to reproduce (optional):"
+    },
+    {
+      "name": "feedback_mail_body_screenshots",
+      "value": "Screenshots (optional):"
+    },
+    {
+      "name": "feedback_mail_body_logs",
+      "value": "Logs (optional; tick \"Attach diagnostic logs\" when sending):"
+    },
+    {
+      "name": "feedback_mail_logs_manual_attach",
+      "value": "(Diagnostic logs could not be attached automatically; export them in Settings > More > Diagnostic logs and attach manually.)"
     },
     {
       "name": "about_handysend_version",
@@ -898,11 +1006,23 @@
     },
     {
       "name": "debug_log_label",
-      "value": "Detailed logging (DEBUG)"
+      "value": "Detailed logging"
     },
     {
       "name": "debug_log_desc",
-      "value": "Outputs more detailed log information for troubleshooting; turns off automatically after restart"
+      "value": "Records more detailed diagnostic information to help developers locate issues. Turn it off after reproducing the issue."
+    },
+    {
+      "name": "log_settings_title",
+      "value": "Log settings"
+    },
+    {
+      "name": "log_settings_info_title",
+      "value": "Log files"
+    },
+    {
+      "name": "log_settings_info_desc",
+      "value": "Logs are kept in the app sandbox. The exported ZIP contains key and detailed logs from this and the previous session, plus app version and device information."
     },
     {
       "name": "more_settings",
@@ -930,11 +1050,11 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "Web sharing uses an encrypted connection with a self-signed certificate. Some browser extensions or security policies may block downloads; if downloads fail, try unencrypted sharing or adjust your browser extensions/settings"
+      "value": "The encrypted connection uses a self-signed certificate and may be blocked by browsers or ad blockers. If downloads fail, turn off encrypted transfer or disable related extensions and try again."
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "All network interfaces are disabled. Other devices cannot discover this device. Please enable in Advanced Settings > Network Interfaces"
+      "value": "All network interfaces are off. LocalSend cannot work. Enable one in Settings > LocalSend > Advanced Settings > Network Interfaces."
     },
     {
       "name": "network_interface_desc",
@@ -950,7 +1070,15 @@
     },
     {
       "name": "network_default_indicator",
-      "value": "Default"
+      "value": "Default network"
+    },
+    {
+      "name": "network_interface_status_enabled",
+      "value": "Enabled"
+    },
+    {
+      "name": "network_interface_status_disabled",
+      "value": "Disabled"
     },
     {
       "name": "gallery_save_dialog_title",
@@ -963,6 +1091,18 @@
     {
       "name": "no_devices_found",
       "value": "No devices found. Make sure the target device has LocalSend installed and open."
+    },
+    {
+      "name": "web_access_auto_accept_upload_label",
+      "value": "Skip upload confirmation"
+    },
+    {
+      "name": "web_access_auto_accept_upload_desc",
+      "value": "Others can send files to you from the web page without your confirmation; text messages are copied to the clipboard automatically."
+    },
+    {
+      "name": "web_access_unavailable",
+      "value": "Web service not ready yet"
     },
     {
       "name": "web_download_request_title",
@@ -1005,6 +1145,10 @@
       "value": "File has been moved or deleted"
     },
     {
+      "name": "history_open_file_access_denied",
+      "value": "File is temporarily unavailable. Please try again later"
+    },
+    {
       "name": "history_delete_title",
       "value": "Delete record?"
     },
@@ -1021,24 +1165,44 @@
       "value": "Will delete: %s"
     },
     {
+      "name": "history_delete_message_text",
+      "value": "Will delete this text message record"
+    },
+    {
+      "name": "large_file_send_confirm_title",
+      "value": "Send large file?"
+    },
+    {
+      "name": "large_file_send_confirm_message",
+      "value": "Total size %s exceeds 10 GB. Large transfers may fail (timeout, disconnection, or declined by receiver). Send anyway?"
+    },
+    {
+      "name": "large_file_receive_hint",
+      "value": "Large transfer (10 GB+), may fail"
+    },
+    {
+      "name": "storage_insufficient_message",
+      "value": "Insufficient storage: %s available, %s required (including reserve)"
+    },
+    {
+      "name": "copy_truncated_message",
+      "value": "Content too long, only the first %s was copied"
+    },
+    {
+      "name": "accept_targets_failed",
+      "value": "Failed to prepare receive targets"
+    },
+    {
+      "name": "history_delete_message_count",
+      "value": "Will delete %d records"
+    },
+    {
       "name": "history_clear_message_count",
       "value": "Will delete all %d records"
     },
     {
       "name": "history_text_content_title",
       "value": "Message content"
-    },
-    {
-      "name": "send_video",
-      "value": "Video"
-    },
-    {
-      "name": "send_document",
-      "value": "Document"
-    },
-    {
-      "name": "send_archive",
-      "value": "Archive"
     },
     {
       "name": "file_status_waiting",
@@ -1070,11 +1234,11 @@
     },
     {
       "name": "permission_notification_desc",
-      "value": "Show background transfer progress and results in the notification panel"
+      "value": "Used for background transfers and temporary keep-alive."
     },
     {
       "name": "permission_bluetooth_label",
-      "value": "Bluetooth Permission"
+      "value": "Device discovery and connection"
     },
     {
       "name": "permission_bluetooth_check_desc",
@@ -1098,11 +1262,11 @@
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "MTA Receive"
+      "value": "Allow receiving"
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "Receive content from nearby devices over MTA while the app is in the foreground"
+      "value": "Allow nearby MTA devices to send files to you."
     },
     {
       "name": "mta_enabled_label",
@@ -1110,7 +1274,7 @@
     },
     {
       "name": "mta_enabled_desc",
-      "value": "Master switch for the MTA protocol. Turning it off stops MTA receiving and device discovery"
+      "value": "Turning it off disables file transfer with nearby MTA devices."
     },
     {
       "name": "mta_receive_disabled_desc",
@@ -1126,15 +1290,15 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "Present as the selected brand when transferring files with MTA devices. Only effective for some vendors"
+      "value": "Pretend to be the selected brand when transferring files; only effective for some vendors."
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "MTA Connection Alerts"
+      "value": "Show MTA warnings"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "Show a warning banner on the main page when Bluetooth or WLAN is off"
+      "value": "Show a warning banner on the Send page when Bluetooth or WLAN is off"
     },
     {
       "name": "mta_brand_picker_title",
@@ -1154,19 +1318,23 @@
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "Bluetooth is off. MTA devices cannot be discovered. Turn on Bluetooth."
+      "value": "Bluetooth is off. MTA cannot be used. Turn on Bluetooth."
     },
     {
-      "name": "mta_wifi_off_warning",
-      "value": "Wi-Fi is off. Device discovery and transfers over LAN and MTA may fail. Turn on Wi-Fi."
+      "name": "wifi_off_lan_and_mta_warning",
+      "value": "WLAN is off. LocalSend and MTA cannot be used. Turn on WLAN."
+    },
+    {
+      "name": "mta_wifi_off_standalone_warning",
+      "value": "WLAN is off. MTA cannot be used. Turn on WLAN."
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "MTA requires Wi-Fi. Without it, devices can be discovered but transfers will fail. Turn on Wi-Fi."
+      "value": "WLAN is off. MTA devices can be discovered but cannot transfer. Turn on WLAN."
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "Bluetooth and Wi-Fi are both off. MTA devices cannot be discovered, and transfers will fail. Turn them on and try again."
+      "value": "Bluetooth and WLAN are both off. MTA cannot be used. Turn them on and try again."
     },
     {
       "name": "nearby_devices_subtitle_mta",
@@ -1265,8 +1433,12 @@
       "value": "Exit"
     },
     {
+      "name": "send_partial_protocols_disabled_hint",
+      "value": "%s is disabled. Related devices and entries will not be shown."
+    },
+    {
       "name": "send_all_protocols_disabled_hint",
-      "value": "LocalSend and MTA are both turned off. Cannot send or receive files"
+      "value": "All transfer methods are off. The app cannot be used. Enable at least one transfer method in Settings."
     },
     {
       "name": "send_protocol_hint_settings",
@@ -1301,8 +1473,12 @@
       "value": "Incoming transfer"
     },
     {
-      "name": "pending_request_notification_text",
-      "value": "Tap to open HandySend and confirm"
+      "name": "background_attention_pending_text",
+      "value": "Waiting for your confirmation (%d)"
+    },
+    {
+      "name": "background_attention_web_access_text",
+      "value": "%s is accessing your files over the web (%d files)"
     },
     {
       "name": "session_stage_awaiting",
@@ -1425,6 +1601,10 @@
       "value": "Partially completed (only some files received)"
     },
     {
+      "name": "mta_send_stage_rejected",
+      "value": "Declined by peer"
+    },
+    {
       "name": "mta_send_stage_failed",
       "value": "Send failed"
     },
@@ -1462,11 +1642,23 @@
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "This cannot be undone. Clears %d task records and deletes all sent text files."
+      "value": "This cannot be undone. Clears %d task records."
+    },
+    {
+      "name": "transfer_center_delete_selected_title",
+      "value": "Delete selected records?"
+    },
+    {
+      "name": "transfer_center_delete_selected_message_count",
+      "value": "This cannot be undone. Deletes %d selected task records."
+    },
+    {
+      "name": "transfer_center_select_not_deletable",
+      "value": "Ongoing and pending tasks can't be deleted"
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "File history"
+      "value": "File receive history"
     },
     {
       "name": "session_detail_title",
@@ -1569,14 +1761,6 @@
       "value": "Other ways"
     },
     {
-      "name": "send_method_web_send",
-      "value": "Web share"
-    },
-    {
-      "name": "send_method_web_receive",
-      "value": "Web receive"
-    },
-    {
       "name": "send_method_ip",
       "value": "Send by IP"
     },
@@ -1626,7 +1810,7 @@
     },
     {
       "name": "discovery_source_web",
-      "value": "Web share"
+      "value": "Web transfer"
     },
     {
       "name": "discovery_empty_hint_localsend",
@@ -1679,6 +1863,46 @@
     {
       "name": "local_device_ip",
       "value": "Local IP"
+    },
+    {
+      "name": "local_device_type",
+      "value": "Device type"
+    },
+    {
+      "name": "local_device_model",
+      "value": "Device model"
+    },
+    {
+      "name": "local_device_port",
+      "value": "Port"
+    },
+    {
+      "name": "local_device_broadcast_name",
+      "value": "Broadcast name"
+    },
+    {
+      "name": "local_device_mta_device_id",
+      "value": "Sender ID"
+    },
+    {
+      "name": "local_device_group_identity",
+      "value": "Device identity"
+    },
+    {
+      "name": "local_device_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "local_device_group_mta",
+      "value": "MTA"
+    },
+    {
+      "name": "local_device_encrypted_on",
+      "value": "On"
+    },
+    {
+      "name": "local_device_encrypted_off",
+      "value": "Off"
     },
     {
       "name": "service_status_running",
@@ -1806,7 +2030,7 @@
     },
     {
       "name": "session_file_preview_over_limit",
-      "value": "File is too large to preview"
+      "value": "Content too long, showing first 128 KB only"
     },
     {
       "name": "session_file_open_with_app",
@@ -1815,6 +2039,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "No app available to open this file"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "%d more files, tap to load"
     },
     {
       "name": "session_file_open_failed",
@@ -1826,15 +2054,31 @@
     },
     {
       "name": "new_transfer_alert_message",
-      "value": "%s wants to send %d files"
+      "value": "%s sent %d files"
+    },
+    {
+      "name": "new_transfer_alert_message_text",
+      "value": "%s sent a message"
+    },
+    {
+      "name": "new_transfer_alert_message_outbound",
+      "value": "%s wants to download %d files"
+    },
+    {
+      "name": "new_transfer_confirm_timeout",
+      "value": "Confirmation timed out. The request was closed."
     },
     {
       "name": "new_transfer_alert_view",
       "value": "View"
     },
     {
-      "name": "new_transfer_alert_later",
-      "value": "Later"
+      "name": "web_access_notice_title",
+      "value": "Web access"
+    },
+    {
+      "name": "web_access_notice_message",
+      "value": "%s accessed the web page. You can download the %d files you selected."
     },
     {
       "name": "favorites_online",
@@ -1893,24 +2137,216 @@
       "value": "Remove %d devices from favorites?"
     },
     {
-      "name": "favorites_select_cancel",
-      "value": "Cancel"
-    },
-    {
-      "name": "favorites_select_all",
-      "value": "Select all"
-    },
-    {
-      "name": "favorites_delete_count",
-      "value": "Delete (%d)"
-    },
-    {
       "name": "favorites_probing",
       "value": "Connecting..."
     },
     {
       "name": "favorites_probe_failed",
       "value": "Device unreachable. Please check the network."
+    },
+    {
+      "name": "multi_select_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "multi_select_all",
+      "value": "Select all"
+    },
+    {
+      "name": "multi_select_delete_count",
+      "value": "Delete (%d)"
+    },
+    {
+      "name": "web_settings",
+      "value": "Web Transfer"
+    },
+    {
+      "name": "web_send_label",
+      "value": "Web transfer"
+    },
+    {
+      "name": "web_receive_label",
+      "value": "Allow uploads"
+    },
+    {
+      "name": "web_access_no_file_warning",
+      "value": "No file selected to send."
+    },
+    {
+      "name": "web_send_desc",
+      "value": "Turning it off disables file transfer over the web."
+    },
+    {
+      "name": "web_receive_desc",
+      "value": "Others can send files to this device from the web page."
+    },
+    {
+      "name": "web_access_start_send",
+      "value": "Turn on web transfer"
+    },
+    {
+      "name": "local_device_group_web",
+      "value": "Web"
+    },
+    {
+      "name": "local_device_interfaces_localsend",
+      "value": "Network interfaces (LocalSend)"
+    },
+    {
+      "name": "local_device_interfaces_web",
+      "value": "Network interfaces (Web service)"
+    },
+    {
+      "name": "web_https_label",
+      "value": "Encrypted transfer"
+    },
+    {
+      "name": "web_https_desc",
+      "value": "Use HTTPS to encrypt file transfers"
+    },
+    {
+      "name": "web_access_code_label",
+      "value": "Access code:"
+    },
+    {
+      "name": "web_access_code_hint",
+      "value": "If you cannot scan, type this address and use the code."
+    },
+    {
+      "name": "web_interface_label",
+      "value": "Network interface"
+    },
+    {
+      "name": "web_interface_desc",
+      "value": "Choose the network interfaces used to display web addresses."
+    },
+    {
+      "name": "web_interface_none",
+      "value": "Select at least one interface"
+    },
+    {
+      "name": "web_port_label",
+      "value": "Port"
+    },
+    {
+      "name": "web_port_desc",
+      "value": "Default 53310; a temporary port is used when it is occupied"
+    },
+    {
+      "name": "web_port_invalid",
+      "value": "Enter a port between 1024 and 65535"
+    },
+    {
+      "name": "web_port_conflict",
+      "value": "The port must differ from the LocalSend port"
+    },
+    {
+      "name": "web_port_fallback_warning",
+      "value": "Port %d is in use; using %d instead. You can change it in Web settings."
+    },
+    {
+      "name": "web_port_fallback_value",
+      "value": "Current port %d (default %d in use)"
+    },
+    {
+      "name": "web_info_status",
+      "value": "Service status"
+    },
+    {
+      "name": "web_info_address",
+      "value": "Web address"
+    },
+    {
+      "name": "web_address_switch",
+      "value": "Switch web address"
+    },
+    {
+      "name": "web_service_restart_title",
+      "value": "Restart web service?"
+    },
+    {
+      "name": "web_service_restart_message",
+      "value": "Changing web settings requires restarting the service. The following transfers will be interrupted:\n%s"
+    },
+    {
+      "name": "web_service_restart_ok",
+      "value": "Restart"
+    },
+    {
+      "name": "web_service_restart_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "bg_transfer_title_web_keepalive",
+      "value": "Web service running"
+    },
+    {
+      "name": "bg_transfer_content_web_keepalive",
+      "value": "Kept alive in the background; closes automatically after 5 minutes."
+    },
+    {
+      "name": "bg_transfer_title_keepalive",
+      "value": "Running in background"
+    },
+    {
+      "name": "bg_transfer_content_keepalive",
+      "value": "Temporarily held for 5 minutes; closes automatically when it expires"
+    },
+    {
+      "name": "bg_transfer_title_transfer",
+      "value": "Transferring in background"
+    },
+    {
+      "name": "bg_transfer_content_transfer",
+      "value": "Closing this notification interrupts the transfer"
+    },
+    {
+      "name": "bg_transfer_content_tasks_percent",
+      "value": "%d tasks · %d%%"
+    },
+    {
+      "name": "background_receive_label",
+      "value": "Allow background receiving"
+    },
+    {
+      "name": "background_receive_desc",
+      "value": "Without a transfer, the app keeps running in the background for 5 minutes to receive web or LocalSend requests."
+    },
+    {
+      "name": "web_access_stop",
+      "value": "Stop web transfer"
+    },
+    {
+      "name": "service_status_label",
+      "value": "Service status"
+    },
+    {
+      "name": "service_status_no_interface",
+      "value": "Unavailable (no network interface)"
+    },
+    {
+      "name": "network_interface_status_not_enabled",
+      "value": "Not enabled"
+    },
+    {
+      "name": "web_access_no_interface",
+      "value": "No available network interface. Web transfer is unavailable."
+    },
+    {
+      "name": "session_waiting_peer_upload",
+      "value": "Waiting for upload"
+    },
+    {
+      "name": "session_end_web_access",
+      "value": "End session"
+    },
+    {
+      "name": "session_end_web_download",
+      "value": "End download"
+    },
+    {
+      "name": "log_file_unavailable",
+      "value": "File logging unavailable; showing temporary memory logs"
     },
     {
       "name": "demo_scenario_menu_title",

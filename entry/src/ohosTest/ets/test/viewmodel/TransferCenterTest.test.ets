@@ -19,13 +19,20 @@ import {
   finish,
   getActiveCount,
   getHistory,
+  getHistoryRevision,
   getSession,
   resetRegistry,
-  setSessionFiles
+  setSessionFiles,
+  setStage,
+  updateFileProgress
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { SessionAdapter, registerAdapter } from '../../../../main/ets/service/transfer/adapters/SessionAdapter'
+import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
 import { registerDefaultSources } from '../../../../main/ets/service/transfer/DefaultRegistrations'
-import { resetSessionHistoryCache } from '../../../../main/ets/service/transfer/SessionHistoryStore'
+import {
+  clearSessionHistory,
+  resetSessionHistoryCache
+} from '../../../../main/ets/service/transfer/SessionHistoryStore'
 import {
   CenterRow,
   collectActiveSessionIds,
@@ -41,15 +48,16 @@ import {
   ROW_SESSION,
   rowAwaitingConfirm,
   rowActions,
+  rowDeletable,
   rowHasByteProgress,
   rowIsTerminal,
   rowIsTextSession,
+  rowNeedsLargeHint,
   rowStage,
   sessionSourceKey,
   sourceLabelForSession,
   SessionRowModel,
   sortSessionRows,
-  isSingleTextFileTask,
   TransferCenterGroups,
   TransferCenterViewModel,
   RowValidationResult,
@@ -107,6 +115,16 @@ function withByteProgress(hasProgress: boolean): SessionCapabilities {
   return caps
 }
 
+/**
+ * 复位会话域状态：清空注册表与持久化历史。
+ * resetSessionHistoryCache 只失效内存缓存、不清除已落盘数据，故须先 clearSessionHistory 再失效缓存。
+ */
+function resetSessionDomain(): void {
+  resetRegistry()
+  clearSessionHistory()
+  resetSessionHistoryCache()
+}
+
 /** 统计视图中指向指定会话的行数（用于断言同一会话渲染条数）。 */
 function countRowsForSession(vm: TransferCenterViewModel, sessionId: string): number {
   let matches = 0
@@ -122,6 +140,21 @@ function countRowsForSession(vm: TransferCenterViewModel, sessionId: string): nu
 /** 把行模型包装为列表条目行（与组装行序列同构）。 */
 function centerRowOf(row: SessionRowModel): CenterRow {
   return { key: row.key, kind: ROW_SESSION, session: row }
+}
+
+/**
+ * 统计视图中来自持久化历史的行数（历史行不持有实时会话对象）。
+ * 与 countRowsForSession 互补：后者只数实时行，会话在终态可见窗口内始终计入。
+ */
+function countHistoryRowsForSession(vm: TransferCenterViewModel, sessionId: string): number {
+  let matches = 0
+  for (let i = 0; i < vm.rows.length; i++) {
+    let row = vm.rows[i].session
+    if (row !== undefined && row.session === undefined && row.sessionId === sessionId) {
+      matches++
+    }
+  }
+  return matches
 }
 
 /** 统计行序列描述中的行标记数（每个行标记形如「[索引]」）。 */
@@ -349,7 +382,32 @@ export default function TransferCenterTest() {
         totalBytes: 100
       }]
       let fileSession = createSession(fileInput)
+      // 具备字节进度能力但尚未产生字节时不渲染 0% 进度条
+      expect(rowHasByteProgress(liveSessionRow(fileSession))).assertFalse()
+      updateFileProgress(fileSession.id, 'f', 1, 100)
       expect(rowHasByteProgress(liveSessionRow(fileSession))).assertTrue()
+      resetRegistry()
+    })
+
+    it('liveRow_largeHintOnlyForNonTerminalLargeSessions', 0, () => {
+      resetRegistry()
+      // 总量达阈值的非终态会话提示
+      let bigInput = input('localsend-send', 'big')
+      bigInput.files = [{
+        fileId: 'f',
+        fileName: 'big.bin',
+        fileType: '',
+        totalBytes: MtaConstants.LARGE_FILE_WARN_BYTES
+      }]
+      let bigSession = createSession(bigInput)
+      expect(rowNeedsLargeHint(liveSessionRow(bigSession))).assertTrue()
+      // 终态后不再提示
+      finish(bigSession.id, SessionStage.succeeded)
+      expect(rowNeedsLargeHint(liveSessionRow(bigSession))).assertFalse()
+      // 小会话与历史行（无实时会话）不提示
+      let smallSession = createSession(input('localsend-send', 'small'))
+      expect(rowNeedsLargeHint(liveSessionRow(smallSession))).assertFalse()
+      expect(rowNeedsLargeHint(historyEntryRow(historyEntry(smallSession.id, Date.now())))).assertFalse()
       resetRegistry()
     })
 
@@ -364,6 +422,53 @@ export default function TransferCenterTest() {
       // 去重保留实时行：状态取自实时会话而非历史台账
       expect(merged[0].session !== undefined).assertTrue()
       expect(rowStage(merged[0])).assertEqual(SessionStage.failed)
+      resetRegistry()
+    })
+
+    // 已出现过的标识以集合承载，需保持与线性回扫完全一致的去重语义
+    it('merge_dedupesWithinHistoryItself', 0, () => {
+      resetRegistry()
+      let e1 = historyEntry('dup', 100)
+      let e2 = historyEntry('dup', 200)
+      let firstRow = historyEntryRow(e1)
+      let history = [firstRow, historyEntryRow(e2)]
+      let merged = mergeSessionRows([], history)
+      expect(merged.length).assertEqual(1)
+      // 同标识保留首现者
+      expect(merged[0].timestamp).assertEqual(firstRow.timestamp)
+      resetRegistry()
+    })
+
+    it('merge_keepsDistinctLiveAndHistoryOrder', 0, () => {
+      resetRegistry()
+      let live: Array<SessionRowModel> = [historyEntryRow(historyEntry('l1', 1)),
+        historyEntryRow(historyEntry('l2', 2))]
+      let history: Array<SessionRowModel> = [historyEntryRow(historyEntry('h1', 3))]
+      let merged = mergeSessionRows(live, history)
+      // 实时条目在前：合并阶段的相对顺序即遍历顺序
+      expect(merged.length).assertEqual(3)
+      expect(merged[0].sessionId).assertEqual('l1')
+      expect(merged[1].sessionId).assertEqual('l2')
+      expect(merged[2].sessionId).assertEqual('h1')
+      resetRegistry()
+    })
+
+    it('merge_emptyInputs', 0, () => {
+      resetRegistry()
+      expect(mergeSessionRows([], []).length).assertEqual(0)
+      resetRegistry()
+    })
+
+    it('dedupe_removesDuplicatesKeepsFirst', 0, () => {
+      resetRegistry()
+      let first = historyEntryRow(historyEntry('dup', 100))
+      let rows = [first, historyEntryRow(historyEntry('dup', 200)),
+        historyEntryRow(historyEntry('other', 300))]
+      let deduped = dedupeSessionRows(rows)
+      // 同标识只保留首次出现者，其余相对顺序不变
+      expect(deduped.length).assertEqual(2)
+      expect(deduped[0].timestamp).assertEqual(first.timestamp)
+      expect(deduped[1].sessionId).assertEqual('other')
       resetRegistry()
     })
 
@@ -422,6 +527,76 @@ export default function TransferCenterTest() {
       expect(allDropped.kept.length).assertEqual(0)
       expect(allDropped.dropped.length).assertEqual(1)
       expect(allDropped.dropped[0].sessionId).assertEqual('orphan-2')
+    })
+
+    // 基准标识以集合承载：成员判定语义须与线性查找一致（含重复基准项）
+    it('validateSessionRows_duplicateBenchmarkIds', 0, () => {
+      resetRegistry()
+      let row = historyEntryRow(historyEntry('h-dup', 1))
+      let result: RowValidationResult = validateSessionRows([row], [], ['h-dup', 'h-dup'])
+      expect(result.kept.length).assertEqual(1)
+      expect(result.dropped.length).assertEqual(0)
+      resetRegistry()
+    })
+
+    it('validateSessionRows_liveSessionObjectAlwaysResolvable', 0, () => {
+      resetRegistry()
+      // 持有实时会话对象的行即视为可解析，即便标识不在任一基准集合中
+      let s = createSession(input('localsend-send', 'a'))
+      let liveRow = liveSessionRow(s)
+      let result: RowValidationResult = validateSessionRows([liveRow], [], [])
+      expect(result.kept.length).assertEqual(1)
+      resetRegistry()
+    })
+
+    // ── 历史内容版本号：驱动展示层跳过「历史行无需重建」的重复刷新 ──
+
+    it('historyRevision_advancesOnPersistAndClear', 0, () => {
+      resetSessionDomain()
+      let baseline = getHistoryRevision()
+      // 仅刷新列表不改动历史：版本号不变，历史行可直接复用
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      expect(getHistoryRevision()).assertEqual(baseline)
+      // 归档一条终态会话后版本号推进
+      let s = createSession(input('localsend-send', 'rev'))
+      finish(s.id, SessionStage.succeeded)
+      expect(getHistoryRevision() > baseline).assertTrue()
+      // 清空后再次推进
+      let afterArchive = getHistoryRevision()
+      clearSessionHistory()
+      expect(getHistoryRevision() > afterArchive).assertTrue()
+      resetSessionDomain()
+    })
+
+    it('historyRowCache_reflectsNewHistoryAfterRevisionChange', 0, () => {
+      resetSessionDomain()
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      let rowsBefore = vm.rows.length
+      // 归档后再次刷新：缓存须失效重建，新会话出现在列表中
+      let s = createSession(input('localsend-send', 'cached'))
+      finish(s.id, SessionStage.succeeded)
+      vm.refresh()
+      expect(countRowsForSession(vm, s.id)).assertEqual(1)
+      expect(vm.rows.length >= rowsBefore).assertTrue()
+      resetSessionDomain()
+    })
+
+    it('historyRowCache_staleReuseDoesNotResurrectClearedHistory', 0, () => {
+      resetSessionDomain()
+      // 终态可见窗口内同一会话以实时行存在，与历史行缓存无关；故用
+      // clearHistory 移除已终态的可见会话与持久化历史，再断言历史行不复现
+      let s = createSession(input('localsend-send', 'removable'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 该会话此刻以实时行存在；先移除可见会话与持久化历史，再验证历史行不复现
+      vm.clearHistory()
+      vm.refresh()
+      expect(countRowsForSession(vm, s.id)).assertEqual(0)
+      expect(countHistoryRowsForSession(vm, s.id)).assertEqual(0)
+      resetSessionDomain()
     })
 
     it('liveRow_textSessionFlag_andActionSet', 0, () => {
@@ -561,17 +736,219 @@ export default function TransferCenterTest() {
       resetSessionHistoryCache()
     })
 
-    it('fileCountText_singleTextFile_showsTextLabel_liveAndHistory', 0, () => {
+    it('rowDeletable_terminalAndHistory_deletable_activeAndPendingNot', 0, () => {
+      // 持久化历史行恒可勾选删除
+      expect(rowDeletable(historyEntryRow(historyEntry('hist-1', 1000)))).assertTrue()
+      // 终态可见会话行可勾选删除
+      let terminal = createSession(input('localsend-send', 'done'))
+      finish(terminal.id, SessionStage.succeeded)
+      expect(rowDeletable(liveSessionRow(terminal))).assertTrue()
+      // 进行中与待确认会话不可勾选：这两类会话对应动作是取消 / 拒绝，「删除」对其无意义
+      let active = createSession(input('localsend-send', 'running'))
+      expect(rowDeletable(liveSessionRow(active))).assertFalse()
+      let pending = createSession(input('localsend-send', 'awaiting'))
+      setStage(pending.id, SessionStage.awaitingConfirmation)
+      expect(rowDeletable(liveSessionRow(pending))).assertFalse()
       resetRegistry()
-      // 实时行：恰好一个文本类文件 → 文件数量位置显示「文本」标签
+    })
+
+    it('selection_enterExitAndToggleSelect_trackBySessionId', 0, () => {
+      resetSessionDomain()
+      let s1 = createSession(input('localsend-send', 'a'))
+      finish(s1.id, SessionStage.succeeded)
+      let s2 = createSession(input('localsend-send', 'b'))
+      finish(s2.id, SessionStage.failed)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 长按进入多选并选中该条
+      vm.enterSelection(s1.id)
+      expect(vm.selectionMode).assertTrue()
+      expect(vm.isSelected(s1.id)).assertTrue()
+      expect(vm.selectedCount).assertEqual(1)
+      // 点击切换：再次点击取消勾选，点击另一条为追加
+      vm.toggleSelect(s1.id)
+      expect(vm.isSelected(s1.id)).assertFalse()
+      vm.toggleSelect(s2.id)
+      expect(vm.selectedCount).assertEqual(1)
+      // 全选 / 取消全选
+      vm.toggleSelectAll()
+      expect(vm.allSelected).assertTrue()
+      expect(vm.selectedCount).assertEqual(2)
+      vm.toggleSelectAll()
+      expect(vm.selectedCount).assertEqual(0)
+      // 退出多选清空勾选
+      vm.enterSelection(s1.id)
+      vm.exitSelection()
+      expect(vm.selectionMode).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('selection_nonDeletableRow_entersModeWithoutCheck', 0, () => {
+      resetSessionDomain()
+      let active = createSession(input('localsend-send', 'running'))
+      let done = createSession(input('localsend-send', 'done'))
+      finish(done.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 长按不可勾选行（进行中会话）同样进入多选，但不勾选自身
+      vm.enterSelection(active.id)
+      expect(vm.selectionMode).assertTrue()
+      expect(vm.isSelected(active.id)).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      // 进入多选后仍可勾选同列表中其他可删除的行（无需先长按一条可勾选行）
+      vm.toggleSelect(done.id)
+      expect(vm.selectedCount).assertEqual(1)
+      expect(vm.isSelected(done.id)).assertTrue()
+      // 点击不可勾选行不产生勾选（提示由视图层给出）
+      vm.toggleSelect(active.id)
+      expect(vm.isSelected(active.id)).assertFalse()
+      expect(vm.selectedCount).assertEqual(1)
+      vm.exitSelection()
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('selection_refreshKeepsMode_whenOnlyNonDeletableRowsRemain', 0, () => {
+      resetSessionDomain()
+      let active = createSession(input('localsend-send', 'running'))
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(active.id)
+      expect(vm.selectionMode).assertTrue()
+      // 数据刷新后仍只有进行中会话：保留多选（行仍存在，只是全部不可勾选）
+      vm.refresh()
+      expect(vm.selectionMode).assertTrue()
+      // 全选在无可勾选行时为空操作
+      vm.toggleSelectAll()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('selection_selectAll_skipsNonDeletableRows', 0, () => {
+      resetSessionDomain()
+      let done1 = createSession(input('localsend-send', 'done-1'))
+      finish(done1.id, SessionStage.succeeded)
+      let done2 = createSession(input('localsend-send', 'done-2'))
+      finish(done2.id, SessionStage.failed)
+      let running = createSession(input('localsend-send', 'running'))
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(done1.id)
+      // 全选前：仅长按行被勾选，尚未全选
+      expect(vm.selectedCount).assertEqual(1)
+      expect(vm.allSelected).assertFalse()
+      vm.toggleSelectAll()
+      // 全选只覆盖可勾选行：进行中会话既不被勾选也不计入全选判定
+      expect(vm.selectedCount).assertEqual(2)
+      expect(vm.allSelected).assertTrue()
+      expect(vm.isSelected(running.id)).assertFalse()
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_deleteSelected_removesOnlySelectedRows', 0, () => {
+      resetSessionDomain()
+      let s1 = createSession(input('localsend-send', 'a'))
+      finish(s1.id, SessionStage.succeeded)
+      let s2 = createSession(input('localsend-send', 'b'))
+      finish(s2.id, SessionStage.failed)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      expect(countRowsForSession(vm, s1.id)).assertEqual(1)
+      expect(countRowsForSession(vm, s2.id)).assertEqual(1)
+      vm.enterSelection(s1.id)
+      vm.deleteSelected()
+      vm.refresh()
+      // 仅所选行消失，未选行保留
+      expect(countRowsForSession(vm, s1.id)).assertEqual(0)
+      expect(countRowsForSession(vm, s2.id)).assertEqual(1)
+      // 删除后退出多选且勾选清空
+      expect(vm.selectionMode).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_deleteSelected_emptySelection_noOp', 0, () => {
+      resetSessionDomain()
+      let s = createSession(input('localsend-send', 'a'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      // 无勾选时不执行删除，行保留
+      vm.deleteSelected()
+      vm.refresh()
+      expect(countRowsForSession(vm, s.id)).assertEqual(1)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_pruneSelection_dropsRowsRemovedByClearHistory', 0, () => {
+      resetSessionDomain()
+      let s = createSession(input('localsend-send', 'a'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(s.id)
+      expect(vm.selectedCount).assertEqual(1)
+      // 会话行在多选期间被清除（此处走全量清除入口）：下次 refresh 剔除失效勾选并退出多选
+      vm.clearHistory()
+      vm.refresh()
+      expect(vm.selectedCount).assertEqual(0)
+      expect(vm.selectionMode).assertFalse()
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('viewModel_pruneSelection_exitsMode_whenOnlyEmptyStateRowRemains', 0, () => {
+      resetSessionDomain()
+      // 空态本身占一行（composeRows），故「列表为空」不等于 rows.length === 0：
+      // 退出多选须以「无会话行」为判据，否则清空历史后多选态会残留
+      let emptyVm = new TransferCenterViewModel()
+      emptyVm.refresh()
+      expect(emptyVm.rows.length).assertEqual(1)
+      expect(emptyVm.rows[0].kind).assertEqual(ROW_EMPTY)
+
+      // 有会话行时进入多选，再全量清除 → 只剩空态行 → 应退出多选
+      let s = createSession(input('localsend-send', 'a'))
+      finish(s.id, SessionStage.succeeded)
+      let vm = new TransferCenterViewModel()
+      vm.refresh()
+      vm.enterSelection(s.id)
+      expect(vm.selectionMode).assertTrue()
+      vm.clearHistory()
+      vm.refresh()
+      expect(vm.rows.length).assertEqual(1)
+      expect(vm.rows[0].kind).assertEqual(ROW_EMPTY)
+      expect(vm.selectionMode).assertFalse()
+      expect(vm.selectedCount).assertEqual(0)
+      vm.stop()
+      resetSessionDomain()
+    })
+
+    it('fileCountText_singleTextFile_showsFileCount_textMessageShowsLabel', 0, () => {
+      resetRegistry()
+      // 单文本文件但不是文本消息：按文件数量展示，不冒用「文本」标签
       let textFiles: Array<SessionFile> = [sessionFileOf('note.txt', 'text/plain')]
       let liveRow = liveSessionRow(createSession(inputWithFiles('txt-live', textFiles)))
-      expect(fileCountTextId(liveRow)).assertEqual($r('app.string.transfer_center_text_label').id)
-
-      // 历史行：同一会话转为历史条目后判定不变（实时行与历史行同口径）
+      expect(fileCountTextId(liveRow)).assertEqual($r('app.string.transfer_center_file_count', 1).id)
       let historyRow = historyEntryRow(
         historyEntryWithFiles('txt-hist', [historyFileOf('note.txt', 'text/plain')]))
-      expect(fileCountTextId(historyRow)).assertEqual($r('app.string.transfer_center_text_label').id)
+      expect(fileCountTextId(historyRow)).assertEqual($r('app.string.transfer_center_file_count', 1).id)
+
+      // 文本消息：实时行与历史行均使用「文本」标签
+      let messageInput = inputWithFiles('msg-live', textFiles)
+      messageInput.textMessage = true
+      let messageRow = liveSessionRow(createSession(messageInput))
+      expect(fileCountTextId(messageRow)).assertEqual($r('app.string.transfer_center_text_label').id)
+      let messageHistory = historyEntryWithFiles('msg-hist',
+        [historyFileOf('note.txt', 'text/plain')])
+      messageHistory.textMessage = true
+      expect(fileCountTextId(historyEntryRow(messageHistory)))
+        .assertEqual($r('app.string.transfer_center_text_label').id)
       resetRegistry()
     })
 
@@ -652,7 +1029,7 @@ export default function TransferCenterTest() {
       }
       expect(matched).assertTrue()
 
-      // 单个文本类文件：沿用既有「文本」标签口径
+      // 单个文本类文件但不是文本消息：显示文件数量，不显示「文本」
       resetRegistry()
       let singleInput = input('mta-receive', 'mta-real-single')
       singleInput.dataFlow = SessionDataFlow.inbound
@@ -666,20 +1043,10 @@ export default function TransferCenterTest() {
         path: '/d/note.txt'
       }])).assertTrue()
       expect(fileCountTextId(liveSessionRow(single)))
-        .assertEqual($r('app.string.transfer_center_text_label').id)
+        .assertEqual($r('app.string.transfer_center_file_count', 1).id)
 
       resetRegistry()
       resetSessionHistoryCache()
-    })
-
-    it('singleTextFilePredicate_reusesTextFileJudgement', 0, () => {
-      // 恰好一个文本类文件：MIME 命中或扩展名命中均判为真（判定唯一来源为统一文本类判定）
-      expect(isSingleTextFileTask(1, 'text/plain', 'payload')).assertTrue()
-      expect(isSingleTextFileTask(1, '', 'readme.md')).assertTrue()
-      // 多文件、单非文本、空清单均判为假
-      expect(isSingleTextFileTask(2, 'text/plain', 'a.txt')).assertFalse()
-      expect(isSingleTextFileTask(1, 'application/octet-stream', 'archive.bin')).assertFalse()
-      expect(isSingleTextFileTask(0, '', '')).assertFalse()
     })
 
     it('describeCenterRows_threeDistinctSessions_eachLineOwnContent', 0, () => {

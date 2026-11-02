@@ -62,6 +62,7 @@ export enum MtaSendTerminal {
   success = 'success',
   partial = 'partial',
   failed = 'failed',
+  rejected = 'rejected',
   cancelled = 'cancelled'
 }
 
@@ -134,7 +135,8 @@ function buildPeer(targetAlias: string, deviceType: string, deviceModel: string,
 /** 开始一次 MTA 发送（taskId 为协议标识）。 */
 export function beginMtaSendSession(taskId: string, targetAlias: string, deviceType: string,
   deviceModel: string, brandBadge: string, files: Array<SessionFileDescriptor>,
-  mtaBrandId: number = -1, bleAddress: string = '', senderIdHex: string = ''): string {
+  mtaBrandId: number = -1, bleAddress: string = '', senderIdHex: string = '',
+  textMessage: boolean = false): string {
   // 同设备取代：新会话创建之前移除该对端上一条已终态会话的可见条目。
   // MTA 协议载体不携带对端 IP，故以「对端发送者 ID」（跨会话稳定）声明身份；
   // 缺失时回退昵称，由注册表按回退顺序匹配。
@@ -148,7 +150,8 @@ export function beginMtaSendSession(taskId: string, targetAlias: string, deviceT
     peer: buildPeer(targetAlias, deviceType, deviceModel, brandBadge, mtaBrandId, bleAddress, senderIdHex),
     files: files,
     capabilities: capabilities(),
-    stage: SessionStage.active
+    stage: SessionStage.active,
+    textMessage: textMessage
   });
   return session.id;
 }
@@ -186,6 +189,8 @@ export function finishMtaSendSession(unifiedId: string, terminal: MtaSendTermina
     stage = SessionStage.succeeded;
   } else if (terminal === MtaSendTerminal.partial) {
     stage = SessionStage.partiallyFailed;
+  } else if (terminal === MtaSendTerminal.rejected) {
+    stage = SessionStage.declined;
   } else if (terminal === MtaSendTerminal.cancelled) {
     stage = SessionStage.cancelled;
   }
@@ -229,9 +234,10 @@ export class MtaSendEventPlan {
   terminal: boolean = false;
 }
 
-/** 发送阶段是否为终态（完成/部分完成/失败/取消）。 */
+/** 发送阶段是否为终态（完成/部分完成/拒绝/失败/取消）。 */
 function isTerminalSenderStage(stage: MtaSenderStage): boolean {
   return stage === MtaSenderStage.COMPLETED || stage === MtaSenderStage.PARTIAL ||
+    stage === MtaSenderStage.REJECTED ||
     stage === MtaSenderStage.FAILED || stage === MtaSenderStage.CANCELLED;
 }
 
@@ -396,7 +402,8 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       buildDescriptors(request),
       request !== undefined ? request.brandId : -1,
       request !== undefined ? request.bleAddress : '',
-      request !== undefined ? request.senderIdHex : '');
+      request !== undefined ? request.senderIdHex : '',
+      request !== undefined && request.isTextSend);
     activeUnifiedId = unifiedId;
     // 会话已创建：注册表成为「发送中」的事实源，清除发起中标志
     sendStarting = false;
@@ -410,6 +417,8 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       kind = MtaSendTerminal.success;
     } else if (state.stage === MtaSenderStage.PARTIAL) {
       kind = MtaSendTerminal.partial;
+    } else if (state.stage === MtaSenderStage.REJECTED) {
+      kind = MtaSendTerminal.rejected;
     } else if (state.stage === MtaSenderStage.CANCELLED) {
       kind = MtaSendTerminal.cancelled;
     }
@@ -434,7 +443,7 @@ function onSendSessionEnd(instanceGeneration: number): void {
   let plan = decideMtaSendInstanceEnd(instanceGeneration, sendGeneration);
   if (plan.resumeReceiveAccounting) {
     resumeMtaReceiveAfterSend().catch((e: Object): void => {
-      logger.warn('恢复 MTA 接收服务异常: ' + String(e));
+      logger.warn('恢复 MTA 接收服务异常：' + String(e));
     });
   }
   // 发送结束（成功/失败/取消）：按页面可见性期望显式恢复互传发现扫描。
@@ -524,7 +533,7 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   // 发现扫描用「发送暂停」语义：只临时挂起、不抹除可见性期望，发送结束后按期望恢复。
   pauseMtaDiscoveryForSend();
   let receiveRelease = suspendMtaReceiveForSend().catch((e: Object): void => {
-    logger.warn('暂停 MTA 接收服务失败，按已释放处理: ' + String(e));
+    logger.warn('暂停 MTA 接收服务失败，按已释放处理：' + String(e));
   });
   service.setPeripheralReleaseGate(receiveRelease);
   if (clickedMs > 0) {
@@ -555,7 +564,7 @@ function cancelActiveSend(): void {
     return;
   }
   service.cancelSend().catch((e: Object): void => {
-    logger.warn('MTA 取消发送异常: ' + String(e));
+    logger.warn('MTA 取消发送异常：' + String(e));
   });
 }
 
@@ -567,7 +576,7 @@ function retryLastSend(): void {
     return;
   }
   startMtaSend(request, context).catch((e: Object): void => {
-    logger.warn('MTA 重试发送异常: ' + String(e));
+    logger.warn('MTA 重试发送异常：' + String(e));
   });
 }
 

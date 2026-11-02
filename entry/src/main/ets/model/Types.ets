@@ -14,6 +14,7 @@ export enum SendSessionStatus {
   finished = 'finished',
   finishedWithErrors = 'finishedWithErrors',
   declined = 'declined',
+  cancelled = 'cancelled',
   tooManyAttempts = 'tooManyAttempts',
   recipientBusy = 'recipientBusy',
   timeout = 'timeout',
@@ -55,6 +56,10 @@ export enum NetworkType {
   wifi = 'wifi',
   cellular = 'cellular',
   ethernet = 'ethernet',
+  // VPN 与隧道接口（tun/tap、WireGuard、EasyTier、ZeroTier 等），跨网传输的主要通道
+  vpn = 'vpn',
+  // 容器网桥接口（anco、docker、veth、br-<网络 ID> 等），本机处于网关侧
+  bridge = 'bridge',
   unknown = 'unknown'
 }
 
@@ -63,7 +68,7 @@ export interface NetworkInterface {
   prefixLength: number
   type: NetworkType
   isDefault: boolean // 是否为默认网络
-  name: string // 接口名（如 "wlan0"、"ancowlan0"）
+  name: string // 接口名（如 "wlan0"、"eth0"）
 }
 
 export interface LocalDeviceInfo {
@@ -128,12 +133,30 @@ export interface SendFileItem {
   hash?: string
   // 源文件修改时间（Unix 毫秒，可缺省）；用于接收端还原文件时间
   lastModified?: number
+  // 暂存阶段已打开的只读源句柄：发送据此 dup（Rust 以 pread 从文件头读取），
+  // 校验和 dup 后归位偏移，网页分享直接借用
+  sourceFd?: number
+}
+
+/**
+ * 已读到的源文件元数据（大小 + 修改时间）：
+ * 暂存阶段补全后随发送准备一并传入，避免准备层为同一批文件再次逐项 open/stat。
+ */
+export interface SourceFileMeta {
+  size: number
+  lastModified: number
 }
 
 export interface LogEntry {
   timestamp: number
   level: string
+  tag: string
   message: string
+}
+
+/** 诊断日志页从文件尾部解析出的单行条目（offset 为文件内字节偏移，用于稳定列表键）。 */
+export interface LogViewEntry extends LogEntry {
+  offset: number
 }
 
 export interface StagedFile {
@@ -144,9 +167,13 @@ export interface StagedFile {
   isManualText?: boolean
   // 手输文本是否已随某次发送发起（已发起 = 其持久文件不再随暂存列表清理删除）
   persisted?: boolean
-  // 源文件修改时间（Unix 毫秒，可缺省）：在暂存副本生成前捕获，
+  // 手输文本的正文预览（换行折叠为空格）：列表以正文代替沙箱文件名展示
+  textPreview?: string
+  // 源文件修改时间（Unix 毫秒，可缺省）：暂存时由异步补全读取原文件属性，
   // 随发送文件 JSON 传递，供接收端还原文件时间
   lastModified?: number
+  // 文件字节数（异步补全，缺省表示尚未读取）
+  size?: number
   // 视频缩略图（异步懒加载生成）；未生成/失败时为 undefined（显示类型图标）
   previewPixelMap?: image.PixelMap
 }
@@ -196,6 +223,8 @@ export interface ReceiveHistoryEntry {
   fileSize: number
   senderAlias: string
   timestamp: number
+  // 旧版 Web 上传文本消息曾把正文写入此字段；新数据不再写入。
+  // 消费方一律按 path 读取文件本身，该字段仅保留供读取旧历史时识别并清理。
   textContent?: string
 }
 
@@ -214,14 +243,6 @@ export interface SendSessionState {
   receiverSessionId?: string
   // 终态错误消息（finishedWithErrors/其他失败状态），供 UI 显示具体原因而非笼统"错误"。
   errorMessage?: string
-}
-
-// ── Web 下载请求确认相关类型 ──
-export interface PendingWebDownload {
-  sessionId: string
-  ip: string
-  userAgent?: string
-  timestamp: number
 }
 
 // ── 路由参数类型（Navigation pushPathByName 参数契约） ──

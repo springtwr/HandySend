@@ -1,180 +1,150 @@
 import {
   getShareLink,
-  getHttpsEnabled,
+  getWebHttpsEnabled,
   stopShareLink,
-  startWebUpload,
-  getPendingWebDownloads,
-  acceptWebDownloadRequest,
-  declineWebDownloadRequest,
-  declineAllPendingWebDownloads,
-  hasActiveWebDownloads,
-  querySessions,
-  confirmSession,
-  declineSession,
-  subscribeSessions,
-  unsubscribeSessions,
+  ensureWebUpload,
+  disableWebUpload,
+  setWebUploadAutoAccept,
+  isWebUploadAutoAccept,
+  getSharedFileCount,
+  isWebUploadEnabled,
   subscribe,
   unsubscribe,
-  getLocalSendEnabled
+  getWebSendAllowed,
+  setWebSendAllowed,
+  applyWebSendAllowed,
+  setWebReceiveAllowed,
+  getWebReceiveAllowed,
+  getWebAddresses,
+  getSelectedWebAddress,
+  selectWebDisplayAddress,
+  getWebPort,
+  getWebActualPort,
+  isWebPortFallback,
+  getWebAccessCode,
+  refreshWebNetwork
 } from '../service/AppService';
+import { WebAddress } from '../model/WebAddress';
 import { copyText } from '../utils/ClipboardUtil';
-import { PendingWebDownload } from '../model/Types';
-import { SessionDataFlow, SessionStage, TransferSession, isTerminalStage } from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
-const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ShareLinkViewModel', '分享链接页');
-
-// 待确认 Web 下载请求类型经 ViewModel 出口（View 层不直接 import model/Types）。
-export type { PendingWebDownload } from '../model/Types';
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ShareLinkViewModel', '网页传输');
 
 /**
  * ShareLinkViewModel
- * 分享链接页的视图模型。持有 UI 状态 shareUrl，暴露加载/复制/停止命令。
- * 扩展：管理 Web 下载请求确认（pendingDownloads 列表 + 接受/拒绝操作）。
+ * 网页接入面板的视图模型：持有服务地址与本次挂载的授权状态，
+ * 暴露加载 / 复制 / 启停 / 授权命令。
+ *
+ * 面板不承载任务进度——进行中的网页传输由统一会话引擎投影到任务页与详情页，
+ * 这里只管理「服务是否开放、挂了哪些文件、是否允许直接下载」。
  *
  * 反模式合规：
- * - 不依赖 UI 组件（反模式 2 ✓）
- * - 不持有 UIContext / PromptAction（反模式 2 ✓）
- * - copyShareUrl 返回 boolean，Toast 显示由 Page 决定（VM 不触达 UI 反馈）
+ * - 不依赖 UI 组件、不持有 UIContext（Toast 由 Page 依返回值决定）
  */
 @ObservedV2
 export class ShareLinkViewModel {
   @Trace public shareUrl: string = '';
   // 加密传输开启时网页分享使用自签名证书的 HTTPS 连接，页面据此在顶部显示浏览器拦截提示
   @Trace public showHttpsHint: boolean = false;
-  // LocalSend 总开关禁用态镜像：关闭时网页分享不可用，页面据此改渲染中性禁用提示（不展示失效地址）
-  @Trace public localSendDisabled: boolean = false;
-  // ── Web 下载请求确认 ──
-  @Trace public pendingDownloads: Array<PendingWebDownload> = [];
-  @Trace public hasActiveDownloads: boolean = false;
-  // ── 网页接收：待确认上传请求与未终结入站会话判定 ──
-  // 网页来源（浏览器上传）的待确认入站会话投影，作为接收页请求列表数据源
-  @Trace public pendingUploads: Array<PendingWebDownload> = [];
-  // 是否存在未终结的入站会话（退出确认判定，覆盖全部入站来源）
-  @Trace public hasInboundSessions: boolean = false;
+  // 网页传输总开关镜像：关闭时服务停止，页面据此显示开启入口
+  @Trace public sendDisabled: boolean = false
+  // 允许对方上传（子开关）与服务上传入口状态
+  @Trace public uploadAllowed: boolean = false;
+  // 本次挂载是否允许浏览器上传免确认
+  @Trace public autoAcceptUpload: boolean = false;
+  // 当前挂载的分享文件数：为 0 时顶部给出无文件警告（地址与二维码仍展示）
+  @Trace public sharedFileCount: number = 0;
+  // 刚开启网页传输时的短暂抑制：等发送页把暂存列表同步到服务后，再决定是否提示无文件
+  @Trace public suppressNoFileWarning: boolean = false;
+  // 浏览器上传入口是否已开放：决定面板是否出示上传入口
+  @Trace public uploadEnabled: boolean = false;
+  // 可展示的网页地址（多地址时页面出现选择器）
+  @Trace public webAddresses: Array<WebAddress> = [];
+  // 当前展示的地址 IP（空串时取排序后的第一个）
+  @Trace public selectedAddressIp: string = '';
+  // 本次分享的访问码：服务启动后生成，停止/重启即失效
+  @Trace public accessCode: string = '';
+  // 端口回退状态：实际端口与设置端口不一致时顶部提示
+  @Trace public webPortFallback: boolean = false;
+  @Trace public webPreferredPort: number = 0;
+  @Trace public webActualPort: number = 0;
   private refreshCallback: (() => void) | undefined = undefined;
-  // 会话注册表订阅回调（接收模式页面存活期间有效）
-  private sessionsCallback: (() => void) | undefined = undefined;
-  // 网页接收启动进行中标志：启动中重复进入不重复重启上传服务
+  // 上传服务启动进行中标志：启动中重复进入不重复重启
   private startingReceive: boolean = false;
+  private noFileWarningTimer: number = -1;
 
-  /**
-   * 启动网页接收：先开启浏览器上传服务，再加载分享信息（地址由服务启动后方可取得）。
-   * 与网页发送（先建链接再展示）对称。含进行中幂等保护；启动失败按「地址不可用」
-   * 降级（保持空地址），不向页面抛异常。
-   */
-  async startWebReceive(shareUrlFromParams?: string): Promise<void> {
+  /** 是否挂了可下载的文件（决定顶部是否给出无文件警告）。 */
+  get hasDownload(): boolean {
+    return this.sharedFileCount > 0;
+  }
+
+  /** 是否展示「没有选择要发送的文件」警告：开启瞬间等待暂存列表同步完成，避免横幅闪一下。 */
+  shouldShowNoFileWarning(): boolean {
+    return !this.hasDownload && !this.suppressNoFileWarning;
+  }
+
+  /** 清除「刚开启」抑制；暂存文件挂载成功后立即结束抑制。 */
+  private clearNoFileWarningSuppression(): void {
+    this.suppressNoFileWarning = false;
+    if (this.noFileWarningTimer >= 0) {
+      clearTimeout(this.noFileWarningTimer);
+      this.noFileWarningTimer = -1;
+    }
+  }
+
+  /** 允许对方上传：仅当网页传输总开关开启时生效。 */
+  async setUploadAllowed(enabled: boolean): Promise<void> {
+    if (enabled && this.sendDisabled) {
+      return;
+    }
+    setWebReceiveAllowed(enabled);
+    if (!enabled) {
+      await disableWebUpload();
+      this.loadShareInfo();
+      return;
+    }
     if (this.startingReceive) {
       return;
     }
     this.startingReceive = true;
-    // 接收页的请求列表与退出判定均取自统一会话注册表，先订阅再启动服务
-    this.subscribeToSessions();
     try {
-      await startWebUpload();
+      await ensureWebUpload();
     } catch (_e) {
       // 启动失败：地址保持不可用，交由页面降级展示
     } finally {
       this.startingReceive = false;
     }
-    this.loadShareInfo(shareUrlFromParams);
+    this.loadShareInfo();
   }
 
   /**
-   * 订阅统一会话注册表：接收页随会话变化刷新待确认上传列表与退出判定。
-   * 幂等：重复调用不重复订阅。
+   * 页面进入时确保网页服务已启动（不修改总开关，仅消费开关状态）。
    */
-  subscribeToSessions(): void {
-    if (this.sessionsCallback !== undefined) {
+  ensureWebService(): void {
+    if (this.sendDisabled) {
       return;
     }
-    this.sessionsCallback = () => {
-      this.refreshInboundFromRegistry();
-    };
-    subscribeSessions(this.sessionsCallback);
-    // 首次同步状态
-    this.refreshInboundFromRegistry();
+    // 热点（SoftAP）等接口变化可能不产生系统网络事件，进入面板时主动重枚举，
+    // 避免已开启热点却仍提示「没有可用的网络接口」
+    refreshWebNetwork();
+    applyWebSendAllowed(true);
   }
 
   /**
-   * 取消会话注册表订阅。必须在 Page 的 aboutToDisappear 中调用。
-   */
-  unsubscribeFromSessions(): void {
-    if (this.sessionsCallback !== undefined) {
-      unsubscribeSessions(this.sessionsCallback);
-      this.sessionsCallback = undefined;
-    }
-  }
-
-  /**
-   * 从统一会话注册表同步：网页来源待确认上传请求列表与未终结入站会话判定。
-   * 列表仅覆盖「方向为接收、待确认、对端设备类型为 web」的会话；
-   * 退出判定覆盖全部未终结的入站会话（不限于网页来源）。
-   */
-  private refreshInboundFromRegistry(): void {
-    let uploads: Array<PendingWebDownload> = [];
-    let hasInbound: boolean = false;
-    let all: Array<TransferSession> = querySessions();
-    for (let i = 0; i < all.length; i++) {
-      let session = all[i];
-      if (session.dataFlow !== SessionDataFlow.inbound || isTerminalStage(session.stage)) {
-        continue;
-      }
-      hasInbound = true;
-      if (session.stage === SessionStage.awaitingConfirmation && session.peer.deviceType === 'web') {
-        // 对端名称已在摄入层归一化为客户端 IP，此处直接采用（缺失时回退 ip 字段）
-        let ip: string = session.peer.displayName.length > 0 ? session.peer.displayName :
-          (session.peer.ip ?? '');
-        uploads.push({ sessionId: session.id, ip: ip, timestamp: session.startedAt });
-      }
-    }
-    this.pendingUploads = uploads;
-    this.hasInboundSessions = hasInbound;
-  }
-
-  /**
-   * 接受指定网页来源上传请求：经统一会话注册表执行，与任务中心同一事实源。
-   */
-  acceptUpload(sessionId: string): void {
-    confirmSession(sessionId);
-    this.refreshInboundFromRegistry();
-  }
-
-  /**
-   * 拒绝指定网页来源上传请求：经统一会话注册表执行，与任务中心同一事实源。
-   */
-  declineUpload(sessionId: string): void {
-    declineSession(sessionId);
-    this.refreshInboundFromRegistry();
-  }
-
-  /**
-   * 是否存在未终结的入站会话（待确认或进行中，覆盖全部入站来源）。
-   * 用于接收页退出（返回/停止接收）前的确认判定。
-   */
-  hasActiveOrPendingInboundSessions(): boolean {
-    return this.hasInboundSessions;
-  }
-
-  /**
-   * 加载分享信息。优先用路由传入的 URL，否则从 AppService 取。
+   * 加载网页接入信息。地址以仓库为唯一事实源。
    * 必须在 Page 的 aboutToAppear 中调用。
    */
-  loadShareInfo(shareUrlFromParams?: string): void {
-    // 提示显隐与网页分享是否使用 HTTPS 同源：由全局加密开关派生，发送/接收两种模式一致
-    this.showHttpsHint = getHttpsEnabled();
-    if (shareUrlFromParams !== undefined && shareUrlFromParams.length > 0) {
-      this.shareUrl = shareUrlFromParams;
-    } else {
-      this.shareUrl = getShareLink();
+  loadShareInfo(): void {
+    // 提示显隐与网页独立加密开关同源
+    this.showHttpsHint = getWebHttpsEnabled();
+    this.shareUrl = getShareLink();
+    if (this.refreshCallback === undefined) {
+      this.refreshCallback = () => {
+        this.refreshFromRepository();
+      };
+      subscribe(this.refreshCallback);
     }
-
-    // 订阅仓库变化通知
-    this.refreshCallback = () => {
-      this.refreshFromRepository();
-    };
-    subscribe(this.refreshCallback);
     // 首次同步状态
     this.refreshFromRepository();
   }
@@ -183,6 +153,7 @@ export class ShareLinkViewModel {
    * 取消订阅仓库变化通知。必须在 Page 的 aboutToDisappear 中调用。
    */
   unsubscribeFromRepository(): void {
+    this.clearNoFileWarningSuppression();
     if (this.refreshCallback !== undefined) {
       unsubscribe(this.refreshCallback);
       this.refreshCallback = undefined;
@@ -193,53 +164,83 @@ export class ShareLinkViewModel {
    * 从仓库同步最新状态到 @Trace 属性。
    */
   private refreshFromRepository(): void {
-    // LocalSend 总开关状态经既有 changeBus 同步（开关 setter 已 notifyChange，无需新增订阅通道）
-    let disabled: boolean = !getLocalSendEnabled();
-    if (disabled !== this.localSendDisabled) {
-      logger.info('LocalSend 总开关状态变化，网页分享禁用态=' + disabled);
+    // 网页方向允许开关经既有 changeBus 同步（开关 setter 已 notifyChange）
+    let sendDisabled: boolean = !getWebSendAllowed();
+    if (sendDisabled !== this.sendDisabled) {
+      logger.debug('网页传输总开关变化，面板禁用态=' + sendDisabled);
     }
-    this.localSendDisabled = disabled;
-    this.pendingDownloads = getPendingWebDownloads();
-    this.hasActiveDownloads = hasActiveWebDownloads();
+    this.sendDisabled = sendDisabled;
+    this.uploadAllowed = getWebReceiveAllowed();
+    this.autoAcceptUpload = isWebUploadAutoAccept();
+    this.sharedFileCount = getSharedFileCount();
+    if (this.sharedFileCount > 0) {
+      this.clearNoFileWarningSuppression();
+    }
+    this.uploadEnabled = isWebUploadEnabled();
+    // 地址与网卡选择同步：服务停止后地址清空，网卡列表仍可用于下次进入
+    this.webAddresses = getWebAddresses();
+    let selected: WebAddress | undefined = getSelectedWebAddress();
+    this.selectedAddressIp = selected !== undefined ? selected.ip : '';
+    this.webPreferredPort = getWebPort();
+    this.webActualPort = getWebActualPort();
+    this.webPortFallback = isWebPortFallback();
+    this.shareUrl = getShareLink();
+    this.accessCode = getWebAccessCode();
+  }
+
+  /** 切换面板展示的地址；服务不重启，仅更新二维码/地址。 */
+  selectWebAddress(ip: string): void {
+    selectWebDisplayAddress(ip);
   }
 
   /**
-   * 接受指定会话的下载请求。
+   * 切换本次挂载的上传免确认。仅影响当前分享，停止分享后失效。
    */
-  acceptRequest(sessionId: string): void {
-    acceptWebDownloadRequest(sessionId);
-    this.refreshFromRepository();
+  setAutoAcceptUpload(enabled: boolean): void {
+    setWebUploadAutoAccept(enabled);
+    this.autoAcceptUpload = enabled;
   }
 
   /**
-   * 拒绝指定会话的下载请求。
+   * 复制地址到剪贴板。不传参时复制下载地址。
+   * 返回是否成功，Toast 反馈由 Page 决定。
    */
-  declineRequest(sessionId: string): void {
-    declineWebDownloadRequest(sessionId);
-    this.refreshFromRepository();
+  copyShareUrl(url?: string): boolean {
+    let target: string = url !== undefined && url.length > 0 ? url : this.shareUrl;
+    return target.length > 0 ? copyText(target) : false;
   }
 
   /**
-   * 拒绝所有待确认的下载请求。
-   */
-  declineAllRequests(): void {
-    declineAllPendingWebDownloads();
-    this.refreshFromRepository();
-  }
-
-  /**
-   * 复制分享 URL 到剪贴板。返回是否成功（createData 未抛异常）。
-   * Toast 反馈由 Page 根据返回值决定。
-   */
-  copyShareUrl(): boolean {
-    return copyText(this.shareUrl);
-  }
-
-  /**
-   * 停止分享链接。幂等：重复调用安全（原 Page 中 aboutToDisappear 和按钮 onClick 都会触发）。
-   * 用于 Page 的 aboutToDisappear（被动停止）和"停止分享"按钮（主动停止）。
+   * 停止网页服务。幂等：重复调用安全。
    */
   async stopShare(): Promise<void> {
+    await stopShareLink();
+  }
+
+  /**
+   * 开启网页传输总开关并启动服务（与设置页双向同步）。
+   */
+  enableWebTransfer(): void {
+    // 服务先起来、发送页再异步挂载暂存文件；期间先不显示无文件警告，避免横幅闪现
+    this.suppressNoFileWarning = true;
+    if (this.noFileWarningTimer >= 0) {
+      clearTimeout(this.noFileWarningTimer);
+    }
+    this.noFileWarningTimer = setTimeout(() => {
+      this.noFileWarningTimer = -1;
+      this.suppressNoFileWarning = false;
+    }, 2000);
+    setWebSendAllowed(true);
+    applyWebSendAllowed(true);
+  }
+
+  /**
+   * 停止网页传输：关闭总开关并停止服务。
+   * 有活跃网页会话时由 Page 先确认，再取消会话并调用本方法。
+   */
+  async stopWebTransfer(): Promise<void> {
+    this.clearNoFileWarningSuppression();
+    setWebSendAllowed(false);
     await stopShareLink();
   }
 }

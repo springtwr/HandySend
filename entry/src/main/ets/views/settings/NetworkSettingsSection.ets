@@ -13,18 +13,17 @@ import {
 } from '../../viewmodel/SettingsViewModel';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
-import { networkTypeLabel } from '../../utils/NetworkPresentation';
+import { networkTypeLabel, networkTypeSymbol } from '../../utils/NetworkPresentation';
 import { networkSettingsViewModel } from '../../viewmodel/NetworkSettingsViewModel';
 import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefaults';
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
-import { SendSettingsSection } from './SendSettingsSection';
 import { CertificateSheet } from './CertificateSheet';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings', '网络设置');
 
 // LocalSend 协议设置分组（单卡片）：服务器状态 → 自动确认请求 → 接收 PIN 码 →
-// 自动确认下载请求 → 高级设置（加密传输/端口/创建校验和/组播组/发现超时/网络接口）。
+// 网页下载免确认 → 高级设置（加密传输/创建校验和/端口/组播组/发现超时/网络接口）。
 // 接口排序/比较、白名单编辑、脏状态检测等业务逻辑已下沉至 networkSettingsViewModel。
 @ComponentV2
 export struct NetworkSettingsSection {
@@ -77,41 +76,15 @@ export struct NetworkSettingsSection {
     this.applySheetInterfaces(newInterfaces);
   }
 
-  // 将排序后的接口列表应用到弹窗状态，处理新接口的默认 Toggle 分配
+  // 将排序后的接口列表应用到弹窗状态。
+  // 新出现的接口不写入白/黑名单：未列出即按类型取默认状态，无需替用户改配置。
   private applySheetInterfaces(newInterfaces: Array<NetworkInterface>): void {
-    logger.debug('刷新后接口: [' +
+    logger.debug('刷新后接口：[' +
       newInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
 
-    // 收集当前白/黑名单中已有的接口名
-    let knownNames: Set<string> = new Set();
-    for (let i = 0; i < this.localWhitelist.length; i++) {
-      knownNames.add(this.localWhitelist[i]);
-    }
-    for (let i = 0; i < this.localBlacklist.length; i++) {
-      knownNames.add(this.localBlacklist[i]);
-    }
-
-    // 检查新接口中是否有未见过的接口名，按默认规则添加
-    let addedCount = 0;
-    for (let i = 0; i < newInterfaces.length; i++) {
-      let name = newInterfaces[i].name;
-      if (name.length > 0 && !knownNames.has(name)) {
-        if (newInterfaces[i].type === NetworkType.wifi || newInterfaces[i].type === NetworkType.ethernet) {
-          this.localWhitelist.push(name);
-        } else {
-          this.localBlacklist.push(name);
-        }
-        knownNames.add(name);
-        addedCount++;
-      }
-    }
-    if (addedCount > 0) {
-      logger.debug('新增 ' + addedCount + ' 个接口（按默认规则分配）');
-    }
     this.localInterfaces = newInterfaces;
-    logger.debug(
-      '最终白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') +
-        ']');
+    logger.debug('白名单：[' + this.localWhitelist.join(', ') + '] 黑名单：[' +
+      this.localBlacklist.join(', ') + ']');
   }
 
   private showEncryptionNotice(): void {
@@ -263,33 +236,19 @@ export struct NetworkSettingsSection {
       this.viewModel.networkBlacklist, this.localWhitelist, this.localBlacklist, this.localInterfaces);
   }
 
-  // 判断接口是否在白名单中（黑名单优先：接口同时在黑名单中视为不在白名单）
-  private isInterfaceWhitelisted(name: string): boolean {
-    return networkSettingsViewModel.isInterfaceWhitelisted(name, this.localWhitelist, this.localBlacklist);
+  // 判断接口是否启用（开关状态）：黑名单优先，其次白名单，两者都未列出时按类型取默认
+  private isInterfaceEnabled(name: string, type: NetworkType): boolean {
+    return networkSettingsViewModel.isInterfaceEnabled(name, type, this.localWhitelist, this.localBlacklist);
   }
 
-  // 判断接口是否在黑名单中
-  private isInterfaceBlacklisted(name: string): boolean {
-    return networkSettingsViewModel.isInterfaceBlacklisted(name, this.localBlacklist);
+  // 判断接口名是否存在于指定列表
+  private isInList(name: string, list: Array<string>): boolean {
+    return networkSettingsViewModel.isInList(name, list);
   }
 
   // 从数组中移除指定元素
   private removeFromList(list: Array<string>, item: string): Array<string> {
     return networkSettingsViewModel.removeFromList(list, item);
-  }
-
-  // 根据 NetworkType 获取对应的 SymbolGlyph 资源名
-  private getNetworkTypeSymbol(type: NetworkType): Resource {
-    if (type === NetworkType.wifi) {
-      return $r('sys.symbol.wifi');
-    } else if (type === NetworkType.cellular) {
-      return $r('sys.symbol.signal');
-    } else if (type === NetworkType.unknown) {
-      return $r('sys.symbol.questionmark_circle_fill');
-    } else {
-      // 以太网使用通用设备图标
-      return $r('sys.symbol.computer_fill');
-    }
   }
 
   // 判断接口列表是否为空（无接口或仅有 0.0.0.0）
@@ -314,7 +273,7 @@ export struct NetworkSettingsSection {
             Column() {
               Row({ space: DesignTokens.space.sm }) {
                 // 网络类型图标
-                SymbolGlyph(this.getNetworkTypeSymbol(netIf.type))
+                SymbolGlyph(networkTypeSymbol(netIf.type))
                   .fontSize(DesignTokens.size.iconSm)
                   .fontColor([$r('app.color.text_primary')])
 
@@ -336,7 +295,9 @@ export struct NetworkSettingsSection {
                       .fontSize(DesignTokens.font.captionM)
                       .fontColor($r('app.color.text_tertiary'))
 
-                    if (netIf.isDefault) {
+                    // 默认网络徽标只对启用的接口展示：未启用的接口不参与扫描与传输，
+                    // 标出系统默认路由只会与关闭状态的开关相互矛盾
+                    if (netIf.isDefault && this.isInterfaceEnabled(netIf.name, netIf.type)) {
                       Text($r('app.string.network_default_indicator'))
                         .fontSize(DesignTokens.font.captionM)
                         .fontColor($r('app.color.accent_blue'))
@@ -346,26 +307,26 @@ export struct NetworkSettingsSection {
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
 
-                // Toggle 开关：开=白名单（允许扫描），关=黑名单（不扫描）
+                // Toggle 开关：开=允许扫描（白名单，或按类型默认放行），关=不扫描（黑名单）
                 // 每个接口独立控制
-                Toggle({ type: ToggleType.Switch, isOn: this.isInterfaceWhitelisted(netIf.name) })
+                Toggle({ type: ToggleType.Switch, isOn: this.isInterfaceEnabled(netIf.name, netIf.type) })
                   .onChange((isOn: boolean) => {
                     let name = netIf.name;
                     logger.debug(name + ': ' + (isOn ? '白名单' : '黑名单'));
                     if (isOn) {
                       // 打开：从黑名单移到白名单
                       this.localBlacklist = this.removeFromList(this.localBlacklist, name);
-                      if (!this.isInterfaceWhitelisted(name)) {
+                      if (!this.isInList(name, this.localWhitelist)) {
                         this.localWhitelist.push(name);
                       }
                     } else {
                       // 关闭：从白名单移到黑名单
                       this.localWhitelist = this.removeFromList(this.localWhitelist, name);
-                      if (!this.isInterfaceBlacklisted(name)) {
+                      if (!this.isInList(name, this.localBlacklist)) {
                         this.localBlacklist.push(name);
                       }
                     }
-                    logger.debug('白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' +
+                    logger.debug('白名单：[' + this.localWhitelist.join(', ') + '] 黑名单：[' +
                       this.localBlacklist.join(', ') + ']');
                   })
                   .id('settings_interface_toggle')
@@ -422,7 +383,7 @@ export struct NetworkSettingsSection {
           // 白名单/黑名单存储接口名（如 wlan0,eth0），而非精确 IP
           // 保存后自动重启 discovery，无需手动重启服务器
           logger.debug(
-            '白名单: [' + this.localWhitelist.join(', ') + '] 黑名单: [' + this.localBlacklist.join(', ') + ']');
+            '白名单：[' + this.localWhitelist.join(', ') + '] 黑名单：[' + this.localBlacklist.join(', ') + ']');
           this.viewModel.saveNetworkListsAndApply(this.localWhitelist.join(','), this.localBlacklist.join(','));
           this.isShowNetworkInterfaceSheet = false;
         })
@@ -472,7 +433,11 @@ export struct NetworkSettingsSection {
     Column() {
       // LocalSend 总开关关闭时不显示重启横幅（服务器已停，重启提示无意义）
       if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
-        Row() {
+        Row({ space: DesignTokens.space.sm }) {
+          SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+            .fontSize(DesignTokens.font.iconInline)
+            .fontColor([$r('app.color.warning_orange')])
+
           Text($r('app.string.server_needs_restart'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.warning_orange'))
@@ -486,7 +451,7 @@ export struct NetworkSettingsSection {
           }
           Button($r('app.string.restart_server'))
             .fontSize(DesignTokens.font.bodyS)
-            .height(28)
+            .height(DesignTokens.size.inlineButton)
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))
             .borderRadius(DesignTokens.radius.max)
@@ -507,9 +472,9 @@ export struct NetworkSettingsSection {
       // 网络警告横幅（LocalSend 总开关开启、服务器运行中时显示）
       // 没有网络连接优先级高于接口关闭；LocalSend 总开关显式联动，与发送页同口径
       if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {
-        Row({ space: DesignTokens.space.tiny }) {
+        Row({ space: DesignTokens.space.sm }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-            .fontSize(DesignTokens.font.bodyM)
+            .fontSize(DesignTokens.font.iconInline)
             .fontColor([$r('app.color.warning_orange')])
           Text($r('app.string.no_wifi_warning'))
             .fontSize(DesignTokens.font.bodyM)
@@ -524,9 +489,9 @@ export struct NetworkSettingsSection {
         .margin({ top: DesignTokens.space.md })
       } else if (this.viewModel.localSendEnabled && this.viewModel.allInterfacesDisabled &&
         this.viewModel.serverReady) {
-        Row({ space: DesignTokens.space.tiny }) {
+        Row({ space: DesignTokens.space.sm }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-            .fontSize(DesignTokens.font.bodyM)
+            .fontSize(DesignTokens.font.iconInline)
             .fontColor([$r('app.color.warning_orange')])
           Text($r('app.string.all_interfaces_disabled_warning'))
             .fontSize(DesignTokens.font.bodyM)
@@ -633,9 +598,6 @@ export struct NetworkSettingsSection {
         // 请求确认（自动确认请求三选一 + 接收 PIN 码）
         ReceiveSettingsSection({ viewModel: this.viewModel })
 
-        // 下载请求（自动确认下载请求）
-        SendSettingsSection({ viewModel: this.viewModel })
-
         // 高级设置（可展开列表：点击标题行展开/收起）
         Row() {
           Text($r('app.string.advanced_settings_label'))
@@ -644,7 +606,7 @@ export struct NetworkSettingsSection {
             .layoutWeight(1)
 
           SymbolGlyph(this.isAdvancedExpanded ? $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_forward'))
-            .fontSize(DesignTokens.font.titleS)
+            .fontSize(DesignTokens.font.subtitleL)
             .fontColor([$r('app.color.text_tertiary')])
         }
         .width('100%')
@@ -691,6 +653,30 @@ export struct NetworkSettingsSection {
             .alignSelf(ItemAlign.Start)
             .margin({ bottom: DesignTokens.space.tiny })
 
+          // 创建校验和（发送前计算 SHA-256，创建与校验联动，单一开关）
+          Row() {
+            Text($r('app.string.create_checksums_label'))
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+
+            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.createChecksums })
+              .onChange((isOn: boolean) => {
+                this.viewModel.setChecksumsEnabled(isOn);
+              })
+              .id('settings_checksums_toggle')
+          }
+          .width('100%')
+          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+          .alignItems(VerticalAlign.Center)
+
+          Text($r('app.string.checksum_create_desc'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+            .alignSelf(ItemAlign.Start)
+            .margin({ bottom: DesignTokens.space.tiny })
+
           // 端口
           Row() {
             Text($r('app.string.port_label'))
@@ -720,30 +706,6 @@ export struct NetworkSettingsSection {
               .alignSelf(ItemAlign.Start)
               .margin({ bottom: DesignTokens.space.tiny })
           }
-
-          // 创建校验和（发送前计算 SHA-256，创建与校验联动，单一开关）
-          Row() {
-            Text($r('app.string.create_checksums_label'))
-              .fontSize(DesignTokens.font.bodyM)
-              .fontColor($r('app.color.text_primary'))
-              .layoutWeight(1)
-
-            Toggle({ type: ToggleType.Switch, isOn: this.viewModel.createChecksums })
-              .onChange((isOn: boolean) => {
-                this.viewModel.setChecksumsEnabled(isOn);
-              })
-              .id('settings_checksums_toggle')
-          }
-          .width('100%')
-          .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
-          .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-          .alignItems(VerticalAlign.Center)
-
-          Text($r('app.string.checksum_create_desc'))
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.text_secondary'))
-            .alignSelf(ItemAlign.Start)
-            .margin({ bottom: DesignTokens.space.tiny })
 
           // 组播组
           Row() {
@@ -807,7 +769,7 @@ export struct NetworkSettingsSection {
               .layoutWeight(1)
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
           .width('100%')
@@ -822,10 +784,10 @@ export struct NetworkSettingsSection {
             this.localInterfaces = networkSettingsViewModel.sortInterfaces(this.viewModel.getLocalInterfacesList());
             let savedWhitelist = this.parseList(this.viewModel.networkWhitelist);
             let savedBlacklist = this.parseList(this.viewModel.networkBlacklist);
-            logger.debug('接口: [' +
+            logger.debug('接口：[' +
               this.localInterfaces.map((i: NetworkInterface) => i.name + '(' + i.ip + ')').join(', ') + ']');
             logger.debug(
-              '存储白名单: [' + savedWhitelist.join(', ') + '] 黑名单: [' + savedBlacklist.join(', ') +
+              '存储白名单：[' + savedWhitelist.join(', ') + '] 黑名单：[' + savedBlacklist.join(', ') +
                 ']');
             // 恢复保存的白/黑名单，再统一调用 applySheetInterfaces 将不在保存值中的活跃接口
             // 按默认规则纳入本地列表（wifi/ethernet → 白名单，其他 → 黑名单，空名接口跳过）。
@@ -848,6 +810,13 @@ export struct NetworkSettingsSection {
             },
             showClose: true,
             keyboardAvoidMode: SheetKeyboardAvoidMode.TRANSLATE_AND_SCROLL,
+            // 注册 onWillDismiss 后下拉关闭默认会先回弹再关闭（观感像重新弹出一次）：
+            // 需要二次确认时回弹保持面板位置，无需确认时直接关闭
+            onWillSpringBackWhenDismiss: (springBackAction: SpringBackAction) => {
+              if (this.hasUnsavedChanges()) {
+                springBackAction.springBack();
+              }
+            },
             onWillDismiss: (dismissSheetAction: DismissSheetAction) => {
               if (this.hasUnsavedChanges()) {
                 // 有未保存修改时，弹窗确认是否丢弃
@@ -887,7 +856,7 @@ export struct NetworkSettingsSection {
               .layoutWeight(1)
 
             SymbolGlyph($r('sys.symbol.chevron_forward'))
-              .fontSize(DesignTokens.font.titleS)
+              .fontSize(DesignTokens.font.subtitleL)
               .fontColor([$r('app.color.text_secondary')])
           }
           .width('100%')

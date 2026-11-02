@@ -20,8 +20,12 @@ import {
   NativeFileUploadEvent,
   NativeDeviceFoundEvent,
   NativeDeviceLostEvent,
-  NativeWebSendPrepareDownloadEvent,
-  NativeWebSendFileDownloadEvent,
+  NativeWebAccessEvent,
+  NativeWebDownloadStartedEvent,
+  NativeWebDownloadProgressEvent,
+  NativeWebDownloadFileDoneEvent,
+  NativeWebDownloadEndedEvent,
+  NativeWebUploadPrepareEvent,
   NativeWebSendSessionEndEvent,
   NativeMtaReceiveProgressEvent,
   NativeErrorEvent
@@ -332,52 +336,123 @@ export default function NativeEventParseTest() {
       expect(e.fingerprint === 'fp_003').assertTrue()
     })
 
-    // ── webSendPrepareDownload 事件 ──
+    // ── webAccess / webDownload* 事件 ──
 
-    it('parse_web_send_prepare_download_event', 0, () => {
+    it('parse_web_access_event', 0, () => {
       let json =
-        '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_001","ip":"192.168.1.200","userAgent":"Mozilla/5.0"}}'
+        '{"type":"webAccess","payload":{"ip":"192.168.1.200","userAgent":"Mozilla/5.0","fileCount":2}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
         return
       }
-      let e: NativeWebSendPrepareDownloadEvent = event as NativeWebSendPrepareDownloadEvent
-      expect(e.type === 'webSendPrepareDownload').assertTrue()
-      expect(e.sessionId === 'web_session_001').assertTrue()
+      let e: NativeWebAccessEvent = event as NativeWebAccessEvent
+      expect(e.type === 'webAccess').assertTrue()
       expect(e.ip === '192.168.1.200').assertTrue()
       expect(e.userAgent === 'Mozilla/5.0').assertTrue()
+      expect(e.fileCount === 2).assertTrue()
     })
 
-    it('parse_web_send_prepare_download_without_user_agent', 0, () => {
-      let json = '{"type":"webSendPrepareDownload","payload":{"sessionId":"web_session_002","ip":"192.168.1.200"}}'
+    it('parse_web_access_null_user_agent', 0, () => {
+      // 浏览器可不带 User-Agent（或头含非 ASCII 字节）：Rust 侧为 None，
+      // 序列化为 null，须归一为 undefined
+      let json = '{"type":"webAccess","payload":{"ip":"192.168.1.201","userAgent":null,"fileCount":1}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
         return
       }
-      let e: NativeWebSendPrepareDownloadEvent = event as NativeWebSendPrepareDownloadEvent
-      expect(e.sessionId === 'web_session_002').assertTrue()
-      // userAgent 缺失时应为 undefined
+      let e: NativeWebAccessEvent = event as NativeWebAccessEvent
+      expect(e.ip === '192.168.1.201').assertTrue()
       expect(e.userAgent === undefined).assertTrue()
     })
 
-    // ── webSendFileDownload 事件 ──
-
-    it('parse_web_send_file_download_event', 0, () => {
+    it('parse_web_download_started_event', 0, () => {
       let json =
-        '{"type":"webSendFileDownload","payload":{"sessionId":"web_session_001","fileId":"file_1","fileName":"document.pdf","size":4096}}'
+        '{"type":"webDownloadStarted","payload":{"batchId":"b1","ip":"192.168.1.200","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
         return
       }
-      let e: NativeWebSendFileDownloadEvent = event as NativeWebSendFileDownloadEvent
-      expect(e.type === 'webSendFileDownload').assertTrue()
-      expect(e.sessionId === 'web_session_001').assertTrue()
-      expect(e.fileId === 'file_1').assertTrue()
-      expect(e.fileName === 'document.pdf').assertTrue()
-      expect(e.size === 4096).assertTrue()
+      let e: NativeWebDownloadStartedEvent = event as NativeWebDownloadStartedEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.ip === '192.168.1.200').assertTrue()
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].fileName === 'a.txt').assertTrue()
+    })
+
+    it('parse_web_download_started_null_user_agent', 0, () => {
+      let json =
+        '{"type":"webDownloadStarted","payload":{"batchId":"b3","ip":"192.168.1.202","userAgent":null,"files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadStartedEvent = event as NativeWebDownloadStartedEvent
+      expect(e.batchId === 'b3').assertTrue()
+      expect(e.userAgent === undefined).assertTrue()
+      expect(e.files.length === 1).assertTrue()
+    })
+
+    it('parse_web_download_progress_event', 0, () => {
+      let json =
+        '{"type":"webDownloadProgress","payload":{"batchId":"b1","fileId":"f1","sentBytes":5,"totalBytes":10}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadProgressEvent = event as NativeWebDownloadProgressEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.fileId === 'f1').assertTrue()
+      expect(e.sentBytes === 5).assertTrue()
+      expect(e.totalBytes === 10).assertTrue()
+    })
+
+    it('parse_web_download_file_done_event', 0, () => {
+      let json =
+        '{"type":"webDownloadFileDone","payload":{"batchId":"b1","fileId":"f1","totalBytes":10}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadFileDoneEvent = event as NativeWebDownloadFileDoneEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.fileId === 'f1').assertTrue()
+      expect(e.totalBytes === 10).assertTrue()
+    })
+
+    it('parse_web_download_ended_event', 0, () => {
+      let json =
+        '{"type":"webDownloadEnded","payload":{"batchId":"b1","outcome":"failed","error":"network"}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadEndedEvent = event as NativeWebDownloadEndedEvent
+      expect(e.batchId === 'b1').assertTrue()
+      expect(e.outcome === 'failed').assertTrue()
+      expect(e.error === 'network').assertTrue()
+    })
+
+    it('parse_web_download_ended_null_error', 0, () => {
+      // 下载成功（或取消）时 Rust 的 error 为 None，序列化为 JSON null；
+      // 可选字段须归一为 undefined，防止下游「!== undefined && .length」判断被 null 穿透
+      let json =
+        '{"type":"webDownloadEnded","payload":{"batchId":"b2","outcome":"succeeded","error":null}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebDownloadEndedEvent = event as NativeWebDownloadEndedEvent
+      expect(e.batchId === 'b2').assertTrue()
+      expect(e.outcome === 'succeeded').assertTrue()
+      expect(e.error === undefined).assertTrue()
     })
 
     // ── webSendSessionEnd 事件 ──
@@ -392,6 +467,41 @@ export default function NativeEventParseTest() {
       let e: NativeWebSendSessionEndEvent = event as NativeWebSendSessionEndEvent
       expect(e.type === 'webSendSessionEnd').assertTrue()
       expect(e.sessionId === 'web_session_001').assertTrue()
+    })
+
+    // ── webUploadPrepare 事件 ──
+
+    it('parse_web_upload_prepare_event', 0, () => {
+      let json =
+        '{"type":"webUploadPrepare","payload":{"token":"t1","ip":"192.168.1.203","userAgent":"Mozilla/5.0","files":[{"fileId":"f1","fileName":"a.txt","fileType":"text/plain","size":3,"preview":null}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebUploadPrepareEvent = event as NativeWebUploadPrepareEvent
+      expect(e.token === 't1').assertTrue()
+      expect(e.ip === '192.168.1.203').assertTrue()
+      expect(e.userAgent === 'Mozilla/5.0').assertTrue()
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].preview === undefined).assertTrue()
+    })
+
+    it('parse_web_upload_prepare_null_user_agent', 0, () => {
+      // User-Agent 是可选协议头，不得列为必需字段：条件为 null 时整条事件
+      // 仍须保留并进入上传确认链路（否则浏览器上传等满 60s 后超时）
+      let json =
+        '{"type":"webUploadPrepare","payload":{"token":"t2","ip":"192.168.1.204","userAgent":null,"files":[{"fileId":"f2","fileName":"b.txt","fileType":"text/plain","size":5}]}}'
+      let event: NativeEvent | undefined = parseNativeEvent(json)
+      expect(event !== undefined).assertTrue()
+      if (event === undefined) {
+        return
+      }
+      let e: NativeWebUploadPrepareEvent = event as NativeWebUploadPrepareEvent
+      expect(e.token === 't2').assertTrue()
+      expect(e.userAgent === undefined).assertTrue()
+      expect(e.files.length === 1).assertTrue()
+      expect(e.files[0].fileName === 'b.txt').assertTrue()
     })
 
     // ── error 事件 ──

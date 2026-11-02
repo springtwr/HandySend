@@ -44,27 +44,74 @@ hdc shell hilog | grep "HandySend:"
 | MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
 
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository、ReceiveRepository、
-> ReceiveTargets、SendViewModel、SendContent、WebShareRepository、ChecksumRepository、
-> GallerySaveService、VideoThumbnailUtil、service/transfer/*（会话引擎与协议适配器）、
-> TransferCenterViewModel、SessionDetailViewModel、BackgroundTransferService、
-> PendingRequestNotifier。
+> ReceiveTargets、SendViewModel、SendContent、WebShareRepository、RustWeb（NativeBridge
+> 内的网页传输 Rust 日志归并）、ChecksumRepository、GallerySaveService、VideoThumbnailUtil、
+> service/transfer/*（会话引擎与协议适配器）、TransferCenterViewModel、SessionDetailViewModel、
+> BackgroundTransferService、BackgroundAttentionNotifier。
 
-## 日志级别规则（四级）
+## 日志级别规则（五级）
 
-| 级别 | 适用 |
-|------|------|
-| debug | 诊断/状态细节/逐帧进度/no-op 跳过/重试细节 |
-| info | 关键流程节点（启动、连接、请求接受、完成、取消、设置变更生效） |
-| warn | 可恢复告警/无效操作/降级（能力未开启、资源清理失败、重复请求被忽略、注册/反注册失败） |
-| error | 真正失败/异常（解析/连接/IO/保存失败、启动异常） |
-| fatal | 致命不可恢复（保留） |
+| 级别 | 目的 | 适用 |
+|------|------|------|
+| debug | 内部诊断细节（Release 默认抑制） | 状态细节/逐帧进度/no-op 跳过/重试细节/通知收发/鉴权结果/自动重启/历史裁剪/网卡转储/路由分支/适配器内部步骤/取消中间步骤/内部标识与协议字段 |
+| info | 对外可见的关键流程节点 | 用户操作结果、会话终结、服务启停、请求接受/完成/取消/被拒、设置变更生效 |
+| warn | 可恢复告警/无效操作/降级（能力未开启、资源清理失败、重复请求被忽略、注册/反注册失败、环境或权限受限） | 流程继续但需关注的分支 |
+| error | 非预期失败/异常（解析/连接/IO/保存失败、启动异常、不变量被破坏） | 没有回退的真正故障 |
+| fatal | 致命不可恢复（保留） | 几乎不用 |
+
+### 级别判定要点
+
+- 对端拒绝、用户取消、无可用应用、权限被拒、存储不足、对端版本不兼容等**可解释的业务结果不得记为 error**：
+  对外可见的结果用 info，因环境/能力受限而无法继续的分支用 warn。
+- 清理、反注册、停止服务失败通常记 warn：主流程已继续，失败仅影响资源回收。
+- 防御性守卫命中、能力开关关闭后的空操作、重复请求忽略记 debug，不作为告警。
+- info 正文只描述“发生了什么”，不得携带会话/文件/令牌等内部标识、原始协议字段、逐阶段细节与耗时；
+  这些内容放 debug，或用 LogContext 统一承载。
+- 同一事件只在一个最合适的位置记录；已在底层记录原因的失败，上层只记录结果，不重复记 error。
+
+## 日志语言规则
+
+- 日志正文使用简体中文；技术标识保留英文原文（字段名如 `port=`/`taskId=`、协议名如 HTTP/TLS/WS/GATT、错误码、HTTP 状态码、会话标识等）。
+- Rust MTA 日志正文必须保留 `MTA` 前缀，供 ArkTS 侧按正文包含 `MTA` 归并（`drainRustLog` 的 `includes('MTA')` 过滤依赖此约定，翻译时不得去掉）。
+
+### 标点与格式
+
+- 中文正文使用全角标点（`，`、`：`、`；`、`。`），中文句子后的说明、原因、错误统一用 `：`。
+- 英文技术片段、`key=value` 字段与纯英文标签保留半角（如 `port=`、`GATT Server`、`HTTP 403`）。
+- 日志末尾不加句号；一条日志只表达一个事件，不换行。
+- 诊断字段统一为 `键=值`，键与值之间不加空格；字段之间用单个空格分隔。
+
+### 用词口径
+
+- Web 相关统一称“网页”，用户可见的任务统一称“任务”，协议/注册表内部称“会话”，MTA 品牌名保留 `MTA`。
+- 传输角色：LocalSend 语境用“发送方/接收方”，协议层对端用“对端”，面向人的提示用“对方”。
+- 服务、任务、进程用“启动/停止”，开关、能力、功能用“开启/关闭”。
+- 文件与用户数据用“删除”，列表/集合中的条目用“移除”，临时产物用“清理”。
+- 操作未达成用“失败”；捕获回调、异步流程或系统 API 抛出的异常用“异常”；结果状态用“成功”，过程结束用“完成”。
+- 不以函数名、类名或变量名作正文主语；改用功能描述，例如 `nativeStopServer` 写作“停止原生服务器”，
+  `stateChange` 写作“蓝牙状态变化监听”。
 
 Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 
+## 文件日志（双通道）
+
+- 位置：应用沙箱 `filesDir/diagnostics/`
+- 文件：
+  - `events-current.log` / `events-previous.log`：info/warn/error/fatal，始终写入，绝不写 debug，单文件上限 512KB
+  - `detail-current.log` / `detail-previous.log`：始终写 info+；详细日志开启时额外写 debug，单文件上限 2MB
+- 时间：本地时区 ISO 8601，带偏移（如 `2026-11-01T03:48:47.184+08:00`），不是 UTC `Z`
+- 写入：内存队列 + 每 500ms 批量 append；warn/error/fatal 立即 flush；退后台、窗口销毁、正常退出主动 flush
+- 轮转：current 超过上限时删除旧 previous，current 改名为 previous，新建 current 并写新会话头
+- 会话标记：`# session-start ...`、`# session-end ...`；previous 文件保留上一次会话内容，供 ZIP 导出携带
+- 页面：固定只读 detail 当前文件尾部（最近约 256KB），按偏移增量刷新；时间按本地 24 小时制显示；详细开关只决定后续是否追加 debug
+- debug 预算：全局每秒最多 100 条、突发 300 条；超限丢弃并写入 `# debug-suppressed` 汇总，events 不受影响
+- 导出：events/detail 的 current/previous 四份文件 + `metadata.json`/`README.txt` 打包为 ZIP
+- 内存回退：`AppCore` 仅保留最近 500 条，文件日志不可用时供诊断页临时显示
+
 ## 传输进度与任务列表转储的节流策略
 
-- 传输进度日志：发送/接收两侧统一口径，进行中按「会话标识 + 文件标识」维度每秒最多 1 条
-  （`File progress` / `Receive file progress`），终态（完成/失败/取消）必发、不受节流限制；
+- 传输进度日志：发送/接收两侧统一口径，进行中按「会话」维度每 5 秒最多 1 条
+  （`传输进度` / `接收进度`），逐文件不再单独刷日志；文件完成与终态（完成/失败/取消）必发、不受节流限制；
   无字节进度的会话（如纯文本消息）不输出进度日志；节流状态随会话终结清理。
 - 任务列表行序列转储（`TransferCenterViewModel`）：常态仅一行摘要（行数/剔除数/首尾条目标识），
   体积不随记录数增长；命中异常信号（条目被剔除、存在重复标识、行数相比上次减少）时输出完整序列。
@@ -80,11 +127,13 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:EntryBackup` | `[备份]` | EntryBackupAbility.ets | 备份生命周期 |
 | `HandySend:DialogService` | `[弹窗]` | DialogService.ets | 弹窗操作 |
 | `HandySend:ReceiveHistoryService` | `[历史]` | ReceiveHistoryService.ets | 历史记录添加/清空 |
-| `HandySend:NativeBridge` | `[桥接]` | NativeBridge.ets | NAPI 事件回调/处理器异常 |
+| `HandySend:NativeBridge` | `[桥接]` | NativeBridge.ets | NAPI 事件回调/处理器异常、Rust 日志归并 |
+| `HandySend:RustWeb` | `[网页传输]` | NativeBridge.ets | Rust 网页传输子系统日志归并（按 Rust target 归入 `bridge::web`） |
 | `HandySend:NativeTypes` | `[Native 类型]` | model/NativeTypes.ets | 事件必填字段缺失丢弃告警 |
 | `HandySend:EventBus` | `[事件总线]` | utils/EventBus.ets | 事件回调异常 |
-| `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 日志导出保存失败 |
+| `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 文件尾部读取、全量日志导出保存失败 |
 | `HandySend:MainTab` | `[主页]` | MainTabViewModel.ets | Tab 切换、分享 URI 消费 |
+| `HandySend:MainTabFloating` | `[主页]` | MainTabFloating.ets | 首页悬浮壳层、启动门禁与页面收尾 |
 | `HandySend:DiscoveryRepository` | `[发现]` | DiscoveryRepository.ets | 设备发现事件、扫描/连接/注册、Rust 日志归并 |
 | `HandySend:DeviceRepository` | `[设备]` | DeviceRepository.ets | 设备身份刷新 |
 | `HandySend:SendRepository` | `[发送]` | SendRepository.ets | 发送流程（sendToDevice/Multi、文件 staging、会话管理）、Rust 日志归并 |
@@ -92,10 +141,12 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:ReceiveTargets` | `[接收目标]` | service/repository/ReceiveTargets.ets | 接收目录获取失败、直写目标准备失败 |
 | `HandySend:SendViewModel` | `[发送页]` | SendViewModel.ets | 发送状态管理 |
 | `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板、拖放接收） |
-| `HandySend:WebShareRepository` | `[网页分享]` | WebShareRepository.ets | Web 分享链接创建/停止、上传/下载事件 |
+| `HandySend:WebShareRepository` | `[网页传输]` | WebShareRepository.ets | 网页传输链接创建/停止、上传/下载事件、Rust 日志轮询（服务运行期每 2 秒排空） |
+| `HandySend:ShareLinkViewModel` | `[网页传输]` | ShareLinkViewModel.ets | 网页传输面板状态与开关联动 |
 | `HandySend:TransferRegistry` | `[会话注册表]` | service/transfer/TransferSessionRegistry.ets | 会话创建/状态迁移/终结/回收与聚合（统一会话事实源） |
 | `HandySend:SessionHistory` | `[任务历史]` | service/transfer/SessionHistoryStore.ets | 任务历史归档、FIFO 裁剪与 schema 迁移 |
 | `HandySend:SessionAdapter` | `[协议适配]` | service/transfer/adapters/*.ets | 各协议事件翻译与能力/展示描述符 |
+| `HandySend:ProtocolDisableGuard` | `[协议开关]` | service/transfer/ProtocolDisableGuard.ets | 协议关闭确认文案解析 |
 | `HandySend:TransferCenter` | `[任务]` | viewmodel/TransferCenterViewModel.ets | 中心分组/筛选/批量操作 |
 | `HandySend:SessionDetail` | `[会话详情]` | viewmodel/SessionDetailViewModel.ets | 通用详情页状态与动作 |
 | `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算 |
@@ -114,6 +165,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:MtaReceive` | `[互传接收]` | service/mta/MtaReceiveService.ets | MTA 接收编排（广播/GATT/P2P/WS/下载状态机）、建链阶段耗时（收凭据→本机弹窗）与各阶段相对耗时、会话收尾复用/重建判定 |
 | `HandySend:MtaTransfer` | `[互传传输]` | service/mta/MtaTransferClient.ets | MTA WS 传输客户端（握手、消息、下载、status 回执） |
 | `HandySend:MtaBleClient` | `[互传蓝牙]` | service/mta/MtaBleClient.ets | BLE 扫描解析诊断（原始 serviceData/解析结果/异常、5GHz 标记原值与判定依据）、<br>GATT Client（地址重扫/建链重试、按对端能力选择写模式（无响应写/带响应写）<br>与写诊断：写方式/目标特征/MTU/长度/耗时/写结果/失败原因） |
+| `HandySend:MtaBleCommon` | `[互传蓝牙]` | service/mta/MtaBleCommon.ets | BLE 状态查询、Rust 日志轮询与权限辅助 |
 | `HandySend:MtaBleReceiver` | `[互传蓝牙]` | service/mta/MtaBleReceiver.ets | BLE 广播字节诊断（主广播/扫描响应 hex）、GATT Server |
 | `HandySend:MtaCrypto` | `[互传加密]` | service/mta/MtaCrypto.ets | 共享密钥派生、字段加解密（IV/长度/失败阶段） |
 | `HandySend:MtaP2pConnector` | `[互传P2P]` | service/mta/MtaP2pConnector.ets | P2P 连接、GO IP、网络并存诊断 |
@@ -124,6 +176,10 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 ## MTA 子系统正文区分
 
 MTA 各子系统（如 GATT、P2P、WS、下载、暂存）以「子系统: 内容」形式保留在正文中，如 `[互传接收] GATT: sendResponse(写) 失败: ...`。
+
+MTA 收发服务经 `appendLog` 写入的日志与 `logger.*` 共用同一套级别规则：协议阶段推进、密钥/频点/地址、
+逐阶段耗时与写回诊断等内部细节用 debug；用户可见的请求、接受、拒绝、完成、取消用 info；
+清理/恢复/重试失败用 warn；只有无法继续的失败用 error。
 
 ## MTA 品牌兼容诊断点
 
@@ -159,9 +215,11 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 ## Rust 侧日志
 
-- Rust `log::*` 调用按四级语义校正；调试标签（`[DBG-*]` 等）已移除，由正文自述。
-- 缓冲元素格式为 `level|message`（`level ∈ error/warn/info/debug/trace`）；ArkTS 侧按首个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
-- ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`），经带级别轮询接口读取，保留原始级别。
+- Rust `log::*` 调用按同一套五级语义校正；调试标签（`[DBG-*]` 等）已移除，由正文自述。
+- Rust info 只保留服务启停、接收完成等关键节点；页面访问、下载会话建立、批次/令牌明细与协议阶段参数用 debug。
+- 缓冲元素格式为 `level|target|message`（`level ∈ error/warn/info/debug/trace`，`target` 为 Rust 模块路径）；ArkTS 侧按前两个 `|` 解析，`trace` 归一到 `debug`，无分隔符按 `info` 兜底。
+- ArkTS 消费方统一以 `Rust: ` 作为正文前缀（如 `[发现] Rust: ...`、`[桥接] Rust: ...`），经带级别轮询接口读取，保留原始级别；轮询时机为设备发现、发送结束与网页服务运行期（每 2 秒）。
+- target 位于 `bridge::web` 下的 Rust 日志由 ArkTS 侧归入 `[网页传输]`，其余行仍按 `[桥接]` 输出。
 - MTA 相关 Rust 日志正文以 `MTA` 标识开头，供 ArkTS 侧按正文包含 `MTA` 归并到 MTA 发送/应用日志。
 - 第三方依赖（`rustls`/`tokio_rustls`/`reqwest`）的 debug/trace 日志按 target 前缀屏蔽（bridge/identity.rs `log_enabled`）
   ，仅保留其 warn/error；`log!` 宏只检查 max_level、不调用 `enabled()`，故过滤须在输出器的 `log()` 入口收口。
@@ -180,7 +238,12 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 ## Debug 开关
 
-- **Debug 版本**：默认 DEBUG 级别，全量输出
-- **Release 版本**：默认 INFO 级别，诊断日志页「详细日志（DEBUG）」Toggle 可临时开启 DEBUG，重启恢复
-- 不持久化，不依赖 PreferencesUtil
-- `setDebugEnabled()` 同时修改内存标志 + hilog 全局级别
+- 默认关闭不再基于内存压力：内存回退 500 条、写入队列 500 行、页面尾读 256KB 均有界
+- 仍保留显式开关的原因：限制持续 debug 写入、hilog 与 Rust 日志的 I/O/性能开销，
+  减少原始协议/设备标识等诊断内容长期落盘，并避免普通用户看到诊断噪音
+- **Debug 构建**：未保存用户选择时默认 DEBUG
+- **Release 构建**：未保存用户选择时默认 INFO
+- 诊断日志页标题栏溢出菜单 →「日志设置」弹层，内含唯一的「记录详细日志」Toggle 与说明
+- 用户选择持久化，重启后继续生效；可在启动阶段捕获详细日志
+- `setDebugEnabled()` 修改内存标志、hilog 全局级别、detail 的 debug 写入和 Rust 日志级别
+- 文件日志写入与页面读取解耦：页面关闭后仍持续写 events/detail；detail 始终记录 info+，debug 按开关追加

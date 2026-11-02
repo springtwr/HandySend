@@ -105,7 +105,17 @@ pub fn init_with_persisted_identity(
         } else {
             Some(persist_dir)
         };
-        let loaded = persist_dir_opt.and_then(|dir| load_persisted_identity(dir).ok().flatten());
+        let loaded = match persist_dir_opt {
+            Some(dir) => match load_persisted_identity(dir) {
+                Ok(v) => v,
+                Err(e) => {
+                    // 读写失败直接返回错误（不得静默重建身份，否则指纹漂移），按操作失败记录
+                    log::error!("身份加载失败：{e:#}");
+                    return Err(BridgeError::Upstream(anyhow::anyhow!("{e:#}")));
+                }
+            },
+            None => None,
+        };
         log::debug!("loaded_persisted={}", loaded.is_some());
 
         let cert = match loaded {
@@ -170,8 +180,17 @@ fn load_persisted_identity(dir: &str) -> Result<Option<(String, String)>> {
     if !key_path.exists() || !cert_path.exists() {
         return Ok(None);
     }
-    let key = std::fs::read_to_string(&key_path)?;
-    let cert = std::fs::read_to_string(&cert_path)?;
+    // 存在性检查与读取之间文件消失视为无身份（系统回收等），仅其他 IO 错误上报
+    let key = match std::fs::read_to_string(&key_path) {
+        Ok(v) => v,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    let cert = match std::fs::read_to_string(&cert_path) {
+        Ok(v) => v,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
     if key.trim().is_empty() || cert.trim().is_empty() {
         return Ok(None);
     }
@@ -183,10 +202,17 @@ fn save_persisted_identity(dir: &str, key_pem: &str, cert_pem: &str) -> Result<(
     std::fs::create_dir_all(dir)?;
     let key_path = Path::new(dir).join(IDENTITY_KEY_FILE);
     let cert_path = Path::new(dir).join(IDENTITY_CERT_FILE);
-    std::fs::write(&key_path, key_pem)?;
-    if let Err(e) = std::fs::write(&cert_path, cert_pem) {
-        // key/cert 两次写非原子：cert 写失败时清理已写入的新 key，
-        // 避免磁盘残留「新 key + 旧 cert」的不一致身份（加载时两者均在，不会自动重建）
+    // 原子替换：先写临时文件后重命名，避免崩溃留下新旧混搭
+    let tmp_key = Path::new(dir).join("identity.key.tmp");
+    let tmp_cert = Path::new(dir).join("identity.pem.tmp");
+    std::fs::write(&tmp_key, key_pem)?;
+    if let Err(e) = std::fs::write(&tmp_cert, cert_pem) {
+        let _ = std::fs::remove_file(&tmp_key);
+        return Err(e.into());
+    }
+    std::fs::rename(&tmp_key, &key_path)?;
+    if let Err(e) = std::fs::rename(&tmp_cert, &cert_path) {
+        // 证书替换失败时清理已写入的新私钥，避免不一致
         let _ = std::fs::remove_file(&key_path);
         return Err(e.into());
     }
@@ -282,7 +308,7 @@ pub fn get_network_interfaces() -> Vec<NetworkInterfaceInfo> {
             })
             .collect(),
         Err(e) => {
-            log::warn!("获取网络接口失败: {e}");
+            log::warn!("获取网络接口失败：{e}");
             Vec::new()
         }
     }
@@ -425,9 +451,10 @@ pub fn create_cancel_token(state: &Mutex<BridgeState>) -> String {
     id
 }
 
-/// 按 cancel_id 取消一次哈希操作。
-pub fn cancel_hash(state: &BridgeState, cancel_id: &str) -> Result<(), BridgeError> {
-    if let Some(token) = state.cancel_tokens.get(cancel_id) {
+/// 按 cancel_id 取消一次哈希操作，取消后移除令牌避免残留。
+pub fn cancel_hash(state: &Mutex<BridgeState>, cancel_id: &str) -> Result<(), BridgeError> {
+    let mut state = lock(state);
+    if let Some(token) = state.cancel_tokens.remove(cancel_id) {
         token.cancel();
         Ok(())
     } else {
@@ -441,7 +468,7 @@ pub fn cancel_hash(state: &BridgeState, cancel_id: &str) -> Result<(), BridgeErr
 // ── 日志 ──────────────────────────────────────────────────────────────
 
 /// Rust 日志静态缓冲（logger 写入，poll 读取排空）。
-/// 缓冲元素格式为 `level|message`（首个 `|` 为分隔符），供 ArkTS 侧还原原始级别。
+/// 缓冲元素格式为 `level|target|message`（前两个 `|` 为分隔符），供 ArkTS 侧还原原始级别与来源子系统。
 static RUST_LOG_BUF: std::sync::Mutex<std::collections::VecDeque<String>> =
     std::sync::Mutex::new(std::collections::VecDeque::new());
 
@@ -475,9 +502,9 @@ pub fn log_level_token(level: log::Level) -> &'static str {
     }
 }
 
-/// 构造缓冲区记录（`level|message`）。
-fn format_log_entry(level: log::Level, msg: &str) -> String {
-    format!("{}|{}", log_level_token(level), msg)
+/// 构造缓冲区记录（`level|target|message`）。
+fn format_log_entry(level: log::Level, target: &str, msg: &str) -> String {
+    format!("{}|{}|{}", log_level_token(level), target, msg)
 }
 
 /// 第三方 TLS / HTTP 客户端的日志 target 前缀。
@@ -496,7 +523,7 @@ fn log_enabled(target: &str, level: log::Level) -> bool {
     !noisy || level <= log::Level::Info
 }
 
-/// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|message`。
+/// 排空并返回带级别的 Rust 日志缓冲，元素格式为 `level|target|message`。
 pub fn drain_rust_log_buf_with_levels() -> Vec<String> {
     let mut buf = lock(&RUST_LOG_BUF);
     buf.drain(..).collect()
@@ -533,8 +560,12 @@ mod hilog_impl {
                 return;
             }
             let msg = format!("{}", record.args());
-            // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
-            super::push_log_entry(super::format_log_entry(record.level(), &msg));
+            // 写入 level 与 target 前缀：target 供 ArkTS 侧按子系统归并到对应模块标签。
+            super::push_log_entry(super::format_log_entry(
+                record.level(),
+                record.target(),
+                &msg,
+            ));
             let level: c_int = match record.level() {
                 log::Level::Error => 3,
                 log::Level::Warn => 2,
@@ -574,9 +605,10 @@ pub fn init_hilog_logger() {
             if !crate::bridge::identity::log_enabled(record.target(), record.level()) {
                 return;
             }
-            // 写入 level 前缀，供 ArkTS 侧还原原始级别后分级展示
+            // 写入 level 与 target 前缀：target 供 ArkTS 侧按子系统归并到对应模块标签
             push_log_entry(format_log_entry(
                 record.level(),
+                record.target(),
                 &format!("{}", record.args()),
             ));
         }
@@ -894,14 +926,15 @@ mod tests {
             .insert("hash-1".to_string(), cancel.clone());
         let state = Mutex::new(bs);
 
-        let result = cancel_hash(&state.lock().unwrap(), "hash-1");
+        let result = cancel_hash(&state, "hash-1");
         assert!(result.is_ok());
         assert!(cancel.is_cancelled());
+        assert!(!state.lock().unwrap().cancel_tokens.contains_key("hash-1"));
     }
 
     #[test]
     fn cancel_hash_nonexistent_token() {
-        let state = BridgeState::new();
+        let state = Mutex::new(BridgeState::new());
         let result = cancel_hash(&state, "nonexistent");
         assert!(result.is_err());
     }
@@ -944,17 +977,26 @@ mod tests {
 
     #[test]
     fn log_entry_carries_level_prefix() {
-        assert_eq!(format_log_entry(log::Level::Error, "boom"), "error|boom");
         assert_eq!(
-            format_log_entry(log::Level::Warn, "careful"),
-            "warn|careful"
+            format_log_entry(log::Level::Error, "crate::mod", "boom"),
+            "error|crate::mod|boom"
         );
-        assert_eq!(format_log_entry(log::Level::Info, "ok"), "info|ok");
         assert_eq!(
-            format_log_entry(log::Level::Debug, "detail"),
-            "debug|detail"
+            format_log_entry(log::Level::Warn, "crate::mod", "careful"),
+            "warn|crate::mod|careful"
         );
-        assert_eq!(format_log_entry(log::Level::Trace, "bye"), "trace|bye");
+        assert_eq!(
+            format_log_entry(log::Level::Info, "crate::mod", "ok"),
+            "info|crate::mod|ok"
+        );
+        assert_eq!(
+            format_log_entry(log::Level::Debug, "crate::mod", "detail"),
+            "debug|crate::mod|detail"
+        );
+        assert_eq!(
+            format_log_entry(log::Level::Trace, "crate::mod", "bye"),
+            "trace|crate::mod|bye"
+        );
     }
 
     #[test]

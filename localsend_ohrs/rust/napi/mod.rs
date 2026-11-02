@@ -5,6 +5,7 @@
 //! - `event_forwarder`：事件转发（napi_threadsafe_function）
 //! - `identity`：初始化 / 安全上下文 / 基础能力
 //! - `server`：服务器 / 传输决策 / WebSend
+//! - `web`：自研 Web 服务（启停 / 文件表 / 会话决策）
 //! - `client`：发送 / 接收 / 取消 / 注册
 //! - `discovery`：发现
 
@@ -17,6 +18,7 @@ pub mod event_forwarder;
 pub mod identity;
 pub mod mta;
 pub mod server;
+pub mod web;
 
 use napi_ohos::bindgen_prelude::*;
 use napi_ohos::threadsafe_function::ThreadsafeFunction;
@@ -88,16 +90,6 @@ pub struct SendResult {
     pub error: Option<HttpError>,
 }
 
-/// 分享链接信息。
-#[napi(object)]
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareLinkInfo {
-    pub url: String,
-    pub port: u16,
-    pub session_id: String,
-}
-
 /// 安全上下文（TLS 证书身份）。
 #[napi(object)]
 pub struct SecurityContext {
@@ -128,6 +120,6 @@ pub fn register_event_listener(callback: ThreadsafeFunction<String>) -> Result<(
     let env = crate::napi::env::NapiEnv::global();
     env.ensure_event_channel();
     event_forwarder::register_event_callback(callback);
-    log::debug!("Event listener registered");
+    log::debug!("事件监听器已注册");
     Ok(())
 }

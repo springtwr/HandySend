@@ -134,8 +134,9 @@ export struct DeviceListItem {
     }
     .width('100%')
     .padding(DesignTokens.space.md)
-    .backgroundColor($r('app.color.page_background'))
-    .borderRadius(DesignTokens.radius.md)
+    .backgroundColor($r('app.color.card_background'))
+    .borderRadius(DesignTokens.radius.lg)
+    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
     .onClick(() => {
       this.onSend(this.device);
     })

@@ -36,8 +36,8 @@ use crate::bridge::mta::{ws, DownloadPhase, MtaContext};
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(200);
 /// 响应体分块通道容量（块）
 const BODY_CHANNEL_CAPACITY: usize = 8;
-/// 发送诊断日志最小输出间隔（约 1 s）
-const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(1);
+/// 发送诊断日志最小输出间隔（约 10 s）：逐秒速率对排障价值低，终态另有汇总
+const DIAG_LOG_INTERVAL: Duration = Duration::from_secs(10);
 /// 字节速率换算用的每 MiB
 const BYTES_PER_MIB: f64 = 1024.0 * 1024.0;
 
@@ -89,12 +89,12 @@ pub async fn run_server(
             accepted = listener.accept() => match accepted {
                 Ok(pair) => pair,
                 Err(e) => {
-                    log::warn!("MTA accept 失败: {e}");
+                    log::warn!("MTA 接受连接失败：{e}");
                     continue;
                 }
             },
         };
-        log::info!("MTA 接收到连接: {peer}");
+        log::debug!("MTA 接收到连接：{peer}");
         // 传输 WS 小控制帧时避免 Nagle 算法引入额外延迟（低风险，不改变 HTTP/协议行为）
         if let Err(e) = stream.set_nodelay(true) {
             log::debug!("MTA 设置 TCP_NODELAY 失败 ({peer}): {e}");
@@ -138,9 +138,9 @@ where
         // 对端/网络拆除时，优雅关闭底层 IO 可能失败（hyper Kind::Shutdown），
         // 属正常收尾而非传输故障，仅以 trace 记录，避免发送页日志出现误导性错误。
         if e.is_shutdown() {
-            log::trace!("MTA 连接收尾: {e}");
+            log::debug!("MTA 连接收尾：{e}");
         } else {
-            log::debug!("MTA 连接结束: {e}");
+            log::debug!("MTA 连接结束：{e}");
         }
     }
 }
@@ -200,7 +200,7 @@ async fn handle_websocket(req: Request<Incoming>, ctx: Arc<MtaContext>) -> Respo
                 // 只发握手即断开），不能据此判死进行中的发送会话——
                 // 与 run_ws 的单连接守卫语义保持一致
                 if upgrade_ctx.ws_connected.load(Ordering::SeqCst) {
-                    log::warn!("MTA WS 升级失败（已有活跃连接，忽略）: {e}");
+                    log::warn!("MTA WS 升级失败（已有活跃连接，忽略）：{e}");
                 } else {
                     send_event(
                         &upgrade_ctx.event_tx,
@@ -392,13 +392,24 @@ async fn build_download_response(
         }
     });
 
+    let safe_name: String = ctx
+        .file_name
+        .chars()
+        .map(|c| {
+            if c == '"' || c == '\r' || c == '\n' || c.is_control() || c == '/' || c == '\\' {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
     let response = Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/zip")
         .header("connection", "close")
         .header(
             "content-disposition",
-            format!("attachment; filename=\"{}\"", ctx.file_name),
+            format!("attachment; filename=\"{safe_name}\""),
         )
         .body(
             ZipStreamBody {
@@ -728,18 +739,42 @@ fn text_response(status: StatusCode, message: &str) -> Response<BoxBody> {
         .unwrap_or_else(|_| Response::new(empty_body()))
 }
 
-/// 解析查询参数（第一个匹配项）。
+/// 解析查询参数（第一个匹配项，百分号解码失败时回退原文）。
 fn query_param(query: &str, key: &str) -> Option<String> {
     for pair in query.split('&') {
         if let Some((k, v)) = pair.split_once('=') {
             if k == key {
-                return Some(v.to_string());
+                return Some(percent_decode(v));
             }
         } else if pair == key {
             return Some(String::new());
         }
     }
     None
+}
+
+/// 百分号解码（非法序列保留原文，避免匹配失败）。
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && bytes[i + 1].is_ascii_hexdigit()
+            && bytes[i + 2].is_ascii_hexdigit()
+        {
+            let hex = &s[i + 1..i + 3];
+            if let Ok(b) = u8::from_str_radix(hex, 16) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|_| s.to_string())
 }
 
 #[cfg(test)]

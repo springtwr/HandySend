@@ -8,6 +8,8 @@ import {
   decideTextPreview,
   isTextPreviewable
 } from '../utils/FilePreviewPolicy';
+import { sendTextDir } from '../service/repository/SendRepository';
+import { recvTextDir } from '../service/repository/ReceiveTargets';
 
 // 包装单个接收历史条目的条目级 ViewModel。
 // 依据基于场景的列表策略（方案 B）选择：条目为
@@ -26,9 +28,14 @@ export class ReceiveHistoryItemViewModel {
   @Trace public isMessage: boolean = false
   @Trace public timestamp: number = 0
   @Trace public path: string = ''
-  // 文本缩略预览内容：文本类条目按需读取文件本身，且未超预览阈值；
-  // 未加载/路径为空/文件缺失/非文本类/超阈值时为空串
+  // 多选模式下的勾选状态：长按条目进入多选时勾选，逐条点击切换
+  @Trace public selected: boolean = false
+  // 文本缩略预览内容：文本类条目按需读取文件本身，超阈值时为前 128KB 截断内容；
+  // 未加载/路径为空/文件缺失/非文本类/读取失败时为空串
   @Trace public previewText: string = ''
+  // 缩略预览是否为截断内容（超阈值时读取前 128KB；行内缩略本就只取头部展示，无需额外标记；
+  // 该标记供全文弹窗挂截断说明）
+  @Trace public previewTruncated: boolean = false
   // 防重复加载标记
   private textPreviewRequested: boolean = false
 
@@ -62,7 +69,12 @@ export class ReceiveHistoryItemViewModel {
     return isTextPreviewable(this.isTextEntry, this.path, this.fileSize);
   }
 
-  /** 文本类条目是否超过预览阈值：不读取内容、不产缩略预览，查看全文时明确提示文件过大。 */
+  /** 是否可查看截断文本：文本类 + 定位非空（超阈值时读前 128KB 并挂截断说明）。 */
+  get canViewTruncatedText(): boolean {
+    return this.isTextEntry && this.path.length > 0;
+  }
+
+  /** 文本类条目是否超过预览阈值：超限时截断预览前 128KB 并挂截断说明（与「内容不可用」区分）。 */
   get isPreviewOverLimit(): boolean {
     return decideTextPreview(this.isTextEntry, this.path, this.fileSize) === TextPreviewVerdict.overLimit;
   }
@@ -78,20 +90,38 @@ export class ReceiveHistoryItemViewModel {
     return this.path.length > 0;
   }
 
+  /**
+   * 是否为应用私有文本（收发文本落盘目录内的文件）：私有目录无文件管理器可导航位置，
+   * 故「打开所在位置」无合理语义，由菜单层置灰；「用其他应用打开」走应用文件分享机制（隐式 Want +
+   * 只读 URI 授权，沙箱自有文件属可分享目录），不受影响。
+   */
+  get isSandboxText(): boolean {
+    if (this.path.length === 0) {
+      return false;
+    }
+    let sendDir: string = sendTextDir();
+    if (sendDir.length > 0 && this.path.startsWith(sendDir)) {
+      return true;
+    }
+    let recvDir: string = recvTextDir();
+    return recvDir.length > 0 && this.path.startsWith(recvDir);
+  }
+
   // 文本类条目（含文本消息条目）按需读取内容缩略预览。
-  // 列表行出现时调用（fire-and-forget，不阻塞滚动）；判定与「查看全文」同源
-  // （文本类 + 路径非空 + 未超阈值），超阈值不读取内容，读取失败或文件缺失时保持空串静默降级。
+  // 列表行出现时调用（fire-and-forget，不阻塞滚动）；超阈值时读取前 128KB 截断预览并置位截断标记，
+  // 读取失败或文件缺失时保持空串静默降级。
   async loadTextPreview(): Promise<void> {
     if (this.textPreviewRequested || this.previewText.length > 0) {
       return;
     }
-    if (!this.canViewFullText) {
+    if (!this.canViewTruncatedText) {
       return;
     }
     this.textPreviewRequested = true;
     let content = readTextOfLocation(this.path, TEXT_PREVIEW_READ_MAX_BYTES);
     if (content !== undefined) {
       this.previewText = content;
+      this.previewTruncated = this.isPreviewOverLimit;
     }
   }
 

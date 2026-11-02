@@ -120,7 +120,7 @@ pub async fn start_discovery_v2(
                 send_event(&event_tx_bridge, ev).await;
             }
         }
-        log::debug!("Discovery event loop task ended");
+        log::debug!("发现事件循环任务已结束");
     });
 
     {
@@ -205,13 +205,29 @@ pub async fn discovery_discover_staged(
             })
         })
         .collect();
+    if known_channels.len() != channels.len() {
+        // 非法通道静默跳过难以排查，计数告警
+        log::warn!(
+            "发现通道非法跳过：{}/{}",
+            channels.len() - known_channels.len(),
+            channels.len()
+        );
+    }
 
     let interface_ips: Vec<String> = serde_json::from_str(interface_ips_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("接口 IP JSON 解析失败: {e}")))?;
+    let total_ips = interface_ips.len();
     let interface_ips: Vec<Ipv4Addr> = interface_ips
         .into_iter()
         .filter_map(|ip| ip.parse().ok())
         .collect();
+    if interface_ips.len() != total_ips {
+        log::warn!(
+            "接口 IP 非法跳过：{}/{}",
+            total_ips - interface_ips.len(),
+            total_ips
+        );
+    }
 
     let protocol_enum = identity::parse_protocol(protocol);
 

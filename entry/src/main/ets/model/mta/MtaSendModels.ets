@@ -39,7 +39,9 @@ export enum MtaSenderStage {
   COMPLETED = 'completed',
   /** 本次发送仅部分完成（对端回送成功类型 + 部分接收原因，只收了部分文件） */
   PARTIAL = 'partial',
-  /** 本次发送失败（含对端拒绝） */
+  /** 对端拒绝接收（终态，与 FAILED 并列） */
+  REJECTED = 'rejected',
+  /** 本次发送失败 */
   FAILED = 'failed',
   /** 用户已取消，正在通知对端取消（非终态：终态仍为 CANCELLED） */
   CANCEL_NOTIFYING = 'cancel_notifying',
@@ -735,19 +737,22 @@ export class RustLogLine {
 }
 
 /**
- * 解析 Rust 日志桥接行 `level|message`：
- * 按首个 `|` 分割，左为级别右为正文；无分隔符时级别按 info 兜底、整串为正文。
+ * 解析 Rust 日志桥接行 `level|target|message`：
+ * 前两个 `|` 为分隔符（target 为 Rust 模块路径，仅用于按子系统归并），
+ * 其余全部为正文；无分隔符时级别按 info 兜底、整串为正文。
  */
 export function parseRustLogLine(line: string): RustLogLine {
   let parsed = new RustLogLine();
   let sep = line.indexOf('|');
-  if (sep >= 0) {
-    parsed.level = line.substring(0, sep);
-    parsed.message = line.substring(sep + 1);
-  } else {
+  if (sep < 0) {
     parsed.level = LogLevels.INFO;
     parsed.message = line;
+    return parsed;
   }
+  parsed.level = line.substring(0, sep);
+  let rest = line.substring(sep + 1);
+  let targetSep = rest.indexOf('|');
+  parsed.message = targetSep >= 0 ? rest.substring(targetSep + 1) : rest;
   return parsed;
 }
 

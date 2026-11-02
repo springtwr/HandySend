@@ -68,7 +68,7 @@ export class MtaP2pGroup {
       wifiManager.on('p2pConnectionChange', this.connectionChangeCallback);
       this.eventsRegistered = true;
     } catch (e) {
-      logger.warn('p2pConnectionChange 注册失败: ' + errorText(e));
+      logger.warn('注册 P2P 连接变化监听失败：' + errorText(e));
     }
   }
 
@@ -84,7 +84,7 @@ export class MtaP2pGroup {
         this.connectionChangeCallback = undefined;
       }
     } catch (e) {
-      logger.warn('p2pConnectionChange 反注册失败: ' + errorText(e));
+      logger.warn('反注册 P2P 连接变化监听失败：' + errorText(e));
     }
     this.eventsRegistered = false;
     this.handlers = null;
@@ -172,7 +172,7 @@ export class MtaP2pGroup {
       if (typeof code === 'number' && code === MtaConstants.GROUP_NOT_FOUND_CODE) {
         return null;
       }
-      logger.warn('getCurrentGroup 失败: ' + errorText(e));
+      logger.warn('获取当前 P2P 群组失败：' + errorText(e));
       return null;
     }
   }
@@ -193,7 +193,7 @@ export class MtaP2pGroup {
         candidates.push(group.interface);
       }
     } catch (e) {
-      logger.warn('getCurrentGroup 失败: ' + errorText(e));
+      logger.warn('获取当前 P2P 群组失败：' + errorText(e));
     }
     for (let i = 0; i < candidates.length; i++) {
       let mac = nativeGetInterfaceMac(candidates[i]);

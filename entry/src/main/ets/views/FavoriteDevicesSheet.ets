@@ -237,7 +237,7 @@ export struct FavoriteDevicesSheet {
   @Builder
   selectionBar() {
     Row({ space: DesignTokens.space.md }) {
-      Text($r('app.string.favorites_select_cancel'))
+      Text($r('app.string.multi_select_cancel'))
         .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.text_primary'))
         .onClick(() => {
@@ -247,7 +247,7 @@ export struct FavoriteDevicesSheet {
 
       Blank()
 
-      Text($r('app.string.favorites_select_all'))
+      Text($r('app.string.multi_select_all'))
         .fontSize(DesignTokens.font.bodyM)
         .fontColor($r('app.color.accent_blue'))
         .onClick(() => {
@@ -255,7 +255,7 @@ export struct FavoriteDevicesSheet {
         })
         .id('favorites_selection_all')
 
-      Text($r('app.string.favorites_delete_count', this.panelViewModel.selectedCount))
+      Text($r('app.string.multi_select_delete_count', this.panelViewModel.selectedCount))
         .fontSize(DesignTokens.font.bodyM)
         .fontColor(this.panelViewModel.selectedCount > 0 ? $r('app.color.danger_red') :
           $r('app.color.text_tertiary'))

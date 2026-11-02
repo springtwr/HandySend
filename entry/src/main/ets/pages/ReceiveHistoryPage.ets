@@ -1,5 +1,12 @@
 import { common } from '@kit.AbilityKit';
-import { TipsDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
+import {
+  ComponentContent,
+  TipsDialogV2,
+  CustomContentDialogV2,
+  AdvancedDialogV2Button,
+  promptAction,
+  uiObserver
+} from '@kit.ArkUI';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
@@ -13,12 +20,18 @@ import { EmptyState } from '../components/EmptyState';
 import { FileEntryMenuItems, FileEntryMenuOptions } from '../components/FileEntryActions';
 import { FileEntryThumb } from '../components/FileEntryThumb';
 import { getPageContentMaxWidth, getPageMargin } from '../common/Breakpoints';
+import { GallerySaveResult, MediaFileInfo } from '../model/Types';
+import { saveMediaToGallery } from '../service/AppService';
 import { ReceiveHistoryViewModel } from '../viewmodel/ReceiveHistoryViewModel';
 import { ReceiveHistoryItemViewModel } from '../viewmodel/ReceiveHistoryItemViewModel';
 import { copyText } from '../utils/ClipboardUtil';
-import { readTextOfLocation } from '../utils/FileTextUtil';
+import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
+import { formatSizeDetailed } from '../utils/FormatUtil';
+import { gallerySaveLocalPath, isGalleryImage, isSaveToGalleryCandidate } from '../utils/GallerySavePolicy';
+import { buildGallerySaveDialog, GallerySaveDialogParams } from '../views/SaveToGalleryDialog';
 import {
   FileOpenResult,
+  isFileMissing,
   isGalleryLocation,
   normalizeFileLocation,
   openContainingFolder,
@@ -41,10 +54,14 @@ export struct ReceiveHistoryPage {
   @Local deleteDialogCheck: boolean = false
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
+  private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 文本消息完整内容弹窗：打开时暂存当前条目的完整文本，关闭时清空
   @Local fullTextDialogContent: string = ''
   // 全文弹窗内容不可用（文件缺失/读取失败）：弹窗内给出明确提示
   @Local fullTextDialogUnavailable: boolean = false
+  // 全文弹窗内容为截断预览（超阈值时读前 128KB）：弹窗内挂截断说明
+  @Local fullTextDialogTruncated: boolean = false
   // 全文弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local fullTextDialogContentWidth: number = 0
   // 确认回调（打开时暂存，确认时执行）
@@ -164,6 +181,66 @@ export struct ReceiveHistoryPage {
       .id('receive_history_delete_dialog')
   }
 
+  // ── 多选操作条（多选模式下出现于列表顶部） ──
+
+  /** 批量删除确认弹窗：确认后按勾选范围删除，取消不产生任何效果。 */
+  private openBatchDeleteConfirm(): void {
+    if (this.viewModel.selectedCount === 0) {
+      return;
+    }
+    let countMsg: string = this.formatHistoryMessage($r('app.string.history_delete_message_count'),
+      '%d', String(this.viewModel.selectedCount));
+    this.showHistoryDeleteConfirmDialog(
+      $r('app.string.history_delete_title'),
+      countMsg,
+      (deleteFiles: boolean) => {
+        this.withAnimation(() => {
+          this.viewModel.deleteSelected(deleteFiles);
+        });
+      });
+  }
+
+  @Builder
+  selectionBar() {
+    Row({ space: DesignTokens.space.md }) {
+      Text($r('app.string.multi_select_cancel'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.text_primary'))
+        .onClick(() => {
+          this.viewModel.exitSelection();
+        })
+        .id('receive_history_selection_cancel')
+
+      Blank()
+
+      Text($r('app.string.multi_select_all'))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor($r('app.color.accent_blue'))
+        .onClick(() => {
+          this.viewModel.toggleSelectAll();
+        })
+        .id('receive_history_selection_all')
+
+      Text($r('app.string.multi_select_delete_count', this.viewModel.selectedCount))
+        .fontSize(DesignTokens.font.bodyM)
+        .fontColor(this.viewModel.selectedCount > 0 ? $r('app.color.danger_red') :
+          $r('app.color.text_tertiary'))
+        .enabled(this.viewModel.selectedCount > 0)
+        .onClick(() => {
+          this.openBatchDeleteConfirm();
+        })
+        .id('receive_history_selection_delete')
+    }
+    .width('100%')
+    .padding({
+      left: getPageMargin(this.breakpointInfo.widthBreakpoint),
+      right: getPageMargin(this.breakpointInfo.widthBreakpoint),
+      top: DesignTokens.space.sm,
+      bottom: DesignTokens.space.sm
+    })
+    .alignItems(VerticalAlign.Center)
+  }
+
   // 解析带占位符（%s/%d）的字符串资源，用于确认弹窗的消息文本
   private formatHistoryMessage(resource: Resource, placeholder: string, value: string): string {
     let raw: string = getStringSync(this.getUIContext(), resource);
@@ -177,6 +254,9 @@ export struct ReceiveHistoryPage {
   private openResultMessage(result: FileOpenResult): ResourceStr {
     if (result === FileOpenResult.fileMissing) {
       return $r('app.string.history_open_file_missing');
+    }
+    if (result === FileOpenResult.accessDenied) {
+      return $r('app.string.history_open_file_access_denied');
     }
     if (result === FileOpenResult.noApp) {
       return $r('app.string.session_file_open_no_app');
@@ -231,7 +311,80 @@ export struct ReceiveHistoryPage {
       });
   }
 
-  // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）
+  /**
+   * 保存单个媒体文件到相册：菜单点击仅作入口，实际写入需用户在弹窗内点击 SaveButton
+   * 获取临时授权（应用未申请 WRITE_IMAGEVIDEO 受限权限）。
+   */
+  private handleSaveToGallery(item: ReceiveHistoryItemViewModel): void {
+    let hostContext = this.getUIContext().getHostContext();
+    if (hostContext === undefined) {
+      return;
+    }
+    // 与「打开所在位置」同口径：点击时探测源文件，缺失则明确提示，不打开无意义的保存弹窗
+    if (isFileMissing(normalizeFileLocation(item.path))) {
+      this.showMessage($r('app.string.history_open_file_missing'));
+      return;
+    }
+    let mediaFile: MediaFileInfo = {
+      // 保存服务按本机路径转 file URI；file:// 形式的条目先归一为本机路径
+      filePath: gallerySaveLocalPath(item.path),
+      fileName: item.fileName,
+      fileType: item.fileType,
+      isImage: isGalleryImage(item.fileType, item.fileName)
+    };
+    let params = new GallerySaveDialogParams();
+    params.mediaFiles = [mediaFile];
+    params.mediaCountText = this.buildGalleryMediaCountText(1);
+    params.onPerformSave = (files: Array<MediaFileInfo>): Promise<GallerySaveResult> => {
+      let context = this.getUIContext().getHostContext();
+      if (context === undefined) {
+        let failed: GallerySaveResult = { successCount: 0, failCount: files.length, errors: ['no context'] };
+        return Promise.resolve(failed);
+      }
+      return saveMediaToGallery(context as common.UIAbilityContext, files);
+    };
+    params.onSaveComplete = (result: GallerySaveResult): void => {
+      this.showMessage(result.successCount > 0 ? $r('app.string.gallery_save_success') :
+        $r('app.string.gallery_save_failed'));
+      if (result.successCount > 0) {
+        // 按条目精确回写：同会话中未保存的其他文件不被误标，相册图标随即出现
+        this.viewModel.markSavedToGallery(item.id);
+      }
+    };
+    params.onDismiss = (): void => {
+      this.galleryContentNode = null;
+    };
+    params.onCloseDialog = (): void => {
+      this.closeGallerySaveDialog();
+    };
+    let contentNode = new ComponentContent(this.getUIContext(), wrapBuilder(buildGallerySaveDialog), params);
+    this.galleryContentNode = contentNode;
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(contentNode, {
+        autoCancel: true,
+        alignment: DialogAlignment.Center
+      })
+      .catch(() => {
+        this.galleryContentNode = null;
+      });
+  }
+
+  /** 相册保存弹窗的媒体数量文案（单文件固定为 1，复用既有资源）。 */
+  private buildGalleryMediaCountText(count: number): string {
+    return getStringSync(this.getUIContext(), $r('app.string.gallery_save_media_count'))
+      .replace('%d', String(count));
+  }
+
+  private closeGallerySaveDialog(): void {
+    if (this.galleryContentNode !== null) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.galleryContentNode);
+      this.galleryContentNode = null;
+    }
+  }
+
+  // 复制文本类条目的内容：读取文件本身（不再依赖偏好存储中的正文字段）；
+  // 超过读取上限时仅复制前部内容，并明确提示截断
   private copyItemText(item: ReceiveHistoryItemViewModel): void {
     let content = readTextOfLocation(item.path);
     if (content === undefined) {
@@ -239,6 +392,19 @@ export struct ReceiveHistoryPage {
         message: $r('app.string.session_file_preview_unavailable'),
         duration: 2000
       });
+      return;
+    }
+    if (item.fileSize > TEXT_READ_MAX_BYTES) {
+      copyText(content);
+      try {
+        this.getUIContext().getPromptAction().showToast({
+          message: getStringSync(this.getUIContext(), $r('app.string.copy_truncated_message'))
+            .replace('%s', formatSizeDetailed(TEXT_READ_MAX_BYTES)),
+          duration: 2000
+        });
+      } catch (_e) {
+        // toast 展示失败不影响流程
+      }
       return;
     }
     this.copyMessageText(content);
@@ -261,12 +427,11 @@ export struct ReceiveHistoryPage {
 
   /**
    * 查看全文入口（条目点击与菜单「预览全文」共用）：
-   * 超过预览阈值时不读取内容、不弹窗，改为明确提示「文件过大、不支持预览」；
+   * 超过预览阈值时截断预览前 128KB 并挂截断说明；
    * 其余不可用情形（非文本类 / 无路径）不产生任何副作用。
    */
   private requestFullText(item: ReceiveHistoryItemViewModel): void {
-    if (item.isPreviewOverLimit) {
-      this.showMessage($r('app.string.session_file_preview_over_limit'));
+    if (!item.canViewTruncatedText) {
       return;
     }
     this.openFullTextDialog(item);
@@ -274,12 +439,13 @@ export struct ReceiveHistoryPage {
 
   // 打开文本弹窗：仅文本类条目且可读时有效，其余情况不产生任何副作用
   private openFullTextDialog(item: ReceiveHistoryItemViewModel): void {
-    if (!item.canViewFullText) {
+    if (!item.canViewTruncatedText) {
       return;
     }
     let content = item.readFullText();
     this.fullTextDialogUnavailable = content === undefined;
     this.fullTextDialogContent = content !== undefined ? content : '';
+    this.fullTextDialogTruncated = content !== undefined && item.isPreviewOverLimit;
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
         this.fullTextDialog();
@@ -288,6 +454,7 @@ export struct ReceiveHistoryPage {
         // 弹窗关闭（含点击遮罩/返回键）后清空暂存内容
         this.fullTextDialogContent = '';
         this.fullTextDialogUnavailable = false;
+        this.fullTextDialogTruncated = false;
         this.fullTextDialogContentWidth = 0;
       }
     };
@@ -305,6 +472,7 @@ export struct ReceiveHistoryPage {
   private closeFullTextDialog(): void {
     this.closeActiveDialog();
     this.fullTextDialogContent = '';
+    this.fullTextDialogTruncated = false;
     this.fullTextDialogContentWidth = 0;
   }
 
@@ -345,24 +513,34 @@ export struct ReceiveHistoryPage {
         .fontColor($r('app.color.text_secondary'))
         .textAlign(TextAlign.Center)
     } else {
-      Scroll() {
-        Text(this.fullTextDialogContent)
-          .width('100%')
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .textAlign(this.fullTextDialogTextAlign())
-          .wordBreak(WordBreak.BREAK_ALL)
-          .copyOption(CopyOptions.LocalDevice)
-          .onAreaChange((_oldValue: Area, newValue: Area) => {
-            // 记录内容区可用宽度（vp），供单行/多行对齐判定
-            if (typeof newValue.width === 'number') {
-              this.fullTextDialogContentWidth = newValue.width;
-            }
-          })
+      Column({ space: DesignTokens.space.xxs }) {
+        // 截断预览时明确说明，避免误当全文
+        if (this.fullTextDialogTruncated) {
+          Text($r('app.string.session_file_preview_over_limit'))
+            .width('100%')
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.warning_orange'))
+        }
+        Scroll() {
+          Text(this.fullTextDialogContent)
+            .width('100%')
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .textAlign(this.fullTextDialogTextAlign())
+            .wordBreak(WordBreak.BREAK_ALL)
+            .copyOption(CopyOptions.LocalDevice)
+            .onAreaChange((_oldValue: Area, newValue: Area) => {
+              // 记录内容区可用宽度（vp），供单行/多行对齐判定
+              if (typeof newValue.width === 'number') {
+                this.fullTextDialogContentWidth = newValue.width;
+              }
+            })
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 320 })
+        .scrollBar(BarState.Auto)
       }
       .width('100%')
-      .constraintSize({ maxHeight: 320 })
-      .scrollBar(BarState.Auto)
     }
   }
 
@@ -372,16 +550,21 @@ export struct ReceiveHistoryPage {
       DesignTokens.font.bodyM, this.fullTextDialogContentWidth);
   }
 
-  // 条目操作菜单选项：公共三项（预览全文 / 打开所在位置 / 用其他应用打开）的可用性与说明
-  // 由公共能力判定，与详情页条目同口径。
+  // 条目操作菜单选项：公共项（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册）
+  // 的可用性与说明由公共能力判定，与详情页条目同口径。
   private menuOptionsFor(item: ReceiveHistoryItemViewModel): FileEntryMenuOptions {
+    // 保存到相册只对图片 / 视频且不在图库中的条目提供；已保存过的条目保留该项但置灰
+    let saveCandidate: boolean = isSaveToGalleryCandidate(item.path, item.fileType, item.fileName);
     return {
       showPreviewItem: item.isTextEntry,
-      canPreviewText: item.canViewFullText,
-      // 图库来源条目（媒体库图片 / 视频标识）无文件管理器可导航目录，该项置灰；「用其他应用打开」不受影响
-      canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path),
+      // 超阈值同样可截断预览（前 128KB 并挂截断说明），故预览可用性覆盖超限情形
+      canPreviewText: item.canViewFullText || item.isPreviewOverLimit,
+      // 图库来源条目（媒体库图片 / 视频标识）与应用私有文本均无文件管理器可导航目录，该项置灰；
+      // 「用其他应用打开」走应用文件分享机制，沙箱自有文件属可分享目录，不受影响
+      canOpenLocation: item.canOpenContainingFolder && !isGalleryLocation(item.path) && !item.isSandboxText,
       canOpenWithApp: item.canOpenContainingFolder,
-      overLimitHint: item.isPreviewOverLimit,
+      showSaveToGallery: saveCandidate,
+      canSaveToGallery: saveCandidate && !item.savedToGallery,
       onPreviewText: (): void => {
         this.requestFullText(item);
       },
@@ -390,6 +573,9 @@ export struct ReceiveHistoryPage {
       },
       onOpenWithApp: (): void => {
         this.handleOpenWithApp(item);
+      },
+      onSaveToGallery: (): void => {
+        this.handleSaveToGallery(item);
       }
     };
   }
@@ -415,7 +601,9 @@ export struct ReceiveHistoryPage {
       })
         .contentFontColor($r('app.color.danger_red'))
         .onClick(() => {
-          let message: string =
+          // 文本消息条目不带文件名：删除确认改用通用文案
+          let message: string = item.isMessage ?
+            getStringSync(this.getUIContext(), $r('app.string.history_delete_message_text')) :
             this.formatHistoryMessage($r('app.string.history_delete_message_file'), '%s', item.fileName);
           this.showHistoryDeleteConfirmDialog(
             $r('app.string.history_delete_title'),
@@ -454,10 +642,25 @@ export struct ReceiveHistoryPage {
               })
           } else {
             Column() {
+              // 多选模式下的顶部操作条：取消 / 全选 / 删除(N)，随模式显隐
+              if (this.viewModel.selectionMode) {
+                this.selectionBar()
+              }
+
               List({ scroller: this.scroller }) {
                 Repeat(this.viewModel.historyItems).each((ri: RepeatItem<ReceiveHistoryItemViewModel>) => {
                   ListItem() {
                     Row({ space: DesignTokens.space.sm }) {
+                      // 多选模式下展示复选框；点击交由整行处理（指示器不拦截触摸，避免双次切换）
+                      if (this.viewModel.selectionMode) {
+                        Checkbox()
+                          .select(ri.item.selected)
+                          .shape(CheckBoxShape.ROUNDED_SQUARE)
+                          .selectedColor($r('app.color.accent_blue'))
+                          .margin(0)
+                          .hitTestBehavior(HitTestMode.None)
+                      }
+
                       // 左侧类型图标区：图片 / 视频缩略由公共组件按需懒加载，其余或失败回退类型图标
                       FileEntryThumb({
                         path: ri.item.path,
@@ -468,9 +671,10 @@ export struct ReceiveHistoryPage {
                         cornerRadius: DesignTokens.radius.md
                       })
 
-                      // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间
+                      // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间。
+                      // 文本消息条目不展示沙箱文件名（内部实现细节）：首行改用“文本”标签，内容由缩略预览行承载
                       Column() {
-                        Text(ri.item.fileName)
+                        Text(ri.item.isMessage ? $r('app.string.transfer_center_text_label') : ri.item.fileName)
                           .fontSize(DesignTokens.font.subtitleM)
                           .fontWeight(FontWeight.Medium)
                           .fontColor($r('app.color.text_primary'))
@@ -521,17 +725,19 @@ export struct ReceiveHistoryPage {
                       .alignItems(HorizontalAlign.Start)
                       .layoutWeight(1)
 
-                      // 更多操作菜单（下拉）：公共项 + 复制文本 / 删除记录
-                      SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
-                        .fontSize(DesignTokens.font.subtitleM)
-                        .fontColor([$r('app.color.text_secondary')])
-                        .responseRegion({
-                          x: -14,
-                          y: -14,
-                          width: 48,
-                          height: 48
-                        })
-                        .bindMenu(this.historyMenuBuilder(ri.item))
+                      // 更多操作菜单（下拉）：公共项 + 复制文本 / 删除记录；多选模式下不展示
+                      if (!this.viewModel.selectionMode) {
+                        SymbolGlyph($r('sys.symbol.arrowtriangle_down_fill'))
+                          .fontSize(DesignTokens.font.subtitleM)
+                          .fontColor([$r('app.color.text_secondary')])
+                          .responseRegion({
+                            x: -14,
+                            y: -14,
+                            width: 48,
+                            height: 48
+                          })
+                          .bindMenu(this.historyMenuBuilder(ri.item))
+                      }
                     }
                     .width('100%')
                     .padding(DesignTokens.space.md)
@@ -540,12 +746,25 @@ export struct ReceiveHistoryPage {
                     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
                     .margin({ bottom: DesignTokens.space.tiny })
                     .id('receive_history_item')
-                    // 点击文本类记录查看完整内容（超阈值改为明确提示）；其余由判定拦截，不产生任何副作用
+                    // 点击：多选模式下切换勾选；否则查看文本类记录内容
+                    // （超阈值截断预览前 128KB 并挂截断说明），其余由判定拦截，不产生任何副作用
                     .onClick(() => {
-                      this.requestFullText(ri.item);
+                      if (this.viewModel.selectionMode) {
+                        this.viewModel.toggleSelect(ri.item.id);
+                      } else {
+                        this.requestFullText(ri.item);
+                      }
                     })
-                    // 点击态反馈：可查看完整文本或超阈值（点击会给出明确提示）的条目启用系统点击缩放反馈
-                    .clickEffect(ri.item.canViewFullText || ri.item.isPreviewOverLimit ?
+                    // 长按进入多选模式并选中本条（已在多选模式中时不重复响应）
+                    .gesture(LongPressGesture().onAction(() => {
+                      if (!this.viewModel.selectionMode) {
+                        this.viewModel.enterSelection(ri.item.id);
+                      }
+                    }))
+                    // 点击态反馈：多选模式下用于切换勾选；否则为可查看文本内容
+                    // （含超阈值截断预览）的条目启用系统点击缩放反馈
+                    .clickEffect(this.viewModel.selectionMode ||
+                      ri.item.canViewFullText || ri.item.isPreviewOverLimit ?
                       { level: ClickEffectLevel.LIGHT } : null)
                     .transition(
                       TransitionEffect.OPACITY

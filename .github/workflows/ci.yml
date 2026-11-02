@@ -70,7 +70,7 @@ jobs:
     name: ArkTS CodeLinter
     runs-on: ubuntu-latest
     container:
-      image: springtwr/harmonyos-clt:26.0.0.821
+      image: ghcr.io/springtwr/harmonyos-clt:26.0.0.851-1
     steps:
       - name: 检出代码
         uses: actions/checkout@v7

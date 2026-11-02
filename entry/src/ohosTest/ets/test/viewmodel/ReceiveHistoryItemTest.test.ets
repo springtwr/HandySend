@@ -103,16 +103,19 @@ export default function ReceiveHistoryItemTest() {
       expect(binaryItem.canOpenContainingFolder).assertTrue()
     })
 
-    it('textPreview_overLimit_doesNotReadNorProducePreview', 0, async (done: Function) => {
-      // 超过预览阈值的文本类条目：文件本身可读，但预览不读取内容、不产缩略预览
+    it('textPreview_overLimit_readsTruncatedWithFlag', 0, async (done: Function) => {
+      // 超过预览阈值的文本类条目：读取前 128KB 截断预览并置位截断标记（文件本身可读）
       let path = writeTestFileToSandbox('recv_hist_over_limit.txt', TEXT_CONTENT)
       let item = new ReceiveHistoryItemViewModel(
         entryOf('recv_hist_over_limit.txt', 'text/plain', path, false, TEXT_PREVIEW_MAX_BYTES + 1))
       expect(item.isPreviewOverLimit).assertTrue()
-      // 超阈值不提供可用的全文预览（与「内容不可用」区分）
+      // 超阈值不提供完整全文预览，但可截断查看
       expect(item.canViewFullText).assertFalse()
+      expect(item.canViewTruncatedText).assertTrue()
       await item.loadTextPreview()
-      expect(item.previewText).assertEqual('')
+      expect(item.previewText).assertEqual(TEXT_CONTENT)
+      expect(item.previewTruncated).assertTrue()
+      expect(item.readFullText()).assertEqual(TEXT_CONTENT)
       // 复制为用户显式动作，不因超阈值被禁用（保留接收历史页专有项）
       expect(item.canCopyText).assertTrue()
       done()

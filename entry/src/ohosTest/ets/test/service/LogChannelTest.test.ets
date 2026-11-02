@@ -74,15 +74,15 @@ export default function LogChannelTest() {
       expect(logs[0].message).assertEqual('hello')
     })
 
-    it('trim_caps_buffer_to_1800', 0, () => {
+    it('trim_caps_memory_fallback_to_400', 0, () => {
       clearLogs()
-      for (let i = 0; i < 2001; i++) {
+      for (let i = 0; i < 501; i++) {
         addLog('info', 'm' + i)
       }
       let logs: Array<LogEntry> = getLogs()
-      // 超过上限 2000 时裁剪到最近 1800 条，保留最近条目
-      expect(logs.length).assertEqual(1800)
-      expect(logs[logs.length - 1].message).assertEqual('m2000')
+      // 文件日志是事实源；内存只保留最近一小段，供文件不可用时回退
+      expect(logs.length).assertEqual(400)
+      expect(logs[logs.length - 1].message).assertEqual('m500')
     })
   })
 }

@@ -32,8 +32,8 @@
 | `nativeGetServerStatus()` | 获取服务器状态 |
 | `nativePollPendingRequests()` | 轮询待处理请求 |
 | `nativeCreateShareLink(files)` | 创建分享链接 |
-| `nativeStopShareServer()` | 停止分享服务器 |
-| `nativeRespondTransfer(response)` | 响应传输请求（accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
+| `nativeStopShareServer()` | 停止分享服务器（正常模式重启失败时返回错误，调用方可感知） |
+| `nativeRespondTransfer(sessionId, accept, fileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
 | `nativeSendFiles(target, files, pin)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
 | `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
@@ -116,7 +116,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
   │   └── server.rs       # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
   └── adapter/            # 上游类型隔离
-      ├── server.rs       # ServerEventV2/WebSendEvent/InternalEvent → (BridgeEvent, Vec<StateAction>)
+      ├── server.rs       # ServerEventV2/InternalEvent → (BridgeEvent, Vec<StateAction>)
       ├── multicast.rs    # MulticastEvent/DiscoveryEvent → BridgeEvent
       ├── client.rs       # ClientError → BridgeError
       └── types.rs        # DTO 定义 + 上游↔DTO 转换（纯函数）
@@ -150,7 +150,8 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 - **adapter 隔离上游类型**：上游 `ServerEventV2` 变更时只需修改 `adapter/server.rs`（match 穷尽检查引导适配）；`adapt_xxx(event) -> (Option<BridgeEvent>, Vec<StateAction>)`
   + `apply_actions(&mut BridgeState, actions)` 为纯函数，零网络零 runtime 可单测
 - **桥接层函数命名**：无 `do_` 前缀、无 `_facade` 后缀，函数名即公共 API 名
-- **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`
+- **幂等性与错误语义**：重复 `start_server` 返回 `AlreadyRunning`；未启动 `stop_server` 幂等 Ok；重复/竞态 `accept_transfer` 返回 `SessionExpired`。
+  `BridgeError::code()` 给出机器可判定编码（展示文本不变，跨语言分支用；NAPI 透出消费尚未闭环）
 
 ### 进度追踪
 
@@ -164,8 +165,8 @@ napi/                    # NAPI 适配层（napi feature 门控，按入口域�
 ### 事件推送
 
 所有事件（discovery/server/web share/mta）通过 mpsc channel 以强类型 `BridgeEvent` 输出，NAPI 层经 `registerEventListener` 注册的 napi_threadsafe_function 推送。
-事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebSend*、Mta*（进度除外）、Error 等）`send().await`
-保证送达；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃，但可判定终值（进度 100%）者按关键事件送达
+事件按关键/可丢弃分类：关键事件（PrepareUpload、SessionEnd、DeviceFound、DeviceLost、ServerStarted/Stopped、WebAccess/WebDownload*、Mta*（进度除外）、Error 等）`send().await`
+发送并带 1 秒超时防护（无消费者或通道满时丢弃并告警，不永久阻塞事件循环）；`UploadProgress`、`ChecksumProgress`、`MtaSendProgress` 与 `MtaReceiveProgress` `try_send` 丢弃，但可判定终值（进度 100%）者按关键事件送达
 （每文件完成判定的依据，不得因 channel 满而丢失；`ChecksumProgress` 无终值判定，每文件完成由 ArkTS 侧 `await` 返回时确定）。ArkTS 侧通过 `NativeBridge.onBridgeEvent(type, handler)` 按类型订阅。
 
 MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionNegotiated{version}`、`mtaSendRequestSent{taskId}`、`mtaRejectSent{taskId}`（取消状态已成功写入对端连接，视为「已通知对端」
@@ -182,32 +183,85 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 ## Web Share 架构
 
-Web Share 功能通过按需启停服务器实现，不依赖独立服务：
+浏览器分享由自研独立服务实现（`bridge/web/`，与 LocalSend/MTA 同级、端口独立），设备对设备 v2 协议不受影响：
 
-### Web Send（浏览器下载设备文件）
+### 服务与会话
 
-1. `create_share_link(files)` → 解析文件 → 停止当前服务器 → 构造 `WebConfig{send: Some(WebSendConfig), upload: false}` → 重启服务器 → 启动 `WebSendEvent` 处理 task → 返回分享 URL
-2. 浏览器访问 URL → Rust HTTP server 返回下载页面 → 浏览器请求下载 → `WebSendEvent::PrepareDownload` 推送到 ArkTS
-3. ArkTS 根据 `autoConfirmMode` 决定 auto-accept 或弹窗确认 → 调用 `nativeAcceptWebDownload`/`nativeDeclineWebDownload`
-4. 浏览器下载文件时 `WebSendEvent::FileDownload` → Rust 对原始 fd `dup` 副本、以 `pread` 显式偏移读取并以 `FileContent::Stream` 提供文件流（副本读毕自动关闭，同一文件可重复/并发下载）
-5. `stop_share_server()` → 停止服务器 → 清理 web 状态 → 用普通配置重启服务器
+1. ArkTS `WebShareRepository` 组装配置（别名、本次访问码、能力令牌、上传开关、上传目录、文件表、首选端口）→ `start_web_service`
+   启动 hyper 服务 → 返回实际端口 → 出示地址、二维码（URL 携带 `?t=<能力令牌>`）与本次访问码
+2. 浏览器经二维码能力令牌或本次访问码门禁，二者并列、任一通过即可：
+   `GET /?t=`（或 `/upload?t=`）校验令牌后下发 HttpOnly Cookie
+   （`handysend_web_cap`，绑定对端 IP 与 User-Agent 摘要）并 302 到去掉令牌的干净地址；
+   无令牌打开裸地址时渲染整页访问码页；
+   令牌错误或服务重启后旧链接失效时返回「链接已失效」提示页。
+   `POST /web/auth` 校验访问码并下发 `handysend_web_auth`（同样绑定 IP/UA），裸地址可直接提交，不要求先持能力 Cookie；
+   `/caps`、建会话、下载、上传与完成回执要求能力 Cookie 或访问码 Cookie 之一
+3. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；
+   `GET /caps` 只读快照，不建会话。下载会话只做授权与快照缓存：绝对 TTL 2 小时、最多 32 个，
+   页面每次下载前 prepare 刷新；访问只记日志并续期网页保活，不建任务。
+4. 上传仍走待确认流程（`PrepareUploadRequested`，接受/拒绝/过期）；下载不再等待应用确认，
+   页面门禁通过即直接回文件表。下载批次开始/结束经 `WebDownloadStarted` / `WebDownloadEnded` 收口；
+   上传完成回执（`POST /web/finish`）与惰性打扫收口上传终态。
 
-### Web Upload（浏览器上传文件到设备）
+二维码与本次访问码是并列的页面入口：扫描二维码免密进入，裸地址展示访问码页。
+访问码由客户端每次启动服务时生成（6 位数字，仅本次分享有效），分享停止或服务重启即失效，不进入设置持久化；
+服务端仍兼容空值与旧调用（测试），空值表示免访问码。
+能力令牌只解决「谁可以打开页面」：令牌可能被转发/截图，IP+UA 绑定也不构成强身份；
+设置访问码时，通过任一入口即构成外发授权。生产环境始终有访问码/能力令牌；无门禁仅测试/旧调用放行并告警。
 
-1. `start_web_upload()` → 停止当前服务器 → 构造 `WebConfig{send: None, upload: true}` → 重启服务器 → 返回 port
-2. 浏览器访问 URL → 上传文件 → 触发 `prepareUpload`/`fileUpload` 事件（复用 v2 接收流程）
-3. auto-accept 行为与普通 v2 接收一致（`shouldAutoAccept`）
+服务监听 `0.0.0.0`（全部网卡）；`WebServiceConfig.port` 为 0 时由系统随机分配，非 0 时优先绑定该端口，
+被占用则回退随机端口并返回实际端口。ArkTS 侧持久化实际端口，下次启动优先复用；实际端口与设置端口不一致时面板提示回退。
+`WebServiceConfig.capability` 为本次服务实例的二维码/URL 能力令牌，缺省或空串时不启用能力门禁（兼容旧调用与测试）。
+`WebServiceConfig.pin` 为本次访问码：ArkTS 每次启动生成 6 位数字，服务端校验非空值为 6 位数字；
+空值兼容旧调用与测试，表示免访问码。
+
+服务生命周期由 ArkTS 侧网页传输总开关驱动（`applyWebSendAllowed` / `restoreWebService`），允许上传子开关经 `applyWebReceiveAllowed` 控制上传入口，
+与 LocalSend 服务器启停互不联动；启动前自行刷新网卡以取本机地址，不依赖 LocalSend 服务器的启动流程。
+网页服务运行中进入后台时申请 5 分钟有界 `dataTransfer` 长时任务（通知「网页分享保持中」），
+期间有访问/传输则续期；回到前台、删除通知或超时无活动时停止。
+
+### 下载（本机 → 浏览器）
+
+- 单文件 `GET /web/download`：按 token 查快照归属后下发；fd 内容源在换表时由保留区 `dup` 私有副本、
+  请求定位时再复制一份消费（`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片。
+- 多文件 `POST /web/download-batch` 登记选中文件（或 `all=true`）→ `GET /web/download-batch?batch=` 流式 ZIP；
+  一个批次一个任务，ZIP 条目以文件名去重、不预打包、不落临时文件。
+- ZIP 使用 `Stored`，发响应头前按条目名/大小精确计算 `Content-Length`（含 Zip64），
+  浏览器下载管理器因此能显示百分比；条目时间取源文件本地时间，单个文件 ≥4GB 使用 `large_file`。
+- 批次事件 `WebDownloadStarted` / `WebDownloadProgress` / `WebDownloadFileDone` / `WebDownloadEnded`
+  （`batchId` 为任务主键）；任务取消调用 `cancel_web_download`，响应在下个读块停止。
+- 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 感知变化并
+  静默重拉完整文件表，短暂提示「文件列表已更新」；15 秒低频 `/caps` 轮询兜底。
+- 网页访问只在新建 token 时发 `WebAccess`（IP/UA/文件数），应用只记日志并续期有界保活；
+  下载不再有页面心跳、leave、下载 session-end。停止分享先 `mark_web_service_stopped`
+  标记 stopped 并广播，保留服务约 30 秒供页面收尾/刷新，再由 `stop_web_service` 关闭监听。
+- 服务硬停止/重启会关闭已有 TCP/SSE 连接，避免浏览器复用旧 keep-alive 连接读到停止态。
+
+### 上传（浏览器 → 本机）
+
+- 每客户端独立上传槽（不占用 v2 全局单槽）；默认需确认，接受即全量；面板可开启“上传免确认”，
+  与暂存文件列表解耦，应用重启或手动停止网页服务后重置
+- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，
+  文本条目进接收文本目录（首次使用时创建）；仅单条文本消息记为文本消息）；
+  服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
+- 未完成字节写在目标目录下的应用保留子目录 `.handysend-upload-part/`（与最终文件同父目录，完成后原子改名）；
+  该子目录是本应用独占的临时区，接受新一批上传时清理其中不属于活跃会话的遗留半成品——
+  进程被强制终止时也只有这里会留下文件，清理不会触碰目标目录里的用户文件或已交付文件。
+  `/web/leave` 仅上传使用：15s 宽限给刷新/bfcache 留时间，真正关闭后清理；下载不再使用。
+- 终结/过期只清理未完成的临时文件，不删除已改名为最终交付物的文件
+- 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
+  文件与文本混合时文本按普通文本文件处理
+- ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史；开启免确认时建会话后直接预置落盘目标并放行；任务声明 `canCancel`，
+  结束任务时移除服务端上传会话，正在写入的请求体在下个读块停止并清理临时区
+- 上传终态以建会话时的声明清单为准：清单内文件全部落盘即按成功终结，无需等待静默窗口；
+  静默窗口只作兜底，覆盖完成事件缺失等异常情形。落盘完成事件同时回填最终路径，供接收历史与「保存到相册」读取
 
 ### 关键设计
 
-- `BridgeState.receive_pin`：服务器启动时保存 PIN，Web Share 重启服务器时自动复用
-- `BridgeState.web_send_files`：fileId→`WebSendFile{path, fd?}` 映射，FileDownload 时优先对原始 fd `dup` 副本直读（`pread` + `FileContent::Stream`），fd 缺失时回退
-  `FileContent::Path`；原始 fd 分享期间长期有效、所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败、切换上传模式时关闭），Rust 从不关闭原始 fd
-- `BridgeState.web_download_decisions`：sessionId→oneshot channel，accept/decline 发送决策
-- `WebI18n`：网页分享文案（34 字段，含 downloadAll/selectFiles/uploadComplete/retry 等），由 Rust 按**应用生效语言**构造后传给 Web 页面。
-  其中 12 个新增字段用于上传页整页文案接入与下载页静态文案（页面标题、副标题、选择提示、发送文本、批量下载提示、文本预览标签/复制等）。
-  文案分简体中文、繁体中文（台湾用语）、英文三套：简体与繁体为桥接层内置文案，英文复用底层协议实现自带的默认文案；
-  语言在网页服务启动时确定（重新发起网页分享或重新进入网页接收页后生效），读取失败或为空时回退简体中文。
+- 原始读 fd 所有权归 ArkTS（`WebShareRepository` 持有 `fs.File` 阻止 GC 关闭，在停止/替换分享、创建失败时关闭），Rust 每次下载仅 `dup` 副本消费、从不关闭原始 fd
+- 单页（`bridge/web/assets/single.html`，与服务同仓）按 `/caps` 条件渲染下载/发送页签；文案经 `/i18n.json`
+  按浏览器语言或页头选择下发（简体/繁体/英文，失败回退内置简体中文）；主题与语言偏好保存在浏览器本地
+- NAPI 层（`napi/web.rs`）只做薄封装，逻辑归属 `bridge/web/runtime.rs`（全局单例：服务状态 + 服务任务 + 转发任务）
 
 ## fd-direct 收发（直读/直写，无沙箱中转拷贝）
 
@@ -219,18 +273,28 @@ Web Share 功能通过按需启停服务器实现，不依赖独立服务：
   DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
   `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由
   `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 删除 Download 中预创建的不完整文件
-- **文本消息**：与普通文件走同一目标准备路径（`Download/<包名>/`、同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
+- **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件 `Download/<包名>/`、文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
-### 网页资产（鸿蒙高保真风格）
+### 网页资产（自研单页）
 
-`third_party/localsend/packages/core/assets/web/` 下 `download.html`/`upload.html`/`error-403.html` 为鸿蒙化单文件页面（HarmonyOS
-Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源），经 `include_str!` 编译进 `.so`，由 fork 定制分支 `harmony-web-ui` 维护：
+`bridge/web/assets/single.html` 为单文件页面（零外部资源），经 `include_str!` 编译进 `.so`，与服务同仓维护：
 
-- 协议契约与 JS 关键逻辑保留：`sessionStorage` 会话复用、PIN 循环、错误码映射（401/403/409/429/204）、顺序上传
-- 增强：使用鸿蒙 PIN 对话框（而非浏览器 `prompt()`）、"全部下载"（Safari 不支持则禁用并提示）、手动输入文本内联预览 + 复制（下载页 `fileType='text'` 标记，由 ArkTS
-  `shareByLink` 在链接分享路径设置）、上传页发送文本（虚拟 `message.txt` + `fileType='text/plain'` + `preview` 字段携带文本内容，接收端以 `preview` 有无区分文本消息与文本文件）
-- Content-Disposition 同时输出 `filename=` 与 `filename*=UTF-8''`（RFC 5987），保证 Safari 中文文件名正常
+- 按 `/caps` 条件渲染下载/发送页签；下载走浏览器下载管理器（大文件无内存压力），
+  文本类文件无预览字段时用 Range 取前 128KB 内联预览
+  - 预览允许读取建会话后新增的当前文件表条目；真实下载仍按会话快照隔离
+- 下载/上传 token 分键存于 `sessionStorage`；下载刷新时直接 prepare 复用或重建会话，不再心跳；
+  上传顺序直传（XHR 看进度），
+  文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
+  混合内容时文本作为 `message.txt` 随文件发送（文本文件）
+- 页头可切换主题（跟随系统/浅色/深色）与语言（简体/繁体/英文），偏好存于浏览器 `localStorage`
+- 下载页支持多选 + zip 批次：单文件直接下载，多文件由服务端统一 zip；浏览器用精确 `Content-Length` 显示进度；
+  点击整行或复选框均可勾选，Shift 连选按展示顺序处理整段，Ctrl/Cmd+A 全选、Esc 取消全选
+  （输入控件与预览正文内保留原生快捷键）；文件名可拖选或长按复制，触屏仅从复选框起手才能滑选多行；
+  窄屏与触屏下文件名换行完整展示；
+  文件列表经 SSE `/web/events` 感知变化后静默重拉完整文件表，实时更新并短暂提示「文件列表已更新」
+- 访问码页（服务端按 Cookie 注入 `data-auth`，裸地址进入时展示）、错误码映射（401/403/404/410/413；上传另有 408/409）、
+  上传全部完成后 `sendBeacon` 上报完成回执
 
 ## Discovery — 设备发现
 
@@ -245,7 +309,58 @@ Design Token 视觉、HMSymbol 字体子集 base64 内联、零外部资源）�
 
 ### 网络过滤
 
-白/黑名单存储接口名（如 `wlan0,eth0`），按接口名粒度控制。ArkTS 侧 `computeDiscoveryWhitelist()` 将白名单中（且不在黑名单中）的接口映射为网段通配（按 prefixLength 生成 `a.b.c.*`），
-传入 Rust `InterfaceFilter.whitelist`；黑名单接口 IP 直接传入 `InterfaceFilter.blacklist`。白名单为空时不扫描任何接口（whitelist=undefined，组播降级），`getLocalDeviceInfo()` 同样按
-此语义过滤（白名单空 → 过滤后列表为空），保证组播绑定与子网扫描的接口一致性。首次启动时 `ensureDefaultNetworkLists()` 根据接口类型自动初始化默认值（wifi/ethernet 入白名单，其他入黑名单）
-，避免空白名单导致无法发现设备。三个页面（发送/接收/设置）统一显示网络警告横幅：`noWifiWarning`（无 WiFi/以太网物理接口）优先于 `allInterfacesDisabled`（用户关闭了所有接口）。
+白/黑名单存储接口名（如 `wlan0,eth0`），按接口名粒度控制。启用判定统一由 `utils/NetworkInterfaceRules` 的
+`isInterfaceEnabled()` 给出：黑名单优先排除，白名单放行，两者都未列出的接口按类型取默认。
+`computeDiscoveryWhitelistFrom()` 将启用的接口映射为网段通配（按 prefixLength 生成 `a.b.c.*`），
+传入 Rust `InterfaceFilter.whitelist`；黑名单接口 IP 直接传入 `InterfaceFilter.blacklist`。
+`getLocalDeviceInfo()` 用同一判定过滤，保证组播绑定与子网扫描的接口一致性。首次启动时
+`ensureDefaultNetworkLists()` 按接口类型初始化名单，此后新出现的接口不写入名单、直接按类型取默认。
+
+接口类型分六类，判定依据、默认启用状态与展示排序如下：
+
+| 类型 | 判定依据 | 默认启用 | 排序 |
+| --- | --- | --- | --- |
+| `wifi` | `wlan*`/`wifi*`/`ap*`/`p2p*`，含 SoftAP 与 Wi-Fi Direct | 是 | 0 |
+| `ethernet` | `eth*`/`usb*`/`en*`/`br*`（普通桥接） | 是 | 1 |
+| `vpn` | `tun*`/`tap*`/`wg*`/`zt*`/`tailscale*` 等 VPN 与隧道接口 | 是 | 2 |
+| `bridge` | `anco*`/`docker*`/`veth*`/`virbr*` 等容器网桥（Docker 为 `br-<12 位十六进制>`） | 否 | 3 |
+| `unknown` | 其余（含蓝牙网络、`ppp*`） | 否 | 4 |
+| `cellular` | `rmnet*`/`ccmni*`/`wwan*` | 否 | 5 |
+
+类型优先取 `connection.getAllNetsSync()` 的 `ConnectionProperties.interfaceName` 匹配结果，由 `bearerTypes`
+映射（`BEARER_WIFI`/`BEARER_CELLULAR`/`BEARER_ETHERNET`/`BEARER_VPN`）；匹配失败时按接口名前缀补判。
+SoftAP（热点）与次要 STA 没有 netId、不注册 NetworkAgent，不在该列表中，只能走前缀补判；容器网桥同样
+匹配不到。VPN 接口若由 VPN 应用经 VPNExtensionAbility 创建，可直接由 `BEARER_VPN` 识别。
+
+隧道接口保留且默认启用：它是跨公网传输的主要通道，剔除会让 VPN 与跨网场景完全不可用。容器网桥不在枚举
+阶段剔除、只是默认关闭，用户可在网络接口弹窗中手动开启。系统网络事件覆盖不到热点开关（SoftAP 不产生
+连接网络事件），由热点状态监听（`wifiManager.on('hotspotStateChange')`）补触发刷新，设置页与网页面板
+可见时也会主动重枚举。网页分享链接按实时网卡派生，不做本地缓存，网卡列表刷新后立即生效。
+
+普通桥接（`br0`、OpenWrt 的 `br-lan` 等）承载以太网流量，归 `ethernet`；只有 Docker 动态网桥
+`br-<12 位十六进制网络 ID>` 归 `bridge`。`ppp*` 既可能是拨号数据链路，也可能是 PPTP/L2TP 隧道，
+无法从接口名区分，按 `unknown` 处理、默认关闭，需要时由用户在弹窗中手动开启。
+
+`anco*` 是鸿蒙系统自身的容器网桥（真机实测 `ancowlan0` 持有 `172.17.1.1/24`），局域网设备无法
+主动访问，因此默认关闭。`docker*`/`veth*`/`br-<12 位十六进制>`/`virbr*`/`cni*`/`flannel*`/`kube*`
+在鸿蒙手机、平板与 PC 模拟器上均无命中：鸿蒙 PC 的 Docker 运行在融合开发引擎的 StratoVirt Linux
+虚拟机内，容器网桥位于虚拟机内部，宿主侧不可见；这些前缀保留用于覆盖容器网络将来直接暴露到宿主侧
+的情况。
+
+`tap*` 存在歧义：既可能是 OpenVPN 等隧道接口，也可能是 StratoVirt 虚拟机在宿主侧的二层网卡。
+当前一律归 `vpn` 并默认启用；宿主侧 tap 若无 IPv4 地址不会被枚举，Host-Only 等模式给宿主侧
+分配了 IPv4 时才会出现。真实鸿蒙 PC 的接口命名尚未实测。
+
+三个页面（发送/接收/设置）统一显示网络警告横幅：`noWifiWarning`（无 WiFi/以太网物理接口）优先于
+`allInterfacesDisabled`（用户关闭了所有接口）。
+
+### IPv6 现状
+
+网络接口当前按 IPv4 处理：Rust `get_network_interfaces()` 只返回非回环 IPv4，`IfAddr::V6`
+直接丢弃；发现服务的 IPv6 组播关闭（`DiscoveryConfig.group_v6 = None`），接口 IP 与子网扫描
+只接受 `Ipv4Addr`；ArkTS 侧接口模型只有 `ip` 与 `prefixLength`，网段通配、IP 校验、网页地址
+筛选与 IP 短码均按点分十进制 IPv4 实现。
+
+协议层已具备 IPv6 能力：HTTP 服务同时绑定 `0.0.0.0:<port>` 与 `[::]:<port>`，上游 core 提供
+`ff12::fd3a:e420` 组播、按接口索引加入与 `fe80::1%3` 作用域地址处理。启用 IPv6 需扩展接口
+枚举（含 scope id）、打开组播 v6 并改造 ArkTS 侧地址处理，暂未排期。

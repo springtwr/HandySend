@@ -26,6 +26,10 @@
     // @Env 装饰的变量为只读属性、不允许本地初始化（见官方 @Env 文档），
     // 该规则在本工程的全部命中均为误报，故关闭
     "@previewer/mandatory-default-value-for-local-initialization": "off",
+    // 类型无法解析时本应按「未知」放过，该规则却直接判为非 Thenable：
+    // 其一为 Rust NAPI 模块边界，导入的原生函数返回类型解析不到；
+    // 其二为可空 Promise 字段经 null 收窄后 await。本工程全部命中均为误报，故关闭
+    "@typescript-eslint/await-thenable": "off",
     "@security/no-unsafe-aes": "error",
     "@security/no-unsafe-hash": "error",
     "@security/no-unsafe-mac": "warn",

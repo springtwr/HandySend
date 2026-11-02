@@ -413,7 +413,7 @@ export class MtaBleClient {
           try {
             client.close();
           } catch (closeErr) {
-            logger.warn('GATT Client 关闭失败: ' + errorText(closeErr));
+            logger.warn('GATT 客户端关闭失败：' + errorText(closeErr));
           }
         }
         reject(errorText(e));
@@ -466,7 +466,7 @@ export class MtaBleClient {
           // 发送期间仅本处扫描，移除该事件全部监听即可
           ble.off('BLEDeviceFind');
         } catch (e) {
-          logger.warn('重扫反注册失败: ' + errorText(e));
+          logger.warn('重扫反注册失败：' + errorText(e));
         }
         try {
           ble.stopBLEScan();
@@ -496,7 +496,7 @@ export class MtaBleClient {
         ble.on('BLEDeviceFind', finder);
         ble.startBLEScan([filter], options);
       } catch (e) {
-        logger.warn('重扫启动失败: ' + errorText(e));
+        logger.warn('重扫启动失败：' + errorText(e));
         settle(null);
       }
     });
@@ -507,7 +507,7 @@ export class MtaBleClient {
     try {
       client.setBLEMtuSize(MtaConstants.GATT_MTU_SIZE);
     } catch (e) {
-      logger.warn('setBLEMtuSize 失败: ' + errorText(e));
+      logger.warn('设置蓝牙 MTU 失败：' + errorText(e));
     }
   }
 
@@ -599,7 +599,7 @@ export class MtaBleClient {
     this.lastDeviceInfoRawText = raw;
     // 打印对端 DeviceInfo 原文：含本实现未解析的厂商扩展字段（如部分小米机型的 G/M/P），
     // 用于排查握手字段缺失导致的兼容问题
-    logger.debug(`对端 DeviceInfo 原文: ${raw}`);
+    logger.debug(`对端 DeviceInfo 原文：${raw}`);
     let info = parseDeviceInfo(raw);
     if (info === undefined) {
       throw new Error('DeviceInfo 解析失败: ' + raw);

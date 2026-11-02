@@ -25,8 +25,8 @@
       "value": "檔案"
     },
     {
-      "name": "send_image",
-      "value": "圖片"
+      "name": "send_media",
+      "value": "圖庫"
     },
     {
       "name": "send_justify",
@@ -45,14 +45,6 @@
       "value": "請確保與目標連線到同一個 Wi-Fi 網路"
     },
     {
-      "name": "auto_accept_download_label",
-      "value": "自動確認下載請求"
-    },
-    {
-      "name": "auto_accept_download_desc",
-      "value": "僅當對方透過網頁分享（瀏覽器）傳送檔案時生效"
-    },
-    {
       "name": "auto_confirm_title",
       "value": "自動確認請求"
     },
@@ -69,6 +61,22 @@
       "value": "開"
     },
     {
+      "name": "auto_confirm_off_desc",
+      "value": "每次接收前都需要手動確認"
+    },
+    {
+      "name": "auto_confirm_favorites_desc",
+      "value": "僅自動接受收藏裝置的請求；收到的純文字訊息會自動複製到剪貼簿"
+    },
+    {
+      "name": "auto_confirm_on_desc",
+      "value": "自動接受本網路內所有裝置的請求；收到的純文字訊息會自動複製到剪貼簿"
+    },
+    {
+      "name": "received_text_copied_toast",
+      "value": "收到文字訊息，已複製到剪貼簿"
+    },
+    {
       "name": "favorite_devices_title",
       "value": "收藏清單"
     },
@@ -78,31 +86,19 @@
     },
     {
       "name": "share_link_title",
-      "value": "網頁分享"
+      "value": "網頁傳送"
     },
     {
       "name": "receive_link_title",
       "value": "網頁接收"
     },
     {
-      "name": "share_link_address_label",
-      "value": "區域網路位址"
-    },
-    {
       "name": "share_link_qr_hint",
-      "value": "掃描 QR Code 或在瀏覽器中開啟連結"
+      "value": "掃描 QR Code 進入"
     },
     {
       "name": "share_link_disabled_hint",
-      "value": "LocalSend 已關閉，網頁分享無法使用"
-    },
-    {
-      "name": "stop_share",
-      "value": "停止分享"
-    },
-    {
-      "name": "stop_receive",
-      "value": "停止接收"
+      "value": "網頁服務已關閉"
     },
     {
       "name": "device_type_mobile",
@@ -253,6 +249,26 @@
       "value": "去贊助"
     },
     {
+      "name": "rate_label",
+      "value": "評價"
+    },
+    {
+      "name": "rate_description",
+      "value": "為便捷快傳評分"
+    },
+    {
+      "name": "rate_message",
+      "value": "覺得好用的話可以到應用市場為便捷快傳評分，助力專案更好發展"
+    },
+    {
+      "name": "rate_hint",
+      "value": "你的好評就是開發者前進的動力"
+    },
+    {
+      "name": "rate_go",
+      "value": "去評分"
+    },
+    {
       "name": "settings_network",
       "value": "網路"
     },
@@ -305,18 +321,6 @@
       "value": "向你傳送檔案時要求對方輸入 PIN 碼，留空則停用"
     },
     {
-      "name": "auto_finish_label",
-      "value": "自動完成"
-    },
-    {
-      "name": "auto_finish_desc",
-      "value": "檔案傳輸完成後自動退出傳輸頁面"
-    },
-    {
-      "name": "save_to_history_label",
-      "value": "儲存到歷史"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "儲存到相簿"
     },
@@ -350,11 +354,11 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "設定將在重啟伺服器後生效"
+      "value": "LocalSend 設定已修改，重啟服務後生效"
     },
     {
       "name": "restart_server",
-      "value": "重啟"
+      "value": "重啟服務"
     },
     {
       "name": "localsend_enabled_label",
@@ -362,7 +366,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "LocalSend 協定總開關，關閉後將同時停用網頁分享與裝置探索"
+      "value": "關閉後將無法與 LocalSend 互傳檔案"
     },
     {
       "name": "server_status_running",
@@ -378,7 +382,7 @@
     },
     {
       "name": "start_server",
-      "value": "啟動"
+      "value": "啟動服務"
     },
     {
       "name": "stop_server",
@@ -418,7 +422,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "接收歷史"
+      "value": "檔案接收歷史"
     },
     {
       "name": "receive_history_empty",
@@ -470,7 +474,7 @@
     },
     {
       "name": "troubleshoot_title",
-      "value": "疑難排解"
+      "value": "常見問題"
     },
     {
       "name": "troubleshoot_group_general",
@@ -483,6 +487,10 @@
     {
       "name": "troubleshoot_group_mta",
       "value": "MTA（互傳聯盟）"
+    },
+    {
+      "name": "troubleshoot_group_web",
+      "value": "網頁"
     },
     {
       "name": "troubleshoot_firewall_title",
@@ -498,11 +506,11 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "【LocalSend】確保兩台裝置連線到同一 Wi-Fi 網路並執行 LocalSend，且雙方使用的連接埠一致。\n【MTA】只有在周圍有互傳聯盟成員裝置並開啟其品牌分享功能（如榮耀分享、小米互傳、OPPO 互傳等）時，互傳裝置列表才會顯示。"
+      "value": "【LocalSend】\n① 兩台裝置連線到同一 Wi-Fi 網路；\n② 雙方都在執行 LocalSend 或相容應用程式；\n③ 雙方使用相同的連接埠。\n\n【MTA】\n① 本機開啟藍牙與 WLAN（無需連線網路）；\n② 周圍有已開啟品牌分享功能（如榮耀分享、小米互傳、OPPO 互傳等）的互傳聯盟裝置；\n③ 互傳裝置僅在傳送頁可見時掃描，切換頁籤或退到背景後會暫停。"
     },
     {
       "name": "troubleshoot_discovery_service_hint",
-      "value": "iOS 或安卓上的 LocalSend 有時雖然是開啟狀態，但服務實際上未能啟動。若無法發現裝置，請清理背景並重新開啟應用程式。"
+      "value": "iOS 或安卓上的 LocalSend 有時雖然顯示為開啟狀態，但服務並未真正啟動。\n若無法發現裝置，請清理背景並重新開啟應用程式。"
     },
     {
       "name": "troubleshoot_connection_title",
@@ -510,7 +518,7 @@
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "檢查目標裝置是否執行以及 IP 位址是否正確，確保 VPN 未干擾區域網路存取。"
+      "value": "檢查目標裝置是否正在執行、IP 位址是否正確。\n確保 VPN 未干擾區域網路存取。"
     },
     {
       "name": "troubleshoot_protocol_title",
@@ -518,7 +526,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "兩端裝置的加密設定必須相容才能正常通訊。若一端使用 HTTPS 而另一端使用 HTTP，將無法發現或連線對方。請在「設定 → LocalSend → 進階設定 → 加密傳輸」中確保雙方的加密選項一致。"
+      "value": "兩端裝置的加密設定必須相容才能正常通訊。\n若一端使用 HTTPS 而另一端使用 HTTP，將無法發現或連線對方。\n請在「設定 → LocalSend → 進階設定 → 加密傳輸」中確保雙方的加密選項一致。"
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -526,7 +534,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "同時啟用多個網路介面（如乙太網路+Wi-Fi 或雙 Wi-Fi）可能導致裝置探索異常，因為廣播可能走錯介面。建議關閉多餘的網路介面，或在「設定 → LocalSend → 進階設定 → 網路介面」中選擇正確的介面。"
+      "value": "同時啟用多個網路介面（如乙太網路 + Wi-Fi 或雙 Wi-Fi）可能導致裝置探索異常：廣播可能走錯介面。\n建議關閉多餘的網路介面，或在「設定 → LocalSend → 進階設定 → 網路介面」中選擇正確的介面。"
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -534,7 +542,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "【LocalSend】傳輸中斷可能因接收端鎖定螢幕、切換背景或網路波動導致。建議傳輸時保持應用程式在前景並確保網路穩定，失敗後可重新傳送。\n【MTA】互傳傳輸需本機藍牙與 WLAN 均保持開啟，並保持接收端應用程式在前景；傳輸期間切換網路或退到背景都可能中斷，失敗後可重新傳送。"
+      "value": "【LocalSend】\n· 退到背景或鎖定螢幕時，進行中的傳輸會由背景長時任務保護並繼續；\n· 請勿關閉傳輸通知或強制結束應用程式，否則傳輸會中斷；\n· 網路波動或對端結束應用程式也可能導致失敗，失敗後可重新傳送。\n\n【MTA】\n· 本機藍牙與 WLAN 均需保持開啟；\n· 接收端應保持應用程式在前景，退到背景會停止接收服務，無法發起新的互傳接收；\n· 傳輸期間切換網路或網路波動可能導致中斷，失敗後可重新傳送。"
     },
     {
       "name": "troubleshoot_remote_title",
@@ -542,7 +550,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "便捷快傳預設在同一區域網路內運作。如需跨網路傳輸，可使用異地組網工具（如 EasyTier 等）建立虛擬區域網路，然後在「設定 → LocalSend → 進階設定 → 網路介面」中開啟工具對應的網路介面即可。"
+      "value": "便捷快傳預設在同一區域網路內運作。\n如需跨網路傳輸，可使用異地組網工具（如 EasyTier 等）建立虛擬區域網路：\n① 在「設定 → LocalSend → 進階設定 → 網路介面」中開啟工具對應的網路介面；\n② 網頁傳輸還需在「設定 → 網頁傳輸 → 進階設定 → 網路介面」中允許該介面，並選擇對應位址。"
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -550,7 +558,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "【LocalSend】如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。\n【MTA】互傳裝置以藍牙識別碼區分，對端藍牙識別碼變更時可能短暫出現重複，未再收到廣播的裝置會自動移除；也可點擊重新整理按鈕重新掃描，立即清除重複條目。"
+      "value": "【LocalSend】\n如果對方重設了安全憑證（裝置指紋），同一裝置會以不同身分出現，導致列表中出現重複。\n點擊重新整理按鈕重新整理裝置列表即可恢復正常顯示。\n\n【MTA】\n互傳裝置以藍牙識別碼區分，對端藍牙識別碼變更時可能短暫出現重複，未再收到廣播的裝置會自動移除。\n也可點擊重新整理按鈕重新掃描，立即清除重複條目。"
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -558,11 +566,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "互傳聯盟（MTA）目前尚未經過各品牌裝置的完備測試，若傳輸失敗，請依下列步驟擷取日誌並回報：\n① 點擊傳送頁右上角的「更多」選單（⋯），選擇「診斷日誌」；\n② 在日誌頁開啟「詳細日誌（DEBUG）」開關；\n③ 重新執行一次 MTA 傳輸以重現問題；\n④ 在日誌頁將日誌儲存（匯出）為檔案；\n⑤ 進入「設定 → 回饋 → 程式碼倉庫」提交 issues，並附上剛匯出的日誌檔案。"
+      "value": "互傳聯盟（MTA）目前尚未經過各品牌裝置的完備測試。\n若傳輸失敗，請依下列步驟擷取日誌並回報：\n① 點擊傳送頁右上角的「更多」選單（⋯），選擇「診斷日誌」；\n② 在日誌頁開啟「詳細日誌（DEBUG）」開關；\n③ 重新執行一次 MTA 傳輸以重現問題；\n④ 在日誌頁將日誌儲存（匯出）為檔案；\n⑤ 進入「設定 → 更多 → 反饋」，選擇「電子郵件」或「代碼倉庫」提交問題，並附上剛匯出的日誌檔案。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「詳細日誌（DEBUG）」開關在重新啟動應用程式後會自動關閉，請在開啟後直接重現問題，期間不要重新啟動應用程式。"
+      "value": "「詳細日誌（DEBUG）」開關在重新啟動應用程式後會自動關閉。\n請在開啟後直接重現問題，期間不要重新啟動應用程式。"
     },
     {
       "name": "troubleshoot_offline_title",
@@ -570,7 +578,39 @@
     },
     {
       "name": "troubleshoot_offline_desc",
-      "value": "裝置離線後不會立即從「附近裝置」中消失。區域網路（LocalSend）裝置停止廣播後，需要經過一輪重新整理確認才會被移除；互傳聯盟（MTA）裝置依靠 BLE 廣播判斷線上狀態，約 30 秒內未再收到廣播即自動從清單移除，裝置重新上線則會即時出現。為節省電量，互傳裝置的探索掃描僅在傳送頁可見期間進行。"
+      "value": "裝置離線後不會立即從「附近裝置」中消失。\n· 區域網路（LocalSend）裝置停止廣播後，需要經過一輪重新整理確認才會被移除；\n· 互傳聯盟（MTA）裝置依靠 BLE 廣播判斷線上狀態，約 30 秒未再收到廣播即自動移除，重新上線則會即時出現。\n為節省電量，互傳裝置的探索掃描僅在傳送頁可見期間進行。"
+    },
+    {
+      "name": "troubleshoot_web_usage_title",
+      "value": "如何使用網頁傳輸"
+    },
+    {
+      "name": "troubleshoot_web_usage_desc",
+      "value": "① 在傳送頁暫存檔案後，點擊「網頁」圖示進入網頁傳輸面板；\n② 對方掃碼，或在瀏覽器中開啟面板顯示的位址並輸入 6 位存取碼，即可下載，無需安裝應用程式。\n\n面板位址僅在同一區域網路內可存取；網頁上傳需在「設定 → 網頁傳輸」中開啟「允許上傳」。"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_title",
+      "value": "網頁位址打不開或存取碼無效"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_desc",
+      "value": "網頁位址僅在同一區域網路內可存取，且只對本次分享有效。\n· 停止網頁傳輸、重新啟動網頁服務或重新啟動應用程式後，本次存取碼會失效；\n· 連接埠回退或網路變化時位址也可能改變；\n· 需要對方重新掃碼，或按面板目前顯示的位址與存取碼進入。\n\n若仍無法開啟，請檢查：\n· 雙方是否在同一網路；\n· 對方輸入的是否為面板顯示的完整位址（預設連接埠 53310，被佔用時會自動改用臨時連接埠）；\n· 路由器是否開啟了訪客網路隔離或防火牆攔截。"
+    },
+    {
+      "name": "troubleshoot_web_encryption_title",
+      "value": "網頁傳輸為什麼預設不加密"
+    },
+    {
+      "name": "troubleshoot_web_encryption_desc",
+      "value": "網頁加密傳輸預設關閉，且與 LocalSend 的加密設定互不影響。\n如需加密，可在「設定 → 網頁傳輸 → 進階設定 → 加密傳輸」中開啟。\n開啟後使用自簽憑證，可能被瀏覽器或廣告攔截擴充功能攔截。\n若下載失敗，可暫時關閉加密傳輸，或停用相關擴充功能後重試。"
+    },
+    {
+      "name": "troubleshoot_web_background_title",
+      "value": "切到背景後網頁無法存取"
+    },
+    {
+      "name": "troubleshoot_web_background_desc",
+      "value": "網頁服務隨應用程式執行。\n開啟「設定 → 一般 → 允許背景接收」後，沒有傳輸任務時應用程式會在背景保留約 5 分鐘，期間仍可存取網頁。\n逾時後或手動停止網頁傳輸，網頁將無法開啟；需要長時間分享時，請保持應用程式在前景執行。"
     },
     {
       "name": "protocol_version_label",
@@ -586,7 +626,15 @@
     },
     {
       "name": "network_type_ethernet",
-      "value": "乙太網路"
+      "value": "有線網路"
+    },
+    {
+      "name": "network_type_vpn",
+      "value": "VPN"
+    },
+    {
+      "name": "network_type_bridge",
+      "value": "容器網橋"
     },
     {
       "name": "network_type_unknown",
@@ -594,7 +642,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "未連接區域網，其他裝置可能無法發現此裝置"
+      "value": "未連接區域網，LocalSend 裝置可能無法發現本機"
     },
     {
       "name": "diagnostic_logs_title",
@@ -638,11 +686,11 @@
     },
     {
       "name": "save_logs_button",
-      "value": "保存"
+      "value": "匯出全部日誌"
     },
     {
       "name": "save_success",
-      "value": "日誌已儲存到 Download/%s"
+      "value": "日誌已儲存到：\nDownload/%s/%s\n排障結束後建議關閉詳細日誌"
     },
     {
       "name": "save_failed",
@@ -650,7 +698,7 @@
     },
     {
       "name": "clear_logs_button",
-      "value": "清除"
+      "value": "清除日誌"
     },
     {
       "name": "no_logs",
@@ -667,10 +715,6 @@
     {
       "name": "link_share_button",
       "value": "用網頁接收"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "歷史"
     },
     {
       "name": "receive_details_title",
@@ -695,10 +739,6 @@
     {
       "name": "info_label",
       "value": "資訊"
-    },
-    {
-      "name": "send_audio",
-      "value": "音訊"
     },
     {
       "name": "checksum_create_desc",
@@ -769,6 +809,10 @@
       "value": "等待中"
     },
     {
+      "name": "session_waiting_peer_download",
+      "value": "等待對方下載"
+    },
+    {
       "name": "session_status_checksum",
       "value": "校驗中..."
     },
@@ -813,8 +857,16 @@
       "value": "新增檔案"
     },
     {
+      "name": "send_no_source_title",
+      "value": "暫未發現附近裝置"
+    },
+    {
+      "name": "send_no_source_subtitle",
+      "value": "請確認網路與藍牙已開啟"
+    },
+    {
       "name": "server_offline_warning",
-      "value": "服務未執行"
+      "value": "LocalSend 服務未執行"
     },
     {
       "name": "verify_button",
@@ -830,7 +882,11 @@
     },
     {
       "name": "feedback_desc",
-      "value": "到應用市場或程式碼倉庫回饋意見"
+      "value": "透過電子郵件或程式碼倉庫回饋意見"
+    },
+    {
+      "name": "feedback_email",
+      "value": "電子郵件"
     },
     {
       "name": "feedback_appgallery",
@@ -839,6 +895,58 @@
     {
       "name": "feedback_repo",
       "value": "代碼倉庫"
+    },
+    {
+      "name": "contact_developer_title",
+      "value": "聯絡開發者"
+    },
+    {
+      "name": "contact_developer_copy",
+      "value": "複製地址"
+    },
+    {
+      "name": "contact_developer_send",
+      "value": "傳送電子郵件"
+    },
+    {
+      "name": "contact_developer_attach_logs",
+      "value": "附帶診斷日誌（含裝置與傳輸資訊）"
+    },
+    {
+      "name": "feedback_mail_subject",
+      "value": "便捷快傳使用者反饋"
+    },
+    {
+      "name": "feedback_mail_body_intro",
+      "value": "請在這裡描述你的建議或遇到的問題："
+    },
+    {
+      "name": "feedback_mail_body_meta_title",
+      "value": "—— 以下資訊有助於定位問題 ——"
+    },
+    {
+      "name": "feedback_mail_body_version",
+      "value": "應用程式版本：%s"
+    },
+    {
+      "name": "feedback_mail_body_device",
+      "value": "裝置類型：%s"
+    },
+    {
+      "name": "feedback_mail_body_steps",
+      "value": "重現步驟（可選）："
+    },
+    {
+      "name": "feedback_mail_body_screenshots",
+      "value": "截圖（可選）："
+    },
+    {
+      "name": "feedback_mail_body_logs",
+      "value": "日誌（可選，傳送電子郵件時可勾選「附帶診斷日誌」）："
+    },
+    {
+      "name": "feedback_mail_logs_manual_attach",
+      "value": "（未能自動附帶診斷日誌，請在「設定 → 更多 → 診斷日誌」中匯出後手動附上。）"
     },
     {
       "name": "about_handysend_version",
@@ -898,11 +1006,23 @@
     },
     {
       "name": "debug_log_label",
-      "value": "詳細日誌（DEBUG）"
+      "value": "記錄詳細日誌"
     },
     {
       "name": "debug_log_desc",
-      "value": "輸出更詳細的日誌資訊，用於排查故障，重啟後自動關閉"
+      "value": "記錄更詳細的診斷資訊，協助開發者定位問題。問題重現後建議關閉"
+    },
+    {
+      "name": "log_settings_title",
+      "value": "日誌設定"
+    },
+    {
+      "name": "log_settings_info_title",
+      "value": "日誌檔案"
+    },
+    {
+      "name": "log_settings_info_desc",
+      "value": "日誌保存在應用程式沙箱中；匯出的 ZIP 包含本次與上次會話的關鍵日誌、詳細日誌，以及應用程式版本和裝置資訊。"
     },
     {
       "name": "more_settings",
@@ -930,11 +1050,11 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "網頁分享使用自簽憑證的加密連線，部分瀏覽器擴充功能或安全策略可能攔截下載。如遇無法下載，可改用未加密分享或調整瀏覽器擴充功能/設定"
+      "value": "加密連線使用自簽憑證，可能被瀏覽器或廣告攔截擴充功能攔截，若下載失敗，請關閉加密傳輸或停用相關擴充功能後重試"
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有網路介面已關閉，其他裝置無法發現此裝置。請到進階設定 > 網路介面中開啟"
+      "value": "所有網路介面均已關閉，LocalSend 無法使用，請到 設定 > LocalSend > 進階設定 > 網路介面 中開啟"
     },
     {
       "name": "network_interface_desc",
@@ -950,7 +1070,15 @@
     },
     {
       "name": "network_default_indicator",
-      "value": "預設"
+      "value": "預設網路"
+    },
+    {
+      "name": "network_interface_status_enabled",
+      "value": "已啟用"
+    },
+    {
+      "name": "network_interface_status_disabled",
+      "value": "已停用"
     },
     {
       "name": "gallery_save_dialog_title",
@@ -963,6 +1091,18 @@
     {
       "name": "no_devices_found",
       "value": "未發現裝置，請確認目標裝置已安裝並開啟 LocalSend"
+    },
+    {
+      "name": "web_access_auto_accept_upload_label",
+      "value": "上傳免確認"
+    },
+    {
+      "name": "web_access_auto_accept_upload_desc",
+      "value": "其他人透過網頁向你傳送檔案時不再需要經你確認，文字訊息會自動複製到剪貼簿"
+    },
+    {
+      "name": "web_access_unavailable",
+      "value": "網頁服務暫未就緒"
     },
     {
       "name": "web_download_request_title",
@@ -1005,6 +1145,10 @@
       "value": "檔案已被移動或刪除"
     },
     {
+      "name": "history_open_file_access_denied",
+      "value": "檔案暫不可用，請稍後重試"
+    },
+    {
       "name": "history_delete_title",
       "value": "刪除記錄？"
     },
@@ -1021,24 +1165,44 @@
       "value": "將刪除：%s"
     },
     {
+      "name": "history_delete_message_text",
+      "value": "將刪除這條文本訊息記錄"
+    },
+    {
+      "name": "large_file_send_confirm_title",
+      "value": "傳送大檔案？"
+    },
+    {
+      "name": "large_file_send_confirm_message",
+      "value": "檔案總大小 %s，已超過 10GB，大檔案傳輸可能失敗（超時/斷連/對方拒收），仍要繼續傳送嗎？"
+    },
+    {
+      "name": "large_file_receive_hint",
+      "value": "大檔案（10GB 以上）傳輸可能失敗"
+    },
+    {
+      "name": "storage_insufficient_message",
+      "value": "儲存空間不足：可用 %s，需要 %s（含預留）"
+    },
+    {
+      "name": "copy_truncated_message",
+      "value": "內容過長，僅複製了前 %s"
+    },
+    {
+      "name": "accept_targets_failed",
+      "value": "準備接收檔案失敗"
+    },
+    {
+      "name": "history_delete_message_count",
+      "value": "將刪除 %d 條記錄"
+    },
+    {
       "name": "history_clear_message_count",
       "value": "將刪除全部 %d 條記錄"
     },
     {
       "name": "history_text_content_title",
       "value": "文字內容"
-    },
-    {
-      "name": "send_video",
-      "value": "視訊"
-    },
-    {
-      "name": "send_document",
-      "value": "文件"
-    },
-    {
-      "name": "send_archive",
-      "value": "壓縮包"
     },
     {
       "name": "file_status_waiting",
@@ -1070,11 +1234,11 @@
     },
     {
       "name": "permission_notification_desc",
-      "value": "在通知列顯示後台傳輸的進度與結果"
+      "value": "用於背景傳輸和臨時保活"
     },
     {
       "name": "permission_bluetooth_label",
-      "value": "藍牙權限"
+      "value": "裝置探索與連接"
     },
     {
       "name": "permission_bluetooth_check_desc",
@@ -1098,11 +1262,11 @@
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "互傳聯盟接收"
+      "value": "允許接收"
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "應用程式在前台時，以互傳聯盟身分接收附近裝置傳送的內容"
+      "value": "允許附近的互傳聯盟成員裝置向你傳送檔案"
     },
     {
       "name": "mta_enabled_label",
@@ -1110,7 +1274,7 @@
     },
     {
       "name": "mta_enabled_desc",
-      "value": "互傳聯盟協定總開關，關閉後將停止互傳接收與裝置探索"
+      "value": "關閉後將無法與附近的互傳聯盟成員裝置互傳檔案"
     },
     {
       "name": "mta_receive_disabled_desc",
@@ -1126,15 +1290,15 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "與互傳聯盟裝置傳輸檔案時，以所選品牌對外呈現，僅對部分廠商生效"
+      "value": "偽裝成指定品牌的裝置傳輸檔案，僅對部分廠商生效"
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "互傳連接提醒"
+      "value": "顯示互傳提醒"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "藍牙或 WLAN 未開啟時，在主頁面顯示警告橫幅"
+      "value": "藍牙或 WLAN 未開啟時，在傳送頁顯示警告橫幅"
     },
     {
       "name": "mta_brand_picker_title",
@@ -1154,19 +1318,23 @@
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "藍牙未開啟，互傳裝置將無法被發現，請開啟藍牙"
+      "value": "藍牙未開啟，互傳無法使用，請開啟藍牙"
     },
     {
-      "name": "mta_wifi_off_warning",
-      "value": "未開啟 WLAN，區域網路與互傳的裝置探索、傳輸可能失敗，請開啟 WLAN"
+      "name": "wifi_off_lan_and_mta_warning",
+      "value": "WLAN 未開啟，LocalSend 與互傳無法使用，請開啟 WLAN"
+    },
+    {
+      "name": "mta_wifi_off_standalone_warning",
+      "value": "WLAN 未開啟，互傳無法使用，請開啟 WLAN"
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "互傳功能需要開啟 WLAN，未開啟時裝置可被發現但無法傳輸，請開啟 WLAN"
+      "value": "WLAN 未開啟，互傳裝置可被發現但無法傳輸，請開啟 WLAN"
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "藍牙和 WLAN 均未開啟，互傳裝置將無法被發現或傳輸，請開啟後重試"
+      "value": "藍牙與 WLAN 均未開啟，互傳無法使用，請開啟後重試"
     },
     {
       "name": "nearby_devices_subtitle_mta",
@@ -1265,8 +1433,12 @@
       "value": "退出"
     },
     {
+      "name": "send_partial_protocols_disabled_hint",
+      "value": "%s 已關閉，相關裝置與入口將不會顯示"
+    },
+    {
       "name": "send_all_protocols_disabled_hint",
-      "value": "LocalSend 與互傳聯盟均已關閉，無法傳送或接收檔案"
+      "value": "所有傳輸方式均已關閉，應用程式無法使用，請至設定中開啟至少一種傳輸方式"
     },
     {
       "name": "send_protocol_hint_settings",
@@ -1301,8 +1473,12 @@
       "value": "有新的傳輸請求"
     },
     {
-      "name": "pending_request_notification_text",
-      "value": "點擊開啟 HandySend 進行確認"
+      "name": "background_attention_pending_text",
+      "value": "%d 個請求等待你確認"
+    },
+    {
+      "name": "background_attention_web_access_text",
+      "value": "%s 正在透過網頁存取你的檔案（共 %d 個）"
     },
     {
       "name": "session_stage_awaiting",
@@ -1425,6 +1601,10 @@
       "value": "部分完成（僅接收部分檔案）"
     },
     {
+      "name": "mta_send_stage_rejected",
+      "value": "對方拒絕接收"
+    },
+    {
       "name": "mta_send_stage_failed",
       "value": "傳送失敗"
     },
@@ -1454,19 +1634,31 @@
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "清除任務歷史"
+      "value": "清空任務歷史"
     },
     {
       "name": "transfer_center_clear_history_title",
-      "value": "清除任務歷史？"
+      "value": "清空任務歷史？"
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "此操作不可撤銷。將清除 %d 條任務記錄，並刪除全部已傳送的文字檔案。"
+      "value": "此操作不可撤銷。將清空 %d 條任務記錄。"
+    },
+    {
+      "name": "transfer_center_delete_selected_title",
+      "value": "刪除所選記錄？"
+    },
+    {
+      "name": "transfer_center_delete_selected_message_count",
+      "value": "此操作不可撤銷。將刪除所選的 %d 條任務記錄。"
+    },
+    {
+      "name": "transfer_center_select_not_deletable",
+      "value": "進行中與待確認的任務無法刪除"
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "檔案歷史"
+      "value": "檔案接收歷史"
     },
     {
       "name": "session_detail_title",
@@ -1569,14 +1761,6 @@
       "value": "其它方式"
     },
     {
-      "name": "send_method_web_send",
-      "value": "網頁傳送"
-    },
-    {
-      "name": "send_method_web_receive",
-      "value": "網頁接收"
-    },
-    {
       "name": "send_method_ip",
       "value": "指定 IP 傳送"
     },
@@ -1626,7 +1810,7 @@
     },
     {
       "name": "discovery_source_web",
-      "value": "網頁分享"
+      "value": "網頁傳輸"
     },
     {
       "name": "discovery_empty_hint_localsend",
@@ -1679,6 +1863,46 @@
     {
       "name": "local_device_ip",
       "value": "本機 IP"
+    },
+    {
+      "name": "local_device_type",
+      "value": "裝置類型"
+    },
+    {
+      "name": "local_device_model",
+      "value": "裝置型號"
+    },
+    {
+      "name": "local_device_port",
+      "value": "連接埠"
+    },
+    {
+      "name": "local_device_broadcast_name",
+      "value": "廣播名稱"
+    },
+    {
+      "name": "local_device_mta_device_id",
+      "value": "傳送者 ID"
+    },
+    {
+      "name": "local_device_group_identity",
+      "value": "裝置身分"
+    },
+    {
+      "name": "local_device_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "local_device_group_mta",
+      "value": "互傳"
+    },
+    {
+      "name": "local_device_encrypted_on",
+      "value": "開"
+    },
+    {
+      "name": "local_device_encrypted_off",
+      "value": "關"
     },
     {
       "name": "service_status_running",
@@ -1806,7 +2030,7 @@
     },
     {
       "name": "session_file_preview_over_limit",
-      "value": "檔案過大，不支援預覽"
+      "value": "內容過長，僅顯示前 128KB"
     },
     {
       "name": "session_file_open_with_app",
@@ -1815,6 +2039,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "找不到可開啟此檔案的應用程式"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "還有 %d 個檔案，點擊載入更多"
     },
     {
       "name": "session_file_open_failed",
@@ -1826,15 +2054,31 @@
     },
     {
       "name": "new_transfer_alert_message",
-      "value": "%s 想要傳送 %d 個檔案"
+      "value": "%s 發來 %d 個檔案"
+    },
+    {
+      "name": "new_transfer_alert_message_text",
+      "value": "%s 發來 1 則訊息"
+    },
+    {
+      "name": "new_transfer_alert_message_outbound",
+      "value": "%s 想要下載 %d 個檔案"
+    },
+    {
+      "name": "new_transfer_confirm_timeout",
+      "value": "等待確認逾時，請求已關閉"
     },
     {
       "name": "new_transfer_alert_view",
       "value": "檢視"
     },
     {
-      "name": "new_transfer_alert_later",
-      "value": "稍後"
+      "name": "web_access_notice_title",
+      "value": "網頁存取"
+    },
+    {
+      "name": "web_access_notice_message",
+      "value": "%s 存取了網頁，可下載你已選取的 %d 個檔案。"
     },
     {
       "name": "favorites_online",
@@ -1893,24 +2137,216 @@
       "value": "確定移除 %d 台收藏裝置？"
     },
     {
-      "name": "favorites_select_cancel",
-      "value": "取消"
-    },
-    {
-      "name": "favorites_select_all",
-      "value": "全選"
-    },
-    {
-      "name": "favorites_delete_count",
-      "value": "刪除（%d）"
-    },
-    {
       "name": "favorites_probing",
       "value": "正在連線…"
     },
     {
       "name": "favorites_probe_failed",
       "value": "無法連線到該裝置，請檢查網路"
+    },
+    {
+      "name": "multi_select_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "multi_select_all",
+      "value": "全選"
+    },
+    {
+      "name": "multi_select_delete_count",
+      "value": "刪除（%d）"
+    },
+    {
+      "name": "web_settings",
+      "value": "網頁傳輸"
+    },
+    {
+      "name": "web_send_label",
+      "value": "網頁傳輸"
+    },
+    {
+      "name": "web_receive_label",
+      "value": "允許上傳"
+    },
+    {
+      "name": "web_access_no_file_warning",
+      "value": "尚未選擇要傳送的檔案"
+    },
+    {
+      "name": "web_send_desc",
+      "value": "關閉後將無法透過網頁傳輸檔案"
+    },
+    {
+      "name": "web_receive_desc",
+      "value": "其他人可以透過網頁向你傳送檔案"
+    },
+    {
+      "name": "web_access_start_send",
+      "value": "開啟網頁傳輸"
+    },
+    {
+      "name": "local_device_group_web",
+      "value": "網頁"
+    },
+    {
+      "name": "local_device_interfaces_localsend",
+      "value": "網路介面（LocalSend）"
+    },
+    {
+      "name": "local_device_interfaces_web",
+      "value": "網路介面（網頁服務）"
+    },
+    {
+      "name": "web_https_label",
+      "value": "加密傳輸"
+    },
+    {
+      "name": "web_https_desc",
+      "value": "使用 HTTPS 加密傳輸檔案"
+    },
+    {
+      "name": "web_access_code_label",
+      "value": "存取碼："
+    },
+    {
+      "name": "web_access_code_hint",
+      "value": "無法掃碼時，手動輸入以下位址並使用存取碼"
+    },
+    {
+      "name": "web_interface_label",
+      "value": "網路介面"
+    },
+    {
+      "name": "web_interface_desc",
+      "value": "選擇用於顯示網址的網路介面"
+    },
+    {
+      "name": "web_interface_none",
+      "value": "至少選擇一個介面"
+    },
+    {
+      "name": "web_port_label",
+      "value": "連接埠"
+    },
+    {
+      "name": "web_port_desc",
+      "value": "預設 53310，被佔用時自動使用臨時連接埠"
+    },
+    {
+      "name": "web_port_invalid",
+      "value": "請輸入 1024–65535 之間的連接埠"
+    },
+    {
+      "name": "web_port_conflict",
+      "value": "連接埠不能與 LocalSend 連接埠相同"
+    },
+    {
+      "name": "web_port_fallback_warning",
+      "value": "連接埠 %d 被佔用，已改用 %d，可在網頁設定中更換連接埠"
+    },
+    {
+      "name": "web_port_fallback_value",
+      "value": "目前連接埠 %d（預設 %d 被佔用）"
+    },
+    {
+      "name": "web_info_status",
+      "value": "服務狀態"
+    },
+    {
+      "name": "web_info_address",
+      "value": "網頁位址"
+    },
+    {
+      "name": "web_address_switch",
+      "value": "切換網頁位址"
+    },
+    {
+      "name": "web_service_restart_title",
+      "value": "重新啟動網頁服務？"
+    },
+    {
+      "name": "web_service_restart_message",
+      "value": "修改網頁設定需要重新啟動服務，以下傳輸將被中斷：\n%s"
+    },
+    {
+      "name": "web_service_restart_ok",
+      "value": "重新啟動"
+    },
+    {
+      "name": "web_service_restart_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "bg_transfer_title_web_keepalive",
+      "value": "網頁服務執行中"
+    },
+    {
+      "name": "bg_transfer_content_web_keepalive",
+      "value": "背景臨時保活，5 分鐘後自動關閉"
+    },
+    {
+      "name": "bg_transfer_title_keepalive",
+      "value": "背景執行中"
+    },
+    {
+      "name": "bg_transfer_content_keepalive",
+      "value": "臨時保活5分鐘，到期後自動關閉"
+    },
+    {
+      "name": "bg_transfer_title_transfer",
+      "value": "背景傳輸中"
+    },
+    {
+      "name": "bg_transfer_content_transfer",
+      "value": "關閉通知會中斷傳輸"
+    },
+    {
+      "name": "bg_transfer_content_tasks_percent",
+      "value": "%d 個任務 · %d%%"
+    },
+    {
+      "name": "background_receive_label",
+      "value": "允許背景接收"
+    },
+    {
+      "name": "background_receive_desc",
+      "value": "沒有傳輸任務時，應用將在背景繼續執行5分鐘，期間可接收網頁或 LocalSend 的傳輸請求"
+    },
+    {
+      "name": "web_access_stop",
+      "value": "停止網頁傳輸"
+    },
+    {
+      "name": "service_status_label",
+      "value": "服務狀態"
+    },
+    {
+      "name": "service_status_no_interface",
+      "value": "異常（無可用網路介面）"
+    },
+    {
+      "name": "network_interface_status_not_enabled",
+      "value": "未啟用"
+    },
+    {
+      "name": "web_access_no_interface",
+      "value": "沒有可用的網路介面，網頁傳輸不可用"
+    },
+    {
+      "name": "session_waiting_peer_upload",
+      "value": "等待上傳"
+    },
+    {
+      "name": "session_end_web_access",
+      "value": "結束會話"
+    },
+    {
+      "name": "session_end_web_download",
+      "value": "結束下載"
+    },
+    {
+      "name": "log_file_unavailable",
+      "value": "檔案日誌不可用，目前顯示暫存記憶體日誌"
     },
     {
       "name": "demo_scenario_menu_title",

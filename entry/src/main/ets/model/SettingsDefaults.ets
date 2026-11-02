@@ -15,12 +15,6 @@ export const DEFAULT_AUTO_CONFIRM_MODE: AutoConfirmMode = AutoConfirmMode.off;
 
 export const DEFAULT_RECEIVE_PIN: string = '';
 
-export const DEFAULT_AUTO_FINISH: boolean = true;
-
-export const DEFAULT_AUTO_ACCEPT_WEB_DOWNLOAD: boolean = true;
-
-export const DEFAULT_SAVE_TO_HISTORY: boolean = true;
-
 export const DEFAULT_SAVE_TO_GALLERY: boolean = false;
 
 export const DEFAULT_DESTINATION: string = '';
@@ -36,8 +30,6 @@ export const DEFAULT_HIDE_TAB_BAR_ON_SCROLL: boolean = false;
 // ── 设备身份 ──
 // 空字符串时根据系统信息自动检测
 export const DEFAULT_CUSTOM_ALIAS: string = '';
-
-export const DEFAULT_CUSTOM_DEVICE_TYPE: string = '';
 
 // ── 校验和设置 ──
 export const DEFAULT_CREATE_CHECKSUMS: boolean = false;
@@ -68,9 +60,42 @@ export const DEFAULT_LOCALSEND_ENABLED: boolean = true;
 // ── 互传联盟（MTA）──
 export const DEFAULT_MTA_ENABLED: boolean = true;
 
+// ── 网页分享 ──
+export const DEFAULT_WEB_SEND_ENABLED: boolean = false;
+
+export const DEFAULT_WEB_RECEIVE_ENABLED: boolean = false;
+
+// 网页独立安全项：新装默认关闭/空，与 LocalSend 互不影响
+export const DEFAULT_WEB_HTTPS_ENABLED: boolean = false;
+
+
+// 网页端口：53310-53316 预留给 HandySend 网页/扩展服务，避开 53317（LocalSend）
+// 与 53318（localsnd CLI 的默认 HTTP 端口）
+export const DEFAULT_WEB_PORT: number = 53310;
+
+// 进程内记录的实际端口：启动成功后写入，重启服务时优先复用；不持久化，
+// 应用重启后仍先尝试配置端口，避免上次回退的临时端口被带到下次启动
+export const DEFAULT_WEB_LAST_PORT: number = 0;
+
+// 空串表示白名单/黑名单为空；接口是否启用按 NetworkInterfaceRules 的类型默认规则，
+// 黑名单优先，其次白名单，两者都未列出时 Wi-Fi/有线/VPN 启用
+export const DEFAULT_WEB_INTERFACES: string = '';
+
+export const DEFAULT_WEB_INTERFACE_BLACKLIST: string = '';
+
+export const DEFAULT_WEB_DISPLAY_ADDRESS: string = '';
+
+export const WEB_PORT_MIN: number = 1024;
+
+export const WEB_PORT_MAX: number = 65535;
+
+
 export const DEFAULT_MTA_RECEIVE_ENABLED: boolean = true;
 
 // 默认第三方：品牌标识语义归属品牌注册表，此处仅引用
 export const DEFAULT_MTA_SIMULATED_BRAND: number = MTA_BRAND_ID_THIRD_PARTY;
 
 export const DEFAULT_MTA_CONNECTION_WARNINGS: boolean = true;
+
+// 默认关闭：由用户主动开启无传输时的后台接收窗口
+export const DEFAULT_BACKGROUND_RECEIVE: boolean = false;

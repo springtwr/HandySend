@@ -101,32 +101,33 @@ export default function BreakpointsTest() {
 
     it('widescreenSideBar_lg_phone_true', 0, () => {
       expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_LG,
-        HeightBreakpoint.HEIGHT_MD, 'phone', false)).assertTrue()
+        HeightBreakpoint.HEIGHT_MD, 'phone')).assertTrue()
     })
 
     it('widescreenSideBar_xl_2in1_true', 0, () => {
       expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_XL,
-        HeightBreakpoint.HEIGHT_MD, '2in1', false)).assertTrue()
+        HeightBreakpoint.HEIGHT_MD, '2in1')).assertTrue()
     })
 
     it('widescreenSideBar_md_false', 0, () => {
       expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_MD,
-        HeightBreakpoint.HEIGHT_MD, 'phone', false)).assertFalse()
+        HeightBreakpoint.HEIGHT_MD, 'phone')).assertFalse()
     })
 
     it('widescreenSideBar_sm_false', 0, () => {
       expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_SM,
-        HeightBreakpoint.HEIGHT_MD, 'phone', false)).assertFalse()
+        HeightBreakpoint.HEIGHT_MD, 'phone')).assertFalse()
     })
 
     it('widescreenSideBar_tablet_portrait_false', 0, () => {
       expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_XL,
-        HeightBreakpoint.HEIGHT_LG, 'tablet', false)).assertFalse()
+        HeightBreakpoint.HEIGHT_LG, 'tablet')).assertFalse()
     })
 
-    it('widescreenSideBar_short_height_false', 0, () => {
+    // 窗口高度不参与判定：矮窗（高度断点 sm）下宽屏仍使用侧边栏
+    it('widescreenSideBar_short_height_true', 0, () => {
       expect(isWidescreenSideBarLayout(WidthBreakpoint.WIDTH_LG,
-        HeightBreakpoint.HEIGHT_MD, 'phone', true)).assertFalse()
+        HeightBreakpoint.HEIGHT_SM, '2in1')).assertTrue()
     })
   })
 }

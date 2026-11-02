@@ -9,11 +9,14 @@
 // 3. 取消发送后接收方收到 cancelReceived 事件的联动验证
 // 4. 传输中断（网络断开）后的超时检测与错误状态恢复
 import { describe, it, expect } from '@ohos/hypium'
+import { fileIo as fs } from '@kit.CoreFileKit'
 
 // sendResultErrorMessage 依赖 getAppContext()，在无 UIAbilityContext 时回退到硬编码英文消息
 // 因此可以在 instrument test 环境下验证回退逻辑
-import { sendResultErrorMessage } from '../../../../main/ets/service/repository/SendRepository'
+import { prepareSendFiles, sendResultErrorMessage } from '../../../../main/ets/service/repository/SendRepository'
 import { NativeHttpError } from '../../../../main/ets/model/NativeTypes'
+import { SendFileItem } from '../../../../main/ets/model/Types'
+import { writeTestFileToSandbox } from '../helper/TestHelper'
 
 function makeError(kind: string, status?: number, message?: string): NativeHttpError {
   let err: NativeHttpError = {
@@ -112,6 +115,18 @@ export default function SendRepositoryTest() {
       let msg: string = sendResultErrorMessage(err)
       // 无可读消息的未知错误统一回退为连接失败文案
       expect(msg).assertEqual('Connection failed')
+    })
+
+    // ── prepareSendFiles：源文件修改时间透传 ──
+    // 网页 zip 条目按该字段还原文件时间；缺失时会回退为当前时间。
+
+    it('prepareSendFiles_carries_source_mtime', 0, async (done: Function) => {
+      let path: string = writeTestFileToSandbox('prepare_mtime_' + Date.now() + '.txt', 'mtime')
+      let expected: number = Math.floor(fs.statSync(path).mtime * 1000)
+      let items: Array<SendFileItem> = await prepareSendFiles([path])
+      expect(items.length).assertEqual(1)
+      expect(items[0].lastModified).assertEqual(expected)
+      done()
     })
   })
 }

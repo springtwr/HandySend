@@ -37,7 +37,7 @@ export class EventBus {
         snapshot[i]();
       } catch (e) {
         // 单个回调异常不中断其余回调分发，也不向上传播到触发通知的业务操作
-        logger.error('EventBus 回调异常: ' + String(e));
+        logger.error('事件总线回调异常：' + String(e));
       }
     }
   }

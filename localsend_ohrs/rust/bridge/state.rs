@@ -4,7 +4,6 @@
 //! - 不持有 `runtime`——runtime 由 NAPI 层 NapiEnv 管理
 //! - 事件经 `event_tx`（mpsc channel）输出
 //! - `server_event_task` 存储服务器事件循环 task 的 JoinHandle，`stop_server` 时 abort；
-//!   `web_send_event_task` 由 `stop_share_server` 接管（abort 并清空 web_send 状态）
 //! - `initialized` 标志判断首次初始化
 //!
 //! `BridgeState` 本身不依赖 NAPI——可在测试中直接构造。
@@ -15,10 +14,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use localsend::discovery::DiscoveryHandle;
 use localsend::http::server::common::save::FileUploadTarget;
 use localsend::http::server::v2::PrepareUploadDecisionV2;
-use localsend::http::server::web::WebSendEvent;
 use localsend::http::server::ServerHandle;
 use localsend::model::discovery::DeviceType;
-use localsend::model::transfer::FileContent;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -53,18 +50,6 @@ pub struct PendingFile {
 pub struct RecvTargetFd {
     pub fd: i32,
     pub path: String,
-}
-
-/// Web 分享文件的存储内容源。
-///
-/// - `path`：源定位（picker URI 或沙箱路径），保留用于日志/回退。
-/// - `fd`：已打开的内容读描述符（fd-direct 场景）；分享期间长期有效，
-///   每次下载由桥接层 `dup` 副本消费，Rust 从不关闭原始 fd
-///   （所有权归 ArkTS，由其持有并在分享结束时关闭）。
-#[derive(Clone, Debug)]
-pub struct WebSendFile {
-    pub path: String,
-    pub fd: Option<i32>,
 }
 
 // ── 桥接状态 ─────────────────────────────────────────────────────────────
@@ -113,22 +98,12 @@ pub struct BridgeState {
     /// 会话对端信息：(ip, port, protocol)，用于接收方取消时向发送方发 /cancel。
     pub session_peers: HashMap<String, (String, u16, localsend::model::discovery::ProtocolType)>,
 
-    // ── WebSend ──
-    /// WebSend 事件通道发送端（Web 发送模式激活时设置）。
-    pub web_send_event_tx: Option<tokio::sync::mpsc::Sender<WebSendEvent>>,
-    /// Web 发送文件 ID → 内容源（路径 + 可选 fd，供 FileDownload 内容查找）。
-    pub web_send_files: Arc<Mutex<HashMap<String, WebSendFile>>>,
-    /// 待处理的 Web 下载决策：session_id → oneshot 发送端（true=接受，false=拒绝）。
-    pub web_download_decisions: HashMap<String, oneshot::Sender<bool>>,
+    // ── 待处理文件传输（v2 接收：内容源按需提供） ──
     /// 待处理的文件上传目标：(session_id, file_id) → oneshot 发送端。
     pub pending_file_uploads: HashMap<(String, String), oneshot::Sender<FileUploadTarget>>,
     /// 接收文件预注册的直写目标：(session_id, file_id) → fd 与真实路径。
     /// ArkTS 在 respondTransfer 前逐文件注册；handle_file_upload 消费（取出即移除）。
     pub recv_target_fds: HashMap<(String, String), RecvTargetFd>,
-    /// 待处理的文件下载内容：(session_id, file_id) → oneshot 发送端。
-    pub pending_file_downloads: HashMap<(String, String), oneshot::Sender<FileContent>>,
-    /// WebSend 事件循环 task 的 JoinHandle（stop 时 abort）。
-    pub web_send_event_task: Option<JoinHandle<()>>,
 
     // ── 其他 ──
     pub current_send_session_id: Arc<Mutex<String>>,
@@ -162,13 +137,8 @@ impl BridgeState {
             cancel_tokens: HashMap::new(),
             pending_requests: Arc::new(Mutex::new(Vec::new())),
             session_peers: HashMap::new(),
-            web_send_event_tx: None,
-            web_send_files: Arc::new(Mutex::new(HashMap::new())),
-            web_download_decisions: HashMap::new(),
             pending_file_uploads: HashMap::new(),
             recv_target_fds: HashMap::new(),
-            pending_file_downloads: HashMap::new(),
-            web_send_event_task: None,
             current_send_session_id: Arc::new(Mutex::new(String::new())),
             save_dir: String::new(),
         }

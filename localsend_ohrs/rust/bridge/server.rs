@@ -1,6 +1,4 @@
-//! 服务器生命周期 + 传输决策。
-//!
-//! Web 分享/网页上传相关能力见 `web_share` 模块。
+//! 服务器生命周期 + 传输决策（设备对设备 v2；网页走独立 `web` 服务）。
 //!
 //! 核心函数接收 `Arc<Mutex<BridgeState>>` 参数，事件通过
 //! `state.event_tx`（mpsc::Sender<BridgeEvent>）输出。
@@ -20,7 +18,6 @@ use tokio::sync::{mpsc, oneshot};
 
 use localsend::http::server::internal::{InternalConfig, InternalEvent};
 use localsend::http::server::v2::ServerEventV2;
-use localsend::http::server::web::WebConfig;
 use localsend::http::server::{self, ServerConfigV2, TlsConfig};
 use localsend::http::state::ClientInfo;
 use localsend::model::discovery::PROTOCOL_VERSION_V2;
@@ -31,9 +28,8 @@ use crate::bridge::event::{send_event, BridgeError, BridgeEvent};
 use crate::bridge::identity;
 use crate::bridge::state::{BridgeState, PendingRequest};
 use crate::bridge::throttle::ProgressThrottle;
-use crate::bridge::web_share::clear_web_send_files;
 
-/// 从 BridgeState 克隆 event_tx（注入 spawned task；web_share 模块复用）。
+/// 从 BridgeState 克隆 event_tx（注入 spawned task）。
 pub(crate) fn clone_event_tx(state: &Mutex<BridgeState>) -> Option<mpsc::Sender<BridgeEvent>> {
     lock(state).event_tx.clone()
 }
@@ -51,7 +47,6 @@ pub async fn start_server(
     use_https: bool,
     verify_checksums: bool,
     pin: Option<String>,
-    mut web_config: Option<WebConfig>,
     external_show_token: Option<String>,
 ) -> Result<u16, BridgeError> {
     {
@@ -60,7 +55,7 @@ pub async fn start_server(
         // 防止并发 start_server 双启动（检查与写回之间存在 TOCTOU 窗口）
         if s.server_handle.is_some() || s.server_starting {
             // 守卫命中说明存在并发注册（调用方时序问题），warn 级便于暴露
-            log::warn!("start_server: already running (guard hit)");
+            log::warn!("启动服务器：已在运行（守卫命中）");
             return Err(BridgeError::AlreadyRunning);
         }
         s.server_starting = true;
@@ -86,15 +81,12 @@ pub async fn start_server(
     };
 
     // 尝试启动服务器，若端口仍被占用则重试一次。
-    // web_config 不可 Clone（包含 mpsc::Sender），因此仅无 web_config 时重试。
     let mut current_stop_tx = stop_tx;
     let mut current_stop_rx = stop_rx;
     let mut handle: Option<server::ServerHandle> = None;
     let mut internal_event_rx_option: Option<mpsc::Receiver<InternalEvent>> = None;
 
-    let max_attempts = if web_config.is_some() { 1 } else { 2 };
-
-    for attempt in 0..max_attempts {
+    for attempt in 0..2 {
         let cfg = ServerConfigV2 {
             pin: pin.clone(),
             verify_checksums,
@@ -129,7 +121,7 @@ pub async fn start_server(
             info,
             Some(internal_config),
             Some(cfg),
-            web_config.take(),
+            None,
             current_stop_rx,
         )
         .await
@@ -149,7 +141,7 @@ pub async fn start_server(
                         || err_msg.contains("EADDRINUSE"))
                 {
                     log::warn!(
-                        "Port {} still in use (err: {}), waiting 500ms and retrying...",
+                        "端口 {} 仍被占用（err: {}），等待 500ms 后重试……",
                         port,
                         err_msg
                     );
@@ -158,9 +150,9 @@ pub async fn start_server(
                     current_stop_tx = retry_tx;
                     current_stop_rx = retry_rx;
                 } else {
-                    // 非 in-use 失败打出真实错误文本（此前会被静默吞掉）
-                    log::warn!(
-                        "start_server: attempt {} failed on port {}: {}",
+                    // 非 in-use 失败直接返回错误，无重试无降级，按操作失败记录
+                    log::error!(
+                        "启动服务器：第 {} 次尝试在端口 {} 上失败：{}",
                         attempt,
                         port,
                         err_msg
@@ -242,7 +234,7 @@ pub async fn start_server(
                     send_event(&event_tx, ev).await;
                 }
             }
-            log::debug!("Server event loop task ended");
+            log::debug!("服务事件循环任务已结束");
         })
     };
 
@@ -252,7 +244,7 @@ pub async fn start_server(
             while let Some(event) = internal_event_rx.recv().await {
                 match event {
                     InternalEvent::Show { args } => {
-                        log::debug!("Show requested with args: {:?}", args);
+                        log::debug!("收到展示请求，参数：{:?}", args);
                     }
                 }
             }
@@ -270,7 +262,8 @@ pub async fn start_server(
         s.verify_checksums = verify_checksums;
         s.receive_pin = pin.clone();
         // 注册成功打点：排查端口占用/意外注册类问题的关键线索
-        log::debug!("server registered on port {}", local_port);
+        log::info!("服务已注册");
+        log::debug!("服务已注册端口 {}", local_port);
     }
 
     // 推送 ServerStarted 事件（关键事件）
@@ -300,7 +293,7 @@ async fn handle_file_upload(
     };
     let Some(target_tx) = target_tx else {
         log::warn!(
-            "FileUpload: no pending target for session={} file={}",
+            "FileUpload: 会话无待处理目标 session={} file={}",
             session_id,
             file_id
         );
@@ -321,7 +314,7 @@ async fn handle_file_upload(
         match registered {
             Some(recv_fd) => {
                 log::debug!(
-                    "recv: fd-direct save: session={} file={} path={}",
+                    "recv: fd 直接保存 session={} file={} path={}",
                     session_id,
                     file_id,
                     recv_fd.path
@@ -335,7 +328,7 @@ async fn handle_file_upload(
             }
             None => {
                 log::warn!(
-                    "FileUpload: no registered target fd for session={} file={}, failing (no sandbox fallback)",
+                    "FileUpload: 会话无已注册目标 fd session={} file={}，上传失败（无沙箱回退）",
                     session_id,
                     file_id
                 );
@@ -357,7 +350,13 @@ async fn handle_file_upload(
             progress_tx: Some(progress_tx),
         }
     };
-    let _ = target_tx.send(target);
+    if let Err(_returned) = target_tx.send(target) {
+        // 接收端已丢弃时关闭随目标退回的句柄，避免泄漏
+        #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+        if let localsend::http::server::common::save::FileUploadTarget::Fd { fd, .. } = _returned {
+            let _ = unsafe { std::fs::File::from_raw_fd(fd) };
+        }
+    }
 
     let sid = session_id.to_string();
     let fid = file_id.to_string();
@@ -404,7 +403,7 @@ async fn handle_file_upload(
             .await;
         }
         log::debug!(
-            "recv-progress: Stream ended: session={} file={} last={}/{}",
+            "recv-progress: 流已结束 session={} file={} last={}/{}",
             sid_progress,
             fid_progress,
             last_reported,
@@ -428,22 +427,18 @@ async fn handle_file_upload(
                     },
                 )
                 .await;
-                log::debug!("recv-progress: File saved OK: session={} file={}", sid, fid);
+                log::debug!("recv-progress: 文件保存成功 session={} file={}", sid, fid);
             }
             Ok(Err(err)) => {
                 log::error!(
-                    "recv-progress: File save failed: session={} file={} error={}",
+                    "recv-progress: 文件保存失败 session={} file={} error={}",
                     sid,
                     fid,
                     err
                 );
             }
             Err(_) => {
-                log::debug!(
-                    "recv-progress: File upload cancelled: session={} file={}",
-                    sid,
-                    fid
-                );
+                log::debug!("recv-progress: 文件上传已取消 session={} file={}", sid, fid);
             }
         }
     });
@@ -465,13 +460,13 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
     for (_key, cancel) in s.active_transfers.drain() {
         cancel.cancel();
     }
+    // 哈希任务同样取消，避免停止后进度继续上报
+    for (_key, token) in s.cancel_tokens.drain() {
+        token.cancel();
+    }
     lock(&s.pending_requests).clear();
     s.pending_decisions.clear();
-    s.web_send_event_tx.take();
-    clear_web_send_files(&s.web_send_files);
-    s.web_download_decisions.clear();
     s.pending_file_uploads.clear();
-    s.pending_file_downloads.clear();
     // 服务器停止：关闭所有尚未消费的接收直写 fd
     for (_key, recv_fd) in s.recv_target_fds.drain() {
         let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
@@ -551,7 +546,17 @@ pub fn register_recv_file_fd(
     fd: i32,
     path: &str,
 ) -> Result<(), BridgeError> {
+    if fd < 0 {
+        return Err(BridgeError::InvalidArgument("接收句柄无效".to_string()));
+    }
     let mut s = lock(state);
+    // 覆盖注册前关闭旧句柄，避免泄漏
+    if let Some(old) = s
+        .recv_target_fds
+        .remove(&(session_id.to_string(), file_id.to_string()))
+    {
+        let _ = unsafe { std::fs::File::from_raw_fd(old.fd) };
+    }
     s.recv_target_fds.insert(
         (session_id.to_string(), file_id.to_string()),
         crate::bridge::state::RecvTargetFd {
@@ -702,7 +707,7 @@ pub fn cancel_local_session(
                 .cancel(peer_protocol, &peer_ip, peer_port, &sid)
                 .await;
             log::debug!(
-                "cancel-local-session: Sent /cancel to sender {}:{}, session={}",
+                "cancel-local-session: 已向发送方 {}:{} 发送 /cancel，session={}",
                 peer_ip,
                 peer_port,
                 sid
@@ -771,7 +776,6 @@ pub async fn create_server(
         use_https,
         verify_checksums,
         pin,
-        None,
         show_token,
     )
     .await?;
@@ -820,20 +824,20 @@ mod tests {
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let port = start_server(state.clone(), 0, false, true, None, None, None)
+            let port = start_server(state.clone(), 0, false, true, None, None)
                 .await
                 .expect("首次启动失败");
             assert!(port > 0);
 
             // 重复启动 → AlreadyRunning
-            let err = start_server(state.clone(), 0, false, true, None, None, None)
+            let err = start_server(state.clone(), 0, false, true, None, None)
                 .await
                 .expect_err("重复启动应返回 AlreadyRunning");
             assert!(matches!(err, BridgeError::AlreadyRunning));
 
             // stop 后重新启动成功（快速 stop→start 无残留）
             stop_server(&state);
-            let port2 = start_server(state.clone(), 0, false, true, None, None, None)
+            let port2 = start_server(state.clone(), 0, false, true, None, None)
                 .await
                 .expect("stop 后重新启动失败");
             assert!(port2 > 0);
@@ -1150,6 +1154,15 @@ mod tests {
                 "高频进度消息下推送的中间进度事件应远小于消息数，实际 {intermediate}/{MSG_COUNT}"
             );
         });
+    }
+
+    #[test]
+    fn test_register_recv_file_fd_rejects_negative_fd() {
+        // 非法句柄直接报错，不进入登记表
+        let state = Mutex::new(BridgeState::new());
+        let result = register_recv_file_fd(&state, "s-neg", "f-neg", -1, "/tmp/target.bin");
+        assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
+        assert!(state.lock().unwrap().recv_target_fds.is_empty());
     }
 
     #[test]

@@ -36,11 +36,15 @@ import {
   getAdapter,
   isTextSessionDescriptor
 } from '../service/transfer/adapters/SessionAdapter';
-import { isAutoFinish } from '../service/repository/SettingsRepository';
 // 来源标签、方向文案与历史结果 → 统一状态映射与任务列表同源（同一套纯函数，避免两处口径分叉）
 import { directionLabelFor, sourceLabelForSession, stageForOutcome } from './TransferCenterViewModel';
 import { isTextFile } from '../utils/MimeUtils';
-import { readTextOfLocation } from '../utils/FileTextUtil';
+import { isLargeTransfer } from '../utils/LargeTransferUtil';
+import { sendTextDir } from '../service/repository/SendRepository';
+import { recvTextDir } from '../service/repository/ReceiveTargets';
+import { updateGallerySavedStatusByPath } from '../service/repository/ReceiveHistoryService';
+import { isPathSavedToGallery } from '../utils/GallerySavePolicy';
+import { readTextOfLocation, TEXT_READ_MAX_BYTES } from '../utils/FileTextUtil';
 import {
   TextPreviewVerdict,
   TEXT_PREVIEW_READ_MAX_BYTES,
@@ -56,6 +60,12 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话
 /** 详情页路由参数（按统一会话标识进入）。 */
 export interface SessionDetailParams {
   sessionId: string
+}
+
+/** 可复制的会话文本：内容与是否被读取上限截断。 */
+export interface CopyableTextMessage {
+  text: string
+  truncated: boolean
 }
 
 /** 详情页文件区块的预览模式（仅由「文件数量 + 文本类判定」决定）。 */
@@ -163,7 +173,7 @@ export function parseMediaFilesJson(json: string): Array<MediaFileInfo> {
     }
     return parsed as Array<MediaFileInfo>;
   } catch (e) {
-    logger.warn('parse media files failed: ' + String(e));
+    logger.warn('解析媒体文件列表失败：' + String(e));
     return [];
   }
 }
@@ -305,6 +315,11 @@ function historyFileToSessionFile(entry: SessionHistoryFileEntry): SessionFile {
 const DISPLAY_SYNC_INTERVAL: number = 1000;
 const SPEED_STALE_MS: number = 3000;
 
+// 详情页文件清单的分页展示：首屏只建前若干行，用户点击「加载更多」再追加一批。
+// 会话文件数量可达数百，全量建行会在进入页面时集中阻塞。
+const DETAIL_FILES_INITIAL: number = 40;
+const DETAIL_FILES_BATCH: number = 60;
+
 @ObservedV2
 export class SessionDetailViewModel {
   @Trace public session: TransferSession | undefined = undefined
@@ -327,28 +342,24 @@ export class SessionDetailViewModel {
   // 内联预览文本（单文本文件时于刷新中按路径读取；渲染期不读盘）与「内容不可用」标记
   @Trace public previewText: string = ''
   @Trace public previewUnavailable: boolean = false
-  // 内联预览文件超过预览阈值：不读取内容、不提供预览（与「内容不可用」区分，用于展示超限说明与两条出口）
+  // 内联预览文件超过预览阈值：截断预览前 128KB（与「内容不可用」区分，展示层挂截断说明）
   @Trace public previewOverLimit: boolean = false
   // 实时速度（B/s，0 表示不可用）与预计剩余秒数（-1 表示不可用）
   @Trace public speed: number = 0
   @Trace public etaSeconds: number = -1
-  // 自动完成信号：本次加载的会话进入终态且「自动完成」开启时置位，页面消费后置空
-  @Trace public autoFinishRequested: boolean = false
+  // 文件清单已渲染的行数：首屏只建前若干行，其余由用户点击「加载更多」继续追加，
+  // 避免数百行一次性建树并同时发起图片解码（会长时间卡顿并触发内存压力）
+  @Trace public visibleFileCount: number = DETAIL_FILES_INITIAL
   private sessionId: string = ''
   private subscribed: boolean = false
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
   private lastSyncMs: number = 0
-  // 是否观察到过进行中阶段：仅在「进行中 → 终态」的跃迁上触发自动完成，
-  // 直接打开一个已终结会话（终态可见窗口内/历史摘要）不触发，避免刚进入即被自动返回
-  private autoFinishArmed: boolean = false
   private changeCallback: () => void = (): void => {
   }
 
   /** 载入会话并订阅注册表变化。 */
   load(sessionId: string): void {
     this.sessionId = sessionId;
-    this.autoFinishArmed = false;
-    this.autoFinishRequested = false;
     // 载入新会话时复位「实时会话已释放」标记
     this.liveReleased = false;
     // 切换会话时复位速度采样与展示，避免残留前一会话的速度/剩余时间
@@ -364,6 +375,7 @@ export class SessionDetailViewModel {
     this.previewUnavailable = false;
     this.previewOverLimit = false;
     this.sourceLabel = '';
+    this.visibleFileCount = DETAIL_FILES_INITIAL;
     if (!this.subscribed) {
       this.changeCallback = (): void => {
         this.refresh();
@@ -374,6 +386,7 @@ export class SessionDetailViewModel {
     this.refresh();
   }
 
+  /** 卸载清理：退订会话变化通知。 */
   unload(): void {
     if (this.subscribed) {
       unsubscribeSessions(this.changeCallback);
@@ -409,12 +422,42 @@ export class SessionDetailViewModel {
     return this.session !== undefined ? this.files : this.historyFiles;
   }
 
+  /**
+   * 文件清单的当前展示切片：只返回前 visibleFileCount 行（分页展示）。
+   * 完整清单仍由 detailFiles() 提供（预览判定、总数统计等口径不受影响）。
+   */
+  detailFilesForDisplay(): Array<SessionFile> {
+    let files: Array<SessionFile> = this.detailFiles();
+    if (files.length <= this.visibleFileCount) {
+      return files;
+    }
+    return files.slice(0, this.visibleFileCount);
+  }
+
+  /** 是否还有未展示的文件行（供文件清单底部「加载更多」入口判定）。 */
+  hasMoreDetailFiles(): boolean {
+    return this.visibleFileCount < this.detailFiles().length;
+  }
+
+  /** 未展示的文件行数。 */
+  remainingDetailFiles(): number {
+    let remaining: number = this.detailFiles().length - this.visibleFileCount;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  /** 追加一批文件行（用户点击「加载更多」触发；一次只加一屏左右，控制建行与解码开销）。 */
+  loadMoreDetailFiles(): void {
+    let total: number = this.detailFiles().length;
+    let next: number = this.visibleFileCount + DETAIL_FILES_BATCH;
+    this.visibleFileCount = next > total ? total : next;
+  }
+
   /** 当前展示的时间线（实时会话或历史条目）。 */
   detailTimeline(): Array<SessionTimelineEvent> {
     return this.session !== undefined ? this.timeline : this.historyTimeline;
   }
 
-  /** 从注册表重新读取会话/文件/时间线/描述符，并同步速度显示与自动完成信号。 */
+  /** 从注册表重新读取会话/文件/时间线/描述符，并同步速度显示。 */
   refresh(): void {
     let session = getSession(this.sessionId);
     if (session === undefined) {
@@ -448,7 +491,6 @@ export class SessionDetailViewModel {
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
     this.sourceLabel = sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? '');
     this.syncSpeed(session);
-    this.applyAutoFinish(session);
     this.refreshPreviewContent();
   }
 
@@ -496,25 +538,6 @@ export class SessionDetailViewModel {
     this.etaSeconds = -1;
     // 历史态预览按逐文件路径读取（与实时态同规则）
     this.refreshPreviewContent();
-  }
-
-  /**
-   * 自动完成信号：会话在本次浏览期间由非终态进入终态且「自动完成」开启时置位；
-   * 文本消息阅读场景（需用户阅读/复制内容）不自动返回。
-   */
-  private applyAutoFinish(session: TransferSession): void {
-    if (!isTerminalStage(session.stage)) {
-      this.autoFinishArmed = true;
-      return;
-    }
-    if (!this.autoFinishArmed) {
-      return;
-    }
-    this.autoFinishArmed = false;
-    if (!isAutoFinish() || this.hasTextPreview()) {
-      return;
-    }
-    this.autoFinishRequested = true;
   }
 
   /** 历史条目的统一状态（供详情状态徽标复用同一套文案/配色）。 */
@@ -568,6 +591,12 @@ export class SessionDetailViewModel {
     return resolveSessionActions(this.session.stage, this.capabilities).canCancel;
   }
 
+  /** 进行中动作文案：网页访问会话为“结束会话”，其余为“取消传输”。 */
+  cancelLabel(): ResourceStr {
+    return this.capabilities.cancelLabel !== undefined ?
+      this.capabilities.cancelLabel : $r('app.string.session_detail_cancel');
+  }
+
   canVerify(): boolean {
     return this.session !== undefined && this.capabilities.hasVerify &&
       this.session.peer.fingerprint !== undefined && (this.session.peer.fingerprint ?? '').length > 0;
@@ -598,32 +627,60 @@ export class SessionDetailViewModel {
     return this.session !== undefined && isPreparing(this.session);
   }
 
-  /** 是否为文本消息会话（携带可复制的文本内容）。 */
+  /** 是否为文本消息会话（展示描述符携带可复制的文本内容）。 */
   hasTextPreview(): boolean {
     return isTextSessionDescriptor(this.display);
   }
 
   /**
+   * 会话是否应按「文本消息」呈现（区别于文件选择器选中的 .txt 等文本文件）。
+   * 实时态取会话显式标记（适配器创建时声明）并兼容描述符携带的文本内容；
+   * 历史态取归档标记；旧历史条目无标记时回退到应用私有文本目录路径判据。
+   */
+  isTextMessageContent(): boolean {
+    if (this.session !== undefined) {
+      return this.session.textMessage || this.hasTextPreview();
+    }
+    if (this.historyEntry !== undefined) {
+      if (this.historyEntry.textMessage === true) {
+        return true;
+      }
+      // 兼容旧版本误写的 false：应用私有文本目录只存文本消息，按路径兜底识别；
+      // 普通 .txt 文件位于 Download 或用户选择器路径，不会命中该目录。
+      let files = this.detailFiles();
+      return files.length === 1 && isTextFile(files[0].fileType, files[0].fileName) &&
+        this.isSandboxTextFile(files[0]);
+    }
+    return this.hasTextPreview();
+  }
+
+  /**
+   * 是否为「对端发来的文本消息」会话。
+   *
+   * 关闭/复制两个动作的语义是「收到一条文本」：关闭＝直接接受、复制＝复制后接受。
+   * 本机外发方向（如浏览器下载本机分享的文本）复用同一份文本预览时，不适用该动作组合，
+   * 否则待确认阶段没有可用的确认入口，且「关闭」会被误当成收起页面而实际放行传输。
+   */
+  isTextMessageSession(): boolean {
+    return this.hasTextPreview() && this.session !== undefined &&
+      this.session.dataFlow === SessionDataFlow.inbound;
+  }
+
+  /**
    * 当前预览模式（实时态与历史态同规则）。
-   * 「恰好一个文本类文件」只说明具备内联预览的形状；待确认/进行中阶段该条目可能只是尚无内容的
-   * 占位（如互传接收下载前的「主文件名」占位条目），此时内联预览必然落到「内容不可用」而误导用户。
-   * 故在形状判定之上增加「可预览来源」守卫：条目已有路径、会话携带文本消息内容、或会话已终态/历史
-   * 只读时，才采用内联预览；否则按文件清单呈现（确认阶段以主文件名占位，不误报不可用）。
+   * 「恰好一个文本类文件」只说明具备内联预览的形状；只有会话本身是手动输入的文本消息时
+   * 才内联展示正文。文件选择器选中的 .txt 等文本文件按普通文件清单呈现（仍可点击预览），
+   * 避免被误标为「来自某设备的文本」。
    */
   previewMode(): SessionPreviewMode {
     let files = this.detailFiles();
     if (decidePreviewMode(files) !== SessionPreviewMode.inline) {
       return SessionPreviewMode.list;
     }
-    let hasPath: boolean = files[0].path.length > 0;
-    let terminal: boolean = this.session !== undefined && isTerminalStage(this.session.stage);
-    if (hasPath || this.hasTextPreview() || terminal || this.isReadOnly()) {
-      return SessionPreviewMode.inline;
-    }
-    return SessionPreviewMode.list;
+    return this.isTextMessageContent() ? SessionPreviewMode.inline : SessionPreviewMode.list;
   }
 
-  /** 是否为内联文本预览（会话仅一个文本类文件）。 */
+  /** 是否为内联文本预览（会话仅一个文本类文件且为文本消息）。 */
   isInlinePreview(): boolean {
     return this.previewMode() === SessionPreviewMode.inline;
   }
@@ -631,6 +688,41 @@ export class SessionDetailViewModel {
   /** 某条目是否为文本类文件（多文件时提供点击预览入口）。 */
   isTextFileEntry(file: SessionFile): boolean {
     return isTextFile(file.fileType, file.fileName);
+  }
+
+  /** 待确认且达到大文件阈值时提示风险（纯展示，不拦截确认；覆盖各协议接收路径）。 */
+  needsLargeFileHint(): boolean {
+    if (!this.canConfirm() || this.session === undefined) {
+      return false;
+    }
+    return isLargeTransfer(this.session.totalBytes);
+  }
+
+  /**
+   * 某条目是否为应用私有文本（收发文本落盘目录内的文件）：私有目录无文件管理器可导航位置，
+   * 故「打开所在位置」无合理语义，由菜单层置灰；「用其他应用打开」走应用文件分享机制（隐式 Want +
+   * 只读 URI 授权，沙箱自有文件属可分享目录），不受影响。
+   */
+  isSandboxTextFile(file: SessionFile): boolean {
+    if (file.path.length === 0) {
+      return false;
+    }
+    let sendDir: string = sendTextDir();
+    if (sendDir.length > 0 && file.path.startsWith(sendDir)) {
+      return true;
+    }
+    let recvDir: string = recvTextDir();
+    return recvDir.length > 0 && file.path.startsWith(recvDir);
+  }
+
+  /** 文件是否已保存到相册（按接收历史的相册标记与路径匹配；不做相册副本存在性检测）。 */
+  isSavedToGallery(file: SessionFile): boolean {
+    return isPathSavedToGallery(file.path);
+  }
+
+  /** 标记文件已保存到相册：按路径回写接收历史，使任务详情与接收历史两处状态同源。 */
+  markSavedToGallery(file: SessionFile): void {
+    updateGallerySavedStatusByPath(file.path, true);
   }
 
   /** 按需读取某文件的文本内容（多文件时的点击预览）；失败返回 undefined 表示不可用。 */
@@ -641,8 +733,9 @@ export class SessionDetailViewModel {
 
   /**
    * 刷新内联预览内容：仅内联模式时按路径读取（数据变更时执行一次，渲染期不读盘）；
-   * 超过预览阈值时不读取内容，改为置位「超限不可预览」（与「内容不可用」区分）；
-   * 无路径或读取失败时回退展示描述符携带的文本，仍不可用则标记为不可用。
+   * 超过预览阈值时读取前 128KB 截断预览并置位截断标记（读取失败不回退描述符全文，
+   * 其体积不受限，会击穿阈值的性能意图）；未超阈值但读取失败时回退展示描述符携带的文本，
+   * 仍不可用则标记为不可用。
    */
   private refreshPreviewContent(): void {
     this.previewText = '';
@@ -655,8 +748,14 @@ export class SessionDetailViewModel {
     let verdict: TextPreviewVerdict =
       decideTextPreview(isTextFile(file.fileType, file.fileName), file.path, file.totalBytes);
     if (verdict === TextPreviewVerdict.overLimit) {
-      // 超阈值：不读取文件内容（避免一次性读入与整段渲染造成卡顿），由展示层明确说明原因
-      this.previewOverLimit = true;
+      // 超阈值截断预览：读取量与渲染量均不超过阈值，不引入新的性能风险
+      let content = readTextOfLocation(file.path, TEXT_PREVIEW_READ_MAX_BYTES);
+      if (content !== undefined) {
+        this.previewText = content;
+        this.previewOverLimit = true;
+        return;
+      }
+      this.previewUnavailable = true;
       return;
     }
     if (verdict === TextPreviewVerdict.previewable) {
@@ -681,6 +780,27 @@ export class SessionDetailViewModel {
     }
     let text = this.display.textPreview;
     return text !== undefined ? text : '';
+  }
+
+  /**
+   * 可复制的会话文本（文件优先、描述符兜底）与是否截断：
+   * 落盘路径可得时读文件本身（缺省 200KB 上限，与多文件清单/接收历史同口径），超限截断并置位；
+   * 无路径（待确认预预览等）时回退描述符携带的文本。显示仍以 128KB 内联预览为准，两档分工不变。
+   */
+  copyableTextMessage(): CopyableTextMessage {
+    let files = this.detailFiles();
+    if (files.length > 0 && files[0].path.length > 0) {
+      let content = readTextOfLocation(files[0].path);
+      if (content !== undefined) {
+        let result: CopyableTextMessage = {
+          text: content, truncated: files[0].totalBytes > TEXT_READ_MAX_BYTES
+        };
+        return result;
+      }
+    }
+    let fallback = this.display.textPreview;
+    let result: CopyableTextMessage = { text: fallback ?? '', truncated: false };
+    return result;
   }
 
   /** 会话整体进度百分比（准备态取准备进度口径）。 */
@@ -718,7 +838,7 @@ export class SessionDetailViewModel {
 
   /** 取消（独立显式操作；页面返回不触发）。 */
   cancelTransfer(): void {
-    logger.debug('cancel session ' + this.sessionId);
+    logger.debug('取消任务 ' + this.sessionId);
     registryCancel(this.sessionId);
   }
 }

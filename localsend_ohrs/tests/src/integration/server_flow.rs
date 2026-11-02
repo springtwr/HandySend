@@ -105,7 +105,7 @@ async fn test_server_prepare_upload_flow() {
     }
 
     // 启动服务器（port 0 → OS 分配实际端口）
-    let port = server::start_server(state.clone(), 0, false, true, None, None, None)
+    let port = server::start_server(state.clone(), 0, false, true, None, None)
         .await
         .expect("启动服务器失败");
 
@@ -240,7 +240,7 @@ async fn test_server_start_idempotent() {
     )
     .unwrap();
 
-    server::start_server(state.clone(), 0, false, true, None, None, None)
+    server::start_server(state.clone(), 0, false, true, None, None)
         .await
         .expect("首次启动失败");
     let _ = wait_for_event(&mut event_rx, |e| {
@@ -249,14 +249,14 @@ async fn test_server_start_idempotent() {
     .await;
 
     // 重复启动 → AlreadyRunning
-    let err = server::start_server(state.clone(), 0, false, true, None, None, None)
+    let err = server::start_server(state.clone(), 0, false, true, None, None)
         .await
         .expect_err("重复启动应返回 AlreadyRunning");
     assert!(matches!(err, BridgeError::AlreadyRunning));
 
     // stop 后再次启动成功（快速 stop→start 无残留）
     server::stop_server(&state);
-    let port2 = server::start_server(state.clone(), 0, false, true, None, None, None)
+    let port2 = server::start_server(state.clone(), 0, false, true, None, None)
         .await
         .expect("stop 后重新启动失败");
     assert!(port2 > 0);

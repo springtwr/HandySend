@@ -8,6 +8,9 @@
  * - showProtocolDisableConfirmDialog（协议总开关关闭前的活跃传输二次确认；
  *   经 onWillDismiss 在交互式关闭时按取消处理，避免误关中断传输）。
  *
+ * 另提供 showCenterToast：非 UI 层（Repository/Service）发起的屏幕中央短提示，
+ * 复用同一份 UIContext。
+ *
  * 关键修复: closeCustomDialog 必须使用与 openCustomDialog 相同的 ComponentContent 实例,
  * 因此将 contentNode 引用存储在 params 对象中, 在 onClick 回调中复用同一实例关闭弹窗.
  */
@@ -28,7 +31,7 @@ export class DialogService {
 
   private static getPromptAction(): PromptAction | null {
     if (DialogService.ctx === null) {
-      logger.error('UIContext not initialized. Call DialogService.init() first.');
+      logger.error('界面上下文未初始化，请先调用 DialogService.init()');
       return null;
     }
     return DialogService.ctx.getPromptAction();
@@ -59,11 +62,19 @@ export class DialogService {
   // 取消语义：取消按钮回调空串；同时注册 onWillDismiss——用户点击弹窗外空白/系统返回键等
   // 交互式关闭时也回调空串再关闭，保证发送流程的 PIN 等待方始终能收到结果，不会挂起。
   static showPinDialog(deviceName: string, errorHint: string, callback: (pin: string) => void): void {
-    let params = new PinParams(deviceName, errorHint, callback);
+    let settled: boolean = false;
+    let settleOnce = (pin: string): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(pin);
+    };
+    let params = new PinParams(deviceName, errorHint, settleOnce);
     let opened = DialogService.openDialog(params, wrapBuilder(buildPinDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
-        // 交互式关闭（点击遮罩/返回键/侧滑）等价于点击取消按钮
+        // 交互式关闭（点击遮罩/返回键/侧滑）等价于点击取消按钮；settled 防按钮与关闭双调
         params.callback('');
         params.contentNode = null;
         action.dismiss();
@@ -71,7 +82,7 @@ export class DialogService {
     });
     // 打开失败（UIContext 未就绪）时按取消语义回调，保证 PIN 等待方不挂起
     if (!opened) {
-      callback('');
+      settleOnce('');
     }
   }
 
@@ -79,7 +90,16 @@ export class DialogService {
   // 回调参数 keepRunning：true = 继续（取消关闭、保留窗口与传输），false = 退出应用。
   // 交互式关闭（点击遮罩/返回键）等价于"继续"，避免误退出中断传输。
   static showCloseConfirmDialog(callback: (keepRunning: boolean) => void): void {
-    let params = new CloseConfirmParams(callback);
+    // 按钮与交互式关闭双调防护（同 PIN 弹窗 settled 语义）
+    let settled: boolean = false;
+    let settleOnce = (keepRunning: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(keepRunning);
+    };
+    let params = new CloseConfirmParams(settleOnce);
     let opened = DialogService.openDialog(params, wrapBuilder(buildCloseConfirmDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
@@ -90,7 +110,7 @@ export class DialogService {
     });
     // 打开失败（UIContext 未就绪）时按"继续"处理，保证窗口不因弹窗失败而关闭
     if (!opened) {
-      callback(true);
+      settleOnce(true);
     }
   }
 
@@ -118,7 +138,49 @@ export class DialogService {
         }
       }
     }
-    let params = new ProtocolDisableConfirmParams(titleText, messageText, detailLines, callback);
+    DialogService.showDetailConfirmDialog(titleText, messageText, detailLines, callback,
+      $r('app.string.protocol_disable_confirm_cancel'), $r('app.string.protocol_disable_confirm_ok'));
+  }
+
+  // 网页服务重启二次确认弹窗（修改加密/PIN/端口且存在进行中网页传输时触发）。
+  static showWebServiceRestartConfirmDialog(detailLines: Array<string>,
+    callback: (confirmed: boolean) => void): void {
+    let titleText: string = '';
+    let messageText: string = '';
+    if (DialogService.ctx !== null) {
+      let hostContext = DialogService.ctx.getHostContext();
+      if (hostContext !== undefined) {
+        try {
+          titleText = hostContext.resourceManager
+            .getStringSync($r('app.string.web_service_restart_title').id);
+          messageText = hostContext.resourceManager
+            .getStringSync($r('app.string.web_service_restart_message').id)
+            .replace('%s', detailLines.join('\n'));
+        } catch (_e) {
+          logger.warn('解析网页服务重启确认弹窗文案失败');
+        }
+      }
+    }
+    DialogService.showDetailConfirmDialog(titleText, messageText, detailLines, callback,
+      $r('app.string.web_service_restart_cancel'), $r('app.string.web_service_restart_ok'));
+  }
+
+  // 通用明细确认弹窗：标题/正文已由调用方解析，正文含明细行。
+  private static showDetailConfirmDialog(titleText: string, messageText: string,
+    detailLines: Array<string>, callback: (confirmed: boolean) => void,
+    cancelLabel: ResourceStr, confirmLabel: ResourceStr): void {
+    // 按钮与交互式关闭双调防护（同 PIN 弹窗 settled 语义）
+    let settled: boolean = false;
+    let settleOnce = (confirmed: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback(confirmed);
+    };
+    let params =
+      new ProtocolDisableConfirmParams(titleText, messageText, detailLines, settleOnce,
+        cancelLabel, confirmLabel);
     let opened = DialogService.openDialog(params, wrapBuilder(buildProtocolDisableConfirmDialog), {
       alignment: DialogAlignment.Center,
       onWillDismiss: (action: DismissDialogAction) => {
@@ -129,8 +191,22 @@ export class DialogService {
     });
     // 打开失败（UIContext 未就绪）时按"取消"处理，不中断传输
     if (!opened) {
-      callback(false);
+      params.callback(false);
     }
+  }
+
+  // ── 轻提示 ──
+
+  /**
+   * 屏幕中央短提示：供非 UI 层（Repository/Service）告知用户一次即时结果，
+   * 如自动接收文本消息后已写入剪贴板。UIContext 未就绪时静默丢弃。
+   */
+  static showCenterToast(message: ResourceStr, duration: number = 2000): void {
+    let promptAction = DialogService.getPromptAction();
+    if (promptAction === null) {
+      return;
+    }
+    promptAction.showToast({ message: message, duration: duration, alignment: Alignment.Center });
   }
 
   // ── 通用关闭方法: 使用存储在 params 中的 contentNode 关闭弹窗 ──
@@ -179,14 +255,18 @@ class ProtocolDisableConfirmParams extends DialogBaseParams {
   messageText: string;
   detailLines: Array<string>;
   callback: (confirmed: boolean) => void;
+  cancelLabel: ResourceStr;
+  confirmLabel: ResourceStr;
 
   constructor(titleText: string, messageText: string, detailLines: Array<string>,
-    callback: (confirmed: boolean) => void) {
+    callback: (confirmed: boolean) => void, cancelLabel: ResourceStr, confirmLabel: ResourceStr) {
     super();
     this.titleText = titleText;
     this.messageText = messageText;
     this.detailLines = detailLines;
     this.callback = callback;
+    this.cancelLabel = cancelLabel;
+    this.confirmLabel = confirmLabel;
   }
 }
 
@@ -327,7 +407,7 @@ function buildProtocolDisableConfirmDialog(params: ProtocolDisableConfirmParams)
       .id('protocol_disable_confirm_message')
     Row({ space: DesignTokens.space.sm }) {
       // 次要操作按钮采用无填充样式（ButtonStyleMode.NORMAL），底色即所在卡片背景
-      Button($r('app.string.protocol_disable_confirm_cancel'))
+      Button(params.cancelLabel)
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)
@@ -338,7 +418,7 @@ function buildProtocolDisableConfirmDialog(params: ProtocolDisableConfirmParams)
           DialogService.closeDialogByParams(params);
         })
         .id('protocol_disable_confirm_cancel_btn')
-      Button($r('app.string.protocol_disable_confirm_ok'))
+      Button(params.confirmLabel)
         .layoutWeight(1)
         .height(DesignTokens.size.thumbSm)
         .borderRadius(DesignTokens.radius.max)

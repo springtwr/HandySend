@@ -1,4 +1,4 @@
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { fileIo as fs, statfs } from '@kit.CoreFileKit';
 import {
   PendingRequest,
   PendingRequestFile,
@@ -22,11 +22,15 @@ import {
   nativeCancelTransferLocal,
   nativeDiscardRecvFileFds
 } from '../NativeBridge';
-import { ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets } from './ReceiveTargets';
+import {
+  ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets,
+  ensureRecvDownloadDir
+} from './ReceiveTargets';
 import { getFavorites } from './FavoritesService';
-import { addEntry as addHistoryEntry } from './ReceiveHistoryService';
-import { notifyChange } from './AppCore';
-import { getAutoConfirmMode, isAutoFinish, isSaveToHistory, isSaveToGallery } from './SettingsRepository';
+import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
+import { getAppContext, notifyChange } from './AppCore';
+import { DialogService } from '../DialogService';
+import { getAutoConfirmMode, isSaveToGallery } from './SettingsRepository';
 import { isServerRunning, getReceiveCacheDir } from './ServerRepository';
 import {
   getActiveProgress,
@@ -38,8 +42,13 @@ import {
   SendFileInfo
 } from './SendRepository';
 import { isImage, isVideo } from '../../utils/MimeUtils';
+import { formatSizeDetailed } from '../../utils/FormatUtil';
+import {
+  RECEIVE_STORAGE_RESERVE_BYTES, StorageCheckVerdict, decideStorageCheck
+} from '../../utils/StorageCheck';
 import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { getLogger } from '../../utils/Logger';
+import { copyText } from '../../utils/ClipboardUtil';
 import { LogDomains } from '../../common/LogDomains';
 import { SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
 import {
@@ -247,7 +256,7 @@ function ingestIncomingRequest(
   }
 
   // ── 自动确认接收集成 ──
-  if (shouldAutoAccept(senderFingerprint, hasMessage)) {
+  if (shouldAutoAccept(senderFingerprint)) {
     // 自动接收：立即接收所有文件，但仍展示
     // 请求，使传输页进行路由并展示进度/完成。
     requestDoNotDisturb.push(sessionId);
@@ -257,9 +266,18 @@ function ingestIncomingRequest(
     receiveSessionStates[sessionId] = 'sending';
     receiveSessionAutoAccepted[sessionId] = true;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.debug('auto-accepting from ' + senderAlias + ': ' +
-      reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
+    logger.info('自动接收来自 ' + senderAlias + '：' +
+      reqFiles.length + ' 个文件', { direction: 'recv', targetAlias: senderAlias });
     request.autoConfirmed = true;
+    // 纯文本消息（整条请求只有一条文本条目）直接复制到剪贴板并在屏幕中央提示；
+    // 文本与其他文件混合时不动剪贴板——此时用户关注点在文件，避免覆盖已有剪贴板内容
+    if (hasMessage && files.length === 1) {
+      if (copyText(messageText)) {
+        DialogService.showCenterToast($r('app.string.received_text_copied_toast'));
+      } else {
+        logger.warn('接收文本消息写入剪贴板失败', { direction: 'recv', targetAlias: senderAlias });
+      }
+    }
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, false, messageText);
     acceptAction(sessionId, allFileIds);
@@ -273,10 +291,10 @@ function ingestIncomingRequest(
     receiveSessionStates[sessionId] = 'waiting';
     receiveSessionAutoAccepted[sessionId] = false;
     receiveSessionSenderAlias[sessionId] = senderAlias;
-    logger.debug('Incoming transfer from ' + senderAlias + ': ' +
-      reqFiles.length + ' file(s)', { direction: 'recv', targetAlias: senderAlias });
+    logger.info('收到来自 ' + senderAlias + ' 的传输：' +
+      reqFiles.length + ' 个文件', { direction: 'recv', targetAlias: senderAlias });
     // 统一会话事实源：建模为待确认会话（确认/拒绝在任务完成）；
-    // 后台待确认提示通知由 PendingRequestNotifier 订阅注册表统一发布
+    // 后台关注通知由 BackgroundAttentionNotifier 订阅注册表统一发布
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, true, messageText);
   }
@@ -305,10 +323,12 @@ function doPollRequests(): void {
       r.files,
       false,
       (sid: string, allFileIds: Array<string>) => {
-        // 立即响应传输——接受所有文件
-        nativeRespondTransfer(sid, true, allFileIds).catch((e: Error) => {
-          logger.warn('AutoConfirm auto-accept failed: ' + e.message);
-        });
+        // 立即响应传输——接受所有文件（同步调用，抛错记日志）
+        try {
+          nativeRespondTransfer(sid, true, allFileIds);
+        } catch (e) {
+          logger.warn('自动确认接收失败：' + String(e));
+        }
       }
     );
     changed = changed || ingested;
@@ -328,7 +348,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   let infoFp: string = (event.senderFingerprint !== undefined && event.senderFingerprint !== null) ?
     event.senderFingerprint : '';
   if (sessionId.length === 0) {
-    logger.warn('PrepareUpload event with empty sessionId, ignoring');
+    logger.warn('上传准备事件缺少会话标识，已忽略');
     return;
   }
   let senderAlias: string = event.senderAlias;
@@ -366,13 +386,13 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       // 自动接收同样走"预注册直写目标 → accept"流程（fd-direct）；
       // 失败是本地原因（沙箱/目标注册错误），置 failed 而非 canceledBySender，
       // 使 UI 呈现"传输失败"而非误导性的"发送方已取消"
-      acceptWithTargets(sid, allFileIds).then((ok: boolean) => {
-        if (!ok) {
+      acceptWithTargets(sid, allFileIds).then((acceptError: string) => {
+        if (acceptError.length > 0) {
           receiveSessionStates[sid] = 'failed';
-          logger.warn('Auto accept failed for session ' + sid.substring(0, 8));
+          logger.warn('会话自动接收失败 ' + sid.substring(0, 8) + ': ' + acceptError);
         }
       }).catch((e: Error) => {
-        logger.warn('AutoConfirm auto-accept failed: ' + e.message);
+        logger.warn('自动确认接收失败：' + e.message);
       });
     }
   );
@@ -398,7 +418,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   // 方向过滤：接收侧状态表只承载本机接收会话；发送方向/陌生标识的同类事件一律忽略并留痕，
   // 不改动任何接收侧状态表（不清理接收目录、不发布多余变更通知）。
   if (!isLocalReceiveSessionId(sessionId, Object.keys(receiveSessionStates))) {
-    logger.info('忽略非本机接收会话的会话结束事件: ' + sessionId.substring(0, 8));
+    logger.debug('忽略非本机接收会话的会话结束事件：' + sessionId.substring(0, 8));
     return;
   }
   if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
@@ -410,7 +430,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
     finishLocalReceiveSession(sessionId, SessionStage.cancelled);
     // 清理该会话在沙箱目录中的半成品文件
     cleanupSessionReceiveFiles(sessionId);
-    logger.info('Transfer cancelled by sender (session end): ' + sessionId.substring(0, 8));
+    logger.info('发送方已取消传输');
     notifyChange();
   } else {
     // reason === 'Finished'：Rust 侧会话已结束。可能是成功完成（全部文件
@@ -448,7 +468,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     sessionEndCheckTimers = newTimers;
     // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
     if (sessionFinished[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
-      logger.info('Session ended (completed): ' + sessionId.substring(0, 8));
+      logger.debug('会话已结束（已完成） 会话=' + sessionId.substring(0, 8));
       return;
     }
     // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
@@ -459,7 +479,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
       finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'transfer_interrupted');
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
-      logger.info('Transfer interrupted (session ended with failures): ' + sessionId.substring(0, 8));
+      logger.info('传输中断（异常结束）');
       notifyChange();
     }
   }, 3000);
@@ -540,7 +560,7 @@ export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent)
     // 触发本地 CancellationToken 取消——中断 Rust 层进行中的 send_files
     // （当本机是发送方，收到接收方的 /cancel 通知时）
     nativeCancelTransferLocal(sessionId);
-    logger.info('Transfer cancelled by remote: ' + sessionId.substring(0, 8));
+    logger.info('发送方已取消传输');
     notifyChange();
   }
 }
@@ -561,7 +581,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   finishLocalReceiveSession(sessionId, SessionStage.cancelled);
   // 清理该会话在沙箱目录中的半成品文件
   cleanupSessionReceiveFiles(sessionId);
-  logger.info('Transfer aborted by sender (before confirm): ' + sessionId.substring(0, 8));
+  logger.debug('发送方在确认前已中止传输 会话=' + sessionId.substring(0, 8));
   notifyChange();
 }
 
@@ -618,14 +638,14 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
     handleRecvProgress(progressEntry, false);
   }
 
-  // 接收方向进度日志：与发送方向同一节流口径（进行中每秒最多 1 条、终态必发）；
+  // 接收方向进度日志：与发送方向同一口径（进行中按会话每 5 秒最多 1 条、终态必发）；
   // 无字节进度的会话（totalBytes 为 0，如纯文本消息）不输出
   if (totalBytes > 0) {
+    let progressKey: string = sessionId + ':progress';
     if (progress >= 1) {
-      progressLogThrottle.clear(key);
-      logger.debug('Receive file complete', { sessionId: sessionId, fileId: fileId, direction: 'recv' });
-    } else if (progressLogThrottle.shouldLog(key, Date.now())) {
-      logger.debug('Receive file progress: ' + bytesSent + '/' + totalBytes + ' bytes',
+      logger.debug('接收文件完成', { sessionId: sessionId, fileId: fileId, direction: 'recv' });
+    } else if (progressLogThrottle.shouldLog(progressKey, Date.now())) {
+      logger.debug('接收进度：' + bytesSent + '/' + totalBytes + ' 字节',
         { sessionId: sessionId, fileId: fileId, direction: 'recv' });
     }
   }
@@ -658,7 +678,7 @@ function handleSendProgressProgress(sessionId: string, fileId: string, progress:
 
 /**
  * 处理单个接收进度更新事件。
- * 处理：文件完成检测、会话完成、文件导出、历史记录、自动完成、清理。
+ * 处理：文件完成检测、会话完成、文件导出、历史记录、清理。
  */
 function handleRecvProgress(progress: TransferProgress, completed: boolean): void {
   let sessionId: string = progress.sessionId;
@@ -704,7 +724,7 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
 }
 
 /**
- * 完成一个接收会话：导出文件、记录历史、自动完成、清理。
+ * 完成一个接收会话：导出文件、记录历史、清理。
  * 当会话中的所有文件均下载完成时调用。全程同步执行。
  */
 function finishReceiveSession(sessionId: string): void {
@@ -739,7 +759,7 @@ function finishReceiveSession(sessionId: string): void {
     entries[0].preview !== undefined && entries[0].preview.length > 0;
 
   if (isTextMessage) {
-    // 文本消息分支：文件已落接收目录（与普通文件同目录同重名规则），
+    // 文本消息分支：文件已落应用私有接收文本目录（filesDir/text_recv/），
     // 正文只存在于文件本身（文本即文件，需持久保留），预览由详情页按路径读取
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
       // 接收历史只记路径与元数据，不写正文（正文只存在于文件本身）
@@ -764,7 +784,7 @@ function finishReceiveSession(sessionId: string): void {
   // 前置守卫已排除取消/失败态且函数全程同步，不存在中途状态翻转窗口，
   // 直接置完成信号即可
   pendingRecvCompleted = sessionId;
-  logger.debug('set recvTransferCompleted=' + sessionId, { sessionId: sessionId, direction: 'recv' });
+  logger.debug('已设置接收完成标记 会话=' + sessionId, { sessionId: sessionId, direction: 'recv' });
 
   // ── 提取媒体文件信息供相册保存弹窗使用 ──
   if (isSaveToGallery()) {
@@ -787,7 +807,7 @@ function finishReceiveSession(sessionId: string): void {
       }
       if (mediaFiles.length > 0) {
         pendingRecvMediaFiles = JSON.stringify(mediaFiles);
-        logger.debug('set pendingRecvMediaFiles, count=' + mediaFiles.length,
+        logger.debug('已设置 pendingRecvMediaFiles count=' + mediaFiles.length,
           { sessionId: sessionId, direction: 'recv' });
       }
     }
@@ -798,12 +818,6 @@ function finishReceiveSession(sessionId: string): void {
   // 此时 pendingRecvCompleted 和 pendingRecvMediaFiles 尚未设置。
   // 必须在设置完这些信号后再次通知 UI，使 refreshCallback → updateProgress 能够消费它们。
   notifyChange();
-
-  // ── 自动完成逻辑 ──
-  if (isAutoFinish()) {
-    // 满足自动完成条件：仅记录日志；会话状态清理由下方回收窗口统一负责
-    logger.info('session ' + sessionId.substring(0, 8) + ' completed, auto-closing');
-  }
 
   // 成功会话保留有界的聚合可见窗口（约 3s）：期间会话仍判定为 'finished' 且
   // 文件大小/发送方别名可得，后台聚合可在窗口内计算出 100% 终态帧；
@@ -880,27 +894,106 @@ function collectSessionFileIds(sessionId: string): Array<string> {
 
 // ── 请求响应 ──
 
-// 执行"接收确认"：先预创建直写目标并注册 fd，再向 Rust 发送 accept 响应。
-// 目标准备失败时拒绝会话并回滚已创建文件；respond 抛异常（如会话已过期）时同样回滚。
-// 返回是否成功接受。
-async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<boolean> {
+// 落盘前存储预留检查：按请求声明的文件大小汇总判定落盘卷可用空间
+// （文本条目落沙箱、普通文件落 Download，按同卷合并判定）。
+// 大小均未知（轮询路径未登记）或目录/查询不可得时跳过检查、记录后放行；
+// 不足时返回可直接展示的原因，调用方拒绝会话。
+async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string>): Promise<string> {
+  let total: number = 0;
+  let known: number = 0;
+  for (let i = 0; i < fileIds.length; i++) {
+    let size: number | undefined = sessionFileSizes[sessionId + ':' + fileIds[i]];
+    if (size !== undefined && size > 0) {
+      total = total + size;
+      known++;
+    }
+  }
+  if (known === 0) {
+    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 无声明大小');
+    return '';
+  }
+  let dir: string = await ensureRecvDownloadDir();
+  if (dir.length === 0) {
+    // 目录不可得时跳过检查：目标准备阶段会整体拒绝，不在此处误报存储不足
+    return '';
+  }
+  let free: number = -1;
+  try {
+    free = await statfs.getFreeSize(dir);
+  } catch (e) {
+    logger.warn('查询可用空间失败：' + String(e));
+  }
+  if (free < 0) {
+    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 可用空间未知');
+    return '';
+  }
+  if (decideStorageCheck(free, total, RECEIVE_STORAGE_RESERVE_BYTES) ===
+    StorageCheckVerdict.insufficient) {
+    return storageInsufficientMessage(free, total + RECEIVE_STORAGE_RESERVE_BYTES);
+  }
+  return '';
+}
+
+// 存储不足提示文案（本地化；资源读取失败时回退中文文案）
+function storageInsufficientMessage(freeBytes: number, requiredBytes: number): string {
+  let template: string = '存储空间不足：可用 %s，需要 %s（含预留）';
+  try {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      template = appContext.resourceManager.getStringSync(
+        $r('app.string.storage_insufficient_message').id);
+    }
+  } catch (_e) {
+  }
+  return template.replace('%s', formatSizeDetailed(freeBytes))
+    .replace('%s', formatSizeDetailed(requiredBytes));
+}
+
+// 目标准备失败提示文案（本地化；资源读取失败时回退中文文案）
+function acceptPrepareFailedMessage(): string {
+  let fallback: string = '准备接收文件失败';
+  try {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      return appContext.resourceManager.getStringSync(
+        $r('app.string.accept_targets_failed').id);
+    }
+  } catch (_e) {
+  }
+  return fallback;
+}
+
+// 执行"接收确认"：先校验存储预留，再预创建直写目标并注册 fd，最后向 Rust 发送 accept 响应。
+// 存储不足/目标准备失败/respond 抛异常时直接拒绝会话并回滚；返回空串表示接受成功，
+// 否则返回可直接展示给用户的失败原因（调用方透传到会话错误信息）。
+async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<string> {
   if (fileIds.length === 0) {
-    logger.warn('Accept with empty file list, declining session');
+    logger.error('接受时文件列表为空，拒绝会话');
     try {
-      await nativeRespondTransfer(sessionId, false, []);
+      nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
-    return false;
+    return acceptPrepareFailedMessage();
+  }
+  // 落盘前存储预留检查：可用空间不足时直接拒绝，避免写坏文件与半成品残留
+  let storageError: string = await checkStorageBeforeAccept(sessionId, fileIds);
+  if (storageError.length > 0) {
+    logger.warn('存储预留检查失败，拒绝会话：' + storageError);
+    try {
+      nativeRespondTransfer(sessionId, false, []);
+    } catch (_e) {
+    }
+    return storageError;
   }
   let targetPaths: Record<string, string> | undefined =
     await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId]);
   if (targetPaths === undefined) {
-    logger.error('Prepare receive targets failed, declining session ' + sessionId.substring(0, 8));
+    logger.error('准备接收目标失败，拒绝会话');
     try {
-      await nativeRespondTransfer(sessionId, false, []);
+      nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
-    return false;
+    return acceptPrepareFailedMessage();
   }
   // 回写直写路径：进度事件/历史记录按登记路径补齐
   let pathKeys: Array<string> = Object.keys(targetPaths);
@@ -910,21 +1003,24 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
   }
   try {
-    await nativeRespondTransfer(sessionId, true, fileIds);
-    logger.info('Accepted request ' + sessionId.substring(0, 8) + ' with ' +
-      fileIds.length + ' file(s)');
-    return true;
+    nativeRespondTransfer(sessionId, true, fileIds);
+    logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');
+    return '';
   } catch (e) {
     // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
-    logger.error('Accept respond failed: ' + e);
+    logger.error('接受响应失败：' + e);
     nativeDiscardRecvFileFds(sessionId);
     removeRecvTargetFiles(sessionId);
-    return false;
+    return acceptPrepareFailedMessage();
   }
 }
 
 export async function respondToRequest(sessionId: string, accept: boolean,
   acceptedFileIds: Array<string> = []): Promise<void> {
+  // 重复响应去重：快速双击等重入直接返回，避免 DND 与会话动作重复执行
+  if (requestDoNotDisturb.includes(sessionId)) {
+    return;
+  }
   requestDoNotDisturb.push(sessionId);
   let newPending: Array<PendingRequest> = [];
   for (let i = 0; i < pendingRequests.length; i++) {
@@ -937,25 +1033,34 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     receiveSessionStates[sessionId] = 'sending';
     markReceiveActive(sessionId);
     let ids: Array<string> = acceptedFileIds.length > 0 ? acceptedFileIds : collectSessionFileIds(sessionId);
-    let ok: boolean = await acceptWithTargets(sessionId, ids);
-    if (!ok) {
-      // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件）
+    let acceptError: string = await acceptWithTargets(sessionId, ids);
+    if (acceptError.length > 0) {
+      // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件），
+      // 失败原因透传到会话错误信息（存储不足等本地原因用户可见）
       receiveSessionStates[sessionId] = 'canceledBySender';
-      finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'prepare_failed');
-      logger.error('Session ' + sessionId.substring(0, 8) + ' declined by local prepare failure');
+      finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
+      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId.substring(0, 8));
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
     finishLocalReceiveSession(sessionId, SessionStage.declined);
     try {
-      await nativeRespondTransfer(sessionId, false, acceptedFileIds);
-      logger.info('Request ' + sessionId.substring(0, 8) + ' declined');
+      nativeRespondTransfer(sessionId, false, acceptedFileIds);
+      logger.info('请求已拒绝');
     } catch (e) {
-      logger.error('Respond failed: ' + e);
+      logger.error('响应失败：' + e);
     }
     // 拒绝后的资源清理：释放预创建直写目标（通常未创建）与半成品文件
     removeRecvTargetFiles(sessionId);
     nativeDiscardRecvFileFds(sessionId);
+    // 拒绝即终态：同步移除免打扰条目（终态延迟清理仅用于接受链路的可见期保留）
+    let keptDnd: Array<string> = [];
+    for (let d = 0; d < requestDoNotDisturb.length; d++) {
+      if (requestDoNotDisturb[d] !== sessionId) {
+        keptDnd.push(requestDoNotDisturb[d]);
+      }
+    }
+    requestDoNotDisturb = keptDnd;
   }
   notifyChange();
 }
@@ -964,20 +1069,15 @@ export async function respondToRequest(sessionId: string, accept: boolean,
 
 /**
  * 自动接收决策的纯逻辑（可独立测试）。
- * - 文本消息从不自动接收
- * - on 模式：始终自动接收
+ * - on 模式：始终自动接收（文本消息同样适用）
  * - paired 模式：仅收藏设备自动接收
  * - off 模式：不自动接收
  */
 export function computeShouldAutoAccept(
   mode: AutoConfirmMode,
   favorites: Array<FavoriteDevice>,
-  senderFingerprint: string,
-  hasMessage: boolean
+  senderFingerprint: string
 ): boolean {
-  if (hasMessage) {
-    return false;
-  }
   if (mode === AutoConfirmMode.on) {
     return true;
   }
@@ -991,17 +1091,16 @@ export function computeShouldAutoAccept(
   return false;
 }
 
-export function shouldAutoAccept(senderFingerprint: string, hasMessage: boolean): boolean {
-  return computeShouldAutoAccept(getAutoConfirmMode(), getFavorites(), senderFingerprint, hasMessage);
+export function shouldAutoAccept(senderFingerprint: string): boolean {
+  return computeShouldAutoAccept(getAutoConfirmMode(), getFavorites(), senderFingerprint);
 }
 
 // ── 接收历史记录 ──
 
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
   pathMap?: Record<string, string>): void {
-  if (!isSaveToHistory()) {
-    return;
-  }
+  // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史
+  let entries: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
     // 优先使用导出后的真实路径（pathMap），导出失败或未导出的条目回退沙箱路径
@@ -1044,15 +1143,16 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       senderAlias: senderAlias,
       timestamp: Date.now()
     };
-    addHistoryEntry(entry);
+    entries.push(entry);
   }
+  addHistoryEntries(entries);
 }
 
-// ── 自动完成逻辑 ──
+// ── 会话清理 ──
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
-// fd-direct 模式下首要是删除 Download/<包名>/ 中本次预创建的不完整目标文件
-// （recvTargetPaths 登记）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
+// fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，
+// 含 Download/<包名>/ 普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   removeRecvTargetFiles(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
@@ -1074,12 +1174,12 @@ function cleanupSessionReceiveFiles(sessionId: string): void {
 setLocalReceiveInvokers(
   (protocolSessionId: string): void => {
     respondToRequest(protocolSessionId, true).catch((e: Object): void => {
-      logger.warn('center confirm failed: ' + String(e));
+      logger.error('确认失败：' + String(e));
     });
   },
   (protocolSessionId: string): void => {
     respondToRequest(protocolSessionId, false).catch((e: Object): void => {
-      logger.warn('center decline failed: ' + String(e));
+      logger.error('拒绝失败：' + String(e));
     });
   },
   (protocolSessionId: string): void => {

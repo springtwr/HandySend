@@ -5,7 +5,7 @@ import {
   TransferMethodGroup
 } from '../../../../main/ets/model/transfer/Registries'
 import {
-  filterSeenSources,
+  filterEnabledDeviceSources,
   listSources,
   registerSource,
   clearSources
@@ -34,11 +34,12 @@ import {
   pruneMissingManualTextFiles,
   filterDevicesByProtocolToggles,
   filterFavoritesByProtocolToggles,
-  filterSeenSourceKeysByProtocolToggles,
+  shouldShowPartialProtocolDisabledHint,
   shouldShowProtocolDisabledHint
 } from '../../../../main/ets/viewmodel/SendViewModel'
 
-function source(key: string, order: number): DeviceSourceDescriptor {
+function source(key: string, order: number, enabled: boolean = true,
+  deviceSource: boolean = true): DeviceSourceDescriptor {
   return {
     key: key,
     label: key,
@@ -46,6 +47,8 @@ function source(key: string, order: number): DeviceSourceDescriptor {
     icon: $r('app.media.ic_tab_send'),
     order: order,
     favoritable: key === 'localsend',
+    deviceSource: deviceSource,
+    enabled: (): boolean => enabled,
     emptyState: { text: 'empty', hint: 'hint', hintVisible: () => true },
     discoveryProvider: (): Array<DiscoveredDevice> => []
   }
@@ -81,19 +84,22 @@ function device(alias: string, ip: string): DiscoveredDevice {
 
 export default function SendPageTest() {
   describe('SendPageTest', () => {
-    it('sourceLabel_appearsOnlyWhenSeen', 0, () => {
+    it('sourceLabel_shownForEnabledDeviceSources', 0, () => {
       clearSources()
       registerSource(source('localsend', 10))
       registerSource(source('mta', 20))
-      // 从未发现过 MTA：仅出现 LocalSend 来源（来源数 1 → 不展示标签）
-      let seen = filterSeenSources(listSources(), ['localsend'])
-      expect(seen.length).assertEqual(1)
-      expect(seen[0].key).assertEqual('localsend')
-      // 曾发现过 MTA：两个来源均出现（来源数 ≥2 → 展示分段标签）
-      let both = filterSeenSources(listSources(), ['localsend', 'mta'])
-      expect(both.length).assertEqual(2)
-      expect(both[0].key).assertEqual('localsend')
-      expect(both[1].key).assertEqual('mta')
+      // 两个协议均开启：来源标签常显，不依赖本次会话是否发现过设备
+      let enabled = filterEnabledDeviceSources(listSources())
+      expect(enabled.length).assertEqual(2)
+      expect(enabled[0].key).assertEqual('localsend')
+      expect(enabled[1].key).assertEqual('mta')
+      // 协议关闭：对应来源隐藏
+      let onlyMta = filterEnabledDeviceSources([source('localsend', 10, false), source('mta', 20)])
+      expect(onlyMta.length).assertEqual(1)
+      expect(onlyMta[0].key).assertEqual('mta')
+      // 网页来源仅用于会话来源标签，不参与设备来源
+      let noWeb = filterEnabledDeviceSources([source('web', 30, true, false)])
+      expect(noWeb.length).assertEqual(0)
       clearSources()
     })
 
@@ -310,27 +316,34 @@ export default function SendPageTest() {
       }]
       expect(filterFavoritesByProtocolToggles(favorites, true).length).assertEqual(2)
       expect(filterFavoritesByProtocolToggles(favorites, false).length).assertEqual(0)
-
-      // 来源键：禁用协议对应的来源键从「曾发现过设备的来源」集合移除
-      expect(filterSeenSourceKeysByProtocolToggles(['localsend', 'mta'], true, true).length).assertEqual(2)
-      let onlyMta = filterSeenSourceKeysByProtocolToggles(['localsend', 'mta'], false, true)
-      expect(onlyMta.length).assertEqual(1)
-      expect(onlyMta[0]).assertEqual('mta')
-      let onlyLocal = filterSeenSourceKeysByProtocolToggles(['localsend', 'mta'], true, false)
-      expect(onlyLocal.length).assertEqual(1)
-      expect(onlyLocal[0]).assertEqual('localsend')
     })
 
-    it('protocolDisabledHint_shownOnlyWhenBothOffAndNotDismissed', 0, () => {
-      // 单一协议禁用：不显示任何常驻提示
-      expect(shouldShowProtocolDisabledHint(false, true, false)).assertFalse()
-      expect(shouldShowProtocolDisabledHint(true, false, false)).assertFalse()
-      // 两者均开启：不显示
-      expect(shouldShowProtocolDisabledHint(true, true, false)).assertFalse()
-      // 两个协议均关闭且未关闭提示：显示
-      expect(shouldShowProtocolDisabledHint(false, false, false)).assertTrue()
+    it('partialProtocolDisabledHint_shownOnlyWhenSomeOff', 0, () => {
+      // 只有网页关闭（默认状态）：不提示
+      expect(shouldShowPartialProtocolDisabledHint(true, true, false, false)).assertFalse()
+      // LocalSend 关闭：提示
+      expect(shouldShowPartialProtocolDisabledHint(false, true, false, false)).assertTrue()
+      // 互传关闭：提示
+      expect(shouldShowPartialProtocolDisabledHint(true, false, false, false)).assertTrue()
+      // LocalSend 与互传均关闭、网页仍开：提示
+      expect(shouldShowPartialProtocolDisabledHint(false, false, true, false)).assertTrue()
+      // 全部关闭：由「所有传输方式均已关闭」提示负责
+      expect(shouldShowPartialProtocolDisabledHint(false, false, false, false)).assertFalse()
+      // 本次会话已关闭提示
+      expect(shouldShowPartialProtocolDisabledHint(false, true, true, true)).assertFalse()
+    })
+
+    it('protocolDisabledHint_shownOnlyWhenAllOffAndNotDismissed', 0, () => {
+      // 任一传输方式开启（含独立的网页传输）：不显示任何常驻提示
+      expect(shouldShowProtocolDisabledHint(false, true, false, false)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(true, false, false, false)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(false, false, true, false)).assertFalse()
+      // 三者均开启：不显示
+      expect(shouldShowProtocolDisabledHint(true, true, true, false)).assertFalse()
+      // 三种传输方式均关闭且未关闭提示：显示
+      expect(shouldShowProtocolDisabledHint(false, false, false, false)).assertTrue()
       // 已在本次会话内关闭提示：不再显示
-      expect(shouldShowProtocolDisabledHint(false, false, true)).assertFalse()
+      expect(shouldShowProtocolDisabledHint(false, false, false, true)).assertFalse()
     })
   })
 }

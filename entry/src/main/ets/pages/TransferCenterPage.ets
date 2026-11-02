@@ -3,7 +3,7 @@
  *
  * 聚合全部会话与任务历史；作为主页一级页签直接可达，同时保留路由页入口。
  * 内容组件为纯内容：视图模型与滚动控制器均由壳层持有并下传，页内不再叠加标题，
- * 标题栏与「本机信息 / 文件历史 / 清除任务历史」入口统一由壳层承载。
+ * 标题栏与「文件接收历史 / 清空任务历史」入口统一由壳层承载。
  * 会话详情统一经 SessionDetailPage（按统一会话标识进入）。
  */
 
@@ -13,13 +13,14 @@ import { HdsNavDestination, HdsNavDestinationTitleMode } from '@kit.UIDesignKit'
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { getPageContentMaxWidth, getPageMargin, isNarrowWidth } from '../common/Breakpoints';
 import {
-  buildLocalDeviceSheetOptions,
   buildTransferCenterMenuContent,
   TransferCenterTitleActions
 } from '../views/transfer/TransferCenterTitleActions';
 import { TransferCenterList } from '../views/transfer/TransferCenterList';
-import { buildClearHistoryMessage } from '../views/transfer/ClearHistoryConfirmDialog';
-import { LocalDeviceSection } from '../views/settings/LocalDeviceSection';
+import {
+  buildClearHistoryMessage,
+  buildDeleteSelectedMessage
+} from '../views/transfer/ClearHistoryConfirmDialog';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 
 @ComponentV2
@@ -32,6 +33,9 @@ export struct TransferCenterContent {
     }
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
+  // 多选批量删除：上抛壳层弹二次确认弹窗（内容组件不持有弹窗本体）
+  @Event onDeleteSelected: () => void = () => {
+  }
 
   private openSession(sessionId: string): void {
     let params: Record<string, string> = { 'sessionId': sessionId };
@@ -40,7 +44,7 @@ export struct TransferCenterContent {
 
   build() {
     Column() {
-      // 列表为内容区首个子组件：标题栏入口（本机信息 / 文件历史 / 清除任务历史）与页面标题均由外层标题栏承载，
+      // 列表为内容区首个子组件：标题栏入口（文件接收历史 / 清空任务历史）与页面标题均由外层标题栏承载，
       // 页内不再提供任何顶部操作行
       TransferCenterList({
         viewModel: this.viewModel,
@@ -50,6 +54,9 @@ export struct TransferCenterContent {
         },
         onScrollDelta: (deltaY: number, absY: number) => {
           this.onScrollDelta(deltaY, absY);
+        },
+        onDeleteSelected: () => {
+          this.onDeleteSelected();
         }
       })
         .layoutWeight(1)
@@ -64,17 +71,20 @@ export struct TransferCenterContent {
 
 @ComponentV2
 export struct TransferCenterPage {
-  // 系统宽度断点（随窗口尺寸变化自动刷新，本机信息半模态参数断点化用）
+  // 系统宽度断点（随窗口尺寸变化自动刷新，内容限宽与页边距按断点取值）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   private pathStack: NavPathStack = new NavPathStack()
   // 壳层持有视图模型与滚动控制器：标题栏入口与列表共享同一份历史状态与滚动位置
   @Local viewModel: TransferCenterViewModel = new TransferCenterViewModel()
   private scroller: Scroller = new Scroller()
-  @Local private isShowLocalDeviceSheet: boolean = false
-  // 清除任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
+  // 清空任务历史确认弹窗的说明文案（打开时构造，关闭时清空）
   @Local private clearHistoryDialogMessage: string = ''
   // 当前打开的确认弹窗 id（关闭时使用）
   private clearHistoryDialogId: number = -1
+  // 多选批量删除确认弹窗的说明文案（打开时构造，关闭时清空）
+  @Local private deleteSelectedDialogMessage: string = ''
+  // 当前打开的批量删除确认弹窗 id（关闭时使用）
+  private deleteSelectedDialogId: number = -1
 
   aboutToAppear(): void {
     this.viewModel.start();
@@ -84,23 +94,20 @@ export struct TransferCenterPage {
     this.viewModel.stop();
   }
 
-  /** 标题栏入口动作：导航类入口直连路由栈，清除任务历史直连内容视图模型。 */
+  /** 标题栏入口动作：导航类入口直连路由栈，清空任务历史直连内容视图模型。 */
   private titleActions(): TransferCenterTitleActions {
     return {
-      onOpenLocalDevice: () => {
-        this.isShowLocalDeviceSheet = true;
-      },
       onOpenFileHistory: () => {
         this.pathStack.pushPathByName('ReceiveHistoryPage', undefined);
       },
       onClearSessionHistory: () => {
-        // 先弹二次确认，确认后才执行清除（取消不产生任何效果）
+        // 先弹二次确认，确认后才执行清空（取消不产生任何效果）
         this.openClearHistoryConfirmDialog();
       }
     };
   }
 
-  /** 打开「清除任务历史」确认弹窗：确认才执行清除，取消 / 点遮罩 / 返回键均不产生效果。 */
+  /** 打开「清空任务历史」确认弹窗：确认才执行清空，取消 / 点遮罩 / 返回键均不产生效果。 */
   private openClearHistoryConfirmDialog(): void {
     // 打开时构造说明文案（含可清除条数），关闭时在 onDidDisappear 中复位
     this.clearHistoryDialogMessage = buildClearHistoryMessage(this.getUIContext());
@@ -132,7 +139,7 @@ export struct TransferCenterPage {
     }
   }
 
-  /** 「清除任务历史」二次确认弹窗（取消 / 清除两键）。 */
+  /** 「清空任务历史」二次确认弹窗（取消 / 确定两键）。 */
   @Builder
   clearHistoryConfirmDialog() {
     AlertDialogV2({
@@ -147,7 +154,7 @@ export struct TransferCenterPage {
       secondaryButton: new AdvancedDialogV2Button({
         content: $r('app.string.dialog_confirm'),
         action: () => {
-          // 先关闭弹窗再执行清除，避免清除刷新与弹窗关闭竞争
+          // 先关闭弹窗再执行清空，避免清空刷新与弹窗关闭竞争
           this.closeClearHistoryDialog();
           this.viewModel.clearHistory();
         }
@@ -158,10 +165,67 @@ export struct TransferCenterPage {
       .id('transfer_center_clear_history_dialog')
   }
 
-  /** 本机信息精简弹窗内容（别名 / 指纹 / 各网卡 IP）。 */
+  /**
+   * 打开多选批量删除确认弹窗：确认才执行删除，取消 / 点遮罩 / 返回键均不产生效果。
+   * 说明文案含勾选条数，与「清空任务历史」弹窗同样在打开时构造、关闭时复位。
+   */
+  private openDeleteSelectedConfirmDialog(): void {
+    if (this.viewModel.selectedCount === 0) {
+      return;
+    }
+    this.deleteSelectedDialogMessage =
+      buildDeleteSelectedMessage(this.getUIContext(), this.viewModel.selectedCount);
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.deleteSelectedConfirmDialog();
+      },
+      onDidDisappear: () => {
+        this.deleteSelectedDialogMessage = '';
+        this.deleteSelectedDialogId = -1;
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.deleteSelectedDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  /** 关闭批量删除确认弹窗并复位弹窗 id（弹窗 id 尚未就绪时为空操作）。 */
+  private closeDeleteSelectedDialog(): void {
+    if (this.deleteSelectedDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.deleteSelectedDialogId);
+      this.deleteSelectedDialogId = -1;
+    }
+  }
+
+  /** 多选批量删除二次确认弹窗（取消 / 删除两键）。 */
   @Builder
-  localDeviceSheet() {
-    LocalDeviceSection()
+  deleteSelectedConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.transfer_center_delete_selected_title'),
+      content: this.deleteSelectedDialogMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeDeleteSelectedDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          // 先关闭弹窗再执行删除，避免删除刷新与弹窗关闭竞争
+          this.closeDeleteSelectedDialog();
+          this.viewModel.deleteSelected();
+        }
+      })
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
+      .constraintSize({ maxWidth: 480 })
+      .id('transfer_center_delete_selected_dialog')
   }
 
   // 内容最大宽度：按断点取值；平板竖屏收紧至 800；窄屏返回 '100%' 全宽
@@ -211,8 +275,6 @@ export struct TransferCenterPage {
     }))
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .bindToScrollable([this.scroller])
-    .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(),
-      buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .onReady((ctx: NavDestinationContext) => {
       this.pathStack = ctx.pathStack;

@@ -1,7 +1,7 @@
 /**
  * WantAgentUtil.ets — 可点击回前台 WantAgent 共用构建工具
  *
- * 后台实况通知（BackgroundTransferService）与待确认提示通知（PendingRequestNotifier）
+ * 后台实况通知（BackgroundTransferService）与后台关注通知（BackgroundAttentionNotifier）
  * 的点击行为一致：拉起主 Ability 并置于前台，可附带一次性导航意图。此处收敛唯一的构建实现。
  */
 

@@ -38,8 +38,6 @@ interface SizeTokens {
   inlineButton: number
   qrCodeSize: number
   tabBarClearance: number
-  // 主页首张卡片统一最小高度（发送/接收页对齐）
-  cardMinHeight: number
   // 传输进度条统一高度（各传输页对齐）
   progressBarHeight: number
   // 空态面板统一最小高度（含卡片内边距）：使空态高度不随文案行数与窗口宽度变化
@@ -48,6 +46,10 @@ interface SizeTokens {
   widescreenSideBarWidth: number
   // 宽屏侧边栏顶部区（应用图标 + 应用名）高度：与内容区标题栏高度对齐
   widescreenSideBarHeaderHeight: number
+  // 状态徽标点直径（图标右上角 overlay，不占布局空间）
+  badgeDot: number
+  // 状态徽标描边宽度（与背景同色，悬浮感）
+  badgeRing: number
 }
 
 interface RadiusTokens {
@@ -116,11 +118,12 @@ export const DesignTokens: DesignTokensType = {
     inlineButton: 28,
     qrCodeSize: 200,
     tabBarClearance: 80,
-    cardMinHeight: 220,
     progressBarHeight: 4,
     emptyStateMinHeight: 120,
     widescreenSideBarWidth: 240,
-    widescreenSideBarHeaderHeight: 56
+    widescreenSideBarHeaderHeight: 56,
+    badgeDot: 8,
+    badgeRing: 2
   } as SizeTokens,
 
   // ── 圆角体系 (vp) ──

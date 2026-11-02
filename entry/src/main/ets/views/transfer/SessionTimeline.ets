@@ -53,7 +53,10 @@ export struct SessionTimeline {
           .width('100%')
           .padding({ top: DesignTokens.space.mini, bottom: DesignTokens.space.mini })
         })
-        .key((item: SessionTimelineEvent) => item.sessionId + '#' + item.timestamp + '#' + item.kind)
+        // 时间线始终是单个会话的事件序列，事件在会话内不重复出现，
+        // 故「时间戳 + 事件类别 + 下标」即可唯一标识；不依赖会话标识——
+        // 归档形态的时间线已按落盘要求剥离该字段
+        .key((item: SessionTimelineEvent, index: number) => item.timestamp + '#' + item.kind + '#' + index)
 
       if (this.events.length === 0) {
         EmptyState({ mainText: $r('app.string.session_detail_placeholder') })

@@ -23,6 +23,8 @@ export struct SingleLineValueRow {
   @Param allowDialog: boolean = true
   /** 值是否靠右对齐（详情页信息行靠右；文件清单行随标签顺排） */
   @Param valueAlignEnd: boolean = true
+  /** 行内字号（默认 bodyS 同详情页辅助信息；需要与主信息行同号时由调用方覆盖） */
+  @Param rowFontSize: number = DesignTokens.font.bodyS
   // 弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行 / 多行对齐）
   @Local dialogContentWidth: number = 0
   private dialogId: number = -1
@@ -131,10 +133,10 @@ export struct SingleLineValueRow {
     if (this.value.length > 0) {
       Row({ space: DesignTokens.space.tiny }) {
         Text(this.label)
-          .fontSize(DesignTokens.font.bodyS)
+          .fontSize(this.rowFontSize)
           .fontColor($r('app.color.text_secondary'))
         Text(this.value)
-          .fontSize(DesignTokens.font.bodyS)
+          .fontSize(this.rowFontSize)
           .fontColor($r('app.color.text_primary'))
           .textAlign(this.valueTextAlign())
           .maxLines(1)

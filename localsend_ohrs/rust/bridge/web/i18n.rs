@@ -1,0 +1,325 @@
+//! 浏览器单页文案（三语：简体/繁体/英文）。
+//!
+//! 服务端按 `GET /i18n.json?lang=` 返回对应语言，
+//! 单页先拉文案再渲染；拉取失败时页面回退内置简体中文。
+
+use serde::Serialize;
+
+/// 单页文案（camelCase 键，与前端 `t(key)` 对照）。
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebPageI18n {
+    /// 应用显示名（与 AppScope 各语言的 app_name 保持一致）。
+    pub app_name: String,
+    pub theme: String,
+    pub theme_system: String,
+    pub theme_light: String,
+    pub theme_dark: String,
+    pub language: String,
+    pub loading: String,
+    pub stopped_note: String,
+    pub download_title: String,
+    pub upload_title: String,
+    pub no_download_hint: String,
+    pub upload_off_hint: String,
+    pub start_receive: String,
+    pub pick_first: String,
+    pub waiting_confirm: String,
+    pub rejected: String,
+    pub confirm_timeout_retry: String,
+    pub share_ended_retry: String,
+    pub request_failed_retry: String,
+    pub network_error_retry: String,
+    pub retry: String,
+    pub upload_done: String,
+    pub upload_failed_retry: String,
+    pub upload_interrupted: String,
+    pub pin_title: String,
+    pub pin_confirm: String,
+    pub pin_error: String,
+    pub auth_subtitle: String,
+    pub auth_placeholder: String,
+    pub auth_enter: String,
+    pub auth_too_many_countdown: String,
+    pub access_ended_reload: String,
+    pub refresh_page: String,
+    pub access_link_required: String,
+    pub access_link_invalid: String,
+    pub download: String,
+    pub download_all: String,
+    pub select_all: String,
+    pub deselect_all: String,
+    pub download_selected: String,
+    pub download_zip_hint: String,
+    pub list_updated: String,
+    pub text_preview_label: String,
+    pub copy: String,
+    pub copied: String,
+    pub upload: String,
+    pub choose_file: String,
+    pub clear: String,
+    pub remove: String,
+    pub drop_hint: String,
+    pub drag_hint: String,
+    pub nothing_to_send: String,
+    pub send_text: String,
+    pub text_placeholder: String,
+    pub text_send: String,
+    pub preview_loading: String,
+    pub preview_unavailable: String,
+    pub share_updated_retry: String,
+    pub https_hint: String,
+}
+
+/// 按 BCP47 语言选择文案集（未知回退简体中文）。
+pub fn web_page_i18n(locale: &str) -> WebPageI18n {
+    let normalized: String = locale.to_lowercase().replace('_', "-");
+    if normalized.starts_with("zh-tw") || normalized.starts_with("zh-hant") {
+        traditional()
+    } else if normalized.starts_with("en") {
+        english()
+    } else {
+        simplified()
+    }
+}
+
+fn simplified() -> WebPageI18n {
+    WebPageI18n {
+        app_name: "便捷快传".to_string(),
+        theme: "主题".to_string(),
+        theme_system: "跟随系统".to_string(),
+        theme_light: "浅色".to_string(),
+        theme_dark: "深色".to_string(),
+        language: "语言".to_string(),
+        loading: "加载中…".to_string(),
+        stopped_note: "分享已结束，请让发送方重新开启后刷新页面。".to_string(),
+        download_title: "下载".to_string(),
+        upload_title: "发送".to_string(),
+        no_download_hint: "暂无可下载文件，请等待发送方添加。".to_string(),
+        upload_off_hint: "对方未开启网页上传功能。".to_string(),
+        start_receive: "开启接收".to_string(),
+        pick_first: "先去选文件".to_string(),
+        waiting_confirm: "等待对方确认中…（请让对方打开应用确认）".to_string(),
+        rejected: "对方已拒绝请求。".to_string(),
+        confirm_timeout_retry: "对方未及时确认，请让对方打开应用后刷新页面重试。".to_string(),
+        share_ended_retry: "分享已结束，请刷新页面重试。".to_string(),
+        request_failed_retry: "请求失败，请刷新页面重试。".to_string(),
+        network_error_retry: "网络错误，请检查连接后重试。".to_string(),
+        retry: "重试".to_string(),
+        upload_done: "发送完成。".to_string(),
+        upload_failed_retry: "发送失败，请重试。".to_string(),
+        upload_interrupted: "网络错误，发送已中断。".to_string(),
+        pin_title: "请输入访问码".to_string(),
+        pin_confirm: "确定".to_string(),
+        pin_error: "访问码错误。".to_string(),
+        auth_subtitle: "请输入发送方面板上显示的 6 位访问码。".to_string(),
+        auth_placeholder: "访问码".to_string(),
+        auth_enter: "进入".to_string(),
+        auth_too_many_countdown: "尝试次数过多，请等待 %d 秒后重试。".to_string(),
+        access_ended_reload: "本次网页访问已结束，请刷新页面重新访问。".to_string(),
+        refresh_page: "刷新页面".to_string(),
+        access_link_required: "请扫描发送方出示的二维码后访问。".to_string(),
+        access_link_invalid: "访问链接已失效，请让发送方重新出示二维码。".to_string(),
+        download: "下载".to_string(),
+        download_all: "全部下载".to_string(),
+        select_all: "全选".to_string(),
+        deselect_all: "取消全选".to_string(),
+        download_selected: "下载所选（%d）".to_string(),
+        download_zip_hint: "多个文件将打包为一个 zip 压缩文件，下载完成后需解压使用。".to_string(),
+        list_updated: "文件列表已更新。".to_string(),
+        text_preview_label: "内容预览".to_string(),
+        copy: "复制".to_string(),
+        copied: "已复制".to_string(),
+        upload: "发送".to_string(),
+        choose_file: "选择文件".to_string(),
+        clear: "清空".to_string(),
+        remove: "移除".to_string(),
+        drop_hint: "松开鼠标即可添加文件".to_string(),
+        drag_hint: "也可以直接将文件拖入页面添加".to_string(),
+        nothing_to_send: "请选择文件或输入文本。".to_string(),
+        send_text: "发送文本".to_string(),
+        text_placeholder: "输入要发送的文本".to_string(),
+        text_send: "发送文本".to_string(),
+        preview_loading: "预览加载中…".to_string(),
+        preview_unavailable: "预览不可用。".to_string(),
+        share_updated_retry: "分享内容已更新，请刷新页面重试。".to_string(),
+        https_hint: "当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。"
+            .to_string(),
+    }
+}
+
+fn traditional() -> WebPageI18n {
+    WebPageI18n {
+        app_name: "便捷快傳".to_string(),
+        theme: "主題".to_string(),
+        theme_system: "跟隨系統".to_string(),
+        theme_light: "淺色".to_string(),
+        theme_dark: "深色".to_string(),
+        language: "語言".to_string(),
+        loading: "載入中…".to_string(),
+        stopped_note: "分享已結束，請讓傳送方重新開啟後重新整理頁面。".to_string(),
+        download_title: "下載".to_string(),
+        upload_title: "傳送".to_string(),
+        no_download_hint: "暫無可下載檔案，請等待傳送方新增。".to_string(),
+        upload_off_hint: "對方未開啟網頁上傳功能。".to_string(),
+        start_receive: "開啟接收".to_string(),
+        pick_first: "先去選擇檔案".to_string(),
+        waiting_confirm: "等待對方確認中…（請讓對方開啟應用程式確認）".to_string(),
+        rejected: "對方已拒絕請求。".to_string(),
+        confirm_timeout_retry: "對方未及時確認，請讓對方開啟應用程式後重新整理頁面重試。"
+            .to_string(),
+        share_ended_retry: "分享已結束，請重新整理頁面重試。".to_string(),
+        request_failed_retry: "請求失敗，請重新整理頁面重試。".to_string(),
+        network_error_retry: "網路錯誤，請檢查連線後重試。".to_string(),
+        retry: "重試".to_string(),
+        upload_done: "傳送完成。".to_string(),
+        upload_failed_retry: "傳送失敗，請重試。".to_string(),
+        upload_interrupted: "網路錯誤，傳送已中斷。".to_string(),
+        pin_title: "請輸入存取碼".to_string(),
+        pin_confirm: "確定".to_string(),
+        pin_error: "存取碼錯誤。".to_string(),
+        auth_subtitle: "請輸入傳送方面板上顯示的 6 位存取碼。".to_string(),
+        auth_placeholder: "存取碼".to_string(),
+        auth_enter: "進入".to_string(),
+        auth_too_many_countdown: "嘗試次數過多，請等待 %d 秒後重試。".to_string(),
+        access_ended_reload: "本次網頁存取已結束，請重新整理頁面再次存取。".to_string(),
+        refresh_page: "重新整理頁面".to_string(),
+        access_link_required: "請掃描傳送方出示的 QR Code 後存取。".to_string(),
+        access_link_invalid: "存取連結已失效，請讓傳送方重新出示 QR Code。".to_string(),
+        download: "下載".to_string(),
+        download_all: "全部下載".to_string(),
+        select_all: "全選".to_string(),
+        deselect_all: "取消全選".to_string(),
+        download_selected: "下載所選（%d）".to_string(),
+        download_zip_hint: "多個檔案將打包為一個 zip 壓縮檔，下載完成後需解壓使用。".to_string(),
+        list_updated: "檔案清單已更新。".to_string(),
+        text_preview_label: "內容預覽".to_string(),
+        copy: "複製".to_string(),
+        copied: "已複製".to_string(),
+        upload: "傳送".to_string(),
+        choose_file: "選擇檔案".to_string(),
+        clear: "清除".to_string(),
+        remove: "移除".to_string(),
+        drop_hint: "放開滑鼠即可加入檔案".to_string(),
+        drag_hint: "也可以直接將檔案拖入頁面加入".to_string(),
+        nothing_to_send: "請選擇檔案或輸入文字。".to_string(),
+        send_text: "傳送文字".to_string(),
+        text_placeholder: "輸入要傳送的文字".to_string(),
+        text_send: "傳送文字".to_string(),
+        preview_loading: "預覽載入中…".to_string(),
+        preview_unavailable: "預覽不可用。".to_string(),
+        share_updated_retry: "分享內容已更新，請重新整理頁面重試。".to_string(),
+        https_hint: "目前為加密連線（自簽章憑證），如下載失敗，可請對方關閉加密傳輸後重試。"
+            .to_string(),
+    }
+}
+
+fn english() -> WebPageI18n {
+    WebPageI18n {
+        app_name: "HandySend".to_string(),
+        theme: "Theme".to_string(),
+        theme_system: "Follow system".to_string(),
+        theme_light: "Light".to_string(),
+        theme_dark: "Dark".to_string(),
+        language: "Language".to_string(),
+        loading: "Loading…".to_string(),
+        stopped_note: "This share has ended. Ask the sender to start it again, then refresh the page.".to_string(),
+        download_title: "Downloads".to_string(),
+        upload_title: "Send".to_string(),
+        no_download_hint: "No files have been shared yet. Wait for the sender to add some.".to_string(),
+        upload_off_hint: "The recipient has not enabled web uploads.".to_string(),
+        start_receive: "Turn on receiving".to_string(),
+        pick_first: "Pick files first".to_string(),
+        waiting_confirm: "Waiting for confirmation… (ask them to open the app)".to_string(),
+        rejected: "The request was rejected.".to_string(),
+        confirm_timeout_retry: "The recipient did not confirm in time. Ask them to open the app, then refresh the page and try again.".to_string(),
+        share_ended_retry: "The share has ended. Refresh the page and try again.".to_string(),
+        request_failed_retry: "Request failed. Refresh the page and try again.".to_string(),
+        network_error_retry: "Network error. Check the connection and retry.".to_string(),
+        retry: "Retry".to_string(),
+        upload_done: "Sent.".to_string(),
+        upload_failed_retry: "Sending failed. Try again.".to_string(),
+        upload_interrupted: "Network error. Sending was interrupted.".to_string(),
+        pin_title: "Enter access code".to_string(),
+        pin_confirm: "OK".to_string(),
+        pin_error: "Invalid access code.".to_string(),
+        auth_subtitle: "Enter the 6-digit access code shown on the sender's panel.".to_string(),
+        auth_placeholder: "Access code".to_string(),
+        auth_enter: "Enter".to_string(),
+        auth_too_many_countdown: "Too many attempts. Try again in %d seconds.".to_string(),
+        access_ended_reload: "This web session has ended. Refresh the page to access again.".to_string(),
+        refresh_page: "Refresh".to_string(),
+        access_link_required: "Scan the QR code shown by the sender to access this page.".to_string(),
+        access_link_invalid: "This access link is invalid. Ask the sender to show the QR code again."
+            .to_string(),
+        download: "Download".to_string(),
+        download_all: "Download all".to_string(),
+        select_all: "Select all".to_string(),
+        deselect_all: "Deselect all".to_string(),
+        download_selected: "Download selected (%d)".to_string(),
+        download_zip_hint: "Multiple files will be packed into one zip archive. Extract it after download.".to_string(),
+        list_updated: "File list updated.".to_string(),
+        text_preview_label: "Preview".to_string(),
+        copy: "Copy".to_string(),
+        copied: "Copied".to_string(),
+        upload: "Send".to_string(),
+        choose_file: "Choose files".to_string(),
+        clear: "Clear".to_string(),
+        remove: "Remove".to_string(),
+        drop_hint: "Release to add files".to_string(),
+        drag_hint: "You can also drag files into this page".to_string(),
+        nothing_to_send: "Choose files or type a message.".to_string(),
+        send_text: "Send text".to_string(),
+        text_placeholder: "Type the message to send".to_string(),
+        text_send: "Send text".to_string(),
+        preview_loading: "Loading preview…".to_string(),
+        preview_unavailable: "Preview unavailable.".to_string(),
+        share_updated_retry: "Shared content has changed. Refresh the page and try again.".to_string(),
+        https_hint: "This is an encrypted connection (self-signed certificate). If downloads fail, ask them to turn off encrypted transfer and retry.".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_i18n_fallback_is_simplified_chinese() {
+        assert_eq!(web_page_i18n("").loading, "加载中…");
+        assert_eq!(web_page_i18n("fr").loading, "加载中…");
+        assert_eq!(web_page_i18n("zh-TW").loading, "載入中…");
+        assert_eq!(web_page_i18n("zh_Hant_TW").loading, "載入中…");
+        assert_eq!(web_page_i18n("en-US").loading, "Loading…");
+    }
+
+    #[test]
+    fn test_app_name_localized() {
+        assert_eq!(web_page_i18n("zh-CN").app_name, "便捷快传");
+        assert_eq!(web_page_i18n("zh-Hant").app_name, "便捷快傳");
+        assert_eq!(web_page_i18n("en-US").app_name, "HandySend");
+    }
+
+    #[test]
+    fn test_i18n_serializes_camel_case_keys() {
+        let json = serde_json::to_value(web_page_i18n("en")).unwrap();
+        assert_eq!(json["downloadAll"], serde_json::json!("Download all"));
+        assert_eq!(json["deselectAll"], serde_json::json!("Deselect all"));
+        assert_eq!(json["themeSystem"], serde_json::json!("Follow system"));
+        assert_eq!(json["textPreviewLabel"], serde_json::json!("Preview"));
+        assert_eq!(json["copy"], serde_json::json!("Copy"));
+        assert_eq!(json["copied"], serde_json::json!("Copied"));
+        assert_eq!(json["dropHint"], serde_json::json!("Release to add files"));
+        assert_eq!(
+            json["dragHint"],
+            serde_json::json!("You can also drag files into this page")
+        );
+        assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
+        assert!(json["httpsHint"].as_str().unwrap().len() > 0);
+        assert!(json["accessLinkRequired"].as_str().unwrap().len() > 0);
+        assert!(json["accessLinkInvalid"].as_str().unwrap().len() > 0);
+        assert_eq!(
+            json["confirmTimeoutRetry"].as_str().unwrap().len() > 0,
+            true
+        );
+    }
+}

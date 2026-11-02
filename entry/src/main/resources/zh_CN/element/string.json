@@ -25,8 +25,8 @@
       "value": "文件"
     },
     {
-      "name": "send_image",
-      "value": "图片"
+      "name": "send_media",
+      "value": "图库"
     },
     {
       "name": "send_justify",
@@ -45,14 +45,6 @@
       "value": "请确保与目标连接到同一个 Wi-Fi 网络"
     },
     {
-      "name": "auto_accept_download_label",
-      "value": "自动确认下载请求"
-    },
-    {
-      "name": "auto_accept_download_desc",
-      "value": "仅当对方通过网页分享（浏览器）发送文件时生效"
-    },
-    {
       "name": "auto_confirm_title",
       "value": "自动确认请求"
     },
@@ -69,6 +61,22 @@
       "value": "开"
     },
     {
+      "name": "auto_confirm_off_desc",
+      "value": "每次接收前都需要手动确认"
+    },
+    {
+      "name": "auto_confirm_favorites_desc",
+      "value": "仅自动接受收藏设备的请求；收到的纯文本消息自动复制到剪贴板"
+    },
+    {
+      "name": "auto_confirm_on_desc",
+      "value": "自动接受本网络内所有设备的请求；收到的纯文本消息自动复制到剪贴板"
+    },
+    {
+      "name": "received_text_copied_toast",
+      "value": "收到文本消息，已复制到剪贴板"
+    },
+    {
       "name": "favorite_devices_title",
       "value": "收藏列表"
     },
@@ -78,31 +86,19 @@
     },
     {
       "name": "share_link_title",
-      "value": "网页分享"
+      "value": "网页发送"
     },
     {
       "name": "receive_link_title",
       "value": "网页接收"
     },
     {
-      "name": "share_link_address_label",
-      "value": "局域网地址"
-    },
-    {
       "name": "share_link_qr_hint",
-      "value": "扫描二维码或在浏览器中打开链接"
+      "value": "扫描二维码进入"
     },
     {
       "name": "share_link_disabled_hint",
-      "value": "LocalSend 已关闭，网页分享不可用"
-    },
-    {
-      "name": "stop_share",
-      "value": "停止分享"
-    },
-    {
-      "name": "stop_receive",
-      "value": "停止接收"
+      "value": "网页服务已关闭"
     },
     {
       "name": "device_type_mobile",
@@ -253,6 +249,26 @@
       "value": "去赞助"
     },
     {
+      "name": "rate_label",
+      "value": "评价"
+    },
+    {
+      "name": "rate_description",
+      "value": "为便捷快传评分"
+    },
+    {
+      "name": "rate_message",
+      "value": "觉得好用的话可以到应用市场为便捷快传评分，助力项目更好的发展"
+    },
+    {
+      "name": "rate_hint",
+      "value": "你的好评就是开发者前进的动力"
+    },
+    {
+      "name": "rate_go",
+      "value": "去评分"
+    },
+    {
       "name": "settings_network",
       "value": "网络"
     },
@@ -305,18 +321,6 @@
       "value": "向你发送文件时要求对方输入 PIN 码，留空则禁用"
     },
     {
-      "name": "auto_finish_label",
-      "value": "自动完成"
-    },
-    {
-      "name": "auto_finish_desc",
-      "value": "文件传输完成后自动退出传输页面"
-    },
-    {
-      "name": "save_to_history_label",
-      "value": "保存到历史"
-    },
-    {
       "name": "save_to_gallery_label",
       "value": "保存到相册"
     },
@@ -350,11 +354,11 @@
     },
     {
       "name": "server_needs_restart",
-      "value": "设置将在重启服务器后生效"
+      "value": "LocalSend 设置已修改，重启服务后生效"
     },
     {
       "name": "restart_server",
-      "value": "重启"
+      "value": "重启服务"
     },
     {
       "name": "localsend_enabled_label",
@@ -362,7 +366,7 @@
     },
     {
       "name": "localsend_enabled_desc",
-      "value": "LocalSend 协议总开关，关闭后将同时禁用网页分享与设备发现"
+      "value": "关闭后将无法与 LocalSend 互传文件"
     },
     {
       "name": "server_status_running",
@@ -378,7 +382,7 @@
     },
     {
       "name": "start_server",
-      "value": "启动"
+      "value": "启动服务"
     },
     {
       "name": "stop_server",
@@ -418,7 +422,7 @@
     },
     {
       "name": "receive_history_title",
-      "value": "接收历史"
+      "value": "文件接收历史"
     },
     {
       "name": "receive_history_empty",
@@ -470,7 +474,7 @@
     },
     {
       "name": "troubleshoot_title",
-      "value": "故障排查"
+      "value": "常见问题"
     },
     {
       "name": "troubleshoot_group_general",
@@ -483,6 +487,10 @@
     {
       "name": "troubleshoot_group_mta",
       "value": "MTA（互传联盟）"
+    },
+    {
+      "name": "troubleshoot_group_web",
+      "value": "网页"
     },
     {
       "name": "troubleshoot_firewall_title",
@@ -498,11 +506,11 @@
     },
     {
       "name": "troubleshoot_discovery_desc",
-      "value": "【LocalSend】确保两台设备连接到同一 Wi-Fi 网络并运行 LocalSend，且双方使用的端口一致。\n【MTA】只有在周围有互传联盟成员设备并打开其品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）时，互传设备列表才会显示。"
+      "value": "【LocalSend】\n① 两台设备连接同一 Wi-Fi 网络；\n② 双方都在运行 LocalSend 或兼容应用；\n③ 双方使用相同的端口。\n\n【MTA】\n① 本机开启蓝牙与 WLAN（无需连接网络）；\n② 周围有已开启品牌分享功能（如荣耀分享、小米互传、OPPO 互传等）的互传联盟设备；\n③ 互传设备仅在发送页可见时扫描，切走页签或退到后台后会暂停。"
     },
     {
       "name": "troubleshoot_discovery_service_hint",
-      "value": "iOS 或安卓上的 LocalSend 有时虽然是打开状态，但服务实际未能启动。若无法发现设备，请清理后台并重新打开应用。"
+      "value": "iOS 或安卓上的 LocalSend 有时虽然显示为打开状态，但服务并未真正启动。\n若无法发现设备，请清理后台并重新打开应用。"
     },
     {
       "name": "troubleshoot_connection_title",
@@ -510,7 +518,7 @@
     },
     {
       "name": "troubleshoot_connection_desc",
-      "value": "检查目标设备是否运行以及 IP 地址是否正确，确保 VPN 未干扰局域网访问。"
+      "value": "检查目标设备是否正在运行、IP 地址是否正确。\n确保 VPN 未干扰局域网访问。"
     },
     {
       "name": "troubleshoot_protocol_title",
@@ -518,7 +526,7 @@
     },
     {
       "name": "troubleshoot_protocol_desc",
-      "value": "两端设备的加密设置必须兼容才能正常通信。如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。请在「设置 → LocalSend → 高级设置 → 加密传输」中确保双方的加密选项一致。"
+      "value": "两端设备的加密设置必须兼容才能正常通信。\n如果一端使用 HTTPS 而另一端使用 HTTP，将无法发现或连接对方。\n请在「设置 → LocalSend → 高级设置 → 加密传输」中确保双方的加密选项一致。"
     },
     {
       "name": "troubleshoot_multi_interface_title",
@@ -526,7 +534,7 @@
     },
     {
       "name": "troubleshoot_multi_interface_desc",
-      "value": "同时启用多个网络接口（如以太网+Wi-Fi 或双 Wi-Fi）可能导致设备发现异常，因为广播可能走错接口。建议关闭多余的网络接口，或在「设置 → LocalSend → 高级设置 → 网络接口」中选择正确的接口。"
+      "value": "同时启用多个网络接口（如以太网 + Wi-Fi 或双 Wi-Fi）可能导致设备发现异常：广播可能走错接口。\n建议关闭多余的网络接口，或在「设置 → LocalSend → 高级设置 → 网络接口」中选择正确的接口。"
     },
     {
       "name": "troubleshoot_transfer_interrupt_title",
@@ -534,7 +542,7 @@
     },
     {
       "name": "troubleshoot_transfer_interrupt_desc",
-      "value": "【LocalSend】传输中断可能因接收端锁屏、切后台或网络波动导致。建议传输时保持应用在前台并确保网络稳定，失败后可重新发送。\n【MTA】互传传输需本机蓝牙与 WLAN 均保持开启，并保持接收端应用在前台；传输期间切换网络或退到后台都可能中断，失败后可重新发送。"
+      "value": "【LocalSend】\n· 退到后台或锁屏时，进行中的传输会由后台长时任务保护并继续；\n· 请勿关闭传输通知或强行结束应用，否则传输会中断；\n· 网络波动或对端退出应用也可能导致失败，失败后可重新发送。\n\n【MTA】\n· 本机蓝牙与 WLAN 均需保持开启；\n· 接收端应保持应用在前台，退到后台会停止接收服务，无法发起新的互传接收；\n· 传输期间切换网络或网络波动可能导致中断，失败后可重新发送。"
     },
     {
       "name": "troubleshoot_remote_title",
@@ -542,7 +550,7 @@
     },
     {
       "name": "troubleshoot_remote_desc",
-      "value": "便捷快传默认在同一局域网内工作。如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网，然后在「设置 → LocalSend → 高级设置 → 网络接口」中开启工具对应的网络接口即可。"
+      "value": "便捷快传默认在同一局域网内工作。\n如需跨网络传输，可使用异地组网工具（如 EasyTier 等）建立虚拟局域网：\n① 在「设置 → LocalSend → 高级设置 → 网络接口」中开启工具对应的网络接口；\n② 网页传输还需在「设置 → 网页传输 → 高级设置 → 网络接口」中允许该接口，并选择对应地址。"
     },
     {
       "name": "troubleshoot_duplicate_title",
@@ -550,7 +558,7 @@
     },
     {
       "name": "troubleshoot_duplicate_desc",
-      "value": "【LocalSend】如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。点击刷新按钮刷新设备列表即可恢复正常显示。\n【MTA】互传设备以蓝牙标识区分，对端蓝牙标识变化时可能短暂出现重复，未再收到广播的设备会自动移除；也可点击刷新按钮重新扫描以立即恢复。"
+      "value": "【LocalSend】\n如果对方重置了安全证书（设备指纹），同一设备会以不同身份出现，导致列表中出现重复。\n点击刷新按钮刷新设备列表即可恢复正常显示。\n\n【MTA】\n互传设备以蓝牙标识区分，对端蓝牙标识变化时可能短暂出现重复，未再收到广播的设备会自动移除。\n也可点击刷新按钮重新扫描，立即清除重复条目。"
     },
     {
       "name": "troubleshoot_mta_transfer_title",
@@ -558,11 +566,11 @@
     },
     {
       "name": "troubleshoot_mta_transfer_desc",
-      "value": "互传联盟（MTA）目前尚未经过各品牌设备的完备测试，若传输失败，请按以下步骤采集日志并反馈：\n① 点击发送页右上角的「更多」菜单（⋯），选择「诊断日志」；\n② 在日志页开启「详细日志（DEBUG）」开关；\n③ 重新执行一次 MTA 传输以复现问题；\n④ 在日志页将日志保存（导出）为文件；\n⑤ 进入「设置 → 反馈 → 代码仓库」提交 issues，并附上刚导出的日志文件。"
+      "value": "互传联盟（MTA）目前尚未经过各品牌设备的完备测试。\n若传输失败，请按以下步骤采集日志并反馈：\n① 点击发送页右上角的「更多」菜单（⋯），选择「诊断日志」；\n② 在日志页开启「详细日志（DEBUG）」开关；\n③ 重新执行一次 MTA 传输以复现问题；\n④ 在日志页将日志保存（导出）为文件；\n⑤ 进入「设置 → 更多 → 反馈」，选择「邮箱」或「代码仓库」提交问题，并附上刚导出的日志文件。"
     },
     {
       "name": "troubleshoot_mta_transfer_hint",
-      "value": "「详细日志（DEBUG）」开关在重启应用后会自动关闭，请在开启后直接复现问题，期间不要重启应用。"
+      "value": "「详细日志（DEBUG）」开关在重启应用后会自动关闭。\n请在开启后直接复现问题，期间不要重启应用。"
     },
     {
       "name": "troubleshoot_offline_title",
@@ -570,7 +578,39 @@
     },
     {
       "name": "troubleshoot_offline_desc",
-      "value": "设备离线后不会立即从「附近设备」中消失。局域网（LocalSend）设备停止广播后，需要经过一轮刷新确认才会被移除；互传联盟（MTA）设备依靠 BLE 广播判断在线状态，约 30 秒内未再收到广播即自动从列表移除，设备重新上线则会实时出现。为节省电量，互传设备的发现扫描仅在发送页可见期间进行。"
+      "value": "设备离线后不会立即从「附近设备」中消失。\n· 局域网（LocalSend）设备停止广播后，需要经过一轮刷新确认才会被移除；\n· 互传联盟（MTA）设备依靠 BLE 广播判断在线状态，约 30 秒未再收到广播即自动移除，重新上线则会实时出现。\n为节省电量，互传设备的发现扫描仅在发送页可见期间进行。"
+    },
+    {
+      "name": "troubleshoot_web_usage_title",
+      "value": "如何使用网页传输"
+    },
+    {
+      "name": "troubleshoot_web_usage_desc",
+      "value": "① 在发送页暂存文件后，点击「网页」图标进入网页传输面板；\n② 对方扫码，或在浏览器中打开面板展示的地址并输入 6 位访问码，即可下载，无需安装应用。\n\n面板地址仅在同一局域网内可访问；网页上传需在「设置 → 网页传输」中开启「允许上传」。"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_title",
+      "value": "网页地址打不开或访问码无效"
+    },
+    {
+      "name": "troubleshoot_web_unreachable_desc",
+      "value": "网页地址仅在同一局域网内可访问，且只对本次分享有效。\n· 停止网页传输、重启网页服务或重启应用后，本次访问码会失效；\n· 端口回退或网络变化时地址也可能改变；\n· 需要对方重新扫码，或按面板当前展示的地址与访问码进入。\n\n若仍无法打开，请检查：\n· 双方是否在同一网络；\n· 对方输入的是否为面板展示的完整地址（默认端口 53310，被占用时会自动换用临时端口）；\n· 路由器是否开启了访客网络隔离或防火墙拦截。"
+    },
+    {
+      "name": "troubleshoot_web_encryption_title",
+      "value": "网页传输为什么默认不加密"
+    },
+    {
+      "name": "troubleshoot_web_encryption_desc",
+      "value": "网页加密传输默认关闭，且与 LocalSend 的加密设置相互独立。\n如需加密，可在「设置 → 网页传输 → 高级设置 → 加密传输」中开启。\n开启后使用自签名证书，可能被浏览器或广告拦截扩展拦截。\n若下载失败，可暂时关闭加密传输，或禁用相关扩展后重试。"
+    },
+    {
+      "name": "troubleshoot_web_background_title",
+      "value": "退到后台后网页无法访问"
+    },
+    {
+      "name": "troubleshoot_web_background_desc",
+      "value": "网页服务随应用运行。\n开启「设置 → 通用 → 允许后台接收」后，没有传输任务时应用会在后台保留约 5 分钟，期间仍可访问网页。\n超时后或手动停止网页传输，网页将无法打开；需要长时间分享时，请保持应用在前台运行。"
     },
     {
       "name": "protocol_version_label",
@@ -586,7 +626,15 @@
     },
     {
       "name": "network_type_ethernet",
-      "value": "以太网"
+      "value": "有线网络"
+    },
+    {
+      "name": "network_type_vpn",
+      "value": "VPN"
+    },
+    {
+      "name": "network_type_bridge",
+      "value": "容器网桥"
     },
     {
       "name": "network_type_unknown",
@@ -594,7 +642,7 @@
     },
     {
       "name": "no_wifi_warning",
-      "value": "未连接局域网，其他设备可能无法发现此设备"
+      "value": "未连接局域网，LocalSend 设备可能无法发现本机"
     },
     {
       "name": "diagnostic_logs_title",
@@ -638,11 +686,11 @@
     },
     {
       "name": "save_logs_button",
-      "value": "保存"
+      "value": "导出全部日志"
     },
     {
       "name": "save_success",
-      "value": "日志已保存到 Download/%s"
+      "value": "日志已保存到：\nDownload/%s/%s\n排障结束后建议关闭详细日志"
     },
     {
       "name": "save_failed",
@@ -650,7 +698,7 @@
     },
     {
       "name": "clear_logs_button",
-      "value": "清除"
+      "value": "清除日志"
     },
     {
       "name": "no_logs",
@@ -667,10 +715,6 @@
     {
       "name": "link_share_button",
       "value": "用网页接收"
-    },
-    {
-      "name": "receive_history_button",
-      "value": "历史"
     },
     {
       "name": "receive_details_title",
@@ -695,10 +739,6 @@
     {
       "name": "info_label",
       "value": "信息"
-    },
-    {
-      "name": "send_audio",
-      "value": "音频"
     },
     {
       "name": "checksum_create_desc",
@@ -769,6 +809,10 @@
       "value": "等待中"
     },
     {
+      "name": "session_waiting_peer_download",
+      "value": "等待对方下载"
+    },
+    {
       "name": "session_status_checksum",
       "value": "校验中..."
     },
@@ -813,8 +857,16 @@
       "value": "添加文件"
     },
     {
+      "name": "send_no_source_title",
+      "value": "暂未发现附近设备"
+    },
+    {
+      "name": "send_no_source_subtitle",
+      "value": "请确认网络与蓝牙已开启"
+    },
+    {
       "name": "server_offline_warning",
-      "value": "服务未运行"
+      "value": "LocalSend 服务未运行"
     },
     {
       "name": "verify_button",
@@ -830,7 +882,11 @@
     },
     {
       "name": "feedback_desc",
-      "value": "到应用市场或代码仓库反馈意见"
+      "value": "通过邮箱或代码仓库反馈意见"
+    },
+    {
+      "name": "feedback_email",
+      "value": "邮箱"
     },
     {
       "name": "feedback_appgallery",
@@ -839,6 +895,58 @@
     {
       "name": "feedback_repo",
       "value": "代码仓库"
+    },
+    {
+      "name": "contact_developer_title",
+      "value": "联系开发者"
+    },
+    {
+      "name": "contact_developer_copy",
+      "value": "复制地址"
+    },
+    {
+      "name": "contact_developer_send",
+      "value": "发送邮件"
+    },
+    {
+      "name": "contact_developer_attach_logs",
+      "value": "附带诊断日志（含设备与传输信息）"
+    },
+    {
+      "name": "feedback_mail_subject",
+      "value": "便捷快传用户反馈"
+    },
+    {
+      "name": "feedback_mail_body_intro",
+      "value": "请在这里描述你的建议或遇到的问题："
+    },
+    {
+      "name": "feedback_mail_body_meta_title",
+      "value": "—— 以下信息有助于定位问题 ——"
+    },
+    {
+      "name": "feedback_mail_body_version",
+      "value": "应用版本：%s"
+    },
+    {
+      "name": "feedback_mail_body_device",
+      "value": "设备类型：%s"
+    },
+    {
+      "name": "feedback_mail_body_steps",
+      "value": "复现步骤（可选）："
+    },
+    {
+      "name": "feedback_mail_body_screenshots",
+      "value": "截图（可选）："
+    },
+    {
+      "name": "feedback_mail_body_logs",
+      "value": "日志（可选，发送邮件时可勾选「附带诊断日志」）："
+    },
+    {
+      "name": "feedback_mail_logs_manual_attach",
+      "value": "（未能自动附带诊断日志，请在「设置 → 更多 → 诊断日志」中导出后手动附上。）"
     },
     {
       "name": "about_handysend_version",
@@ -898,11 +1006,23 @@
     },
     {
       "name": "debug_log_label",
-      "value": "详细日志（DEBUG）"
+      "value": "记录详细日志"
     },
     {
       "name": "debug_log_desc",
-      "value": "输出更详细的日志信息，用于排查故障，重启后自动关闭"
+      "value": "记录更详细的诊断信息，帮助开发者定位问题。问题复现后建议关闭"
+    },
+    {
+      "name": "log_settings_title",
+      "value": "日志设置"
+    },
+    {
+      "name": "log_settings_info_title",
+      "value": "日志文件"
+    },
+    {
+      "name": "log_settings_info_desc",
+      "value": "日志保存在应用沙箱中；导出的 ZIP 包含本次与上次会话的关键日志、详细日志，以及应用版本和设备信息。"
     },
     {
       "name": "more_settings",
@@ -930,11 +1050,11 @@
     },
     {
       "name": "web_share_https_hint",
-      "value": "网页分享使用自签名证书的加密连接，部分浏览器扩展或安全策略可能拦截下载。如遇无法下载，可改用未加密分享或调整浏览器扩展/设置"
+      "value": "加密连接使用自签名证书，可能被浏览器或广告拦截扩展拦截，若下载失败，请关闭加密传输或禁用相关扩展后重试"
     },
     {
       "name": "all_interfaces_disabled_warning",
-      "value": "所有网络接口已关闭，其他设备无法发现此设备。请到高级设置 > 网络接口中打开"
+      "value": "所有网络接口均已关闭，LocalSend 无法使用，请到 设置 > LocalSend > 高级设置 > 网络接口 中开启"
     },
     {
       "name": "network_interface_desc",
@@ -950,7 +1070,15 @@
     },
     {
       "name": "network_default_indicator",
-      "value": "默认"
+      "value": "默认网络"
+    },
+    {
+      "name": "network_interface_status_enabled",
+      "value": "已启用"
+    },
+    {
+      "name": "network_interface_status_disabled",
+      "value": "已禁用"
     },
     {
       "name": "gallery_save_dialog_title",
@@ -963,6 +1091,18 @@
     {
       "name": "no_devices_found",
       "value": "未发现设备，请确保目标设备已安装并打开 LocalSend"
+    },
+    {
+      "name": "web_access_auto_accept_upload_label",
+      "value": "上传免确认"
+    },
+    {
+      "name": "web_access_auto_accept_upload_desc",
+      "value": "其他人通过网页向你发送文件时不再需要经你确认，文本消息会自动复制到剪贴板"
+    },
+    {
+      "name": "web_access_unavailable",
+      "value": "网页服务暂未就绪"
     },
     {
       "name": "web_download_request_title",
@@ -1005,6 +1145,10 @@
       "value": "文件已被移动或删除"
     },
     {
+      "name": "history_open_file_access_denied",
+      "value": "文件暂不可用，请稍后重试"
+    },
+    {
       "name": "history_delete_title",
       "value": "删除记录？"
     },
@@ -1021,24 +1165,44 @@
       "value": "将删除：%s"
     },
     {
+      "name": "history_delete_message_text",
+      "value": "将删除这条文本消息记录"
+    },
+    {
+      "name": "large_file_send_confirm_title",
+      "value": "发送大文件？"
+    },
+    {
+      "name": "large_file_send_confirm_message",
+      "value": "文件总大小 %s，已超过 10GB，大文件传输可能失败（超时/断连/对方拒收），仍要继续发送吗？"
+    },
+    {
+      "name": "large_file_receive_hint",
+      "value": "大文件（10GB 以上）传输可能失败"
+    },
+    {
+      "name": "storage_insufficient_message",
+      "value": "存储空间不足：可用 %s，需要 %s（含预留）"
+    },
+    {
+      "name": "copy_truncated_message",
+      "value": "内容过长，仅复制了前 %s"
+    },
+    {
+      "name": "accept_targets_failed",
+      "value": "准备接收文件失败"
+    },
+    {
+      "name": "history_delete_message_count",
+      "value": "将删除 %d 条记录"
+    },
+    {
       "name": "history_clear_message_count",
       "value": "将删除全部 %d 条记录"
     },
     {
       "name": "history_text_content_title",
       "value": "文本内容"
-    },
-    {
-      "name": "send_video",
-      "value": "视频"
-    },
-    {
-      "name": "send_document",
-      "value": "文档"
-    },
-    {
-      "name": "send_archive",
-      "value": "压缩包"
     },
     {
       "name": "file_status_waiting",
@@ -1070,11 +1234,11 @@
     },
     {
       "name": "permission_notification_desc",
-      "value": "在通知栏显示后台传输的进度与结果"
+      "value": "用于后台传输和临时保活"
     },
     {
       "name": "permission_bluetooth_label",
-      "value": "蓝牙权限"
+      "value": "设备发现和连接"
     },
     {
       "name": "permission_bluetooth_check_desc",
@@ -1098,11 +1262,11 @@
     },
     {
       "name": "mta_receive_enabled_label",
-      "value": "互传联盟接收"
+      "value": "允许接收"
     },
     {
       "name": "mta_receive_enabled_desc",
-      "value": "应用在前台时，以互传联盟身份接收附近设备发送的内容"
+      "value": "允许附近的互传联盟成员设备向你发送文件"
     },
     {
       "name": "mta_enabled_label",
@@ -1110,7 +1274,7 @@
     },
     {
       "name": "mta_enabled_desc",
-      "value": "互传联盟协议总开关，关闭后将停止互传接收与设备发现"
+      "value": "关闭后将无法与附近的互传联盟成员设备互传文件"
     },
     {
       "name": "mta_receive_disabled_desc",
@@ -1126,15 +1290,15 @@
     },
     {
       "name": "mta_simulated_brand_desc",
-      "value": "与互传联盟设备传输文件时，以所选品牌对外呈现，仅对部分厂商生效"
+      "value": "伪装成指定品牌的设备传输文件，仅对部分厂商生效"
     },
     {
       "name": "mta_connection_warnings_label",
-      "value": "互传连接提醒"
+      "value": "显示互传提醒"
     },
     {
       "name": "mta_connection_warnings_desc",
-      "value": "蓝牙或 WLAN 未开启时，在主页面显示警告横幅"
+      "value": "蓝牙或 WLAN 未开启时，在发送页显示警告横幅"
     },
     {
       "name": "mta_brand_picker_title",
@@ -1154,19 +1318,23 @@
     },
     {
       "name": "mta_bluetooth_off_warning",
-      "value": "蓝牙未开启，互传设备将无法被发现，请开启蓝牙"
+      "value": "蓝牙未开启，互传无法使用，请开启蓝牙"
     },
     {
-      "name": "mta_wifi_off_warning",
-      "value": "未开启 WLAN，局域网与互传的设备发现、传输可能失败，请开启 WLAN"
+      "name": "wifi_off_lan_and_mta_warning",
+      "value": "WLAN 未开启，LocalSend 与互传无法使用，请开启 WLAN"
+    },
+    {
+      "name": "mta_wifi_off_standalone_warning",
+      "value": "WLAN 未开启，互传无法使用，请开启 WLAN"
     },
     {
       "name": "mta_wifi_off_lan_ok_warning",
-      "value": "互传功能需要开启 WLAN，未开启时设备可被发现但无法传输，请开启 WLAN"
+      "value": "WLAN 未开启，互传设备可被发现但无法传输，请开启 WLAN"
     },
     {
       "name": "mta_bt_wifi_off_warning",
-      "value": "蓝牙和 WLAN 均未开启，互传设备将无法被发现或传输，请开启后重试"
+      "value": "蓝牙与 WLAN 均未开启，互传无法使用，请开启后重试"
     },
     {
       "name": "nearby_devices_subtitle_mta",
@@ -1265,8 +1433,12 @@
       "value": "退出"
     },
     {
+      "name": "send_partial_protocols_disabled_hint",
+      "value": "%s 已关闭，相关设备与入口将不会显示"
+    },
+    {
       "name": "send_all_protocols_disabled_hint",
-      "value": "LocalSend 与互传联盟均已关闭，无法发送或接收文件"
+      "value": "所有传输方式均已关闭，应用无法使用，请到设置中开启至少一种传输方式"
     },
     {
       "name": "send_protocol_hint_settings",
@@ -1301,8 +1473,12 @@
       "value": "有新的传输请求"
     },
     {
-      "name": "pending_request_notification_text",
-      "value": "点击打开 HandySend 进行确认"
+      "name": "background_attention_pending_text",
+      "value": "%d 个请求等待你确认"
+    },
+    {
+      "name": "background_attention_web_access_text",
+      "value": "%s 正在通过网页访问你的文件（共 %d 个）"
     },
     {
       "name": "session_stage_awaiting",
@@ -1425,6 +1601,10 @@
       "value": "部分完成（仅接收部分文件）"
     },
     {
+      "name": "mta_send_stage_rejected",
+      "value": "对方拒绝接收"
+    },
+    {
       "name": "mta_send_stage_failed",
       "value": "发送失败"
     },
@@ -1454,19 +1634,31 @@
     },
     {
       "name": "transfer_center_clear_history",
-      "value": "清除任务历史"
+      "value": "清空任务历史"
     },
     {
       "name": "transfer_center_clear_history_title",
-      "value": "清除任务历史？"
+      "value": "清空任务历史？"
     },
     {
       "name": "transfer_center_clear_history_message_count",
-      "value": "此操作不可撤销。将清除 %d 条任务记录，并删除全部已发送的文本文件。"
+      "value": "此操作不可撤销。将清空 %d 条任务记录。"
+    },
+    {
+      "name": "transfer_center_delete_selected_title",
+      "value": "删除所选记录？"
+    },
+    {
+      "name": "transfer_center_delete_selected_message_count",
+      "value": "此操作不可撤销。将删除所选的 %d 条任务记录。"
+    },
+    {
+      "name": "transfer_center_select_not_deletable",
+      "value": "进行中与待确认的任务无法删除"
     },
     {
       "name": "transfer_center_file_history_entry",
-      "value": "文件历史"
+      "value": "文件接收历史"
     },
     {
       "name": "session_detail_title",
@@ -1569,14 +1761,6 @@
       "value": "其它方式"
     },
     {
-      "name": "send_method_web_send",
-      "value": "网页发送"
-    },
-    {
-      "name": "send_method_web_receive",
-      "value": "网页接收"
-    },
-    {
       "name": "send_method_ip",
       "value": "指定 IP 发送"
     },
@@ -1626,7 +1810,7 @@
     },
     {
       "name": "discovery_source_web",
-      "value": "网页分享"
+      "value": "网页传输"
     },
     {
       "name": "discovery_empty_hint_localsend",
@@ -1679,6 +1863,46 @@
     {
       "name": "local_device_ip",
       "value": "本机 IP"
+    },
+    {
+      "name": "local_device_type",
+      "value": "设备类型"
+    },
+    {
+      "name": "local_device_model",
+      "value": "设备型号"
+    },
+    {
+      "name": "local_device_port",
+      "value": "端口"
+    },
+    {
+      "name": "local_device_broadcast_name",
+      "value": "广播名称"
+    },
+    {
+      "name": "local_device_mta_device_id",
+      "value": "发送者 ID"
+    },
+    {
+      "name": "local_device_group_identity",
+      "value": "设备身份"
+    },
+    {
+      "name": "local_device_group_localsend",
+      "value": "LocalSend"
+    },
+    {
+      "name": "local_device_group_mta",
+      "value": "互传"
+    },
+    {
+      "name": "local_device_encrypted_on",
+      "value": "开"
+    },
+    {
+      "name": "local_device_encrypted_off",
+      "value": "关"
     },
     {
       "name": "service_status_running",
@@ -1806,7 +2030,7 @@
     },
     {
       "name": "session_file_preview_over_limit",
-      "value": "文件过大，不支持预览"
+      "value": "内容过长，仅显示前 128KB"
     },
     {
       "name": "session_file_open_with_app",
@@ -1815,6 +2039,10 @@
     {
       "name": "session_file_open_no_app",
       "value": "未找到可打开该文件的应用"
+    },
+    {
+      "name": "session_detail_load_more",
+      "value": "还有 %d 个文件，点击加载更多"
     },
     {
       "name": "session_file_open_failed",
@@ -1826,15 +2054,31 @@
     },
     {
       "name": "new_transfer_alert_message",
-      "value": "%s 想要发送 %d 个文件"
+      "value": "%s 发来 %d 个文件"
+    },
+    {
+      "name": "new_transfer_alert_message_text",
+      "value": "%s 发来 1 条消息"
+    },
+    {
+      "name": "new_transfer_alert_message_outbound",
+      "value": "%s 想要下载 %d 个文件"
+    },
+    {
+      "name": "new_transfer_confirm_timeout",
+      "value": "等待确认超时，请求已关闭"
     },
     {
       "name": "new_transfer_alert_view",
       "value": "查看"
     },
     {
-      "name": "new_transfer_alert_later",
-      "value": "稍后"
+      "name": "web_access_notice_title",
+      "value": "网页访问"
+    },
+    {
+      "name": "web_access_notice_message",
+      "value": "%s 访问了网页，可下载你已选中的 %d 个文件。"
     },
     {
       "name": "favorites_online",
@@ -1893,24 +2137,216 @@
       "value": "确定移除 %d 台收藏设备？"
     },
     {
-      "name": "favorites_select_cancel",
-      "value": "取消"
-    },
-    {
-      "name": "favorites_select_all",
-      "value": "全选"
-    },
-    {
-      "name": "favorites_delete_count",
-      "value": "删除（%d）"
-    },
-    {
       "name": "favorites_probing",
       "value": "正在连接…"
     },
     {
       "name": "favorites_probe_failed",
       "value": "无法连接到该设备，请检查网络"
+    },
+    {
+      "name": "multi_select_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "multi_select_all",
+      "value": "全选"
+    },
+    {
+      "name": "multi_select_delete_count",
+      "value": "删除（%d）"
+    },
+    {
+      "name": "web_settings",
+      "value": "网页传输"
+    },
+    {
+      "name": "web_send_label",
+      "value": "网页传输"
+    },
+    {
+      "name": "web_receive_label",
+      "value": "允许上传"
+    },
+    {
+      "name": "web_access_no_file_warning",
+      "value": "尚未选择要发送的文件"
+    },
+    {
+      "name": "web_send_desc",
+      "value": "关闭后将无法通过网页传输文件"
+    },
+    {
+      "name": "web_receive_desc",
+      "value": "其他人可以通过网页向你发送文件"
+    },
+    {
+      "name": "web_access_start_send",
+      "value": "开启网页传输"
+    },
+    {
+      "name": "local_device_group_web",
+      "value": "网页"
+    },
+    {
+      "name": "local_device_interfaces_localsend",
+      "value": "网络接口（LocalSend）"
+    },
+    {
+      "name": "local_device_interfaces_web",
+      "value": "网络接口（网页服务）"
+    },
+    {
+      "name": "web_https_label",
+      "value": "加密传输"
+    },
+    {
+      "name": "web_https_desc",
+      "value": "使用 HTTPS 加密传输文件"
+    },
+    {
+      "name": "web_access_code_label",
+      "value": "访问码："
+    },
+    {
+      "name": "web_access_code_hint",
+      "value": "无法扫码时，手动输入以下地址并使用访问码"
+    },
+    {
+      "name": "web_interface_label",
+      "value": "网络接口"
+    },
+    {
+      "name": "web_interface_desc",
+      "value": "选择用于展示网页地址的网络接口"
+    },
+    {
+      "name": "web_interface_none",
+      "value": "至少选择一个接口"
+    },
+    {
+      "name": "web_port_label",
+      "value": "端口"
+    },
+    {
+      "name": "web_port_desc",
+      "value": "默认 53310，被占用时自动使用临时端口"
+    },
+    {
+      "name": "web_port_invalid",
+      "value": "请输入 1024–65535 之间的端口"
+    },
+    {
+      "name": "web_port_conflict",
+      "value": "端口不能与 LocalSend 端口相同"
+    },
+    {
+      "name": "web_port_fallback_warning",
+      "value": "端口 %d 被占用，已改用 %d，可在网页设置中更换端口"
+    },
+    {
+      "name": "web_port_fallback_value",
+      "value": "当前端口 %d（默认 %d 被占用）"
+    },
+    {
+      "name": "web_info_status",
+      "value": "服务状态"
+    },
+    {
+      "name": "web_info_address",
+      "value": "网页地址"
+    },
+    {
+      "name": "web_address_switch",
+      "value": "切换网页地址"
+    },
+    {
+      "name": "web_service_restart_title",
+      "value": "重启网页服务？"
+    },
+    {
+      "name": "web_service_restart_message",
+      "value": "修改网页设置需要重启服务，以下传输将被中断：\n%s"
+    },
+    {
+      "name": "web_service_restart_ok",
+      "value": "重启"
+    },
+    {
+      "name": "web_service_restart_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "bg_transfer_title_web_keepalive",
+      "value": "网页服务运行中"
+    },
+    {
+      "name": "bg_transfer_content_web_keepalive",
+      "value": "后台临时保活，5 分钟后自动关闭"
+    },
+    {
+      "name": "bg_transfer_title_keepalive",
+      "value": "后台运行中"
+    },
+    {
+      "name": "bg_transfer_content_keepalive",
+      "value": "临时保活5分钟，到期后自动关闭"
+    },
+    {
+      "name": "bg_transfer_title_transfer",
+      "value": "后台传输中"
+    },
+    {
+      "name": "bg_transfer_content_transfer",
+      "value": "关闭通知会中断传输"
+    },
+    {
+      "name": "bg_transfer_content_tasks_percent",
+      "value": "%d 个任务 · %d%%"
+    },
+    {
+      "name": "background_receive_label",
+      "value": "允许后台接收"
+    },
+    {
+      "name": "background_receive_desc",
+      "value": "没有传输任务时，应用将在后台继续运行5分钟，期间可接收网页或 LocalSend 的传输请求"
+    },
+    {
+      "name": "web_access_stop",
+      "value": "停止网页传输"
+    },
+    {
+      "name": "service_status_label",
+      "value": "服务状态"
+    },
+    {
+      "name": "service_status_no_interface",
+      "value": "异常（无可用网络接口）"
+    },
+    {
+      "name": "network_interface_status_not_enabled",
+      "value": "未启用"
+    },
+    {
+      "name": "web_access_no_interface",
+      "value": "没有可用的网络接口，网页传输不可用"
+    },
+    {
+      "name": "session_waiting_peer_upload",
+      "value": "等待上传"
+    },
+    {
+      "name": "session_end_web_access",
+      "value": "结束会话"
+    },
+    {
+      "name": "session_end_web_download",
+      "value": "结束下载"
+    },
+    {
+      "name": "log_file_unavailable",
+      "value": "文件日志不可用，当前显示临时内存日志"
     },
     {
       "name": "demo_scenario_menu_title",
