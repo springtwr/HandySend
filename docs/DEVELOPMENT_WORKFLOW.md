@@ -93,6 +93,8 @@ hvigorw assembleHap --mode module && devecocli run --skip-build
 ## 4. git worktree 专项
 
 > 本节仅适用于使用 `git worktree` 多工作树开发的场景。单克隆 + 分支开发不需要关注。
+>
+> 新建 worktree 后记得补齐本地文件：见 §4.5（`tools/setup-worktree.sh`）。
 
 ### 4.1 Worktree 与 Submodule 的关系
 
@@ -142,6 +144,28 @@ git -C localsend_ohrs/third_party/localsend fetch origin harmony-web-ui
 git -C localsend_ohrs/third_party/localsend checkout -b harmony-web-ui origin/harmony-web-ui
 # 分支 HEAD 与 gitlink 一致时 submodule status 保持干净
 ```
+
+### 4.5 补齐新 worktree 的本地文件
+
+`git worktree add` 出来的工作树只有仓库内容。以下文件/目录不入库（含本机路径或签名，
+或只有部分人使用），需要从主工作树补齐到新工作树：
+
+| 文件/目录 | 处理方式 | 说明 |
+|---|---|---|
+| `build-profile.json5` | 复制 | IDE 构建必需，含本地签名路径 |
+| `.env` | 软链接 | 本机工具链路径，软链接保证多工作树共用一份 |
+| `.opencode/` | 复制 | OpenCode 的 MCP 配置，不用则不存在时自动跳过 |
+| `codegraph.json` | 复制 | 索引排除规则，不存在时跳过 |
+| `.codegraph/` | 重新建索引 | 每台机器/每个工作树独立，不能共享 |
+
+```bash
+tools/setup-worktree.sh ../HandySend-worktrees/dev       # 补齐 + 建 codegraph 索引
+tools/setup-worktree.sh -s ../HandySend-worktrees/dev    # 不建索引（不用 codegraph）
+tools/setup-worktree.sh -n ../HandySend-worktrees/dev    # 预演，只打印不写文件
+```
+
+- 内容一致则跳过；内容不同默认不覆盖，加 `--force` 才覆盖
+- 不使用 OpenCode / codegraph 的人可以完全不执行本脚本，对仓库没有任何影响
 
 ## 5. 升级上游 localsend（按版本节奏，非自动）
 
