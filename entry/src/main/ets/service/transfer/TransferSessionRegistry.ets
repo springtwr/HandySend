@@ -924,7 +924,7 @@ export function checkNoProgress(nowMs: number): number {
     if (session.dataFlow !== SessionDataFlow.outbound || isTerminalStage(session.stage)) {
       return;
     }
-    // 网页访问会话由服务端按下载活动与页面关闭信号收口，不参与通用无进展看门狗
+    // 网页下载批次由服务端下载事件收口，不参与通用无进展看门狗
     if (session.protocolKey === 'web-download') {
       return;
     }

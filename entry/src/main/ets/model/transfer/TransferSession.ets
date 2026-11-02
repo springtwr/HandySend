@@ -87,8 +87,6 @@ export interface SessionCapabilities {
   hasByteProgress: boolean
   canSaveToGallery: boolean
   hasVerify: boolean
-  // 可选：结束动作文案（如网页访问会话为“结束会话”，缺省为“取消传输”）
-  cancelLabel?: ResourceStr
 }
 
 /** 关键事件时间线（事件携带统一会话标识，供后续按会话检索诊断）。 */

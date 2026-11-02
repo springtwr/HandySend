@@ -2033,14 +2033,6 @@
       "value": "等待上传"
     },
     {
-      "name": "session_end_web_access",
-      "value": "结束会话"
-    },
-    {
-      "name": "session_end_web_download",
-      "value": "结束下载"
-    },
-    {
       "name": "log_file_unavailable",
       "value": "文件日志不可用，当前显示临时内存日志"
     }

@@ -25,8 +25,7 @@ import {
   rowNeedsLargeHint,
   rowPercent,
   rowStage,
-  rowStageText,
-  rowCancelLabel
+  rowStageText
 } from '../../viewmodel/TransferCenterViewModel';
 import { SessionStatusBadge } from './SessionStatusBadge';
 import { copyText } from '../../utils/ClipboardUtil';
@@ -305,7 +304,7 @@ export struct TransferCenterList {
                         })
                     }
                   } else if (rowActions(ri.item.session).canCancel) {
-                    Button(rowCancelLabel(ri.item.session))
+                    Button($r('app.string.session_detail_cancel'))
                       .fontSize(DesignTokens.font.bodyS)
                       .height(36)
                       .backgroundColor($r('app.color.page_background'))
@@ -335,7 +334,7 @@ export struct TransferCenterList {
                   }
                 } else if (rowActions(ri.item.session).canCancel) {
                   // 任意方向进行中（含发送「等待对端接收/确认」）：单键「取消」
-                  Button(rowCancelLabel(ri.item.session))
+                  Button($r('app.string.session_detail_cancel'))
                     .fontSize(DesignTokens.font.bodyS)
                     .height(36)
                     .backgroundColor($r('app.color.page_background'))

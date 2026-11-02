@@ -591,12 +591,6 @@ export class SessionDetailViewModel {
     return resolveSessionActions(this.session.stage, this.capabilities).canCancel;
   }
 
-  /** 进行中动作文案：网页访问会话为“结束会话”，其余为“取消传输”。 */
-  cancelLabel(): ResourceStr {
-    return this.capabilities.cancelLabel !== undefined ?
-      this.capabilities.cancelLabel : $r('app.string.session_detail_cancel');
-  }
-
   canVerify(): boolean {
     return this.session !== undefined && this.capabilities.hasVerify &&
       this.session.peer.fingerprint !== undefined && (this.session.peer.fingerprint ?? '').length > 0;

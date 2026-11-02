@@ -2033,14 +2033,6 @@
       "value": "等待上傳"
     },
     {
-      "name": "session_end_web_access",
-      "value": "結束會話"
-    },
-    {
-      "name": "session_end_web_download",
-      "value": "結束下載"
-    },
-    {
       "name": "log_file_unavailable",
       "value": "檔案日誌不可用，目前顯示暫存記憶體日誌"
     }

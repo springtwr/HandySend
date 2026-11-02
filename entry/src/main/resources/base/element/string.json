@@ -2033,14 +2033,6 @@
       "value": "Waiting for upload"
     },
     {
-      "name": "session_end_web_access",
-      "value": "End session"
-    },
-    {
-      "name": "session_end_web_download",
-      "value": "End download"
-    },
-    {
       "name": "log_file_unavailable",
       "value": "File logging unavailable; showing temporary memory logs"
     }
