@@ -195,11 +195,14 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
    启动 hyper 服务 → 返回实际端口 → 出示地址、二维码（URL 携带 `?t=<能力令牌>`）与本次访问码
 2. 浏览器经二维码能力令牌或本次访问码门禁，二者并列、任一通过即可：
    `GET /?t=`（或 `/upload?t=`）校验令牌后下发 HttpOnly Cookie
-   （`handysend_web_cap`，绑定对端 IP 与 User-Agent 摘要）并 302 到去掉令牌的干净地址；
+   （`handysend_web_cap`，HTTPS 下为 `handysend_web_cap_https` 且带 `Secure`；绑定对端 IP 与 User-Agent 摘要）并 302 到去掉令牌的干净地址；
    无令牌打开裸地址时渲染整页访问码页；
    令牌错误或服务重启后旧链接失效时返回「链接已失效」提示页。
-   `POST /web/auth` 校验访问码并下发 `handysend_web_auth`（同样绑定 IP/UA），裸地址可直接提交，不要求先持能力 Cookie；
-   `/caps`、建会话、下载、上传与完成回执要求能力 Cookie 或访问码 Cookie 之一
+   `POST /web/auth` 校验访问码并下发 `handysend_web_auth`（HTTPS 下为 `handysend_web_auth_https` 且带 `Secure`；同样绑定 IP/UA），
+   裸地址可直接提交，不要求先持能力 Cookie；
+   `/caps`、建会话、下载、上传与完成回执要求能力 Cookie 或访问码 Cookie 之一。
+   两种 Cookie 均按协议区分名称：浏览器禁止 HTTP 源用同名非 Secure Cookie 覆盖 HTTPS 下发的 Secure Cookie，
+   否则关闭加密传输后，访问码登录成功也不会被浏览器保存。
 3. 浏览器建会话即出示文件清单（下载）/声明清单（上传），会话键为浏览器 UUID token（IP 绑定，多标签/多浏览器互不踢）；
    `GET /caps` 只读快照，不建会话。下载会话只做授权与快照缓存：绝对 TTL 2 小时、最多 32 个，
    页面每次下载前 prepare 刷新；访问只记日志并续期网页保活，不建任务。

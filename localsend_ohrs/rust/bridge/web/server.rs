@@ -58,10 +58,18 @@ const SINGLE_HTML: &str = include_str!("assets/single.html");
 const MAX_PIN_ATTEMPTS: u32 = 3;
 /// 访问码错误计数窗口：窗口结束后重新计数，避免永久锁死。
 const PIN_ATTEMPT_WINDOW: Duration = Duration::from_secs(60);
-/// 浏览器通过访问码后获得的 Cookie 名。
+/// 浏览器通过访问码后获得的 Cookie 名（HTTP）。
 const AUTH_COOKIE: &str = "handysend_web_auth";
-/// 浏览器用二维码/URL 能力令牌换取的 Cookie 名。
+/// 浏览器通过访问码后获得的 Cookie 名（HTTPS）。
+///
+/// HTTPS 下发的 Cookie 带 `Secure`，浏览器禁止非安全源用同名非 Secure Cookie
+/// 覆盖它。同一地址反复切换加密开关时若沿用同名，降回 HTTP 后登录成功的
+/// `Set-Cookie` 会被浏览器丢弃，页面只能反复停在访问码页，故按协议隔离名称。
+const AUTH_COOKIE_HTTPS: &str = "handysend_web_auth_https";
+/// 浏览器用二维码/URL 能力令牌换取的 Cookie 名（HTTP）。
 const CAPABILITY_COOKIE: &str = "handysend_web_cap";
+/// 浏览器用二维码/URL 能力令牌换取的 Cookie 名（HTTPS），隔离理由同 [`AUTH_COOKIE_HTTPS`]。
+const CAPABILITY_COOKIE_HTTPS: &str = "handysend_web_cap_https";
 /// 访问码授权有效期（服务重启或访问码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// 页面关闭后的结束宽限：刷新会在宽限内重新心跳并取消关闭。
@@ -569,7 +577,8 @@ impl WebServiceState {
         if !self.capability_required() {
             return true;
         }
-        self.cookie_session_valid(&self.cap_sessions, CAPABILITY_COOKIE, headers, peer)
+        let cookie_name = capability_cookie_name(is_secure(self));
+        self.cookie_session_valid(&self.cap_sessions, cookie_name, headers, peer)
     }
 
     /// 请求是否已通过访问码门禁（未设置访问码时恒为真）。
@@ -577,7 +586,8 @@ impl WebServiceState {
         if !self.auth_required() {
             return true;
         }
-        self.cookie_session_valid(&self.auth_sessions, AUTH_COOKIE, headers, peer)
+        let cookie_name = auth_cookie_name(is_secure(self));
+        self.cookie_session_valid(&self.auth_sessions, cookie_name, headers, peer)
     }
 
     /// 请求是否通过页面门禁：能力令牌与访问码并列，任一通过即可。
@@ -932,7 +942,8 @@ async fn login_response(
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("")
             );
-            let cookie = cookie_header(AUTH_COOKIE, &token, is_secure(state));
+            let secure = is_secure(state);
+            let cookie = cookie_header(auth_cookie_name(secure), &token, secure);
             let mut response = json_response(StatusCode::OK, "{\"ok\":true}");
             if let Ok(value) = hyper::header::HeaderValue::from_str(&cookie) {
                 response
@@ -961,6 +972,24 @@ async fn login_response(
 /// 当前连接是否使用 HTTPS（决定 Cookie 是否带 `Secure`）。
 fn is_secure(state: &WebServiceState) -> bool {
     lock(&state.caps).https_hint
+}
+
+/// 当前协议使用的访问码 Cookie 名。
+fn auth_cookie_name(secure: bool) -> &'static str {
+    if secure {
+        AUTH_COOKIE_HTTPS
+    } else {
+        AUTH_COOKIE
+    }
+}
+
+/// 当前协议使用的能力令牌 Cookie 名。
+fn capability_cookie_name(secure: bool) -> &'static str {
+    if secure {
+        CAPABILITY_COOKIE_HTTPS
+    } else {
+        CAPABILITY_COOKIE
+    }
 }
 
 /// 构造 HttpOnly Cookie 头。
@@ -1015,7 +1044,8 @@ fn page_response(
         if let Some(presented) = query.get("t") {
             match state.exchange_capability(presented, req.headers(), peer) {
                 Some(token) => {
-                    let cookie = cookie_header(CAPABILITY_COOKIE, &token, is_secure(state));
+                    let secure = is_secure(state);
+                    let cookie = cookie_header(capability_cookie_name(secure), &token, secure);
                     return redirect_with_cookie(path, &cookie);
                 }
                 None => {
