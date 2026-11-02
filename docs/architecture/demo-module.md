@@ -9,9 +9,10 @@
 
 ## 1. 模块定位
 
-演示模块在发送页注入四台虚拟设备（两台 LocalSend、两台 MTA），点击虚拟设备弹出场景菜单，
+演示模块在发送页注入九台虚拟设备（五台 LocalSend、四台 MTA），点击虚拟设备弹出场景菜单，
 可触发四类模拟传输场景（收文件 / 收文本 / 发文件 / 发文本），会话经统一会话引擎登记，
 任务页、会话详情页、接收历史、后台实况通知等既有 UI 与复用机制对模拟会话透明生效。
+冷启动另向任务中心与接收历史注入固定演示记录，见 §4.6 与 §4.7。
 
 ## 2. 文件结构
 
@@ -19,10 +20,11 @@
 |------|------|
 | `service/demo/DemoDevices.ets` | 虚拟设备定义（固定 fingerprint 集合）、`isDemoDevice()` 精确匹配、`getDemoDevices(protocol)` |
 | `service/demo/DemoData.ets` | 演示数据常量：文件清单（收 5 条 / 发 4 条，各约 3.6 GB）、演示文本、进度计划（1s/60MB）、续期间隔（45s） |
-| `service/demo/DemoFileWriter.ets` | 演示文件落盘（Download 目录回退 filesDir/demo_received）、1×1 PNG 占位图、接收历史条目写入 |
+| `service/demo/DemoFileWriter.ets` | 演示文件落盘（Download 目录回退 filesDir/demo_received）、渐变 PNG 占位图、占位文件复用与接收历史条目写入 |
 | `service/demo/DemoScenarioService.ets` | 场景编排核心：会话创建、进度推进器、适配器命令装饰、待确认续期、`initDemoModule()` 装配 |
-| `service/demo/DemoTaskData.ets` | 任务中心模拟任务清单：固定 12 条终态记录定义（来源/方向/结果/文件清单来源/时间偏移与速度）、固定 web 对端常量、`DEMO_TASK_CATALOG` |
+| `service/demo/DemoTaskData.ets` | 任务中心模拟任务清单：固定 20 条终态记录定义（来源/方向/结果/文件清单来源/时间偏移与速度）、固定 web 对端常量、`DEMO_TASK_CATALOG` |
 | `service/demo/DemoTaskHistory.ets` | 模拟任务历史注入：清单条目 → `SessionHistoryEntry` 映射（时间派生、逐文件清单、对端解析、时间线）与按固定 `sessionId` 的幂等 upsert |
+| `service/demo/DemoReceiveHistory.ets` | 接收历史注入：固定 8 条接收记录（图片/视频/表格/压缩包/音频/文本消息）→ `ReceiveHistoryEntry`，按固定 id 幂等跳过已存在条目 |
 | `components/demo/DemoScenarioSheet.ets` | 场景选择菜单弹窗（CustomContentDialogV2，四场景项 + 语言切换组 + 取消） |
 
 ## 3. 注入点（对既有文件的改动）
@@ -30,7 +32,7 @@
 | 注入点 | 改动 |
 |--------|------|
 | `entryability/EntryAbility.ets` `onCreate` | `initBackgroundTransferService()` 之后调用 `initDemoModule(context)`（幂等） |
-| `service/demo/DemoScenarioService.ets` `initDemoModule()` | `initDemoFileWriter(context)` 之后调用 `seedDemoTaskHistory()`（每次启动执行，幂等注入任务中心模拟任务） |
+| `service/demo/DemoScenarioService.ets` `initDemoModule()` | `initDemoFileWriter(context)` 之后依次调用 `seedDemoTaskHistory()` 与 `seedDemoReceiveHistory()`（幂等注入演示记录） |
 | `viewmodel/SendViewModel.ets` `refresh()` | 真实设备之后追加 `getDemoDevices()` 合并（排序置后；演示 MTA 设备不受蓝牙开关门控） |
 | `components/SendContent.ets` `sendToSelectedDevice()` | 入口处拦截演示设备（先于暂存内容检查），打开场景菜单并跳过真实发送 |
 | `service/transfer/adapters/LocalSendReceiveAdapter.ets` | 新增导出 `resetLocalReceivePendingTimeout()`（待确认超时重排，供续期使用） |
@@ -75,7 +77,7 @@ en / zh_Hans / zh_Hant 三个固定选项并高亮当前值，点击调用 `Sett
 
 ### 4.6 任务中心模拟任务种子
 
-冷启动后任务中心自动呈现固定 12 条终态记录，无需手动触发任何场景；记录经既有任务历史机制持久化
+冷启动后任务中心自动呈现固定 20 条终态记录，无需手动触发任何场景；记录经既有任务历史机制持久化
 与渲染，不新增任何页面/组件/UI，与真实任务同列表混排且不可区分。
 
 - **注入方式**：以终态快照**直接写入**既有任务历史存储（`sessionHistoryStore.load()` → 逐条
@@ -83,7 +85,8 @@ en / zh_Hans / zh_Hant 三个固定选项并高亮当前值，点击调用 `Sett
   不启动定时器；启动时无订阅者，无需发布变更通知。
 - **幂等与重建**：记录使用固定 `sessionId`（前缀 `demo-task-`），每次启动执行一次，同标识 upsert
   天然幂等（重启不重复）；清除任务历史后再启动即按固定清单重建（清除动作与本函数无耦合）。
-- **固定清单**：LocalSend 5 / 互传 4 / web 3；成功 7 / 部分失败 1 / 失败 2 / 取消 2；文本 2 条。
+- **固定清单**：LocalSend 9 / 互传 6 / web 5；成功 12 / 部分失败 3 / 失败 3 / 取消 2；文本 4 条；
+  接收方向 13 条、发送方向 7 条。
 - **相对时间**：以注入时刻为基准往前按固定偏移派生 `startedAt` / `finishedAt`（含固定时长与
   平均/峰值速度），列表排序确定、观感为近期，不随截图批次变化。
 - **对端身份**：LocalSend/互传复用 `DemoDevices` 虚拟设备（互传按真实形状：无 IP/型号徽标、
@@ -92,3 +95,18 @@ en / zh_Hans / zh_Hant 三个固定选项并高亮当前值，点击调用 `Sett
   `outbound`），两者均经 `sourceLabelForSession` 归为 web 来源。
 - **文本记录**：单条 `text/plain` 条目，`size` 取文本 UTF-8 字节数，经 `writeDemoTextFile(...)`
   落盘并把返回路径写入条目 `path`，供详情页内联预览正常渲染。
+
+### 4.7 接收历史演示种子
+
+接收历史页冷启动即有 8 条固定接收记录，无需先触发模拟场景；条目写入既有接收历史存储，
+经既有列表、缩略图、类型图标与文本预览机制渲染。
+
+- **注入方式**：`seedDemoReceiveHistory()` 读取既有历史（`getHistory()`），按固定 id 跳过已存在条目，
+  缺失条目构建为 `ReceiveHistoryEntry` 后经 `addEntries()` 一次性批量落盘。
+- **幂等与重建**：固定 id 为 `demo-recv-hist-NN`，重启不重复；清除接收历史后再启动按清单重建。
+  已存在条目不覆盖，避免重置用户的「已保存到相册」标记与接收时间。
+- **清单构成**：8 条覆盖图片（2）/ 视频 / 表格 / 压缩包 / 音频 / PDF / 文本消息，
+  发送者对端取 `DemoDevices` 虚拟设备昵称，时间偏移从 30 分钟前到 74 小时前。
+- **占位文件**：非文本条目经 `ensureDemoFile()` 在演示落盘目录写入占位内容（图片为可解码的渐变 PNG），
+  同名文件已存在时直接复用，不重复落盘；文本消息按正文实际 UTF-8 字节数记录 `fileSize`。
+- **容量**：条目共享接收历史的 5000 条文件级保留上限，清除与裁剪行为与真实记录一致。

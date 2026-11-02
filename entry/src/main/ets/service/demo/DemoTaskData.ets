@@ -1,8 +1,9 @@
 /**
  * DemoTaskData.ets — 演示任务中心模拟任务清单（仅演示分支存在）
  *
- * 固定 12 条终态任务记录的事实来源：覆盖 LocalSend（5）/ 互传 MTA（4）/ web（3）
- * 三种来源，成功 7 / 部分失败 1 / 失败 2 / 取消 2 多种结果，含 2 条文本任务。
+ * 固定 20 条终态任务记录的事实来源：覆盖 LocalSend（9）/ 互传 MTA（6）/ web（5）
+ * 三种来源，成功 12 / 部分失败 3 / 失败 3 / 取消 2 多种结果，含 4 条文本任务。
+ * 其中接收方向 13 条、发送方向 7 条，使任务中心的接收记录足够充实。
  * 纯数据无副作用；由 DemoTaskHistory 解析为历史条目并幂等注入历史存储。
  */
 
@@ -92,9 +93,9 @@ export const DEMO_TASK_SESSION_PREFIX: string = 'demo-task-';
 const DEMO_MINUTE_MS: number = 60 * 1000;
 const DEMO_HOUR_MS: number = 60 * DEMO_MINUTE_MS;
 
-/** 固定模拟任务清单（12 条：LocalSend 5 / 互传 4 / web 3，含文本 2 条） */
+/** 固定模拟任务清单（20 条：LocalSend 9 / 互传 6 / web 5，含文本 4 条） */
 export const DEMO_TASK_CATALOG: Array<DemoTaskSpec> = [
-  // ── LocalSend（5 条） ──
+  // ── LocalSend（9 条） ──
   {
     sessionId: DEMO_TASK_SESSION_PREFIX + 'ls1',
     source: DemoTaskSource.localsend,
@@ -190,7 +191,83 @@ export const DEMO_TASK_CATALOG: Array<DemoTaskSpec> = [
     averageSpeedBps: 12000000,
     peakSpeedBps: 40000000
   },
-  { // ── 互传 MTA（4 条） ──
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'ls6',
+    source: DemoTaskSource.localsend,
+    protocolKey: 'localsend-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: '王五',
+    isText: false,
+    fileSource: DemoTaskFileSource.receive,
+    outcome: SessionHistoryOutcome.succeeded,
+    completedCount: 0,
+    failedIndex: -1,
+    errorMessage: '',
+    errorCode: '',
+    startOffsetMs: 22 * DEMO_MINUTE_MS,
+    durationMs: 58000,
+    averageSpeedBps: 61000000,
+    peakSpeedBps: 79000000
+  },
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'ls7',
+    source: DemoTaskSource.localsend,
+    protocolKey: 'localsend-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: 'HomeNAS',
+    isText: false,
+    fileSource: DemoTaskFileSource.receive,
+    outcome: SessionHistoryOutcome.partiallyFailed,
+    completedCount: 0,
+    failedIndex: 2,
+    errorMessage: '部分文件传输失败',
+    errorCode: 'partial_failed',
+    startOffsetMs: 9 * DEMO_HOUR_MS,
+    durationMs: 64000,
+    averageSpeedBps: 47000000,
+    peakSpeedBps: 63000000
+  },
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'ls8',
+    source: DemoTaskSource.localsend,
+    protocolKey: 'localsend-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: '李四',
+    isText: true,
+    fileSource: DemoTaskFileSource.text,
+    outcome: SessionHistoryOutcome.succeeded,
+    completedCount: 0,
+    failedIndex: -1,
+    errorMessage: '',
+    errorCode: '',
+    startOffsetMs: 18 * DEMO_HOUR_MS,
+    durationMs: 1300,
+    averageSpeedBps: 0,
+    peakSpeedBps: 0
+  },
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'ls9',
+    source: DemoTaskSource.localsend,
+    protocolKey: 'localsend-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: '张三',
+    isText: false,
+    fileSource: DemoTaskFileSource.receive,
+    outcome: SessionHistoryOutcome.succeeded,
+    completedCount: 0,
+    failedIndex: -1,
+    errorMessage: '',
+    errorCode: '',
+    startOffsetMs: 52 * DEMO_HOUR_MS,
+    durationMs: 71000,
+    averageSpeedBps: 51000000,
+    peakSpeedBps: 68000000
+  },
+  { // ── 互传 MTA（6 条） ──
     sessionId: DEMO_TASK_SESSION_PREFIX + 'mta1',
     source: DemoTaskSource.mta,
     protocolKey: 'mta-send',
@@ -266,7 +343,45 @@ export const DEMO_TASK_CATALOG: Array<DemoTaskSpec> = [
     averageSpeedBps: 9000000,
     peakSpeedBps: 30000000
   },
-  { // ── web（3 条：浏览器上传收文件 + 网页下载成功/失败） ──
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'mta5',
+    source: DemoTaskSource.mta,
+    protocolKey: 'mta-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: 'Mia',
+    isText: false,
+    fileSource: DemoTaskFileSource.mtaAggregate,
+    outcome: SessionHistoryOutcome.succeeded,
+    completedCount: 0,
+    failedIndex: -1,
+    errorMessage: '',
+    errorCode: '',
+    startOffsetMs: 110 * DEMO_MINUTE_MS,
+    durationMs: 47000,
+    averageSpeedBps: 61000000,
+    peakSpeedBps: 76000000
+  },
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'mta6',
+    source: DemoTaskSource.mta,
+    protocolKey: 'mta-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: 'Ethan',
+    isText: false,
+    fileSource: DemoTaskFileSource.mtaAggregate,
+    outcome: SessionHistoryOutcome.failed,
+    completedCount: 0,
+    failedIndex: -1,
+    errorMessage: '对端热点连接中断',
+    errorCode: 'receive_failed',
+    startOffsetMs: 68 * DEMO_HOUR_MS,
+    durationMs: 16000,
+    averageSpeedBps: 7000000,
+    peakSpeedBps: 21000000
+  },
+  { // ── web（5 条：浏览器上传收文件/收文本 + 网页下载成功/失败） ──
     sessionId: DEMO_TASK_SESSION_PREFIX + 'web1',
     source: DemoTaskSource.web,
     protocolKey: 'localsend-receive',
@@ -322,6 +437,44 @@ export const DEMO_TASK_CATALOG: Array<DemoTaskSpec> = [
     durationMs: 27000,
     averageSpeedBps: 24000000,
     peakSpeedBps: 58000000
+  },
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'web4',
+    source: DemoTaskSource.web,
+    protocolKey: 'localsend-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: DEMO_WEB_PEER_KEY,
+    isText: false,
+    fileSource: DemoTaskFileSource.receive,
+    outcome: SessionHistoryOutcome.partiallyFailed,
+    completedCount: 0,
+    failedIndex: 2,
+    errorMessage: '部分文件传输失败',
+    errorCode: 'partial_failed',
+    startOffsetMs: 13 * DEMO_HOUR_MS,
+    durationMs: 69000,
+    averageSpeedBps: 42000000,
+    peakSpeedBps: 57000000
+  },
+  {
+    sessionId: DEMO_TASK_SESSION_PREFIX + 'web5',
+    source: DemoTaskSource.web,
+    protocolKey: 'localsend-receive',
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    peerRef: DEMO_WEB_PEER_KEY,
+    isText: true,
+    fileSource: DemoTaskFileSource.text,
+    outcome: SessionHistoryOutcome.succeeded,
+    completedCount: 0,
+    failedIndex: -1,
+    errorMessage: '',
+    errorCode: '',
+    startOffsetMs: 20 * DEMO_HOUR_MS,
+    durationMs: 1200,
+    averageSpeedBps: 0,
+    peakSpeedBps: 0
   }
 ];
 

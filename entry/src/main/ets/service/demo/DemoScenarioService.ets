@@ -91,6 +91,7 @@ import {
   DemoScenarioType
 } from './DemoData';
 import { seedDemoTaskHistory } from './DemoTaskHistory';
+import { seedDemoReceiveHistory } from './DemoReceiveHistory';
 import { util } from '@kit.ArkTS';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:DemoScenario', '演示场景');
@@ -140,6 +141,8 @@ export function initDemoModule(context: common.Context): void {
   initDemoFileWriter(context);
   // 任务中心模拟任务：固定清单幂等注入既有任务历史存储（每次启动执行，重启不重复、清除后重启重建）
   seedDemoTaskHistory();
+  // 接收历史演示条目：固定 id 幂等注入既有接收历史存储（同上：重启不重复、清除后重启重建）
+  seedDemoReceiveHistory();
   if (installed) {
     return;
   }

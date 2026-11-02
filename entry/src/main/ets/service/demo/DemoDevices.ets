@@ -1,8 +1,8 @@
 /**
  * DemoDevices.ets — 固定虚拟设备定义（仅演示分支存在）
  *
- * 4 台演示设备以完整 DiscoveredDevice 形状常驻发送页设备列表：
- * LocalSend 手机 × 1、LocalSend 桌面 × 1、MTA 手机 × 2（Xiaomi / Honor 品牌）。
+ * 9 台演示设备以完整 DiscoveredDevice 形状常驻发送页设备列表：
+ * LocalSend 手机/平板/桌面/笔记本/NAS 各 1 台、MTA 手机 4 台（Xiaomi / Honor / OPPO / vivo 品牌）。
  * 设备昵称/型号为固定常量，不随应用语言切换（截图一致性）。
  * 演示设备以固定 fingerprint 集合精确识别（isDemoDevice，LocalSend 为证书指纹
  * 形状、MTA 为 BLE 地址形状，均取固定真实感值），
@@ -25,6 +25,20 @@ const DEMO_LOCALSEND_PHONE: DiscoveredDevice = {
   channels: [{ host: '192.168.31.108', port: 53317, protocol: 'http' }]
 };
 
+/** LocalSend 平板演示设备 */
+const DEMO_LOCALSEND_PAD: DiscoveredDevice = {
+  alias: '李四',
+  ip: '192.168.31.109',
+  port: 53317,
+  fingerprint: 'k238a3b89c2e4170afd63c1e9b7a5428dc0fe13b6a94e7d2c5f8310aeb7d662f',
+  version: '2.1',
+  deviceModel: 'Pad15',
+  deviceType: 'tablet',
+  protocol: 'localsend',
+  lastSeen: 0,
+  channels: [{ host: '192.168.31.109', port: 53317, protocol: 'http' }]
+};
+
 /** LocalSend 桌面演示设备 */
 const DEMO_LOCALSEND_DESKTOP: DiscoveredDevice = {
   alias: 'Kat',
@@ -37,6 +51,34 @@ const DEMO_LOCALSEND_DESKTOP: DiscoveredDevice = {
   protocol: 'localsend',
   lastSeen: 0,
   channels: [{ host: '192.168.31.112', port: 53317, protocol: 'http' }]
+};
+
+/** LocalSend 笔记本演示设备（设备类型图标无 laptop 档，按桌面设备呈现） */
+const DEMO_LOCALSEND_LAPTOP: DiscoveredDevice = {
+  alias: '王五',
+  ip: '192.168.31.110',
+  port: 53317,
+  fingerprint: '7b3f9c41d8e25a06f2b7c9d1e4a85b30c6d92f718a4e3b5c9d0f6a2e8b4713c9',
+  version: '2.1',
+  deviceModel: 'MateBook X Pro',
+  deviceType: 'desktop',
+  protocol: 'localsend',
+  lastSeen: 0,
+  channels: [{ host: '192.168.31.110', port: 53317, protocol: 'http' }]
+};
+
+/** LocalSend NAS 演示设备（家庭常开设备，无界面，按无头设备呈现） */
+const DEMO_LOCALSEND_NAS: DiscoveredDevice = {
+  alias: 'HomeNAS',
+  ip: '192.168.31.120',
+  port: 53317,
+  fingerprint: 'e4a71c58d3b92f60a8c15e7d4f29b630d8c71a5f39e64b20c7d8a1f5e3b962d4',
+  version: '2.1',
+  deviceModel: 'DS923+',
+  deviceType: 'headless',
+  protocol: 'localsend',
+  lastSeen: 0,
+  channels: [{ host: '192.168.31.120', port: 53317, protocol: 'http' }]
 };
 
 /** MTA 手机一演示设备（品牌取注册表内 Xiaomi，形状对齐 mtaDeviceToDiscoveredDevice：无 IP/型号） */
@@ -52,7 +94,7 @@ const DEMO_MTA_PHONE_1: DiscoveredDevice = {
   lastSeen: 0,
   channels: [],
   mtaBleAddress: '8C:4B:14:6F:A2:31',
-  mtaSenderIdHex: 'f1',
+  mtaSenderIdHex: '8c4b146fa2310f2e9a7c3b5d1e8f4a62',
   mtaBrandId: 30,
   mtaBrandName: 'Xiaomi',
   mtaIs5Ghz: true,
@@ -72,19 +114,67 @@ const DEMO_MTA_PHONE_2: DiscoveredDevice = {
   lastSeen: 0,
   channels: [],
   mtaBleAddress: '6C:D8:03:7A:B2:44',
-  mtaSenderIdHex: 'f1',
+  mtaSenderIdHex: '6cd8037ab24491f5e2a70c8b3d6e5f04',
   mtaBrandId: 140,
   mtaBrandName: 'Honor',
   mtaIs5Ghz: true,
   mtaRssi: -48
 };
 
-/** 全部演示设备（固定顺序：LocalSend 手机 → LocalSend 桌面 → MTA 手机一 → MTA 手机二） */
+/** MTA 手机三演示设备（品牌取注册表内 OPPO，形状对齐 mtaDeviceToDiscoveredDevice：无 IP/型号） */
+const DEMO_MTA_PHONE_3: DiscoveredDevice = {
+  alias: 'Mia',
+  ip: '',
+  port: 0,
+  fingerprint: '3A:7F:21:B6:9C:05',
+  version: '',
+  deviceModel: '',
+  deviceType: 'mobile',
+  protocol: 'mta',
+  lastSeen: 0,
+  channels: [],
+  mtaBleAddress: '3A:7F:21:B6:9C:05',
+  mtaSenderIdHex: '3a7f21b69c050d8e4f1a2b7c9e6d5308',
+  mtaBrandId: 12,
+  mtaBrandName: 'OPPO',
+  mtaIs5Ghz: true,
+  mtaRssi: -52
+};
+
+/** MTA 手机四演示设备（品牌取注册表内 vivo，形状对齐 mtaDeviceToDiscoveredDevice：无 IP/型号） */
+const DEMO_MTA_PHONE_4: DiscoveredDevice = {
+  alias: 'Ethan',
+  ip: '',
+  port: 0,
+  fingerprint: '5E:91:8A:33:D4:70',
+  version: '',
+  deviceModel: '',
+  deviceType: 'mobile',
+  protocol: 'mta',
+  lastSeen: 0,
+  channels: [],
+  mtaBleAddress: '5E:91:8A:33:D4:70',
+  mtaSenderIdHex: '5e918a33d4702c6f8b1e5a9d3c7f0246',
+  mtaBrandId: 21,
+  mtaBrandName: 'vivo',
+  mtaIs5Ghz: false,
+  mtaRssi: -58
+};
+
+/**
+ * 全部演示设备（固定顺序：LocalSend 手机 → 平板 → 桌面 → 笔记本 → NAS →
+ * MTA 手机一（Xiaomi）→ 手机二（Honor）→ 手机三（OPPO）→ 手机四（vivo））
+ */
 const DEMO_DEVICES: Array<DiscoveredDevice> = [
   DEMO_LOCALSEND_PHONE,
+  DEMO_LOCALSEND_PAD,
   DEMO_LOCALSEND_DESKTOP,
+  DEMO_LOCALSEND_LAPTOP,
+  DEMO_LOCALSEND_NAS,
   DEMO_MTA_PHONE_1,
-  DEMO_MTA_PHONE_2
+  DEMO_MTA_PHONE_2,
+  DEMO_MTA_PHONE_3,
+  DEMO_MTA_PHONE_4
 ];
 
 /** 是否演示设备（按固定 fingerprint 精确匹配设备表） */
