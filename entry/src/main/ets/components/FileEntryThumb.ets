@@ -132,7 +132,9 @@ export struct FileEntryThumb {
   private async loadImageThumbnail(): Promise<void> {
     let location = normalizeFileLocation(this.path);
     if (!location.locatable || location.uri.length === 0) {
+      // 无法定位即确定出不了图：标记失败以回退类型图标，不能停留在「加载中」占位
       this.requested = false;
+      this.loadFailed = true;
       return;
     }
     let side: number = Math.round(this.thumbSize * 2);
@@ -143,10 +145,11 @@ export struct FileEntryThumb {
       await ensureUriAccess(location.uri);
       file = await fs.open(location.uri, fs.OpenMode.READ_ONLY);
       source = image.createImageSource(file.fd);
-      let info: image.ImageInfo = source.getImageInfoSync(0);
+      // 运行时可能在解码前置阶段返回 undefined（声明类型未覆盖），按不可用处理
+      let info: image.ImageInfo | undefined = source.getImageInfoSync(0);
       let targetWidth: number = side;
       let targetHeight: number = side;
-      if (info.size.width > 0 && info.size.height > 0) {
+      if (info !== undefined && info.size.width > 0 && info.size.height > 0) {
         let scale: number = Math.min(side / info.size.width, side / info.size.height);
         targetWidth = Math.max(1, Math.round(info.size.width * scale));
         targetHeight = Math.max(1, Math.round(info.size.height * scale));
@@ -213,9 +216,12 @@ export struct FileEntryThumb {
     });
   }
 
-  /** 是否为「图片 / 视频且尚未出图、也未曾失败」的加载中状态。 */
+  /**
+   * 是否为「图片 / 视频且尚未出图、也未曾失败」的加载中状态。
+   * 定位为空即确定不会出图（未落盘 / 记录缺少路径），不算加载中，直接回退类型图标。
+   */
   private isMediaLoading(): boolean {
-    if (this.loadFailed) {
+    if (this.loadFailed || this.path.length === 0) {
       return false;
     }
     return this.fileType.startsWith('image/') || this.fileType.startsWith('video/');
