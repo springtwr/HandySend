@@ -36,25 +36,25 @@ export struct SendTargetZone {
   // 官方分段标签选项集合：集合引用保持稳定，仅在协议开关变化时就地重建
   // （官方标注 items 为只读 @Param，整体替换在组件侧不被保证生效）
   @Local private sourceItemsValue: SegmentButtonV2Items = new SegmentButtonV2Items([])
-  // 当前已启用来源数：作为 @Local 参与条件渲染，保证协议开关变化时标签栏显隐被重新求值
-  //（visibleSources 读取的协议开关不是响应式状态，仅靠 sourceItemsValue 更新不足以重算外层 if）
-  @Local private enabledSourceCount: number = 0
   // 已构建选项对应的来源键签名（变化时才重建集合）
   private sourceKeySignature: string = ''
+  // 当前可见来源集合（响应式镜像）：来源键集合变化时整体替换。
+  // 副标题、空态文案与标签栏显隐都按可见来源派生；若每次渲染都读协议开关的实时值，
+  // ArkUI 无法感知开关变化，开关重开后仍可能保留上一来源的文案。
+  @Local private visibleSourcesValue: Array<DeviceSourceDescriptor> = []
 
   aboutToAppear(): void {
     this.syncSourceItems();
   }
 
-  /** 协议开关变化时重建分段标签选项（来源集合按开关常显，不随发现结果变化）。 */
+  /** 协议开关变化时刷新可见来源镜像并重建分段标签选项（来源集合按开关常显，不随发现结果变化）。 */
   @Monitor('viewModel.localSendEnabled', 'viewModel.mtaEnabled')
   onSourceToggleChanged(): void {
     this.syncSourceItems();
   }
 
   private syncSourceItems(): void {
-    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
-    this.enabledSourceCount = sources.length;
+    let sources: Array<DeviceSourceDescriptor> = filterEnabledDeviceSources(listSources());
     let signature: string = '';
     for (let i = 0; i < sources.length; i++) {
       signature = signature + sources[i].key + '|';
@@ -67,6 +67,8 @@ export struct SendTargetZone {
       return;
     }
     this.sourceKeySignature = signature;
+    // 先替换可见来源镜像，使副标题/空态文案在开关变化后随新集合重新求值
+    this.visibleSourcesValue = sources;
     let options: Array<SegmentButtonV2ItemOptions> = [];
     for (let i = 0; i < sources.length; i++) {
       options.push({ text: sources[i].label });
@@ -74,9 +76,9 @@ export struct SendTargetZone {
     this.sourceItemsValue = new SegmentButtonV2Items(options);
   }
 
-  /** 可见来源：协议开关开启的设备来源（注册表顺序），与是否发现设备无关。 */
+  /** 可见来源：来源键集合变化时由 syncSourceItems 更新的响应式镜像（注册表顺序）。 */
   private visibleSources(): Array<DeviceSourceDescriptor> {
-    return filterEnabledDeviceSources(listSources());
+    return this.visibleSourcesValue;
   }
 
   /** 当前选中来源（按选中下标派生；集合为空时返回 undefined）。 */
@@ -148,7 +150,7 @@ export struct SendTargetZone {
 
   /** 来源数 ≥2 且至少一个有设备时才显示标签栏；全部为空时回退总空态，不展示空标签。 */
   private shouldShowSourceTabs(): boolean {
-    return this.enabledSourceCount >= 2 && this.hasAnyDevice();
+    return this.visibleSources().length >= 2 && this.hasAnyDevice();
   }
 
   /**
