@@ -422,42 +422,66 @@ pub async fn send_files(
 /// 核心库的 `FileContent::Fd` 走顺序 read，多个发送会话复用同一暂存句柄的 dup 副本时
 /// 会互相推进共享偏移；这里改用显式偏移的 pread，各会话都从 0 读，互不影响。
 /// fd 所有权随任务移交，读毕或接收方结束（通道关闭）后由包装的 File 关闭。
+///
+/// 读取失败通过 `read_error_tx` 上报，上传侧据此中止请求，避免把截断内容
+/// 当作完整文件发送。
 #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
-fn fd_pread_content(fd: i32, file_label: &str) -> FileContent {
-    const READ_CHUNK: usize = 512 * 1024;
-    const CHANNEL_CAPACITY: usize = 16;
+fn fd_pread_content(
+    fd: i32,
+    file_label: &str,
+    read_error_tx: tokio::sync::oneshot::Sender<std::io::Error>,
+) -> FileContent {
+    // 预读上限 2 MiB/流（4 × 512 KiB），与上游核心库一致，
+    // 避免多目标并发发送时每流 8 MiB 的内存放大。
+    const CHANNEL_CAPACITY: usize = 4;
     let (tx, rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
     let label = file_label.to_string();
     // 后台阻塞读取：显式忽略 JoinHandle，fd 所有权已由任务接管
     let _ = tokio::task::spawn_blocking(move || {
-        use std::os::unix::fs::FileExt;
+        read_fd_into_channel(fd, label, tx, read_error_tx);
+    });
+    FileContent::Stream(rx)
+}
 
-        // SAFETY: fd 所有权由本任务接管；调用方已把该 fd 从剩余表移除，
-        // 任务结束时 File drop 关闭，不会重复关闭。
-        let file = unsafe { std::fs::File::from_raw_fd(fd) };
-        let mut offset: u64 = 0;
-        let mut buffer = bytes::BytesMut::with_capacity(READ_CHUNK);
-        loop {
-            buffer.resize(READ_CHUNK, 0);
-            match file.read_at(&mut buffer[..], offset) {
-                Ok(0) => break,
-                Ok(n) => {
-                    offset += n as u64;
-                    buffer.truncate(n);
-                    if tx.blocking_send(buffer.split().freeze()).is_err() {
-                        // 接收方（上传请求）已结束：正常提前退出
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!("send-files: pread 读取失败 file={label} offset={offset}: {e}");
+/// 从 fd 顺序读取并投递到通道；读失败时通过 `read_error_tx` 上报。
+///
+/// 与平台判定解耦，便于在开发机上覆盖错误路径；生产调用仅在 Android / 鸿蒙。
+#[allow(dead_code)]
+#[cfg(unix)]
+fn read_fd_into_channel(
+    fd: i32,
+    label: String,
+    tx: tokio::sync::mpsc::Sender<bytes::Bytes>,
+    read_error_tx: tokio::sync::oneshot::Sender<std::io::Error>,
+) {
+    use std::os::unix::fs::FileExt;
+
+    const READ_CHUNK: usize = 512 * 1024;
+    // SAFETY: fd 所有权由本任务接管；调用方已把该 fd 从剩余表移除，
+    // 任务结束时 File drop 关闭，不会重复关闭。
+    let file = unsafe { std::fs::File::from_raw_fd(fd) };
+    let mut offset: u64 = 0;
+    let mut buffer = bytes::BytesMut::with_capacity(READ_CHUNK);
+    loop {
+        buffer.resize(READ_CHUNK, 0);
+        match file.read_at(&mut buffer[..], offset) {
+            Ok(0) => break,
+            Ok(n) => {
+                offset += n as u64;
+                buffer.truncate(n);
+                if tx.blocking_send(buffer.split().freeze()).is_err() {
+                    // 接收方（上传请求）已结束：正常提前退出
                     break;
                 }
             }
+            Err(e) => {
+                log::error!("send-files: pread 读取失败 file={label} offset={offset}: {e}");
+                let _ = read_error_tx.send(e);
+                break;
+            }
         }
-        log::debug!("send-files: pread 读取结束 file={label} 字节={offset}");
-    });
-    FileContent::Stream(rx)
+    }
+    log::debug!("send-files: pread 读取结束 file={label} 字节={offset}");
 }
 
 /// 上传单个文件（使用会话级取消令牌与会话级 HTTP 客户端）。
@@ -504,10 +528,14 @@ async fn upload_file_with_cancel(
     // fd ≥ 0：pread 从文件头读取（不依赖共享偏移，多个会话可并发复用同一暂存句柄）；
     // fd < 0：内容源为沙箱路径（协议兼容回退）
     #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
-    let content = if fd >= 0 {
-        fd_pread_content(fd, file_path)
+    let (content, read_error_rx) = if fd >= 0 {
+        let (read_error_tx, read_error_rx) = tokio::sync::oneshot::channel();
+        (
+            fd_pread_content(fd, file_path, read_error_tx),
+            Some(read_error_rx),
+        )
     } else {
-        FileContent::Path(std::path::PathBuf::from(file_path))
+        (FileContent::Path(std::path::PathBuf::from(file_path)), None)
     };
     #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
     let content = FileContent::Path(std::path::PathBuf::from(file_path));
@@ -554,20 +582,35 @@ async fn upload_file_with_cancel(
     #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
     let _ = remaining_fds;
 
-    let result = client
-        .upload(
-            target_protocol,
-            target_ip,
-            target_port,
-            public_key,
-            session_id,
-            file_id,
-            token,
-            content,
-            progress,
-            cancel,
-        )
-        .await;
+    let upload = client.upload(
+        target_protocol,
+        target_ip,
+        target_port,
+        public_key,
+        session_id,
+        file_id,
+        token,
+        content,
+        progress,
+        cancel,
+    );
+
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    let result = match read_error_rx {
+        Some(read_error_rx) => {
+            tokio::select! {
+                res = upload => res,
+                // 读取失败：丢弃上传 future，连接随之中止，避免接收方
+                // 把截断内容当作完整文件。
+                Ok(read_error) = read_error_rx => Err(ClientError::Other(
+                    anyhow::anyhow!("读取文件失败: {read_error}"),
+                )),
+            }
+        }
+        None => upload.await,
+    };
+    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    let result = upload.await;
 
     // 上传成功：推送 100% 进度 + 完成（关键事件用 send）
     match result {
@@ -797,6 +840,47 @@ pub async fn client_info(
 mod tests {
     use super::*;
     use crate::bridge::state::BridgeState;
+
+    /// 目录 fd 的 `read_at` 返回 EISDIR，用于覆盖读取失败的上报路径。
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_fd_read_error_is_reported() {
+        use std::os::fd::IntoRawFd;
+
+        let dir = std::fs::File::open(std::env::temp_dir()).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+        let (error_tx, error_rx) = tokio::sync::oneshot::channel();
+        read_fd_into_channel(dir.into_raw_fd(), "dir".to_string(), tx, error_tx);
+
+        let error = error_rx.await.expect("读取失败必须上报");
+        assert!(error.raw_os_error().is_some());
+    }
+
+    /// 正常读到 EOF 后关闭错误通道，上传侧不会收到误报。
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_fd_read_success_reports_no_error() {
+        use std::os::fd::IntoRawFd;
+
+        let path = std::env::temp_dir().join(format!("handysend-fd-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"hello").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        let (error_tx, error_rx) = tokio::sync::oneshot::channel();
+        let reader = tokio::task::spawn_blocking(move || {
+            read_fd_into_channel(file.into_raw_fd(), "test".to_string(), tx, error_tx);
+        });
+
+        let mut content = Vec::new();
+        while let Some(chunk) = rx.recv().await {
+            content.extend_from_slice(&chunk);
+        }
+        reader.await.unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(content, b"hello");
+        assert!(error_rx.await.is_err(), "正常结束不应上报读取错误");
+    }
 
     #[test]
     fn test_cancel_transfer_existing_session() {
