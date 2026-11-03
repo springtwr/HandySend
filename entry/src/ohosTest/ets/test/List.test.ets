@@ -22,6 +22,7 @@ import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
 import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
+import ReceiveInterruptedCleanupTest from './repository/ReceiveInterruptedCleanupTest.test'
 import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
 
 // ── model/ 迁移测试（原 Local Test）──
@@ -121,6 +122,7 @@ export default function testsuite() {
   ProgressLogicTest()
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
+  ReceiveInterruptedCleanupTest()
   ProtocolToggleSettingsTest()
 
   // ── model/ 迁移测试套件 ──

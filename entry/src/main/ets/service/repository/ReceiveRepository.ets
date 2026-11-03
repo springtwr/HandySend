@@ -88,6 +88,8 @@ let receiveSessionStates: Record<string, string> = {
 }; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）|'failed'（传输中断失败）
 let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> 是否已自动接收
 let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
+// 已补记「部分完成」接收历史的会话：取消/失败存在多条事件路径，避免历史重复写入
+let sessionPartialHistoryRecorded: Record<string, boolean> = {};
 
 // ── 一次性传输事件 ──
 let pendingRecvCompleted: string = '';
@@ -540,6 +542,7 @@ function pruneTerminalSessionState(): void {
   sessionCompletedCount = recordWithoutKeys(sessionCompletedCount, drop);
   sessionExported = recordWithoutKeys(sessionExported, drop);
   sessionFinished = recordWithoutKeys(sessionFinished, drop);
+  sessionPartialHistoryRecorded = recordWithoutKeys(sessionPartialHistoryRecorded, drop);
   sessionFileMap = recordWithoutKeys(sessionFileMap, drop);
   receiveSessionStates = recordWithoutKeys(receiveSessionStates, drop);
   receiveSessionAutoAccepted = recordWithoutKeys(receiveSessionAutoAccepted, drop);
@@ -1150,17 +1153,79 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
 
 // ── 会话清理 ──
 
+// 中断清理计划：已完成文件是完整交付物（须保留并补记历史），其余文件按半成品清理。
+export interface InterruptedReceiveCleanupPlan {
+  keepFileIds: Record<string, boolean>
+  completedEntries: Array<ReceivedFileEntry>
+}
+
+/**
+ * 规划接收会话中断（取消/失败）时的文件清理（纯函数）。
+ * completed 的键口径与 completedFileIds 一致（sessionId:fileId）；
+ * 只有该表中登记的文件才视为已完成，未登记的一律按半成品清理。
+ */
+export function planInterruptedReceiveCleanup(sessionId: string,
+  entries: Array<ReceivedFileEntry> | undefined,
+  completed: Record<string, boolean>): InterruptedReceiveCleanupPlan {
+  let keepFileIds: Record<string, boolean> = {};
+  let completedEntries: Array<ReceivedFileEntry> = [];
+  let plan: InterruptedReceiveCleanupPlan = {
+    keepFileIds: keepFileIds,
+    completedEntries: completedEntries
+  };
+  if (entries === undefined) {
+    return plan;
+  }
+  for (let i = 0; i < entries.length; i++) {
+    if (completed[sessionId + ':' + entries[i].fileId] === true) {
+      keepFileIds[entries[i].fileId] = true;
+      completedEntries.push(entries[i]);
+    }
+  }
+  return plan;
+}
+
+// 记录中断会话中已完成文件的历史（部分成功）：路径与元数据取自接收侧登记。
+function recordPartialReceiveHistory(sessionId: string,
+  completedEntries: Array<ReceivedFileEntry>): void {
+  let senderAlias: string = receiveSessionSenderAlias[sessionId] ?? '';
+  let pathMap: Record<string, string> = {};
+  for (let i = 0; i < completedEntries.length; i++) {
+    let entry: ReceivedFileEntry = completedEntries[i];
+    if (entry.filePath.length > 0) {
+      pathMap[entry.fileId] = entry.filePath;
+    }
+  }
+  recordReceiveHistory(sessionId, completedEntries, senderAlias, pathMap);
+}
+
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，
 // 含 Download/<包名>/ 普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
+// 已完成文件是会话的部分交付物：保留并补记接收历史，只有未完成文件按半成品删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
-  removeRecvTargetFiles(sessionId);
+  let plan: InterruptedReceiveCleanupPlan =
+    planInterruptedReceiveCleanup(sessionId, sessionFileMap[sessionId], completedFileIds);
+  if (plan.completedEntries.length > 0 && sessionPartialHistoryRecorded[sessionId] !== true) {
+    sessionPartialHistoryRecorded[sessionId] = true;
+    logger.info('会话中断时保留已完成文件 ' + plan.completedEntries.length + ' 个 会话=' + sessionId);
+    // 历史写入失败不得中断清理：已完成文件已落盘，半成品仍需删除
+    try {
+      recordPartialReceiveHistory(sessionId, plan.completedEntries);
+    } catch (e) {
+      logger.warn('补记部分完成接收历史失败：' + String(e));
+    }
+  }
+  removeRecvTargetFiles(sessionId, plan.keepFileIds);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   if (entries === undefined) {
     return;
   }
   let saveDir: string = getReceiveCacheDir();
   for (let i = 0; i < entries.length; i++) {
+    if (plan.keepFileIds[entries[i].fileId] === true) {
+      continue;
+    }
     let candidate: string = entries[i].filePath.length > 0 ? entries[i].filePath : saveDir + entries[i].fileName;
     try {
       fs.unlinkSync(candidate);
