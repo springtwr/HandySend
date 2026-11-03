@@ -251,42 +251,34 @@ export struct SendTargetZone {
   }
 
   /**
-   * 设备区空态卡片：外观与一条设备卡一致（card_background + radius.lg + 1vp 边框），
-   * 高度下限取一条设备卡的高度（统一空态面板高度 120 − 标准卡片上下内边距 2×20 = 80vp），
-   * 使有设备与无设备时目标区高度不跳变。
+   * 设备区空态卡片：沿用任务页、接收历史页的卡片模式（面板最小高度 120vp），
+   * 为整区提供明确边界；同页条目也是卡片，卡片外观（背景/圆角/边框）与设备卡同款。
    */
   @Builder
   emptyCard() {
-    Column() {
-      if (this.showCombinedEmptyState()) {
-        // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
-        // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启
-        EmptyState({
-          mainText: $r('app.string.send_no_source_title'),
-          actionText: $r('app.string.discovery_source_web'),
-          actionIcon: $r('sys.symbol.worldclock'),
-          onAction: () => {
-            this.onOpenWeb();
-          }
-        })
-          .id('send_no_source')
-      } else {
-        // 条件引导提示沿用警示语义色
-        EmptyState({
-          mainText: this.emptyText(),
-          hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
-          hintColor: $r('app.color.warning_orange')
-        })
-          .id('send_no_devices')
-      }
+    if (this.showCombinedEmptyState()) {
+      // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
+      // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启
+      EmptyState({
+        mainText: $r('app.string.send_no_source_title'),
+        actionText: $r('app.string.discovery_source_web'),
+        actionIcon: $r('sys.symbol.worldclock'),
+        onAction: () => {
+          this.onOpenWeb();
+        },
+        useCard: true
+      })
+        .id('send_no_source')
+    } else {
+      // 条件引导提示沿用警示语义色
+      EmptyState({
+        mainText: this.emptyText(),
+        hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
+        hintColor: $r('app.color.warning_orange'),
+        useCard: true
+      })
+        .id('send_no_devices')
     }
-    .width('100%')
-    .padding(DesignTokens.space.md)
-    .constraintSize({ minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2 })
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
   }
 
   @Builder
