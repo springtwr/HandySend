@@ -16,7 +16,7 @@
 |------|------|
 | `nativeInit(alias, deviceType)` / `nativeInitWithPersistedIdentity(alias, deviceType, persistDir)` | 初始化桥接层；后者从持久化目录加载 TLS 身份 |
 | `nativeStartDiscoveryV2(config)` | 完整配置启动 Rust discovery（discovery 统一入口） |
-| `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, graceMs)` | 分阶段发现（announce → probe known channels → grace 确认窗口 → 无确认时回退子网扫描；详见注 1） |
+| `nativeDiscoveryDiscoverStaged(channels, ips, port, protocol, altProtocol, graceMs, forceSubnetScan)` | 分阶段发现：announce → probe → grace → 双协议并行子网扫描（force 时必扫），返回确认数（注 1）|
 | `nativeDiscoveryScanSubnet(ip, port, protocol)` | 扫描子网 |
 | `nativeDiscoveryAddDevice(device)` | 将 server register 事件反馈给 discovery store |
 | `nativeDiscoverySetAnswerAnnouncements(answer)` | 控制 discovery 是否回应 announce |
@@ -69,7 +69,12 @@
 | `getNativeLibraryVersion()` | 获取原生库版本号 |
 | `getLocalSendProtocolVersion()` | 获取 LocalSend 协议版本 |
 
-> **注 1**：ArkTS 刷新时传默认接口 ips 以启用子网扫描兜底。
+> **注 1**：已知通道由收藏与当前已发现设备组成，ArkTS 同时传入默认接口 ips 以启用子网扫描兜底。
+> 探测已知通道只证明 HTTP 可达，不证明组播可用，因此只有组播 announce 应答或 server register
+> 回写带来的确认才会跳过子网扫描。兜底扫描同时覆盖 `protocol` 与 `altProtocol` 并各接口并行：
+> 局域网内可能只有一种协议的设备（官方 LocalSend 默认 https、HandySend 默认 http）。
+> `forceSubnetScan=true` 用于用户刷新与启动首扫：局域网内可能有不响应组播、只能通过 HTTP
+> 探测发现的设备（如 PC 防火墙拦截入站组播），此时任何组播/register 确认都不足以证明没有漏设备。
 >
 > **注 2**：`nativeMtaStartServer` 的配置可选 `textContent`（文本发送时随 `sendRequest` 携带
 > `catShareText`，缺省行为不变）；`files[]` 条目必带 `sizeBytes`（源文件大小，取自 ArkTS
@@ -94,7 +99,8 @@
 ### Discovery 说明
 
 announce 由 `nativeDiscoveryDiscoverStaged` 内含触发；ArkTS 刷新时向已知设备（收藏 + 已发现快照）
-逐个发送确认探测 + 组播广播，3 秒确认窗口结束后移除未回应的离线设备；扫描中再次点击刷新合并排队（最多补扫一次）。
+逐个发送确认探测 + 组播广播，并在用户刷新、启动首扫与网络变化后按 http/https 双协议强制扫描子网；
+扫描结束后移除本轮未回应的离线设备；扫描中再次点击刷新合并排队（最多补扫一次）。
 
 ## Rust NAPI 层
 
@@ -311,7 +317,11 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 ### Rust 核心发现功能
 
 - **UDP 组播**：`224.0.0.167:<配置端口>`（默认 `53317`；组播端口跟随"端口"设置，与官方 LocalSend 一致），支持 hot-restart（新实例自动停止旧实例）
-- **分阶段发现**（`discover_staged`）：announce → probe favorites → wait grace period → fallback subnet scan
+- **分阶段发现**：桥接层编排 announce → probe 已知通道 → 等待宽限期 → 子网扫描兜底
+  （主/备用协议并行）。只有组播 announce 应答或 server register 回写带来的确认才跳过
+  子网扫描：已知通道探测成功只能说明 HTTP 可达，组播仍可能被网络阻断。用户刷新、
+  启动首扫与网络变化后强制扫描子网（并跳过宽限期），覆盖完全不响应组播、只能 HTTP
+  探测的设备
 - **设备 store**：去重、多 channel 合并、ranked channels、超时清理
 - **事件推送**：设备变化经 mpsc channel 推送 `DeviceFound`（发现/更新）/`DeviceLost`（超时移除）事件
 

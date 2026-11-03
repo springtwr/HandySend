@@ -46,7 +46,8 @@ export const DEFAULT_PORT: number = 53317;
 
 export const DEFAULT_MULTICAST_GROUP: string = '224.0.0.167';
 
-export const DEFAULT_DISCOVERY_TIMEOUT: number = 1000;
+// 与上游 LocalSend 默认值一致：局域网探测超时，子网扫描的最坏耗时随该值同步缩短
+export const DEFAULT_DISCOVERY_TIMEOUT: number = 500;
 
 // 网络白/黑名单：空串仅指无持久化时的初始态，
 // 首次启动的动态默认内容见 SettingsRepository.ensureDefaultNetworkLists

@@ -552,8 +552,9 @@ export class SendViewModel {
     let parts: Array<string> = [];
     for (let i = 0; i < devices.length; i++) {
       let d = devices[i];
+      // protocol 参与签名：对端切换协议后若签名不变，条目对象不会重建，发送会继续用旧协议
       parts.push(`${d.fingerprint}|${d.alias}|${this.favoriteAliasFor(d.fingerprint)}|${d.ip}` +
-        `|${d.port}|${d.deviceModel}|${d.deviceType}|${d.version}`);
+        `|${d.port}|${d.protocol}|${d.deviceModel}|${d.deviceType}|${d.version}`);
     }
     return parts.join('\n');
   }

@@ -28,15 +28,17 @@ pub async fn start_discovery_v2(config: String) -> Result<()> {
     Ok(())
 }
 
-/// 分阶段发现设备。
+/// 分阶段发现设备，返回本次扫描期间确认的设备数。
 #[napi]
 pub async fn discovery_discover_staged(
     channels: String,
     interface_ips: String,
     port: u16,
     protocol: String,
+    alt_protocol: String,
     grace_ms: u32,
-) -> Result<()> {
+    force_subnet_scan: bool,
+) -> Result<u32> {
     let state = NapiEnv::global().state;
     discovery::discovery_discover_staged(
         state,
@@ -44,11 +46,12 @@ pub async fn discovery_discover_staged(
         &interface_ips,
         port,
         &protocol,
+        &alt_protocol,
         grace_ms,
+        force_subnet_scan,
     )
     .await
-    .map_err(|e| Error::from_reason(format!("Discovery discover_staged failed: {e:#}")))?;
-    Ok(())
+    .map_err(|e| Error::from_reason(format!("Discovery discover_staged failed: {e:#}")))
 }
 
 /// 扫描指定网卡的 /24 子网。

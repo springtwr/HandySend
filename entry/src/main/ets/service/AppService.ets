@@ -543,42 +543,56 @@ export function initAppService(context: common.UIAbilityContext): void {
 
     // 网络变化自动扫描的防抖计时器
     let autoScanTimer: number = -1;
+    // 本轮防抖窗口内是否包含连接建立/断开事件：合并事件时保留强制重启意图
+    let pendingForceRestart: boolean = false;
     // 热点状态变化后的补查计时器
     let hotspotRecheckTimer: number = -1;
 
     // 实际应用一次网络变化：刷新网卡/警告/网页地址，服务器运行中则重启发现
-    let applyNetworkChange = (): void => {
+    let applyNetworkChange = (force: boolean): void => {
       refreshWebNetwork();
       // 服务器运行中则重启发现（让组播 socket 适配新接口）
       if (isServerRunning()) {
-        restartDiscovery();
+        restartDiscovery(force);
       }
     };
 
     // 每次网络事件重置 1s 防抖计时器
-    let onNetworkChange = (): void => {
+    let onNetworkChange = (force: boolean): void => {
+      if (force) {
+        pendingForceRestart = true;
+      }
       if (autoScanTimer >= 0) {
         clearTimeout(autoScanTimer);
       }
       autoScanTimer = setTimeout(() => {
-        applyNetworkChange();
+        let forceRestart: boolean = pendingForceRestart;
+        pendingForceRestart = false;
+        applyNetworkChange(forceRestart);
         autoScanTimer = -1;
       }, 1000);
     };
 
-    netConn.on('netAvailable', () => {
-      onNetworkChange();
-    });
+    // 断线后的恢复需要强制重启（接口名与 IP 可能不变，但组播组成员关系已失效）；
+    // 启动时的 netAvailable 只是网络本就可用，不能强制重启，否则会打断启动时
+    // 刚发起的第一轮扫描，把设备发现推迟一整轮。
+    let networkWasLost: boolean = false;
     netConn.on('netLost', () => {
-      onNetworkChange();
+      networkWasLost = true;
+      onNetworkChange(true);
+    });
+    netConn.on('netAvailable', () => {
+      let recovered: boolean = networkWasLost;
+      networkWasLost = false;
+      onNetworkChange(recovered);
     });
     netConn.on('netCapabilitiesChange', () => {
-      onNetworkChange();
+      onNetworkChange(false);
     });
 
     netConn.register(() => {
       // 注册时的初始检查
-      onNetworkChange();
+      onNetworkChange(false);
     });
 
     // 热点（SoftAP）启停不产生 netAvailable/netLost 等连接网络事件，
@@ -586,14 +600,14 @@ export function initAppService(context: common.UIAbilityContext): void {
     try {
       wifiManager.on('hotspotStateChange', (state: number): void => {
         logger.debug('热点状态变化 state=' + state);
-        onNetworkChange();
+        onNetworkChange(false);
         // 热点接口的 IPv4 可能晚于状态事件就绪：稍后补查一次，避免地址短暂缺失后不再更新
         if (hotspotRecheckTimer >= 0) {
           clearTimeout(hotspotRecheckTimer);
         }
         hotspotRecheckTimer = setTimeout((): void => {
           hotspotRecheckTimer = -1;
-          applyNetworkChange();
+          applyNetworkChange(false);
         }, 3000);
       });
     } catch (e) {
