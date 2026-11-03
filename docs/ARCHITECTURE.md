@@ -63,7 +63,7 @@ HandySend/
 │   │   ├── hvigorfile.ts             # BuildRustNapi + RustTest 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫 + Rust 测试）
 │   │   ├── Index.ets                  # HAR 入口
 │   │   └── libs/                     # .so 产物（arm64-v8a / x86_64，gitignore，增量判断依据）
-│   └── third_party/localsend/        # Git submodule（fork 定制分支 harmony-web-ui，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
+│   └── third_party/localsend/        # Git submodule（fork 定制分支 main，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
 ├── build-profile.json5               # 全局构建配置（含签名，gitignore）
 └── oh-package.json5                  # 全局依赖
 ```

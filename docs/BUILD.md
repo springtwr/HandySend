@@ -59,9 +59,9 @@ cd HandySend
 git submodule update --init
 ```
 
-submodule 指向 fork 仓库 `springtwr/localsend_harmony-web-ui`，其默认分支即 HandySend 定制分支 `harmony-web-ui`（基于当前基线 + 鸿蒙化定制提交），主仓库 gitlink 与该分支保持同步，克隆后无需手动检出。
+submodule 指向 fork 仓库 `springtwr/localsend-ohos`，其默认分支即 HandySend 定制分支 `main`（基于当前基线 + 鸿蒙化定制提交），主仓库 gitlink 与该分支保持同步，克隆后无需手动检出。
 
-> - HandySend 的定制提交只推送到 `harmony-web-ui` 分支，不推送 localsend 上游
+> - HandySend 的定制提交只推送到 `main` 分支，不推送 localsend 上游
 > - 编译 `.so` 不需要 Flutter：`--init` 不递归初始化嵌套子模块（`support/submodules/flutter`，Flutter SDK 约 176MB，仅服务于上游 app），可避免拉取多余的 SDK
 
 > submodule 工作流（定制提交、worktree、上游升级）见 [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md)。

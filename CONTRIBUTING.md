@@ -30,7 +30,7 @@
 
 - 默认分支：`main`
 - 开发流程：从 `main` 切功能分支 → 开发 → 推送 → 提交 PR 到 `main`
-- **涉及 localsend submodule 定制的改动**：需先在 fork 定制仓库的 `harmony-web-ui` 分支提交并 push，
+- **涉及 localsend submodule 定制的改动**：需先在 fork 定制仓库的 `main` 分支提交并 push，
   主仓库 PR 仅更新 submodule gitlink。详见
   [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) §3 场景 B
 
