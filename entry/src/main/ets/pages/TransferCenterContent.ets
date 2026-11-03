@@ -22,6 +22,9 @@ export struct TransferCenterContent {
   // 多选批量删除：上抛壳层弹二次确认弹窗（内容组件不持有弹窗本体）
   @Event onDeleteSelected: () => void = () => {
   }
+  // 首个可见行下标上抛：供壳层判断最新任务行是否仍在视口内
+  @Event onFirstVisibleIndexChange: (index: number) => void = (_index: number) => {
+  }
 
   private openSession(sessionId: string): void {
     let params: Record<string, string> = { 'sessionId': sessionId };
@@ -43,6 +46,9 @@ export struct TransferCenterContent {
         },
         onDeleteSelected: () => {
           this.onDeleteSelected();
+        },
+        onFirstVisibleIndexChange: (index: number) => {
+          this.onFirstVisibleIndexChange(index);
         }
       })
         .layoutWeight(1)

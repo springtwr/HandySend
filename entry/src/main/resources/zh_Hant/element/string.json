@@ -849,6 +849,34 @@
       "value": "對方忙，請稍後再試"
     },
     {
+      "name": "send_started_toast",
+      "value": "已開始傳送至 %s"
+    },
+    {
+      "name": "send_failure_card_title",
+      "value": "無法傳送至「%s」"
+    },
+    {
+      "name": "send_failure_card_title_multi",
+      "value": "%s 個任務失敗"
+    },
+    {
+      "name": "send_failure_card_mixed",
+      "value": "各裝置失敗原因不同，請到任務頁查看"
+    },
+    {
+      "name": "send_failure_card_action_tasks",
+      "value": "查看任務"
+    },
+    {
+      "name": "send_failure_card_action_detail",
+      "value": "查看詳情"
+    },
+    {
+      "name": "send_protocol_block_title",
+      "value": "無法加密傳送至「%s」"
+    },
+    {
       "name": "debug_log_label",
       "value": "記錄詳細日誌"
     },

@@ -116,6 +116,8 @@ struct MainTabFloating {
   // 各 Tab 的真实滚动控制器（由内容组件接收并使用，主入口据此绑定导航组件与页签控制器）
   private sendScroller: Scroller = new Scroller()
   private transferScroller: Scroller = new Scroller()
+  // 任务列表首个可见行下标（0 = 最新任务行仍在视口内）：失败浮卡的抑制判定
+  private taskFirstVisibleIndex: number = 0
   private settingsScroller: Scroller = new Scroller()
   // 各 Tab 的滚动位置：页签切换前保存、切换后恢复
   private tabScrollOffsets: number[] = [0, 0, 0]
@@ -827,6 +829,21 @@ struct MainTabFloating {
   }
 
   /**
+   * 跳到任务区并把最新任务行带进视口：清空路由栈回到根、切到任务页签，
+   * 且不沿用旧的滚动位置——失败浮卡的动作必须让用户看到刚失败的那一行。
+   */
+  private focusTaskCenterTop(): void {
+    this.pathStack.clear(false);
+    // 页签切换的滚动恢复读取该值：置 0 才能在动画开始时落到顶部
+    this.tabScrollOffsets[1] = 0;
+    this.switchToTab(1);
+    // 已在该页签时 switchToTab 提前返回，直接滚到顶部
+    if (this.currentTabIndex === 1) {
+      this.tabScrollerAt(1).scrollTo({ xOffset: 0, yOffset: 0 });
+    }
+  }
+
+  /**
    * 切换主页页签：与底部页签栏切换行为一致——先保存当前页签滚动位置，
    * 再切换页签控制器索引（切换动画开始时由 onAnimationStart 恢复目标页签滚动位置），
    * 并同步互传发现扫描的可见性。宽屏侧边栏选中与发送页「去设置」入口共用。
@@ -1137,6 +1154,30 @@ struct MainTabFloating {
             onOpenSettings: () => {
               // 仅切换页签，不直接改动开关（不存在一键启用捷径）
               this.switchToTab(2);
+            },
+            onOpenTaskCenter: () => {
+              // 浮卡可能浮在子页面之上：先回到根再切任务页签，并把最新任务行带进视口
+              this.focusTaskCenterTop();
+            },
+            onOpenSessionDetail: (sessionId: string) => {
+              // 与「查看任务」同源：先回根并切到任务页签，再叠详情页，
+              // 使返回时落在任务列表顶部而不是发送页；clear(false) 避免「弹出栈 + 压入」两段动画
+              this.focusTaskCenterTop();
+              let params: Record<string, string> = { 'sessionId': sessionId };
+              this.pathStack.pushPathByName('SessionDetailPage', params);
+            },
+            shouldShowSendFailureCard: (): boolean => {
+              // 后台：结果由系统通知与任务列表承载，回前台不再补一张过期的卡
+              if (!isAppForeground()) {
+                return false;
+              }
+              // 仅「任务列表正可见且最新任务行仍在视口内」才抑制：失败行就在第一行。
+              // 已滚动到下一条之后、或停在任意子页面时照常弹卡
+              let listVisible: boolean = this.currentTabIndex === 1 && this.pathStack.size() === 0;
+              if (!listVisible) {
+                return true;
+              }
+              return this.taskFirstVisibleIndex > 0;
             }
           })
             .width('100%')
@@ -1191,6 +1232,9 @@ struct MainTabFloating {
             },
             onDeleteSelected: () => {
               this.openDeleteSelectedConfirmDialog();
+            },
+            onFirstVisibleIndexChange: (index: number) => {
+              this.taskFirstVisibleIndex = index;
             }
           })
             .width('100%')

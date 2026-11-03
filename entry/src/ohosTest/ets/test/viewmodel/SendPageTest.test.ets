@@ -15,13 +15,18 @@ import {
   registerMethod,
   clearMethods
 } from '../../../../main/ets/service/transfer/TransferMethodRegistry'
-import { DiscoveredDevice, FavoriteDevice, StagedFile } from '../../../../main/ets/model/Types'
-import { SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
+import { DiscoveredDevice, FavoriteDevice, SendFileItem, StagedFile } from '../../../../main/ets/model/Types'
+import { SessionFileDescriptor, SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
 import { DeviceTypePartition } from '../../../../main/ets/model/SendDeviceGrouping'
 import {
   beginLocalSendSession,
   finishLocalSend
 } from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
+import {
+  MtaSendTerminal,
+  beginMtaSendSession,
+  finishMtaSendSession
+} from '../../../../main/ets/service/transfer/adapters/MtaSendAdapter'
 import {
   getAllSessions,
   getSession,
@@ -31,6 +36,7 @@ import {
   SendInitiateResult,
   SendViewModel,
   decideSendInitiateResult,
+  pickNewSendFailure,
   pruneMissingManualTextFiles,
   filterDevicesByProtocolToggles,
   filterFavoritesByProtocolToggles,
@@ -153,6 +159,91 @@ export default function SendPageTest() {
       expect(sessionB !== undefined ? sessionB.stage : SessionStage.active).assertEqual(SessionStage.succeeded)
       let sessionA = getSession(a)
       expect(sessionA !== undefined ? sessionA.stage : SessionStage.active).assertEqual(SessionStage.active)
+      resetRegistry()
+    })
+
+    it('sendFailure_picksOnlySessionCreatedByThisClick', 0, () => {
+      resetRegistry()
+      let target = device('A', '10.0.0.7')
+      let files: Array<SendFileItem> = [{
+        fileId: 'f1',
+        filePath: '/a',
+        fileName: 'a',
+        fileType: '',
+        size: 10
+      }]
+      // 历史失败：不属于本次点击，不得被当成本次结果
+      let oldId = beginLocalSendSession('old_fail', target, files)
+      finishLocalSend(oldId, false, '历史失败', 'finishedWithErrors')
+      let beforeIds: Array<string> = [oldId]
+      // 本次点击新建并成功：不提示
+      let okId = beginLocalSendSession('new_ok', target, files)
+      finishLocalSend(okId, true)
+      expect(pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.7') === undefined).assertTrue()
+      // 本次点击新建并失败：提示内容指向新会话，原因取会话记录的本地化错误信息
+      let failId = beginLocalSendSession('new_fail', target, files)
+      finishLocalSend(failId, false, '接收端不支持加密传输', 'finishedWithErrors')
+      let notice = pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.7')
+      expect(notice !== undefined ? notice.sessionId : '').assertEqual(failId)
+      expect(notice !== undefined ? notice.message : '').assertEqual('接收端不支持加密传输')
+      expect(notice !== undefined ? notice.alias : '').assertEqual('A')
+      // 仅统计目标设备：其它地址的失败不参与
+      expect(pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.8') === undefined).assertTrue()
+      // 原因缺失时消息为空：由浮卡只展示标题，不编造文案
+      let silentId = beginLocalSendSession('new_silent', target, files)
+      finishLocalSend(silentId, false)
+      let silent = pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.7')
+      expect(silent !== undefined ? silent.message : 'x').assertEqual('')
+      // MTA 会话不携带对端 IP：空 IP 表示按协议整体取最新一条失败
+      let mtaBefore: Array<string> = []
+      let existing = getAllSessions()
+      for (let i = 0; i < existing.length; i++) {
+        mtaBefore.push(existing[i].id)
+      }
+      let descriptors: Array<SessionFileDescriptor> = [{
+        fileId: 'm1',
+        fileName: 'm',
+        fileType: '',
+        totalBytes: 1
+      }]
+      let mtaId = beginMtaSendSession('mta_task', 'MTA 设备', 'mobile', 'M', '', descriptors)
+      finishMtaSendSession(mtaId, MtaSendTerminal.failed, '组网失败')
+      let mtaNotice = pickNewSendFailure(mtaBefore, getAllSessions(), '')
+      expect(mtaNotice !== undefined ? mtaNotice.sessionId : '').assertEqual(mtaId)
+      expect(mtaNotice !== undefined ? mtaNotice.message : '').assertEqual('组网失败')
+      resetRegistry()
+    })
+
+    it('mtaSendOutcome_settlesOnTerminalState', 0, () => {
+      resetRegistry()
+      let viewModel = new SendViewModel()
+      let descriptors: Array<SessionFileDescriptor> = [{
+        fileId: 'm1',
+        fileName: 'm',
+        fileType: '',
+        totalBytes: 1
+      }]
+      let before: Array<string> = viewModel.mtaSendSessionIds()
+      let failId = beginMtaSendSession('mta_fail', 'MTA 设备', 'mobile', 'M', '', descriptors)
+      // 会话仍在进行：未结算，不能提前下结论
+      expect(viewModel.mtaSendOutcome(before).settled).assertFalse()
+      // 对方拒收：拒收属于需要提示的终态
+      finishMtaSendSession(failId, MtaSendTerminal.rejected, '对方拒绝接收')
+      let rejected = viewModel.mtaSendOutcome(before)
+      expect(rejected.settled).assertTrue()
+      expect(rejected.failure !== undefined ? rejected.failure.message : '')
+        .assertEqual('对方拒绝接收')
+      // 成功：结算但不产生失败摘要
+      let beforeOk: Array<string> = viewModel.mtaSendSessionIds()
+      let okId = beginMtaSendSession('mta_ok', 'MTA 设备', 'mobile', 'M', '', descriptors)
+      finishMtaSendSession(okId, MtaSendTerminal.success)
+      let succeeded = viewModel.mtaSendOutcome(beforeOk)
+      expect(succeeded.settled).assertTrue()
+      expect(succeeded.failure === undefined).assertTrue()
+      // 没有新建会话且发送已不活跃：视为结算，不提示
+      let idle = viewModel.mtaSendOutcome(['no-such-session'])
+      expect(idle.settled).assertTrue()
+      expect(idle.failure === undefined).assertTrue()
       resetRegistry()
     })
 

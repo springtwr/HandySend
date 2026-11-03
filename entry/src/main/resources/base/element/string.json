@@ -849,6 +849,34 @@
       "value": "Recipient is busy, please try again later"
     },
     {
+      "name": "send_started_toast",
+      "value": "Sending to %s"
+    },
+    {
+      "name": "send_failure_card_title",
+      "value": "Cannot send to \"%s\""
+    },
+    {
+      "name": "send_failure_card_title_multi",
+      "value": "%s tasks failed"
+    },
+    {
+      "name": "send_failure_card_mixed",
+      "value": "The devices failed for different reasons. See the task page for details."
+    },
+    {
+      "name": "send_failure_card_action_tasks",
+      "value": "View tasks"
+    },
+    {
+      "name": "send_failure_card_action_detail",
+      "value": "View details"
+    },
+    {
+      "name": "send_protocol_block_title",
+      "value": "Cannot send to \"%s\" with encryption"
+    },
+    {
       "name": "debug_log_label",
       "value": "Detailed logging"
     },

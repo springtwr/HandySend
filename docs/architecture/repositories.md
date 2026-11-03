@@ -228,6 +228,9 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 3. 发送端禁用 HTTPS + 接收端支持 HTTPS → 升级使用 HTTPS（接收端服务器只监听 HTTPS，明文连接无法建立）
 4. 发送端禁用 HTTPS + 接收端不支持 HTTPS → 使用 HTTP
 
+- 点击设备时前置拦截：发送页在建立会话前用同一函数判定（`SendContent.isProtocolBlocked`），命中第 2 条时不建任务、
+  改为弹说明对话框（关闭本机加密或让对方启用加密），不在本页改动全局开关；发送链路内的拒绝判定保留为防御纵深
+
 `senderProtocol`：接收端通过 `cert_fingerprint` 是否存在判断发送端协议（有证书→HTTPS，无证书→HTTP），存入 `PendingRequest.senderProtocol`，用于接收对话框验证按钮状态。
 
 ## 证书固定
