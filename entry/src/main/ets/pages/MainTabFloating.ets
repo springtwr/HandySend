@@ -55,15 +55,17 @@ import {
   unsubscribe,
   consumePendingNavigation,
   refreshWifiWarning,
+  PendingNavigation,
 } from '../service/AppService';
 import { isAppForeground } from '../service/repository/AppCore';
-import { NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
+import { NAV_TARGET_SESSION_DETAIL, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import {
   isSaveToGallery, getLocalSendEnabled, getMtaEnabled,
   getWebSendAllowed, getNotifiedProtocolSignature, setNotifiedProtocolSignature
 } from '../service/repository/SettingsRepository';
 import {
-  querySessions, getSession, subscribeSessions, unsubscribeSessions, declineSession
+  querySessions, getSession, getPendingSessionIds, hasSessionOrHistory, subscribeSessions,
+  unsubscribeSessions, declineSession
 } from '../service/transfer/TransferSessionRegistry';
 import {
   SessionDataFlow,
@@ -147,6 +149,8 @@ struct MainTabFloating {
   private newTransferDialogSessionId: string = ''
   // 新传输提示弹窗正文（打开时构造，关闭时清空）
   @Local private newTransferDialogMessage: string = ''
+  // 点击通知进入前台时已存在的待确认会话：通知已承担提醒，本次前台不再补弹这些会话的提示
+  private suppressedTransferPromptSessionIds: Array<string> = []
   // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
   private navBarVisible: boolean = true
   // Navigation 根容器路由栈
@@ -181,9 +185,12 @@ struct MainTabFloating {
     }
   }
 
-  // 通知深链回调：热启动（Ability 存活）时经变更总线送达，消费并执行导航
+  // 变更总线回调：通知深链（热启动经变更总线送达）与回前台补弹共用。
+  // 真机实测 onPageShow 可能早于 EntryAbility.onForeground（页面先显示、前台标志后更新），
+  // 此时 onPageShow 内的补弹会因非前台被跳过；onForeground 末尾的 triggerRefresh 再经此处兜底一次。
   private navigationCallback: () => void = (): void => {
     this.handlePendingNavigation();
+    this.tryOpenNewTransferDialog();
   }
 
   aboutToAppear(): void {
@@ -340,22 +347,41 @@ struct MainTabFloating {
   }
 
   /**
-   * 消费通知深链信号：命中「任务中心」时先清空路由栈回到根（清掉已推入的子页面），
-   * 再切到任务页签，保证点击通知回前台后展示任务中心列表而非退出时所在页面。
+   * 消费通知深链信号：单任务通知直达该任务详情，其余（多条合并 / 实况进度 / 保活）回任务中心。
+   * 两种落点都复用失败浮卡的跳转口径——回根、任务页签滚动归零并切到任务页签，
+   * 保证返回时落在任务列表顶部而不是退出时所在页面或旧滚动位置；
+   * 从通知进入前台时，点击通知那一刻已存在的待确认请求不再补弹（见 tryOpenNewTransferDialog）；
    * 信号为一次性，消费即清空，重复触发无副作用。
    */
   private handlePendingNavigation(): void {
-    let target: string = consumePendingNavigation();
-    if (target !== NAV_TARGET_TRANSFER_CENTER) {
+    let pending: PendingNavigation = consumePendingNavigation();
+    // 通知进入前台（任务中心或详情）：点击时已存在的待确认会话由通知承担提醒，
+    // 记录后跳过本次前台的补弹；点击之后新到达的请求不在集合内，仍正常提示
+    if (pending.target.length > 0) {
+      this.suppressedTransferPromptSessionIds = getPendingSessionIds();
+    }
+    if (pending.target === NAV_TARGET_SESSION_DETAIL && pending.sessionId.length > 0) {
+      if (!hasSessionOrHistory(pending.sessionId)) {
+        // 会话与历史都不存在（如进程重启后残留的待确认通知）：退回任务中心
+        this.focusTaskCenterTop();
+        return;
+      }
+      // 与失败浮卡的「查看详情」同源：先回根、切任务页签并归零滚动，再压入该会话详情
+      this.focusTaskCenterTop();
+      let params: Record<string, string> = { 'sessionId': pending.sessionId };
+      this.pathStack.pushPathByName('SessionDetailPage', params);
       return;
     }
-    this.pathStack.clear();
-    this.switchToTab(1);
+    if (pending.target !== NAV_TARGET_TRANSFER_CENTER && pending.target !== NAV_TARGET_SESSION_DETAIL) {
+      return;
+    }
+    // 任务中心；详情目标缺少会话标识时同样回到任务中心（与解析侧口径一致）
+    this.focusTaskCenterTop();
   }
 
   /**
    * 收到新的接收请求（新的待确认会话）：在应用前台任意页面之上弹出新传输提示弹窗。
-   * 消费 autoOpenSessionId 信号；非前台不消费（保留待回前台补弹，见 onPageShow）；
+   * 消费 autoOpenSessionId 信号；非前台不消费（保留待回前台补弹，见 onPageShow 与变更总线回调）；
    * 已有弹窗在场时不消费（保留信号，弹窗关闭后再试），保证同一时刻仅一个弹窗。
    */
   @Monitor('viewModel.autoOpenSessionId')
@@ -366,6 +392,8 @@ struct MainTabFloating {
   /**
    * 尝试弹出新传输提示弹窗：仅在应用前台、存在待提示信号且当前无弹窗在场时打开；
    * 信号在打开前消费（会话已消失时同样消费，避免残留重复触发）。
+   * 从通知进入前台时，点击通知那一刻已存在的待确认请求只消费信号、不再叠加提示弹窗；
+   * 点击之后新到达的请求仍正常提示。
    */
   private tryOpenNewTransferDialog(): void {
     if (!isAppForeground()) {
@@ -379,13 +407,21 @@ struct MainTabFloating {
       return;
     }
     this.viewModel.autoOpenSessionId = '';
+    let suppressed: boolean = this.suppressedTransferPromptSessionIds.indexOf(sessionId) >= 0;
+    // 提示槽位一次只处理一个会话：通知进入时的旧集合到此失效，后续新请求仍照常提示
+    this.suppressedTransferPromptSessionIds = [];
+    if (suppressed) {
+      logger.debug('通知进入前台，跳过本次补弹 session=' + sessionId);
+      return;
+    }
     let session = getSession(sessionId);
-    if (session === undefined) {
-      // 会话已消失（被处理/回收）：仅消费信号，不弹窗
+    if (session === undefined || session.stage !== SessionStage.awaitingConfirmation) {
+      // 会话已消失或已不处于待确认（被处理 / 超时 / 已开始）：仅消费信号，不弹窗
       return;
     }
     this.newTransferDialogSessionId = sessionId;
     this.newTransferDialogMessage = this.buildNewTransferMessage(session);
+    logger.debug('补弹新传输提示 session=' + sessionId);
     this.openNewTransferDialog();
   }
 
@@ -718,7 +754,8 @@ struct MainTabFloating {
     this.updateMtaScanByVisibility();
     // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
     this.handlePendingNavigation();
-    // 覆盖「待确认请求在后台到达、回到前台」的场景：补弹一次（非前台时未消费信号）
+    // 覆盖「待确认请求在后台到达、回到前台」的场景：补弹一次（非前台时未消费信号）。
+    // 真机实测 onPageShow 可能早于 onForeground，这里被前台判断拦下时由变更总线回调兜底重试。
     this.tryOpenNewTransferDialog();
     // 网页访问提示同样在回到前台时补弹
   }
@@ -830,7 +867,7 @@ struct MainTabFloating {
 
   /**
    * 跳到任务区并把最新任务行带进视口：清空路由栈回到根、切到任务页签，
-   * 且不沿用旧的滚动位置——失败浮卡的动作必须让用户看到刚失败的那一行。
+   * 且不沿用旧的滚动位置——失败浮卡与单任务通知的详情落点都要求目标行/返回落点可预期。
    */
   private focusTaskCenterTop(): void {
     this.pathStack.clear(false);

@@ -684,18 +684,27 @@ export async function resetTlsCertificate(): Promise<NativeSecurityContext> {
 
 // ── 通知深链信号（进程内一次性） ──
 
-// 待消费的导航目标：通知点击意图由 EntryAbility 解析 want 后置位，主页面消费即清空。
-let pendingNavigation: string = '';
+/** 待消费的导航意图：目标 + 会话标识（仅任务详情页非空，其余为空串）。 */
+export interface PendingNavigation {
+  target: string
+  sessionId: string
+}
+
+// 空导航意图（只读）：消费后复用同一实例，避免高频变更总线上重复分配。
+const EMPTY_PENDING_NAVIGATION: PendingNavigation = { target: '', sessionId: '' };
+
+// 待消费的导航意图：通知点击意图由 EntryAbility 解析 want 后置位，主页面消费即清空。
+let pendingNavigation: PendingNavigation = EMPTY_PENDING_NAVIGATION;
 
 /** 置位深链导航信号并触发变更总线（幂等：重复设置同值安全）。 */
-export function setPendingNavigation(target: string): void {
-  pendingNavigation = target;
+export function setPendingNavigation(target: string, sessionId: string = ''): void {
+  pendingNavigation = { target: target, sessionId: sessionId };
   triggerRefresh();
 }
 
 /** 读取并清空深链信号（一次性消费）。 */
-export function consumePendingNavigation(): string {
-  let target: string = pendingNavigation;
-  pendingNavigation = '';
-  return target;
+export function consumePendingNavigation(): PendingNavigation {
+  let pending: PendingNavigation = pendingNavigation;
+  pendingNavigation = EMPTY_PENDING_NAVIGATION;
+  return pending;
 }

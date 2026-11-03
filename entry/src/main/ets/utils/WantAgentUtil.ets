@@ -1,7 +1,7 @@
 /**
  * WantAgentUtil.ets — 可点击回前台 WantAgent 共用构建工具
  *
- * 后台实况通知（BackgroundTransferService）与后台关注通知（BackgroundAttentionNotifier）
+ * 后台传输通知（BackgroundTransferService）与后台关注通知（BackgroundAttentionNotifier）
  * 的点击行为一致：拉起主 Ability 并置于前台，可附带一次性导航意图。此处收敛唯一的构建实现。
  */
 
@@ -10,19 +10,29 @@ import { common, wantAgent, WantAgent } from '@kit.AbilityKit';
 /** 通知深链参数键：承载点击通知后应到达的导航目标。 */
 export const NAVIGATION_PARAM_KEY: string = 'handysend.navigate';
 
+/** 通知深链参数键：任务详情页的目标会话标识（仅 `sessionDetail` 目标携带）。 */
+export const NAVIGATION_SESSION_PARAM_KEY: string = 'handysend.sessionId';
+
 /** 深链导航目标：任务中心列表。 */
 export const NAV_TARGET_TRANSFER_CENTER: string = 'transferCenter';
+
+/** 深链导航目标：任务详情页（配合会话标识直达单个任务）。 */
+export const NAV_TARGET_SESSION_DETAIL: string = 'sessionDetail';
 
 /**
  * 构建点击通知回前台的 WantAgent（拉起主 Ability 并置前）。
  * @param navigationTarget 可选深链目标：非空时写入 Want 参数，供 EntryAbility 解析后置位导航信号；
  *   缺省（不传）时不携带任何参数，保持既有无参调用兼容。
+ * @param sessionId 目标为任务详情页时的会话标识：空串或缺省时不写入该参数，由 EntryAbility 回退任务中心。
  */
 export function buildBackToFrontWantAgent(context: common.UIAbilityContext,
-  navigationTarget?: string): Promise<WantAgent> {
+  navigationTarget?: string, sessionId?: string): Promise<WantAgent> {
   let parameters: Record<string, Object> = {};
   if (navigationTarget !== undefined) {
     parameters[NAVIGATION_PARAM_KEY] = navigationTarget;
+  }
+  if (navigationTarget === NAV_TARGET_SESSION_DETAIL && sessionId !== undefined && sessionId.length > 0) {
+    parameters[NAVIGATION_SESSION_PARAM_KEY] = sessionId;
   }
   let info: wantAgent.WantAgentInfo = {
     wants: [{

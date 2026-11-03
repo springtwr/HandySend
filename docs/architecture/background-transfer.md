@@ -64,26 +64,44 @@
 `entry/src/main/ets/service/BackgroundAttentionNotifier.ets`
 
 - 应用处于后台时，把需要用户关注的事件收敛为**一条**系统通知（独立通知 id，与实况进度通知区分）；
-  点击携带「任务中心」深链意图（见 §3）
+  单条待确认点击直达该请求详情，多条合并点击回任务中心（见 §3）
 - **只展示待确认请求**：LocalSend / MTA 接收、Web 上传；
-  数量取统一注册表的待确认会话计数（`getPendingCount`），`%d` 为等待确认的请求数
+  数量取统一注册表的待确认会话标识数（`getPendingSessionIds`），`%d` 为等待确认的请求数
 - 网页访问/网页下载不进入该通知：访问只写诊断日志，并通过 `noteWebAccess` 续期网页服务的有界保活；
   下载批次由后台传输实况通知承载（与上传/其它传输共用的聚合通知）
 - **发布/撤回驱动**：注册表变更订阅 + 退后台补发（前台期间已存在的待确认请求在 `onBackground` 补齐）；
   回到前台（`onForeground`）撤回；无待确认即撤回
-- **去重**：按「类别 + 数量」签名判重，同一状态不重复 publish；
-  撤回与在途发布之间用代际号兜底回收，避免通知滞留
-- 请求本身仍是注册表中的待确认会话，用户回到前台后在任务页处理
+- **去重**：按「类别 + 数量 + 单条时的会话标识」签名判重，同一状态不重复 publish；
+  数量不变但换成另一条请求时也会重发，避免点击目标仍指向已处理掉的旧请求
+- **发布串行**：连续变化合并为一次排队，轮到本次时按最新注册表状态重算，
+  避免较早的发布晚于较新状态完成而覆盖通知内容与点击目标；
+  撤回与在途发布之间用代际号兜底回收，取消动作串行执行并在发布前等待完成，避免迟到的取消误删新通知
+- 请求本身仍是注册表中的待确认会话，用户回到前台后可在任务页或直达的详情页处理
 
-## 3. 通知点击深链（回任务中心）
+## 3. 通知点击深链
 
-进度通知（§1）与后台关注通知（§2）的点击行为一致：拉起主 Ability 并置于前台，且携带「任务中心」深链意图。
+通知点击统一拉起主 Ability 并置于前台，按「单任务进详情、多任务进任务中心」选择落点，
+口径与发送失败浮卡一致：
 
-- **意图载体**：`utils/WantAgentUtil.buildBackToFrontWantAgent(context, navigationTarget?)` 在 `Want.parameters` 写入
-  `handysend.navigate`（值 `transferCenter`）；缺省不传目标时保持既有无参调用兼容
-- **解析**：`EntryAbility.onCreate`（冷启动）/ `onNewWant`（热启动）解析 `want.parameters['handysend.navigate']`，命中即
-  `AppService.setPendingNavigation('transferCenter')`（一次性信号，置位时触发变更总线）；与分享 want 解析链路互不干扰
-- **消费**：`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费该信号，消费时先 `pathStack.clear()`
-  （回到根、清掉已推入的子页面）再 `switchToTab(1)` 切到任务页签，保证从通知进入后展示任务中心列表而非退出时所在页面；
+| 通知 | 落点 |
+|------|------|
+| 终态普通通知（§1） | 本轮仅 1 个任务 → 该任务详情；2 个及以上 → 任务中心 |
+| 后台关注通知（§2） | 1 条待确认 → 该请求详情（进页即可接受/拒绝）；多条 → 任务中心 |
+| 实况进度通知 / 空闲保活通知 | 任务中心 |
+
+实况进度通知的点击目标在申请长时任务时经 `ContinuousTaskRequest.wantAgent` 一次性固定，进度帧无法改写；
+后续新会话加入或原会话结束后目标会过期，故保持任务中心，不随单/多任务变化。
+
+- **意图载体**：`utils/WantAgentUtil.buildBackToFrontWantAgent(context, navigationTarget?, sessionId?)`
+  在 `Want.parameters` 写入 `handysend.navigate`（`transferCenter` / `sessionDetail`）；
+  目标为 `sessionDetail` 且会话标识非空时另写 `handysend.sessionId`；缺省不传目标时保持既有无参调用兼容
+- **解析**：`EntryAbility.onCreate`（冷启动）/ `onNewWant`（热启动）解析 `want.parameters`，
+  `transferCenter` 置位任务中心信号；`sessionDetail` 携带会话标识时置位详情信号，标识缺失则退回任务中心；
+  信号为 `AppService` 的一次性深链（置位时触发变更总线），与分享 want 解析链路互不干扰
+- **消费**：`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费该信号；
+  两种落点都复用失败浮卡的跳转口径——先 `pathStack.clear(false)` 回到根、任务页签滚动位置归零并切到任务页签，
+  详情落点再压入 `SessionDetailPage`，保证返回时落在任务列表而不是退出时所在页面；
+  会话已被回收时详情页按统一标识回退历史只读摘要；两者都不存在（如进程重启后残留的待确认通知）则退回任务中心；
+  从通知进入前台时（不论落到任务中心还是详情），点击通知那一刻已存在的待确认请求不再补弹，
+  点击之后新到达的请求仍正常提示；
   信号为一次性，消费即清空，不产生重复跳转或页面叠加
-- **落点边界**：通知一律进任务中心列表，不自动进入具体会话详情

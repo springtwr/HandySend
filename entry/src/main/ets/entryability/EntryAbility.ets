@@ -36,7 +36,8 @@ import {
   flushDiagnosticLog,
   markDiagnosticSessionEnd
 } from '../service/log/DiagnosticLogService';
-import { NAVIGATION_PARAM_KEY, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
+import { NAVIGATION_PARAM_KEY, NAVIGATION_SESSION_PARAM_KEY, NAV_TARGET_SESSION_DETAIL,
+  NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
@@ -263,8 +264,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
-   * 解析通知点击带来的深链意图：want 参数命中「任务中心」时置位一次性导航信号
+   * 解析通知点击带来的深链意图：命中「任务中心」或「任务详情」时置位一次性导航信号
    * （冷启动经 onCreate、热启动经 onNewWant 两条路径统一收口）。
+   * 详情意图缺少会话标识时退回任务中心，避免进入无内容的详情页。
    * 与分享 want（handleShareWant）解析链路相互独立，互不干扰。
    */
   private handleNavigationWant(want: Want): void {
@@ -275,7 +277,17 @@ export default class EntryAbility extends UIAbility {
     if (target === undefined || typeof target !== 'string') {
       return;
     }
-    if ((target as string) === NAV_TARGET_TRANSFER_CENTER) {
+    let targetValue: string = target;
+    if (targetValue === NAV_TARGET_SESSION_DETAIL) {
+      let sessionId: Object | undefined = want.parameters[NAVIGATION_SESSION_PARAM_KEY];
+      if (sessionId !== undefined && typeof sessionId === 'string' && sessionId.length > 0) {
+        setPendingNavigation(NAV_TARGET_SESSION_DETAIL, sessionId);
+        return;
+      }
+      setPendingNavigation(NAV_TARGET_TRANSFER_CENTER);
+      return;
+    }
+    if (targetValue === NAV_TARGET_TRANSFER_CENTER) {
       setPendingNavigation(NAV_TARGET_TRANSFER_CENTER);
     }
   }

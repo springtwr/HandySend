@@ -36,7 +36,11 @@ import {
 } from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { buildBackToFrontWantAgent, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
+import {
+  buildBackToFrontWantAgent,
+  NAV_TARGET_SESSION_DETAIL,
+  NAV_TARGET_TRANSFER_CENTER
+} from '../utils/WantAgentUtil';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:BackgroundTransferService', '后台传输');
 
@@ -478,7 +482,11 @@ function terminalTitleRes(kind: TransferTerminalKind): number {
   return $r('app.string.bg_transfer_title_done').id;
 }
 
-/** 发布终态普通通知（独立 id，可震动响铃；回前台时统一撤销）。 */
+/**
+ * 发布终态普通通知（独立 id，可震动响铃；回前台时统一撤销）。
+ * 本轮仅一个任务时点击直达该任务详情；多个任务合并后点击回到任务中心，
+ * 与发送失败浮卡「单条进详情、多条进任务页」的口径一致。
+ */
 function publishTerminalNotice(overall: OverallSnapshot): Promise<void> {
   let context = getAppContext();
   if (context === undefined) {
@@ -489,7 +497,9 @@ function publishTerminalNotice(overall: OverallSnapshot): Promise<void> {
   let taskCount: number = cycleSessionIds.length;
   let content: string = getString($r('app.string.bg_transfer_content_tasks_percent').id,
     taskCount, Math.floor(overall.percent));
-  return buildBackToFrontWantAgent(context, NAV_TARGET_TRANSFER_CENTER).then((agent: WantAgent): Promise<void> => {
+  let target: string = taskCount === 1 ? NAV_TARGET_SESSION_DETAIL : NAV_TARGET_TRANSFER_CENTER;
+  let sessionId: string = taskCount === 1 ? cycleSessionIds[0] : '';
+  return buildBackToFrontWantAgent(context, target, sessionId).then((agent: WantAgent): Promise<void> => {
     let noticeId: number = notificationId === TERMINAL_NOTICE_ID ? TERMINAL_NOTICE_FALLBACK_ID : TERMINAL_NOTICE_ID;
     let request: notificationManager.NotificationRequest = {
       id: noticeId,

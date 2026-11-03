@@ -228,7 +228,7 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 应用处于后台时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）：
 只展示待确认请求（LocalSend / MTA 接收、Web 上传）。网页访问/网页下载不进入该通知，
 只写诊断日志并续期网页服务的有界后台保活。通知按统一注册表的待确认计数驱动发布/撤回，
-回到前台或相关会话结束即撤回；点击统一回到任务中心。
+回到前台或相关会话结束即撤回；单条待确认点击直达该请求详情，多条合并回到任务中心。
 
 详见 [architecture/background-transfer.md](architecture/background-transfer.md) §2。
 
@@ -568,8 +568,10 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 为 0 时不显示。形态判定见 [8.5](#85-响应式设计)。
 
 主页根容器还承载两处全局行为（详见 [9. 状态管理](#9-状态管理)）：**新传输提示弹窗**——应用前台时收到新的待确认接收请求，
-在任意页面（含子页面）之上弹出统一提示（「查看」进入该会话详情、「稍后」/遮罩/返回键仅关闭；单槽位守卫、按会话标识去重；后台不弹、回前台补弹一次）；
-**通知深链**——点击后台传输 / 待确认通知携带「任务中心」深链意图，消费时先清空路由栈回到根、再切到任务页签。
+在任意页面（含子页面）之上弹出统一提示（「查看」进入该会话详情、「稍后」/遮罩/返回键仅关闭；单槽位守卫、按会话标识去重；后台不弹、回前台补弹一次，
+从通知进入前台时点击通知那一刻已存在的待确认请求除外）；
+**通知深链**——点击后台传输终态 / 待确认通知时，仅一个任务的通知直达该任务详情、多任务合并的通知回到任务中心；
+两种落点都先清空路由栈回到根、切到任务页签，详情落点再压入会话详情页。
 
 两处页签容器均显式指定 `index`（取自 `currentTabIndex`），使窗口跨断点导致页签容器重建后回到用户当前页签，
 标题栏文案与内容区保持一致；滚动位置的保存与恢复对滚动控制器读数做容错（控制器未绑定或已销毁时视为本次无有效位置，
@@ -848,10 +850,14 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 - 新会话感知与前台提示：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与任务列表同源同时机刷新任务入口数量与待确认计数），刷新时比对注册表中的待确认会话，
   出现新会话即以 `autoOpenSessionId` 一次性信号通知 `MainTabFloating`；后者在应用前台任意页面（含子页面）之上弹出统一的新传输提示弹窗
   （`AlertDialogV2` 经 `openCustomDialog` 打开，「查看」推入该会话详情、「稍后」/遮罩/返回键仅关闭），单槽位守卫避免叠加、按会话标识去重不重复提示；
-  应用后台时不弹、回前台（`onPageShow`）补弹一次
-- 通知深链：通知点击意图经 Want 参数 `handysend.navigate=transferCenter` 传递，`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
-  `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，消费时先 `pathStack.clear()` 回到根、
-  再切到任务页签，保证从通知进入后展示任务中心列表
+  应用后台时不弹、回前台补弹一次（`onPageShow` 可能早于 `onForeground`，由变更总线回调兜底重试；
+  从通知进入前台时，点击通知那一刻已存在的待确认请求不再补弹）
+- 通知深链：通知点击意图经 Want 参数 `handysend.navigate`（`transferCenter` / `sessionDetail`）传递，
+  详情意图另携带 `handysend.sessionId`；`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
+  `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，
+  消费时先 `pathStack.clear(false)` 回到根、任务页签滚动位置归零并切到任务页签，详情落点再压入 `SessionDetailPage`。
+  落点口径：终态通知按本轮任务数、待确认通知按待确认数——仅一个任务时进详情，多个合并时进任务中心；
+  实况进度与保活通知的点击目标在申请长时任务时固定，始终保持任务中心
 - 任务入口数量：`MainTabViewModel.activeTransferCount` 取 `TransferSessionRegistry.getUnfinishedCount()`（非终态 = 进行中 + 待确认），
   窄屏底部页签与宽屏侧边栏共用同一字段，口径一致
 - 会话动作口径：`model/transfer/TransferSession.resolveSessionActions(stage, capabilities, isText)` 为唯一事实源，

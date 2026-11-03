@@ -1094,6 +1094,17 @@ export function getPendingCount(): number {
   return count;
 }
 
+/** 待确认会话标识（后台关注通知判定单条/多条与详情跳转目标）。 */
+export function getPendingSessionIds(): Array<string> {
+  let ids: Array<string> = [];
+  sessions.forEach((session: TransferSession) => {
+    if (session.stage === SessionStage.awaitingConfirmation) {
+      ids.push(session.id);
+    }
+  });
+  return ids;
+}
+
 export function getOverallSnapshot(prevPercent: number = 0): OverallSnapshot {
   return deriveOverall(getAllSessions(), prevPercent);
 }
@@ -1121,6 +1132,20 @@ export function getHistory(filter?: SessionHistoryQuery): Array<SessionHistoryEn
  */
 export function getHistoryRevision(): number {
   return loadSessionHistoryRevision();
+}
+
+/** 实时会话或持久化历史中是否存在该标识（通知深链落点有效性校验）。 */
+export function hasSessionOrHistory(sessionId: string): boolean {
+  if (sessions.has(sessionId)) {
+    return true;
+  }
+  let history: Array<SessionHistoryEntry> = getHistory();
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].sessionId === sessionId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

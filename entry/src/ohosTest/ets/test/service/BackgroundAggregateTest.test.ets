@@ -20,6 +20,8 @@ import {
   createSession,
   finish,
   getOverallSnapshot,
+  getPendingSessionIds,
+  hasSessionOrHistory,
   updateFileProgress,
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
@@ -132,6 +134,34 @@ export default function BackgroundAggregateTest() {
       expect(overall.percent).assertEqual(0)
       // 仅有待确认时不得误判为全部完成（避免提前发布终态通知）
       expect(overall.allFinished).assertFalse()
+      resetRegistry()
+    })
+
+    // ── 待确认会话标识：后台关注通知的详情跳转依据 ──
+    it('pendingSessionIds_onlyAwaiting', 0, () => {
+      resetRegistry()
+      let pendingFirstInput = input('localsend-receive', 'pending-1')
+      pendingFirstInput.stage = SessionStage.awaitingConfirmation
+      let first = createSession(pendingFirstInput)
+      let active = createSession(input('localsend-send', 'active-1'))
+      let pendingSecondInput = input('mta-receive', 'pending-2')
+      pendingSecondInput.stage = SessionStage.awaitingConfirmation
+      let second = createSession(pendingSecondInput)
+      let ids = getPendingSessionIds()
+      expect(ids.length).assertEqual(2)
+      expect(ids[0]).assertEqual(first.id)
+      expect(ids[1]).assertEqual(second.id)
+      // 进行中会话不得混入待确认集合
+      expect(ids.indexOf(active.id)).assertEqual(-1)
+      resetRegistry()
+    })
+
+    // ── 通知深链落点有效性：实时会话或历史至少存在其一 ──
+    it('hasSessionOrHistory_liveSession', 0, () => {
+      resetRegistry()
+      let session = createSession(input('localsend-send', 'live'))
+      expect(hasSessionOrHistory(session.id)).assertTrue()
+      expect(hasSessionOrHistory('missing-session-id')).assertFalse()
       resetRegistry()
     })
   })
