@@ -795,9 +795,9 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   水平方向始终居中，副提示缺省时不渲染
 - **占满高度**：`fillHeight` 开启时占满可用高度并垂直居中（仅诊断日志页使用）；空态需与列表首行同位时，
   由调用点在组件外挂该页的左右页边距与首元素顶部间距（文件接收历史页取 16vp，与主页、发送页、设置页同一口径）
-- **面板高度统一**：空态面板的最小高度统一取 `DesignTokens.size.emptyStateMinHeight`(120vp)，使高度不随
-  文案行数与窗口宽度（窄屏折行）变化。卡片型空态由组件直接取该值；非卡片型空态由调用方按所在容器
-  给出内容区最小值（`minHeight`），或由外层容器约束整体高度，或不额外约束、按内容高度展示（会话详情时间线）
+- **面板高度统一**：卡片型空态的面板最小高度统一取 `DesignTokens.size.emptyStateMinHeight`(120vp)，使高度不随
+  文案行数与窗口宽度（窄屏折行）变化。非卡片型空态不套卡片，由所在容器按内容高度或整段居中排布
+  （如 Web 分享页整段居中、会话详情时间线按内容高度）
 - **卡片按该页条目形态跟随**：`useCard` 开启时套用与同页条目同款卡片（`radius.lg` + 1vp `border_light`
   边框 + `card_background` 背景）；左右内边距与条目文字对齐取 16vp，上下取 32vp。
   条目是卡片的页面（任务页、网络接口半模态、文件接收历史页、发送页设备区）开启；条目非卡片的页面
@@ -806,15 +806,15 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 
 调用点：
 
-| 位置 | 文件 | useCard | fillHeight | minHeight |
-|------|------|---------|------------|-----------|
-| 任务页列表行级空态 | `views/transfer/TransferCenterList.ets` | 是 | 否 | — |
-| 网络接口半模态空态 | `views/settings/NetworkSettingsSection.ets` | 是 | 否 | — |
-| 文件接收历史页空态（与列表首行同位） | `pages/ReceiveHistoryPage.ets` | 是 | 否 | — |
-| 诊断日志页整页空态 | `pages/HttpLogsPage.ets` | 否 | 是 | — |
-| 发送页设备区空态（带条件引导）与无来源空态 | `components/send/SendTargetZone.ets` | 是 | 否 | — |
-| Web 分享页段落内空态 | `pages/ShareLinkPage.ets` | 否 | 否 | — |
-| 会话详情时间线空态 | `views/transfer/SessionTimeline.ets` | 否 | 否 | — |
+| 位置 | 文件 | useCard | fillHeight |
+|------|------|---------|------------|
+| 任务页列表行级空态 | `views/transfer/TransferCenterList.ets` | 是 | 否 |
+| 网络接口半模态空态 | `views/settings/NetworkSettingsSection.ets` | 是 | 否 |
+| 文件接收历史页空态（与列表首行同位） | `pages/ReceiveHistoryPage.ets` | 是 | 否 |
+| 诊断日志页整页空态 | `pages/HttpLogsPage.ets` | 否 | 是 |
+| 发送页设备区空态（带条件引导）与无来源空态 | `components/send/SendTargetZone.ets` | 是 | 否 |
+| Web 分享页段落内空态 | `pages/ShareLinkPage.ets` | 否 | 否 |
+| 会话详情时间线空态 | `views/transfer/SessionTimeline.ets` | 否 | 否 |
 
 ## 9. 状态管理
 
