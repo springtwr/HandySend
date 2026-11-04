@@ -2,6 +2,8 @@ import { describe, it, expect } from '@ohos/hypium'
 import {
   throttleDelayMs,
   resolveTerminalKind,
+  shouldExecuteStop,
+  isUserCancel,
   TransferTerminalKind as TerminalKind
 } from '../../../../main/ets/service/BackgroundTransferService'
 import {
@@ -61,6 +63,24 @@ export default function BackgroundAggregateTest() {
       expect(resolveTerminalKind(false, false)).assertEqual(TerminalKind.success)
       expect(resolveTerminalKind(true, true)).assertEqual(TerminalKind.failed)
       expect(resolveTerminalKind(true, false)).assertEqual(TerminalKind.partial)
+    })
+
+    // ── 停止决策：有任务 Id 按 Id 停，无 Id 才依赖代次 ──
+    it('stopTarget_byTaskIdOrGeneration', 0, () => {
+      // 有任务 Id：即使新周期已启动，也必须停止旧任务
+      expect(shouldExecuteStop(7, 2, 3)).assertTrue()
+      // 无任务 Id：代次一致才允许停全部
+      expect(shouldExecuteStop(-1, 2, 2)).assertTrue()
+      expect(shouldExecuteStop(-1, 2, 3)).assertFalse()
+    })
+
+    // ── 用户取消判定：兼容 reason 与 API 26 detailedReason ──
+    it('userCancel_reasonAndDetailed', 0, () => {
+      expect(isUserCancel(1, undefined)).assertTrue()
+      expect(isUserCancel(3, undefined)).assertTrue()
+      expect(isUserCancel(2, 3)).assertTrue()
+      expect(isUserCancel(2, 4)).assertFalse()
+      expect(isUserCancel(2, undefined)).assertFalse()
     })
 
     // ── 后台关注类别：待确认请求优先于网页访问 ──

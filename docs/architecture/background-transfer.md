@@ -8,8 +8,10 @@
 
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
-后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，
-`KEEP_BACKGROUND_RUNNING` 权限），并以实况通知（LIVE_VIEW SlotType + downloadTemplate，typeCode 8）展示聚合进度；全部会话终态后发布终态文案（成功/部分失败/失败三档）并延迟 10 秒停止任务实现通知停留。
+后台传输保护（手机/平板/PC 通用）：应用处于后台、存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）
+且通知权限已开启时申请 `dataTransfer` 长时任务（`backgroundTaskManager.startBackgroundRunning`，
+`KEEP_BACKGROUND_RUNNING` 权限），并以实况通知（LIVE_VIEW SlotType + downloadTemplate，typeCode 8）展示聚合进度；
+本轮无进行中会话后发布独立普通终态通知（成功/部分失败/失败三档），并立即停止传输长时任务。
 
 服务为模块级单例，由 EntryAbility 生命周期驱动。
 
@@ -22,22 +24,36 @@
 
 - 长时任务的申请/保持除 `onBackground` 时机外，也由 changeBus 驱动：缓存 `UIAbilityContext`，在后台检出进行中传输且任务空闲时主动申请（`ensureTransferTaskForBackground`，幂等）
 - 传输任务与空闲保活任务分离，各自持有独立的 `dataTransfer` 长时任务、通知 Id 与任务 Id：
-  - 传输任务：后台存在活跃会话时申请，通知显示「后台传输中 / 关闭通知会中断传输」，随真实进度更新；
-  - 保活任务：设置「允许后台接收」开启且网页服务或 LocalSend 服务器运行时，进入后台即申请，
+  - 传输任务：后台存在活跃会话时申请，通知显示「后台传输中 / 45%」；多任务时显示
+    「后台传输中 / 共 3 个任务 · 45%」，随真实进度更新；
+  - 保活任务：设置「允许后台接收」开启、通知权限已开启且网页服务或 LocalSend 服务器运行时，进入后台即申请，
     通知显示「后台运行中 / 临时保活5分钟，到期后自动关闭」，固定 5 分钟，每 30 秒推进进度，
     到期先发布 100% 结束帧再立即停止任务（通知随任务消失，与传输任务一致，不触发系统完成提醒）；
     不因传输开始/结束重置或延长。
+- 通知权限未开启时不申请传输/保活长时任务（长时任务通知无法建立），
+  「允许后台接收」设置项置灰
 - 传输结束统一发布独立普通终态通知（成功/部分失败/失败三档，不自动撤销，回前台或点击后撤销）；
   普通通知发布完成后立即停止传输长时任务，避免「后台传输中」通知继续显示。
   普通终态通知与保活实况通知可并存。
 - 系统可能因 `dataTransfer` 低速率提前取消保活任务（`detailedReason=4`）；保活任务被取消时只结束保活，
   不影响仍在进行的传输任务。
 - 终态处理期间新传输出现时使在途停止失效并复位终态标记，使传输任务继续有效
+- 回前台延迟 3 秒停止传输任务（3 秒内重新退后台则取消停止并复用原任务），同时立即停止保活任务；
+  Ability 销毁时立即停止
+- 停止按 `continuousTaskId` 精确执行；仅任务 Id 缺失、需要停全部的兜底路径才用启停代次保护
+- 长时任务取消兼容 `USER_CANCEL` 与 `USER_CANCEL_REMOVE_NOTIFICATION`；
+  API 26 起同时读取 `detailedReason`，低版本仅按 `reason` 判断
+- 申请成功后重新读取整体快照：申请期间已结束的传输直接收尾，不发布申请前旧帧；
+  期间新加入的会话纳入首帧
 
 ### 1.3 更新机制
 
 - 订阅 AppCore changeBus，1s 节流发布（`throttleDelayMs` 纯函数决策 + 单 pending 定时器同帧合并）
 - 代次计数器（startGeneration）防止停止后旧帧覆盖
+- 聚合进度按本轮后台周期累计：进行中会话取实时字节，终态会话冻结最终字节；
+  任务完成不把其字节从分母移除，新任务加入才增加分母，避免任务完成时进度跳变
+- 实况窗文案只展示进度信息。按《Background Tasks Kit 接入规范》，`dataTransfer` 长时任务
+  允许更新进度信息，但仅限进度展示，不用于提示、公告等其他用途
 
 ### 1.4 终态正确性
 
@@ -52,12 +68,14 @@
 
 ### 1.6 删除通知取消
 
-- `continuousTaskCancel` 事件 USER_CANCEL(1) 时经统一取消入口下发：对注册表中全部非终态会话调用 `TransferSessionRegistry.cancel()`
+- `continuousTaskCancel` 用户取消事件（`USER_CANCEL` / `USER_CANCEL_REMOVE_NOTIFICATION`，
+  含 API 26 `detailedReason`）经统一取消入口下发：对注册表中全部非终态会话调用 `TransferSessionRegistry.cancel()`
 - `cancel` 按适配器能力声明分发（`canCancel=false` 的协议为空操作，不改状态、不调用适配器），其余由各协议适配器执行具体取消动作
 
 ### 1.7 可测性
 
-- 导出 `throttleDelayMs`/`resolveTerminalKind` 纯决策函数供 Instrument Test 单测；聚合断言由 `BackgroundAggregateTest` 经注册表快照验证
+- 导出 `throttleDelayMs`/`resolveTerminalKind`/`shouldExecuteStop`/`isUserCancel` 纯决策函数供 Instrument Test 单测；
+  聚合断言由 `BackgroundAggregateTest` 经注册表快照验证
 
 ## 2. BackgroundAttentionNotifier — 后台关注通知层
 
@@ -85,7 +103,7 @@
 
 | 通知 | 落点 |
 |------|------|
-| 终态普通通知（§1） | 本轮仅 1 个任务 → 该任务详情；2 个及以上 → 任务中心 |
+| 终态普通通知（§1） | 本轮仅 1 个传输任务 → 该任务详情；2 个及以上 → 任务中心 |
 | 后台关注通知（§2） | 1 条待确认 → 该请求详情（进页即可接受/拒绝）；多条 → 任务中心 |
 | 实况进度通知 / 空闲保活通知 | 任务中心 |
 

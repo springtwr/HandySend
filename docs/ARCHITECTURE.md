@@ -87,7 +87,8 @@ HandySend/
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
   - `onCreate` 初始化 `BackgroundTransferService`
   - `onBackground`：MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收，并启动后台传输任务（同步 `AppCore.setAppForeground(false)`）
-  - `onForeground`：停止后台传输任务、撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
+  - `onForeground`：延迟 3 秒停止后台传输任务（期间重新退后台则取消停止并复用），
+    停止保活任务，撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
   - `onBackground`：启动后台传输任务后同步一次后台关注通知，补发前台期间已存在的待确认请求
   - `onDestroy` 兜底停止
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回
@@ -216,7 +217,8 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
 后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请独立的 `dataTransfer` 传输长时任务；
-「允许后台接收」开启且网页服务或 LocalSend 服务器运行时，另申请独立的 5 分钟空闲保活长时任务，两条任务各有通知、互不重置。
+「允许后台接收」开启、通知权限已开启且网页服务或 LocalSend 服务器运行时，另申请独立的 5 分钟空闲保活长时任务，
+两条任务各有通知、互不重置；通知权限未开启时设置项置灰，后台长时任务不申请。
 数据源唯一为统一会话注册表的协议无关聚合快照（待确认不计入活跃），服务为模块级单例、由 EntryAbility 生命周期驱动。
 
 启停驱动、终态处理、前台引导、删除通知取消等实现细节详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
@@ -684,7 +686,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 | 分区组件 | 内容 | 所属分组 |
 |----------|------|----------|
-| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 允许后台接收 + 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
+| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 允许后台接收（通知权限未开启时置灰） + 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
 | `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器与设备发现；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）<br>+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN<br>+ 高级设置折叠（含安全信息（证书）半屏弹窗）+ 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
 | `ReceiveSettingsSection` | 自动确认请求（半屏弹窗）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）<br>+ 允许接收开关（总开关关闭时置灰不可用）+ 显示互传提醒开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） | 互传联盟（MTA） |
@@ -856,7 +858,7 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   详情意图另携带 `handysend.sessionId`；`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
   `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，
   消费时先 `pathStack.clear(false)` 回到根、任务页签滚动位置归零并切到任务页签，详情落点再压入 `SessionDetailPage`。
-  落点口径：终态通知按本轮任务数、待确认通知按待确认数——仅一个任务时进详情，多个合并时进任务中心；
+  落点口径：终态通知按本轮传输任务数、待确认通知按待确认数——仅一个任务时进详情，多个合并时进任务中心；
   实况进度与保活通知的点击目标在申请长时任务时固定，始终保持任务中心
 - 任务入口数量：`MainTabViewModel.activeTransferCount` 取 `TransferSessionRegistry.getUnfinishedCount()`（非终态 = 进行中 + 待确认），
   窄屏底部页签与宽屏侧边栏共用同一字段，口径一致

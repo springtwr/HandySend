@@ -2025,12 +2025,12 @@
       "value": "背景傳輸中"
     },
     {
-      "name": "bg_transfer_content_transfer",
-      "value": "關閉通知會中斷傳輸"
+      "name": "bg_transfer_content_percent",
+      "value": "%d%%"
     },
     {
       "name": "bg_transfer_content_tasks_percent",
-      "value": "%d 個任務 · %d%%"
+      "value": "共 %d 個任務 · %d%%"
     },
     {
       "name": "background_receive_label",
@@ -2039,6 +2039,10 @@
     {
       "name": "background_receive_desc",
       "value": "沒有傳輸任務時，應用將在背景繼續執行5分鐘，期間可接收網頁或 LocalSend 的傳輸請求"
+    },
+    {
+      "name": "background_receive_desc_notification_required",
+      "value": "使用此功能需要開啟通知權限"
     },
     {
       "name": "web_access_stop",

@@ -358,7 +358,7 @@ export default class EntryAbility extends UIAbility {
     // 偏好写入为防抖刷盘，进程终止前全部强制落盘，防止 pending 写入丢失
     flushAllPreferences();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
-    stopTransferTask();
+    stopTransferTask(true);
     // 兜底清理：正常退出链路（onBackground 停 MTA → 页面 aboutToDisappear
     // 停服务器）已覆盖，此处兜住页面清理未执行的边缘场景，防止进程存活
     // 而 Ability 重建时原生层 server_handle/discovery_handle/直写 fd 残留。
@@ -586,7 +586,7 @@ export default class EntryAbility extends UIAbility {
     // 置于方法开头，避免被后续调用（如 startMtaReceiveIfEnabled 等）抛出的异常阻断，
     // 保证语言同步始终有机会执行。
     syncSystemLanguageIfFollowing();
-    // 回前台停止长时任务（通知随之消失），进度展示交还前台传输页
+    // 回前台延迟停止长时任务（通知随之消失）；3 秒内重新退后台则取消停止并复用任务
     stopTransferTask();
     // 回到前台：撤回后台关注通知（用户可在应用内处理请求）
     withdrawBackgroundAttention();

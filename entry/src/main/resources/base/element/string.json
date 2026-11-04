@@ -2025,12 +2025,12 @@
       "value": "Transferring in background"
     },
     {
-      "name": "bg_transfer_content_transfer",
-      "value": "Closing this notification interrupts the transfer"
+      "name": "bg_transfer_content_percent",
+      "value": "%d%%"
     },
     {
       "name": "bg_transfer_content_tasks_percent",
-      "value": "%d tasks · %d%%"
+      "value": "Total tasks: %d · %d%%"
     },
     {
       "name": "background_receive_label",
@@ -2039,6 +2039,10 @@
     {
       "name": "background_receive_desc",
       "value": "Without a transfer, the app keeps running in the background for 5 minutes to receive web or LocalSend requests."
+    },
+    {
+      "name": "background_receive_desc_notification_required",
+      "value": "Notification permission is required to use this feature"
     },
     {
       "name": "web_access_stop",
