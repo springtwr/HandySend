@@ -449,6 +449,18 @@
       "value": "iOS 或安卓上的 LocalSend 有時雖然顯示為開啟狀態，但服務並未真正啟動。\n若無法發現裝置，請清理背景並重新開啟應用程式。"
     },
     {
+      "name": "troubleshoot_slow_transfer_title",
+      "value": "傳輸速度慢"
+    },
+    {
+      "name": "troubleshoot_slow_transfer_desc",
+      "value": "先做三個簡單檢查：\n① 兩台裝置都連線同一個 5GHz Wi-Fi，不要一台 5GHz、一台 2.4GHz（2.4GHz 會明顯更慢）；\n② 查看 Wi-Fi 連線速度：系統設定 → WLAN → 點擊已連線的 WLAN → 連線速度。如果低於 300Mbps，先靠近路由器或確認連線的是 5GHz 再試；如果顯示 800Mbps 以上但傳輸仍慢，通常是路由器轉發或另一台裝置的限制。\n③ 用寬頻測速作參考：寬頻測速也走「裝置→路由器」這段 Wi-Fi。如果寬頻測速正常（例如 300M 寬頻能到 30–40MB/s），但區域網路傳輸明顯更低，代表瓶頸在區域網路轉發或另一台裝置；如果寬頻測速也很低，先靠近路由器再測，排除 Wi-Fi 訊號/頻段問題；如果靠近後仍低，代表寬頻速率較低，但寬頻不參與區域網路傳輸，與本問題無關。\n\n常見原因：\n· 兩台裝置都連同一個 5GHz 路由器時，資料要經路由器收一遍、再發一遍，實際速度通常只有單台裝置單獨測速時的一半左右；兩台裝置都透過同一個路由器 Wi-Fi 互傳時，中低階家用路由器通常很難穩定超過 50MB/s。\n· 距離遠、隔牆、訊號弱，或周圍 Wi-Fi 網路很多，都會讓速度下降；\n· 大量小檔案會比單個大檔案慢，屬於正常現象；\n· 電腦插網路線時，如果網路埠或網路線是百兆（100Mbps），理論上限約 12.5MB/s。"
+    },
+    {
+      "name": "troubleshoot_slow_transfer_highlight",
+      "value": "最有效的改善：\n直接用鴻蒙裝置開啟熱點（鴻蒙裝置一般可同時開啟 Wi-Fi 和熱點），讓另一台裝置連線熱點後傳輸，速度普遍能超過 100MB/s。"
+    },
+    {
       "name": "troubleshoot_connection_title",
       "value": "無法連線"
     },
@@ -835,6 +847,34 @@
     {
       "name": "send_error_busy",
       "value": "對方忙，請稍後再試"
+    },
+    {
+      "name": "send_started_toast",
+      "value": "已開始傳送至 %s"
+    },
+    {
+      "name": "send_failure_card_title",
+      "value": "無法傳送至「%s」"
+    },
+    {
+      "name": "send_failure_card_title_multi",
+      "value": "%s 個任務失敗"
+    },
+    {
+      "name": "send_failure_card_mixed",
+      "value": "各裝置失敗原因不同，請到任務頁查看"
+    },
+    {
+      "name": "send_failure_card_action_tasks",
+      "value": "查看任務"
+    },
+    {
+      "name": "send_failure_card_action_detail",
+      "value": "查看詳情"
+    },
+    {
+      "name": "send_protocol_block_title",
+      "value": "無法加密傳送至「%s」"
     },
     {
       "name": "debug_log_label",
@@ -1685,8 +1725,12 @@
       "value": "本機裝置與識別"
     },
     {
-      "name": "session_meta_duration_label",
-      "value": "耗時"
+      "name": "session_meta_task_duration_label",
+      "value": "任務耗時"
+    },
+    {
+      "name": "session_meta_transfer_duration_label",
+      "value": "傳輸耗時"
     },
     {
       "name": "session_meta_average_speed_label",
@@ -1981,12 +2025,12 @@
       "value": "背景傳輸中"
     },
     {
-      "name": "bg_transfer_content_transfer",
-      "value": "關閉通知會中斷傳輸"
+      "name": "bg_transfer_content_percent",
+      "value": "%d%%"
     },
     {
       "name": "bg_transfer_content_tasks_percent",
-      "value": "%d 個任務 · %d%%"
+      "value": "共 %d 個任務 · %d%%"
     },
     {
       "name": "background_receive_label",
@@ -1995,6 +2039,10 @@
     {
       "name": "background_receive_desc",
       "value": "沒有傳輸任務時，應用將在背景繼續執行5分鐘，期間可接收網頁或 LocalSend 的傳輸請求"
+    },
+    {
+      "name": "background_receive_desc_notification_required",
+      "value": "使用此功能需要開啟通知權限"
     },
     {
       "name": "web_access_stop",
@@ -2019,14 +2067,6 @@
     {
       "name": "session_waiting_peer_upload",
       "value": "等待上傳"
-    },
-    {
-      "name": "session_end_web_access",
-      "value": "結束會話"
-    },
-    {
-      "name": "session_end_web_download",
-      "value": "結束下載"
     },
     {
       "name": "log_file_unavailable",

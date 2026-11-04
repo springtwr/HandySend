@@ -321,14 +321,6 @@ export function rowStageText(row: SessionRowModel): ResourceStr {
   return row.session !== undefined ? row.session.stageText : '';
 }
 
-/** 行进行中动作文案：网页访问会话为“结束会话”，其余为“取消传输”。 */
-export function rowCancelLabel(row: SessionRowModel): ResourceStr {
-  if (row.session !== undefined && row.session.capabilities.cancelLabel !== undefined) {
-    return row.session.capabilities.cancelLabel;
-  }
-  return $r('app.string.session_detail_cancel');
-}
-
 /** 行是否具备字节级进度且可直接展示百分比（无字节进度或分母为 0 时为假）。 */
 export function rowHasByteProgress(row: SessionRowModel): boolean {
   if (row.session === undefined || !row.session.capabilities.hasByteProgress) {

@@ -18,7 +18,8 @@ import {
   defaultCapabilities,
   isPreparing,
   isTerminalStage,
-  resolveSessionActions
+  resolveSessionActions,
+  displayDurationMs
 } from '../model/transfer/TransferSession';
 import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
 import {
@@ -92,7 +93,7 @@ export function decidePreviewMode(files: Array<SessionFile>): SessionPreviewMode
  * 缺省字段以空串/0 表示，由展示层统一降级。
  *
  * 改为可观测类：详情展示子组件直接读取本实例上的 `@Trace` 字段（依赖由 ArkUI 追踪），
- * 刷新时**原地更新同一实例**（不替换对象），使「传输详情」区块的耗时/速度随进度变化，
+ * 刷新时**原地更新同一实例**（不替换对象），使「传输详情」区块的耗时/速度随进度与墙钟变化，
  * 并避免切换会话或实时退化为历史时子组件残留上一会话数据。
  */
 @ObservedV2
@@ -107,11 +108,12 @@ export class SessionDetailMeta {
   createdAt: number = 0
   startedAt: number = 0
   @Trace finishedAt: number = 0
-  // 耗时：进行中为「当前时刻 − 开始时刻」（实时口径），终态回落归档耗时
-  @Trace durationMs: number = 0
+  // 耗时：任务耗时（创建 → 结束）与传输耗时（首个字节进度 → 结束），终态回落归档口径
+  @Trace taskDurationMs: number = 0
+  @Trace transferDurationMs: number = 0
   // 传输性能
   @Trace totalBytes: number = 0
-  // 平均速度：进行中为「已传字节 ÷ 已用时间」（实时口径），终态回落归档平均速度
+  // 平均速度：进行中为「已传字节 ÷ 传输耗时」（实时口径），终态回落归档平均速度
   @Trace averageSpeedBps: number = 0
   @Trace peakSpeedBps: number = 0
   // 结果与错误
@@ -189,34 +191,29 @@ function timelineTimeOf(events: Array<SessionTimelineEvent>, kind: SessionEventK
 }
 
 /**
- * 归档耗时（毫秒）：起止时刻各自截断毫秒后取差（与时间线口径严格一致），
- * 避免「毫秒差向下取整」与「时间线绝对时间之差」偶发 1 秒偏差。
+ * 进行中实时耗时（毫秒）：当前时刻 − 起点（秒级截断口径）。
+ * 起点缺失或窗口不足 1 秒时返回 0，由展示层降级为统一占位符——
+ * 实时口径不补足 1 秒，避免用被抬高的时长低估实时速度。
  */
-function archivedDurationMs(startedAt: number, finishedAt: number): number {
-  if (finishedAt > startedAt) {
-    return (Math.floor(finishedAt / 1000) - Math.floor(startedAt / 1000)) * 1000;
-  }
-  return 0;
-}
-
-/**
- * 进行中实时耗时（毫秒）：当前时刻 − 开始时刻（同一截断口径）。
- * 未开始计时（待确认阶段，或从未记录开始时刻）返回 0，由展示层降级为统一占位符。
- */
-function liveDurationMs(stage: SessionStage, startedAt: number, now: number): number {
-  if (startedAt <= 0 || stage === SessionStage.awaitingConfirmation) {
+function liveElapsedMs(start: number, now: number): number {
+  if (start <= 0 || now <= start) {
     return 0;
   }
-  return (Math.floor(now / 1000) - Math.floor(startedAt / 1000)) * 1000;
+  return (Math.floor(now / 1000) - Math.floor(start / 1000)) * 1000;
 }
 
 /**
  * 按实时会话原地更新详情信息（不替换实例）：
- * 进行中耗时取「当前时刻 − 开始时刻」、平均速度取「已传字节 ÷ 已用时间」、峰值速度取会话实时峰值；
- * 未开始计时或从未产生字节进度时保持占位（0）；会话进入终态后耗时与平均速度切换为归档口径，
+ * 任务耗时取「会话创建 → 当前/终结」、传输耗时取「首个字节进度 → 当前/终结」、
+ * 平均速度取「已传字节 ÷ 传输耗时」、峰值速度取会话实时峰值；
+ * 未开始传输时传输耗时与平均速度保持占位（0）；会话进入终态后耗时与平均速度切换为归档口径，
  * 与随后从历史条目进入时看到的结果一致。
+ *
+ * `syncAverageSpeed` 控制实时平均速度是否写入：该值随每个进度事件变化，逐事件刷新会持续跳动，
+ * 故由调用方按显示节流（与瞬时速度同为 1 秒节奏）决定是否写入；终态一律写入归档值。
  */
-function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): void {
+function applyLiveMeta(target: SessionDetailMeta, session: TransferSession,
+  syncAverageSpeed: boolean): void {
   let createdAt: number = timelineTimeOf(session.timeline, SessionEventKind.created);
   if (createdAt <= 0) {
     createdAt = session.startedAt;
@@ -226,16 +223,20 @@ function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): voi
     startedAt = session.startedAt;
   }
   let terminal: boolean = isTerminalStage(session.stage);
-  let durationMs: number = 0;
+  let taskDurationMs: number = 0;
+  let transferDurationMs: number = 0;
   let averageSpeedBps: number = 0;
   if (terminal) {
-    // 终态回落归档值
-    durationMs = archivedDurationMs(session.startedAt, session.finishedAt);
+    // 终态回落归档口径：任务耗时为创建 → 终结，传输耗时为首个字节进度 → 终结
+    taskDurationMs = displayDurationMs(session.startedAt, session.finishedAt);
+    transferDurationMs = displayDurationMs(session.transferStartedAt, session.finishedAt);
     averageSpeedBps = session.averageSpeedBps;
   } else {
-    durationMs = liveDurationMs(session.stage, session.startedAt, Date.now());
-    if (durationMs > 0 && session.bytesSent > 0) {
-      averageSpeedBps = (session.bytesSent * 1000) / durationMs;
+    let now: number = Date.now();
+    taskDurationMs = liveElapsedMs(session.startedAt, now);
+    transferDurationMs = liveElapsedMs(session.transferStartedAt, now);
+    if (transferDurationMs > 0 && session.bytesSent > 0) {
+      averageSpeedBps = (session.bytesSent * 1000) / transferDurationMs;
     }
   }
 
@@ -247,9 +248,13 @@ function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): voi
   target.createdAt = createdAt;
   target.startedAt = startedAt;
   target.finishedAt = session.finishedAt;
-  target.durationMs = durationMs;
+  target.taskDurationMs = taskDurationMs;
+  target.transferDurationMs = transferDurationMs;
   target.totalBytes = session.totalBytes;
-  target.averageSpeedBps = averageSpeedBps;
+  // 实时平均速度按显示节流写入（终态一律写归档值），避免随每个进度事件跳动
+  if (terminal || syncAverageSpeed) {
+    target.averageSpeedBps = averageSpeedBps;
+  }
   target.peakSpeedBps = session.peakSpeedBps;
   target.errorMessage = session.errorMessage;
   target.errorCode = session.errorCode;
@@ -262,7 +267,7 @@ function applyLiveMeta(target: SessionDetailMeta, session: TransferSession): voi
 
 /**
  * 按持久化历史条目原地更新详情信息（不替换实例），字段面与实时入口完全一致，
- * 保证实时态与历史态同口径（耗时 / 平均速度 / 峰值速度均取归档值）。
+ * 保证实时态与历史态同口径：任务耗时按创建 → 终结推导，传输耗时与平均/峰值速度取归档值。
  */
 function applyHistoryMeta(target: SessionDetailMeta, entry: SessionHistoryEntry): void {
   let createdAt: number = timelineTimeOf(entry.timeline, SessionEventKind.created);
@@ -281,7 +286,8 @@ function applyHistoryMeta(target: SessionDetailMeta, entry: SessionHistoryEntry)
   target.createdAt = createdAt;
   target.startedAt = startedAt;
   target.finishedAt = entry.finishedAt;
-  target.durationMs = entry.durationMs;
+  target.taskDurationMs = displayDurationMs(entry.startedAt, entry.finishedAt);
+  target.transferDurationMs = entry.durationMs;
   target.totalBytes = entry.totalBytes;
   target.averageSpeedBps = entry.averageSpeedBps;
   target.peakSpeedBps = entry.peakSpeedBps;
@@ -314,6 +320,8 @@ function historyFileToSessionFile(entry: SessionHistoryFileEntry): SessionFile {
 // 速度显示同步间隔与过期阈值（毫秒）
 const DISPLAY_SYNC_INTERVAL: number = 1000;
 const SPEED_STALE_MS: number = 3000;
+// 详情页走时刷新间隔（毫秒）：任务/传输耗时随墙钟增长，等待确认等无事件阶段也须自行走时
+const LIVE_TIMING_TICK_MS: number = 1000;
 
 // 详情页文件清单的分页展示：首屏只建前若干行，用户点击「加载更多」再追加一批。
 // 会话文件数量可达数百，全量建行会在进入页面时集中阻塞。
@@ -354,6 +362,10 @@ export class SessionDetailViewModel {
   private subscribed: boolean = false
   private speedEstimator: SpeedEstimator = new SpeedEstimator()
   private lastSyncMs: number = 0
+  // 实时平均速度的最近一次显示刷新时刻（与瞬时速度同为 1 秒显示节奏）
+  private lastAverageSpeedSyncMs: number = 0
+  // 走时刷新定时器（页面打开且会话未终结时运行；-1 表示未运行）
+  private timingTimer: number = -1
   private changeCallback: () => void = (): void => {
   }
 
@@ -367,6 +379,7 @@ export class SessionDetailViewModel {
     this.speed = 0;
     this.etaSeconds = -1;
     this.lastSyncMs = 0;
+    this.lastAverageSpeedSyncMs = 0;
     // 切换会话时复位完整信息与历史快照，避免残留上一会话数据
     this.meta = emptySessionDetailMeta();
     this.historyFiles = [];
@@ -384,14 +397,52 @@ export class SessionDetailViewModel {
       this.subscribed = true;
     }
     this.refresh();
+    // 任务/传输耗时随墙钟增长：页面打开期间自行走时，不依赖进度事件
+    this.startTimingTicker();
   }
 
-  /** 卸载清理：退订会话变化通知。 */
+  /** 卸载清理：停止走时刷新并退订会话变化通知。 */
   unload(): void {
+    this.stopTimingTicker();
     if (this.subscribed) {
       unsubscribeSessions(this.changeCallback);
       this.subscribed = false;
     }
+  }
+
+  /**
+   * 启动走时刷新：任务耗时/传输耗时是「当前时刻 − 起点」的实时值，
+   * 而其余字段只在会话变更通知时刷新——等待确认、建链等无事件阶段会让耗时不走。
+   * 故页面打开期间按固定间隔只重算这两个展示值；会话终结或离开注册表即停止。
+   */
+  private startTimingTicker(): void {
+    this.stopTimingTicker();
+    let session = this.session;
+    if (session === undefined || isTerminalStage(session.stage)) {
+      return;
+    }
+    this.timingTimer = setInterval((): void => {
+      this.tickTiming();
+    }, LIVE_TIMING_TICK_MS);
+  }
+
+  private stopTimingTicker(): void {
+    if (this.timingTimer >= 0) {
+      clearInterval(this.timingTimer);
+      this.timingTimer = -1;
+    }
+  }
+
+  /** 走时刷新：只重算随墙钟变化的展示值（耗时与实时平均速度），不重读历史/预览内容。 */
+  private tickTiming(): void {
+    let session = this.session;
+    if (session === undefined || this.liveReleased || isTerminalStage(session.stage)) {
+      this.stopTimingTicker();
+      return;
+    }
+    // 走时刷新固定 1 秒一次，与平均速度的显示节奏一致，同时推进该节奏的时间基准
+    this.lastAverageSpeedSyncMs = Date.now();
+    applyLiveMeta(this.meta, session, true);
   }
 
   /** 会话（实时或历史摘要）是否已加载。 */
@@ -484,8 +535,14 @@ export class SessionDetailViewModel {
     this.session = session;
     this.files = session.files;
     this.timeline = session.timeline;
-    // 原地更新同一详情信息实例：子组件持有的对象不变，`@Trace` 字段变化即驱动界面刷新
-    applyLiveMeta(this.meta, session);
+    // 原地更新同一详情信息实例：子组件持有的对象不变，`@Trace` 字段变化即驱动界面刷新。
+    // 实时平均速度与瞬时速度同为 1 秒显示节奏，避免进度事件密集时数值持续跳动
+    let now: number = Date.now();
+    let syncAverageSpeed: boolean = now - this.lastAverageSpeedSyncMs >= DISPLAY_SYNC_INTERVAL;
+    if (syncAverageSpeed) {
+      this.lastAverageSpeedSyncMs = now;
+    }
+    applyLiveMeta(this.meta, session, syncAverageSpeed);
     this.capabilities = getSessionCapabilities(session);
     let adapter = getAdapter(session.protocolKey);
     this.display = adapter !== undefined ? adapter.getDisplayDescriptor(session.id) : emptyDisplayDescriptor();
@@ -589,12 +646,6 @@ export class SessionDetailViewModel {
       return false;
     }
     return resolveSessionActions(this.session.stage, this.capabilities).canCancel;
-  }
-
-  /** 进行中动作文案：网页访问会话为“结束会话”，其余为“取消传输”。 */
-  cancelLabel(): ResourceStr {
-    return this.capabilities.cancelLabel !== undefined ?
-      this.capabilities.cancelLabel : $r('app.string.session_detail_cancel');
   }
 
   canVerify(): boolean {

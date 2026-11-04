@@ -2,6 +2,8 @@ import { describe, it, expect } from '@ohos/hypium'
 import {
   throttleDelayMs,
   resolveTerminalKind,
+  shouldExecuteStop,
+  isUserCancel,
   TransferTerminalKind as TerminalKind
 } from '../../../../main/ets/service/BackgroundTransferService'
 import {
@@ -20,6 +22,8 @@ import {
   createSession,
   finish,
   getOverallSnapshot,
+  getPendingSessionIds,
+  hasSessionOrHistory,
   updateFileProgress,
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
@@ -59,6 +63,24 @@ export default function BackgroundAggregateTest() {
       expect(resolveTerminalKind(false, false)).assertEqual(TerminalKind.success)
       expect(resolveTerminalKind(true, true)).assertEqual(TerminalKind.failed)
       expect(resolveTerminalKind(true, false)).assertEqual(TerminalKind.partial)
+    })
+
+    // ── 停止决策：有任务 Id 按 Id 停，无 Id 才依赖代次 ──
+    it('stopTarget_byTaskIdOrGeneration', 0, () => {
+      // 有任务 Id：即使新周期已启动，也必须停止旧任务
+      expect(shouldExecuteStop(7, 2, 3)).assertTrue()
+      // 无任务 Id：代次一致才允许停全部
+      expect(shouldExecuteStop(-1, 2, 2)).assertTrue()
+      expect(shouldExecuteStop(-1, 2, 3)).assertFalse()
+    })
+
+    // ── 用户取消判定：兼容 reason 与 API 26 detailedReason ──
+    it('userCancel_reasonAndDetailed', 0, () => {
+      expect(isUserCancel(1, undefined)).assertTrue()
+      expect(isUserCancel(3, undefined)).assertTrue()
+      expect(isUserCancel(2, 3)).assertTrue()
+      expect(isUserCancel(2, 4)).assertFalse()
+      expect(isUserCancel(2, undefined)).assertFalse()
     })
 
     // ── 后台关注类别：待确认请求优先于网页访问 ──
@@ -132,6 +154,34 @@ export default function BackgroundAggregateTest() {
       expect(overall.percent).assertEqual(0)
       // 仅有待确认时不得误判为全部完成（避免提前发布终态通知）
       expect(overall.allFinished).assertFalse()
+      resetRegistry()
+    })
+
+    // ── 待确认会话标识：后台关注通知的详情跳转依据 ──
+    it('pendingSessionIds_onlyAwaiting', 0, () => {
+      resetRegistry()
+      let pendingFirstInput = input('localsend-receive', 'pending-1')
+      pendingFirstInput.stage = SessionStage.awaitingConfirmation
+      let first = createSession(pendingFirstInput)
+      let active = createSession(input('localsend-send', 'active-1'))
+      let pendingSecondInput = input('mta-receive', 'pending-2')
+      pendingSecondInput.stage = SessionStage.awaitingConfirmation
+      let second = createSession(pendingSecondInput)
+      let ids = getPendingSessionIds()
+      expect(ids.length).assertEqual(2)
+      expect(ids[0]).assertEqual(first.id)
+      expect(ids[1]).assertEqual(second.id)
+      // 进行中会话不得混入待确认集合
+      expect(ids.indexOf(active.id)).assertEqual(-1)
+      resetRegistry()
+    })
+
+    // ── 通知深链落点有效性：实时会话或历史至少存在其一 ──
+    it('hasSessionOrHistory_liveSession', 0, () => {
+      resetRegistry()
+      let session = createSession(input('localsend-send', 'live'))
+      expect(hasSessionOrHistory(session.id)).assertTrue()
+      expect(hasSessionOrHistory('missing-session-id')).assertFalse()
       resetRegistry()
     })
   })

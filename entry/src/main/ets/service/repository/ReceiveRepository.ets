@@ -88,6 +88,8 @@ let receiveSessionStates: Record<string, string> = {
 }; // sessionId -> 状态：'waiting'（等待）|'sending'（发送中）|'finished'（完成）|'finishedWithErrors'（完成但有错误）|'canceledBySender'（发送方取消）|'failed'（传输中断失败）
 let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> 是否已自动接收
 let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
+// 已补记「部分完成」接收历史的会话：取消/失败存在多条事件路径，避免历史重复写入
+let sessionPartialHistoryRecorded: Record<string, boolean> = {};
 
 // ── 一次性传输事件 ──
 let pendingRecvCompleted: string = '';
@@ -389,7 +391,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       acceptWithTargets(sid, allFileIds).then((acceptError: string) => {
         if (acceptError.length > 0) {
           receiveSessionStates[sid] = 'failed';
-          logger.warn('会话自动接收失败 ' + sid.substring(0, 8) + ': ' + acceptError);
+          logger.warn('会话自动接收失败 ' + sid + ': ' + acceptError);
         }
       }).catch((e: Error) => {
         logger.warn('自动确认接收失败：' + e.message);
@@ -418,7 +420,7 @@ export function handleSessionEndEventTyped(event: NativeSessionEndEvent): void {
   // 方向过滤：接收侧状态表只承载本机接收会话；发送方向/陌生标识的同类事件一律忽略并留痕，
   // 不改动任何接收侧状态表（不清理接收目录、不发布多余变更通知）。
   if (!isLocalReceiveSessionId(sessionId, Object.keys(receiveSessionStates))) {
-    logger.debug('忽略非本机接收会话的会话结束事件：' + sessionId.substring(0, 8));
+    logger.debug('忽略非本机接收会话的会话结束事件：' + sessionId);
     return;
   }
   if (event.reason === 'Cancelled' || event.reason === 'cancelled') {
@@ -468,7 +470,7 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     sessionEndCheckTimers = newTimers;
     // 会话已成功完成（finishReceiveSession 已执行导出）——无需处理
     if (sessionFinished[sessionId] === true || receiveSessionStates[sessionId] === 'finished') {
-      logger.debug('会话已结束（已完成） 会话=' + sessionId.substring(0, 8));
+      logger.debug('会话已结束（已完成） 会话=' + sessionId);
       return;
     }
     // 仍未完成：按失败处理（网络中断/写入失败导致传输中止），
@@ -540,6 +542,7 @@ function pruneTerminalSessionState(): void {
   sessionCompletedCount = recordWithoutKeys(sessionCompletedCount, drop);
   sessionExported = recordWithoutKeys(sessionExported, drop);
   sessionFinished = recordWithoutKeys(sessionFinished, drop);
+  sessionPartialHistoryRecorded = recordWithoutKeys(sessionPartialHistoryRecorded, drop);
   sessionFileMap = recordWithoutKeys(sessionFileMap, drop);
   receiveSessionStates = recordWithoutKeys(receiveSessionStates, drop);
   receiveSessionAutoAccepted = recordWithoutKeys(receiveSessionAutoAccepted, drop);
@@ -581,7 +584,7 @@ export function handlePrepareUploadAbortedEventTyped(event: NativePrepareUploadA
   finishLocalReceiveSession(sessionId, SessionStage.cancelled);
   // 清理该会话在沙箱目录中的半成品文件
   cleanupSessionReceiveFiles(sessionId);
-  logger.debug('发送方在确认前已中止传输 会话=' + sessionId.substring(0, 8));
+  logger.debug('发送方在确认前已中止传输 会话=' + sessionId);
   notifyChange();
 }
 
@@ -909,7 +912,7 @@ async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string
     }
   }
   if (known === 0) {
-    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 无声明大小');
+    logger.debug('跳过存储检查：会话 ' + sessionId + ' 无声明大小');
     return '';
   }
   let dir: string = await ensureRecvDownloadDir();
@@ -924,7 +927,7 @@ async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string
     logger.warn('查询可用空间失败：' + String(e));
   }
   if (free < 0) {
-    logger.debug('跳过存储检查：会话 ' + sessionId.substring(0, 8) + ' 可用空间未知');
+    logger.debug('跳过存储检查：会话 ' + sessionId + ' 可用空间未知');
     return '';
   }
   if (decideStorageCheck(free, total, RECEIVE_STORAGE_RESERVE_BYTES) ===
@@ -1039,7 +1042,7 @@ export async function respondToRequest(sessionId: string, accept: boolean,
       // 失败原因透传到会话错误信息（存储不足等本地原因用户可见）
       receiveSessionStates[sessionId] = 'canceledBySender';
       finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
-      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId.substring(0, 8));
+      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId);
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
@@ -1150,17 +1153,79 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
 
 // ── 会话清理 ──
 
+// 中断清理计划：已完成文件是完整交付物（须保留并补记历史），其余文件按半成品清理。
+export interface InterruptedReceiveCleanupPlan {
+  keepFileIds: Record<string, boolean>
+  completedEntries: Array<ReceivedFileEntry>
+}
+
+/**
+ * 规划接收会话中断（取消/失败）时的文件清理（纯函数）。
+ * completed 的键口径与 completedFileIds 一致（sessionId:fileId）；
+ * 只有该表中登记的文件才视为已完成，未登记的一律按半成品清理。
+ */
+export function planInterruptedReceiveCleanup(sessionId: string,
+  entries: Array<ReceivedFileEntry> | undefined,
+  completed: Record<string, boolean>): InterruptedReceiveCleanupPlan {
+  let keepFileIds: Record<string, boolean> = {};
+  let completedEntries: Array<ReceivedFileEntry> = [];
+  let plan: InterruptedReceiveCleanupPlan = {
+    keepFileIds: keepFileIds,
+    completedEntries: completedEntries
+  };
+  if (entries === undefined) {
+    return plan;
+  }
+  for (let i = 0; i < entries.length; i++) {
+    if (completed[sessionId + ':' + entries[i].fileId] === true) {
+      keepFileIds[entries[i].fileId] = true;
+      completedEntries.push(entries[i]);
+    }
+  }
+  return plan;
+}
+
+// 记录中断会话中已完成文件的历史（部分成功）：路径与元数据取自接收侧登记。
+function recordPartialReceiveHistory(sessionId: string,
+  completedEntries: Array<ReceivedFileEntry>): void {
+  let senderAlias: string = receiveSessionSenderAlias[sessionId] ?? '';
+  let pathMap: Record<string, string> = {};
+  for (let i = 0; i < completedEntries.length; i++) {
+    let entry: ReceivedFileEntry = completedEntries[i];
+    if (entry.filePath.length > 0) {
+      pathMap[entry.fileId] = entry.filePath;
+    }
+  }
+  recordReceiveHistory(sessionId, completedEntries, senderAlias, pathMap);
+}
+
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，
 // 含 Download/<包名>/ 普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
+// 已完成文件是会话的部分交付物：保留并补记接收历史，只有未完成文件按半成品删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
-  removeRecvTargetFiles(sessionId);
+  let plan: InterruptedReceiveCleanupPlan =
+    planInterruptedReceiveCleanup(sessionId, sessionFileMap[sessionId], completedFileIds);
+  if (plan.completedEntries.length > 0 && sessionPartialHistoryRecorded[sessionId] !== true) {
+    sessionPartialHistoryRecorded[sessionId] = true;
+    logger.info('会话中断时保留已完成文件 ' + plan.completedEntries.length + ' 个 会话=' + sessionId);
+    // 历史写入失败不得中断清理：已完成文件已落盘，半成品仍需删除
+    try {
+      recordPartialReceiveHistory(sessionId, plan.completedEntries);
+    } catch (e) {
+      logger.warn('补记部分完成接收历史失败：' + String(e));
+    }
+  }
+  removeRecvTargetFiles(sessionId, plan.keepFileIds);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   if (entries === undefined) {
     return;
   }
   let saveDir: string = getReceiveCacheDir();
   for (let i = 0; i < entries.length; i++) {
+    if (plan.keepFileIds[entries[i].fileId] === true) {
+      continue;
+    }
     let candidate: string = entries[i].filePath.length > 0 ? entries[i].filePath : saveDir + entries[i].fileName;
     try {
       fs.unlinkSync(candidate);

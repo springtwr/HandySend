@@ -25,8 +25,9 @@ export function buildContextPrefix(context: LogContext | undefined): string {
   }
   let parts: Array<string> = [];
   if (context.sessionId !== undefined && context.sessionId.length > 0) {
-    let short = context.sessionId.length > 8 ? context.sessionId.substring(0, 8) : context.sessionId;
-    parts.push('sid=' + short);
+    // 会话标识含协议前缀（如 localsend-receive_1730567890123_7），截取前若干字符只会得到
+    // 各会话共有的前缀、无法区分，故完整输出，便于按标识串联一次传输的全部日志
+    parts.push('sid=' + context.sessionId);
   }
   if (context.fileId !== undefined && context.fileId.length > 0) {
     parts.push('fid=' + context.fileId);

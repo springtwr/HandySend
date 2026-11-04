@@ -142,3 +142,76 @@ async fn test_discovery_device_found() {
     // 清理
     bridge_discovery::stop_discovery(&state);
 }
+
+/// 回归：已知通道探测成功不能阻止子网扫描，且子网扫描要覆盖两种协议。
+///
+/// 已知设备 A 会应答探测，但它只能证明 HTTP 可达，不能证明组播可用。新设备 B
+/// 不在已知通道中、且只支持 HTTP；主协议用 HTTPS 扫描不到它，必须回退到备用协议。
+/// 若把探测确认当成「组播可用」的证据，或只扫主协议，B 都会被漏掉。
+#[tokio::test]
+async fn test_staged_discover_scans_subnet_after_known_probe() {
+    let (known_port, _stop_known) =
+        start_register_server("Known-Device", "known-fingerprint").await;
+    let (scan_port, _stop_scan) = start_register_server("New-Device", "new-fingerprint").await;
+
+    let (state, _event_rx) = new_state_with_event_tx();
+    identity::init_with_persisted_identity(
+        &state,
+        "HandySend-Staged".to_string(),
+        DeviceType::Mobile,
+        "",
+    )
+    .unwrap();
+
+    let multicast_port = next_multicast_port();
+    let config = serde_json::json!({
+        "port": multicast_port,
+        "protocol": "http",
+        "multicastGroup": TEST_GROUP.to_string(),
+        "discoveryTimeoutMs": 1000,
+        "download": true,
+    })
+    .to_string();
+    bridge_discovery::start_discovery_v2(state.clone(), &config)
+        .await
+        .expect("启动发现失败");
+
+    // 已知通道只包含 A；子网扫描端口指向 B，只有扫描才能命中 B
+    let channels = serde_json::json!([{
+        "host": "127.0.0.1",
+        "port": known_port,
+        "protocol": "http",
+    }]);
+    let interface_ips = serde_json::json!(["127.0.0.99"]);
+
+    // 非强制路径：探测确认不能当作「组播可用」的证据而跳过子网扫描
+    let confirmed = bridge_discovery::discovery_discover_staged(
+        &state,
+        &channels.to_string(),
+        &interface_ips.to_string(),
+        scan_port,
+        "https",
+        "http",
+        100,
+        false,
+    )
+    .await
+    .expect("分阶段发现失败");
+
+    assert!(
+        confirmed >= 2,
+        "已知设备与子网扫描设备都应被确认，实际确认数={confirmed}"
+    );
+    let known = {
+        let s = state.lock().unwrap();
+        bridge_discovery::discovery_get_device(&s, "known-fingerprint")
+    };
+    assert_ne!(known, "null", "已知通道设备应写入 store");
+    let scanned = {
+        let s = state.lock().unwrap();
+        bridge_discovery::discovery_get_device(&s, "new-fingerprint")
+    };
+    assert_ne!(scanned, "null", "子网扫描设备应写入 store");
+
+    bridge_discovery::stop_discovery(&state);
+}

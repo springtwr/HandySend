@@ -4,9 +4,9 @@
  * 编排两条独立的 dataTransfer 长时任务与系统实况通知（downloadTemplate）：
  * - 传输任务：后台存在活跃传输时申请，1s 节流发布进度；终态发布普通通知后立即停止；
  * - 保活任务：允许后台接收且网页/LocalSend 服务运行时，退后台固定 5 分钟，
- *   每 30 秒推进进度，到期静默停止（不发布 100%）；
- * - onForeground → 停止两条任务并撤销终态通知；
- * - 用户删除通知（continuousTaskCancel USER_CANCEL）→ 只影响对应任务；
+ *   每 30 秒推进进度，到期发布 100% 结束帧后停止；
+ * - onForeground → 延迟 3 秒停止传输任务（期间重新退后台则复用），立即停止保活任务并撤销终态通知；
+ * - 用户删除通知（continuousTaskCancel 用户取消）→ 只影响对应任务；
  *   删除传输任务通知时取消活跃传输。
  *
  * 数据源：统一会话注册表的协议无关聚合快照（TransferSessionRegistry.getOverallSnapshot）。
@@ -15,12 +15,13 @@
 
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { common, WantAgent } from '@kit.AbilityKit';
 import { getAppContext, subscribe, isAppForeground, setAppForeground } from './repository/AppCore';
 import { getWebActualPort } from './repository/WebShareRepository';
 import { isServerRunning } from './repository/ServerRepository';
 import { isBackgroundReceiveEnabled } from './repository/SettingsRepository';
+import { isNotificationPermissionGranted } from './PermissionService';
 import {
   cancel as cancelSession,
   getAllSessions,
@@ -31,17 +32,24 @@ import {
   OverallSnapshot,
   SessionStage,
   TransferSession,
+  isPreparing,
   isSuccessStage,
   isTerminalStage
 } from '../model/transfer/TransferSession';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
-import { buildBackToFrontWantAgent, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
+import {
+  buildBackToFrontWantAgent,
+  NAV_TARGET_SESSION_DETAIL,
+  NAV_TARGET_TRANSFER_CENTER
+} from '../utils/WantAgentUtil';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:BackgroundTransferService', '后台传输');
 
 // 进度通知发布节流间隔（毫秒）
 const PUBLISH_INTERVAL_MS = 1000;
+// 回前台延迟停止传输任务的宽限时间（毫秒）：快速前后台切换时复用原任务，避免 stop/start 抖动
+const FOREGROUND_STOP_GRACE_MS = 3000;
 // 空闲保活时长（毫秒）：网页服务或 LocalSend 服务器运行且无传输时保留 5 分钟
 const WEB_KEEPALIVE_MS = 5 * 60 * 1000;
 // 保活心跳间隔（毫秒）：每 30 秒更新一次进度；5 分钟后发 100% 并立即结束
@@ -51,6 +59,12 @@ const TERMINAL_NOTICE_ID = 10002;
 const TERMINAL_NOTICE_FALLBACK_ID = 10003;
 // 实况通知 typeCode：数据传输（dataTransfer）类型固定为 8（官方约定）
 const LIVE_VIEW_TYPE_CODE = 8;
+// 长时任务取消原因数值：与 ContinuousTaskCancelReason / DetailedCancelReason 枚举值对齐。
+// 运行时枚举对象在部分设备/测试环境不可用，故用数值比较。
+const CANCEL_REASON_USER = 1;
+const CANCEL_REASON_USER_REMOVE_NOTIFICATION = 3;
+// detailedReason（取消详情）从 API 26 开始提供；低版本只按 reason 判断
+const DETAILED_CANCEL_REASON_MIN_API = 26;
 
 // ── 状态机 ──
 
@@ -92,9 +106,9 @@ let taskContext: common.UIAbilityContext | undefined = undefined;
 let cachedContext: common.UIAbilityContext | undefined = undefined;
 // 上次进度发布时间（节流基准；<0 表示任务周期内尚未发布过）
 let lastPublishMs: number = -1;
-// 上次已发布的进度值（传入聚合函数做单调防回跳）
-let lastPublishedPercent: number = 0;
 let pendingTimer: number = -1;
+// 回前台延迟停止定时器（-1 表示未安排）
+let foregroundStopTimer: number = -1;
 // 终态停止代次：新传输出现时使在途的终态停止失效
 let terminalStopGeneration: number = 0;
 // 空闲保活截止时刻、窗口起点（0 表示无）与停止定时器
@@ -147,6 +161,25 @@ export function resolveTerminalKind(hasFailure: boolean, allFailed: boolean): Tr
     return TransferTerminalKind.success;
   }
   return allFailed ? TransferTerminalKind.failed : TransferTerminalKind.partial;
+}
+
+/**
+ * 停止决策：有任务 Id 时按 Id 精确停止旧任务；
+ * 无任务 Id 时只能停全部，需 generation 匹配，避免误停新周期任务。
+ */
+export function shouldExecuteStop(taskId: number, stopGeneration: number,
+  startGeneration: number): boolean {
+  return taskId >= 0 || stopGeneration === startGeneration;
+}
+
+/**
+ * 是否视为用户主动取消：兼容 USER_CANCEL 与 USER_CANCEL_REMOVE_NOTIFICATION，
+ * 并兼容 API 26 通过 detailedReason 上报“用户移除通知”的情况。
+ */
+export function isUserCancel(reason: number, detailedReason: number | undefined): boolean {
+  return reason === CANCEL_REASON_USER ||
+    reason === CANCEL_REASON_USER_REMOVE_NOTIFICATION ||
+    detailedReason === CANCEL_REASON_USER_REMOVE_NOTIFICATION;
 }
 
 // ── 数据聚合（协议无关：唯一来源为统一会话注册表） ──
@@ -298,7 +331,8 @@ function allTerminalFailed(): boolean {
   let allFailed: boolean = true;
   for (let i = 0; i < cycleSessionIds.length; i++) {
     let session = getSession(cycleSessionIds[i]);
-    if (session !== undefined && isTerminalStage(session.stage)) {
+    if (session !== undefined && session.stage !== SessionStage.declined &&
+      isTerminalStage(session.stage)) {
       hasTerminal = true;
       if (session.stage === SessionStage.succeeded ||
         session.stage === SessionStage.partiallyFailed) {
@@ -313,6 +347,23 @@ function allTerminalFailed(): boolean {
 // 终态文案判定（hasFailure/allTerminalFailed）只看本轮集合
 let cycleSessionIds: Array<string> = [];
 
+// 本轮已终态会话的进度快照：任务完成后其字节不再从聚合分母/分子中移除，
+// 会话被回收后仍用这里的终值，避免完成时或回收时进度跳变。
+interface CycleContribution {
+  sent: number
+  total: number
+}
+
+interface CycleProgress {
+  percent: number
+  // 本轮传输任务总数（进行中 + 终态传输尝试，不含拒绝请求）
+  taskCount: number
+  // 仅 taskCount === 1 时给出该会话标识，供终态通知决定是否直达详情
+  singleSessionId: string
+}
+
+let cycleFrozen: Map<string, CycleContribution> = new Map();
+
 /** 把当前所有非终态会话纳入本轮关注集合（新会话出现即纳入，幂等）。 */
 function trackCycleSessions(): void {
   let sessions: Array<TransferSession> = getAllSessions();
@@ -323,11 +374,101 @@ function trackCycleSessions(): void {
   }
 }
 
+/** 终态会话是否计入本轮任务数：拒绝请求不算传输任务，其余终态保留。 */
+function isCycleSessionCountable(session: TransferSession): boolean {
+  if (session.stage === SessionStage.active) {
+    return true;
+  }
+  if (!isTerminalStage(session.stage)) {
+    return false;
+  }
+  return session.stage !== SessionStage.declined;
+}
+
+/** 终态会话是否计入进度字节：失败/取消但从未传输过字节的任务只计任务数，不拉低百分比。 */
+function isCycleSessionProgressContributable(session: TransferSession): boolean {
+  return session.transferStartedAt > 0 || session.bytesSent > 0 || isSuccessStage(session.stage);
+}
+
+/**
+ * 本轮批次累计进度：活跃会话取实时字节，终态会话冻结最终字节。
+ * 从未传输过字节的失败/取消只计任务数，不进入进度分母。
+ * 任务完成不会把它从分母中移除；新任务加入才增加分母，因此完成时不会跳变。
+ * 同时返回本轮传输任务总数和唯一任务标识，供通知文案与点击目标使用。
+ */
+function currentCycleProgress(): CycleProgress {
+  let sent: number = 0;
+  let total: number = 0;
+  let taskCount: number = 0;
+  let firstSessionId: string = '';
+  let countTask = (sessionId: string): void => {
+    taskCount++;
+    if (firstSessionId.length === 0) {
+      firstSessionId = sessionId;
+    }
+  };
+  for (let i = 0; i < cycleSessionIds.length; i++) {
+    let sessionId: string = cycleSessionIds[i];
+    let session: TransferSession | undefined = getSession(sessionId);
+    if (session === undefined) {
+      let frozen: CycleContribution | undefined = cycleFrozen.get(sessionId);
+      if (frozen !== undefined) {
+        countTask(sessionId);
+        sent += frozen.sent;
+        total += frozen.total;
+      }
+      continue;
+    }
+    if (session.stage === SessionStage.active) {
+      countTask(sessionId);
+      if (isPreparing(session)) {
+        sent += session.prepBytes;
+        total += session.prepTotalBytes;
+      } else {
+        sent += session.bytesSent;
+        total += session.totalBytes;
+      }
+      continue;
+    }
+    if (!isCycleSessionCountable(session)) {
+      continue;
+    }
+    countTask(sessionId);
+    let frozen: CycleContribution | undefined = cycleFrozen.get(sessionId);
+    if (frozen === undefined) {
+      if (isCycleSessionProgressContributable(session)) {
+        frozen = { sent: session.bytesSent, total: session.totalBytes };
+      } else {
+        // 只计任务数：从未传输过字节的失败/取消不进入进度分母
+        frozen = { sent: 0, total: 0 };
+      }
+      cycleFrozen.set(sessionId, frozen);
+    }
+    sent += frozen.sent;
+    total += frozen.total;
+  }
+  let percent: number = 0;
+  if (total > 0) {
+    percent = Math.floor(sent * 100 / total);
+    if (percent < 0) {
+      percent = 0;
+    } else if (percent > 100) {
+      percent = 100;
+    }
+  }
+  return {
+    percent: percent,
+    taskCount: taskCount,
+    singleSessionId: taskCount === 1 ? firstSessionId : ''
+  };
+}
+
 /** 本轮关注会话中是否存在失败类终态（终态文案判定用，不受历史会话污染）。 */
 function cycleHasFailure(): boolean {
   for (let i = 0; i < cycleSessionIds.length; i++) {
     let session = getSession(cycleSessionIds[i]);
-    if (session !== undefined && isTerminalStage(session.stage) && !isSuccessStage(session.stage)) {
+    if (session !== undefined && session.stage !== SessionStage.declined &&
+      isTerminalStage(session.stage) && !isSuccessStage(session.stage)) {
       return true;
     }
   }
@@ -350,6 +491,18 @@ function taskNotificationId(kind: LongTaskKind): number {
 
 function taskGeneration(kind: LongTaskKind): number {
   return kind === LongTaskKind.transfer ? startGeneration : keepaliveStartGeneration;
+}
+
+// 进度行文案：单任务「45%」，多任务「共 3 个任务 · 45%」。
+// 任务数为本轮传输任务总数；百分比为本轮批次累计进度。
+// dataTransfer 长时任务允许更新进度信息，实况窗文案仅用于进度展示。
+function buildProgressContent(progress: CycleProgress): string {
+  let value: number = Math.floor(progress.percent);
+  if (progress.taskCount > 1) {
+    return getString($r('app.string.bg_transfer_content_tasks_percent').id,
+      progress.taskCount, value);
+  }
+  return getString($r('app.string.bg_transfer_content_percent').id, value);
 }
 
 // 以指定长时任务的通知 Id 发布实况通知帧（downloadTemplate + SYSTEM_LIVE_VIEW）
@@ -405,15 +558,15 @@ function publishFrame(kind: LongTaskKind, title: string, content: string,
   return notificationPublishChain;
 }
 
-function emitProgress(overall: OverallSnapshot): void {
+function emitProgress(): void {
   // 终态已发布后不再发布任何进度帧（防过期节流帧回跳覆盖终态）
   if (terminalPublished) {
     return;
   }
   lastPublishMs = Date.now();
-  lastPublishedPercent = overall.percent;
+  let progress: CycleProgress = currentCycleProgress();
   publishFrame(LongTaskKind.transfer, getString($r('app.string.bg_transfer_title_transfer').id),
-    getString($r('app.string.bg_transfer_content_transfer').id), Math.floor(overall.percent));
+    buildProgressContent(progress), progress.percent);
 }
 
 /** 发布保活任务帧（独立于传输任务）。 */
@@ -427,13 +580,13 @@ function publishWebKeepaliveFrame(): void {
 // 发布最新聚合进度：在发布时刻重读快照并计算，避免使用调度时刻的过期快照；
 // 期间传输已终态则直接转终态发布。
 function publishLatestProgress(): void {
-  let overall = currentOverall(lastPublishedPercent);
+  let overall = currentOverall(0);
   if (overall.active) {
-    emitProgress(overall);
+    emitProgress();
     return;
   }
   if (!terminalPublished) {
-    publishTerminal(overall);
+    publishTerminal();
   }
 }
 
@@ -478,18 +631,25 @@ function terminalTitleRes(kind: TransferTerminalKind): number {
   return $r('app.string.bg_transfer_title_done').id;
 }
 
-/** 发布终态普通通知（独立 id，可震动响铃；回前台时统一撤销）。 */
-function publishTerminalNotice(overall: OverallSnapshot): Promise<void> {
+/**
+ * 发布终态普通通知（独立 id，可震动响铃；回前台时统一撤销）。
+ * 本轮仅一个传输任务时点击直达该任务详情；多个任务合并后点击回到任务中心，
+ * 与发送失败浮卡「单条进详情、多条进任务页」的口径一致。
+ */
+function publishTerminalNotice(): Promise<void> {
   let context = getAppContext();
   if (context === undefined) {
     return Promise.resolve();
   }
   let kind: TransferTerminalKind = terminalKind();
   let title: string = getString(terminalTitleRes(kind));
-  let taskCount: number = cycleSessionIds.length;
+  let progress: CycleProgress = currentCycleProgress();
+  let taskCount: number = progress.taskCount;
   let content: string = getString($r('app.string.bg_transfer_content_tasks_percent').id,
-    taskCount, Math.floor(overall.percent));
-  return buildBackToFrontWantAgent(context, NAV_TARGET_TRANSFER_CENTER).then((agent: WantAgent): Promise<void> => {
+    taskCount, progress.percent);
+  let target: string = taskCount === 1 ? NAV_TARGET_SESSION_DETAIL : NAV_TARGET_TRANSFER_CENTER;
+  let sessionId: string = taskCount === 1 ? progress.singleSessionId : '';
+  return buildBackToFrontWantAgent(context, target, sessionId).then((agent: WantAgent): Promise<void> => {
     let noticeId: number = notificationId === TERMINAL_NOTICE_ID ? TERMINAL_NOTICE_FALLBACK_ID : TERMINAL_NOTICE_ID;
     let request: notificationManager.NotificationRequest = {
       id: noticeId,
@@ -532,11 +692,10 @@ function restartIdleKeepaliveWindow(): void {
 
 // 终态发布：成功和失败都发普通终态通知，保证新消息提醒；
 // 普通通知发布完成后立即停止传输长时任务，避免“正在传输”通知继续误导。
-function publishTerminal(overall: OverallSnapshot): void {
+function publishTerminal(): void {
   cancelPendingPublish();
   terminalPublished = true;
   lastPublishMs = Date.now();
-  lastPublishedPercent = overall.percent;
   let stopGen: number = ++terminalStopGeneration;
   let stopTransfer = (): void => {
     if (stopGen !== terminalStopGeneration) {
@@ -544,7 +703,7 @@ function publishTerminal(overall: OverallSnapshot): void {
     }
     stopTaskInternal();
   };
-  publishTerminalNotice(overall).then(stopTransfer, stopTransfer);
+  publishTerminalNotice().then(stopTransfer, stopTransfer);
 }
 
 /**
@@ -575,11 +734,24 @@ function scheduleWebKeepaliveStop(): void {
 function onTransferChanged(): void {
   if (isAppForeground()) {
     maybePromptNotificationAuth();
+    // 前台宽限期内任务仍可能运行：继续纳入本轮会话，保证随后退后台时终态文案完整
+    if (state !== TransferTaskState.idle) {
+      trackCycleSessions();
+      // 即使前台不发布进度，也在此冻结刚终态会话的字节，避免回收后再计算出现回跳
+      currentCycleProgress();
+      // 前台出现新传输时使在途终态停止失效，避免它误停仍有活跃会话的任务
+      if (currentOverall(0).active) {
+        terminalStopGeneration++;
+        terminalPublished = false;
+      }
+    }
     return;
   }
-  let overall = currentOverall(lastPublishedPercent);
+  let overall = currentOverall(0);
   // 任何后台事件都先把当前进行中的会话纳入本轮关注集合（终态文案判定依据）
   trackCycleSessions();
+  // 及时冻结刚终态会话的字节，避免会话回收后再次参与计算
+  currentCycleProgress();
   if (overall.active) {
     // 新传输出现：使在途终态停止失效并复位终态标记，
     // 使传输长时任务继续有效并恢复进度通知；
@@ -596,7 +768,7 @@ function onTransferChanged(): void {
     return;
   }
   if (!terminalPublished) {
-    publishTerminal(overall);
+    publishTerminal();
   }
 }
 
@@ -644,12 +816,40 @@ function resetCycleState(): void {
   notificationId = -1;
   continuousTaskId = -1;
   lastPublishMs = -1;
-  lastPublishedPercent = 0;
   terminalPublished = false;
   cycleSessionIds = [];
+  cycleFrozen.clear();
+}
+
+/** 取消回前台延迟停止（重新退后台时复用仍在运行的任务）。 */
+function cancelForegroundStop(): void {
+  if (foregroundStopTimer >= 0) {
+    clearTimeout(foregroundStopTimer);
+    foregroundStopTimer = -1;
+  }
+}
+
+/** 安排回前台延迟停止：快速前后台切换时取消，避免 stop/start 抖动。 */
+function scheduleForegroundStop(): void {
+  if (foregroundStopTimer >= 0) {
+    return;
+  }
+  foregroundStopTimer = setTimeout(() => {
+    foregroundStopTimer = -1;
+    if (isAppForeground() && state !== TransferTaskState.idle) {
+      logger.debug('前台宽限期结束，停止传输长时任务');
+      stopTaskInternal();
+    }
+  }, FOREGROUND_STOP_GRACE_MS);
 }
 
 function stopTaskInternal(): void {
+  // 停止前清理可能存在的回前台延迟定时器
+  cancelForegroundStop();
+  // 已处于 idle：可能已有停止在途，重复调用不得递增代次使在途停止失效
+  if (state === TransferTaskState.idle) {
+    return;
+  }
   // 令未决的申请回调失效
   startGeneration++;
   let stopGeneration: number = startGeneration;
@@ -663,8 +863,9 @@ function stopTaskInternal(): void {
   if (wasRunning && ctx !== undefined) {
     let context: common.UIAbilityContext = ctx;
     let stopTask = (): void => {
-      // 等待期间已有新周期启动：旧周期的停止不得误停新任务
-      if (stopGeneration !== startGeneration) {
+      // 有任务 Id 时按 Id 精确停止旧任务，不因新周期启动而丢弃停止动作；
+      // 只有无任务 Id、需要停全部的 fallback 才用代次保护，避免误停新任务
+      if (!shouldExecuteStop(taskId, stopGeneration, startGeneration)) {
         return;
       }
       stopLongTask(context, taskId);
@@ -678,8 +879,13 @@ function stopTaskInternal(): void {
 
 // 长时任务取消回调：用户删除通知 → 取消全部活跃传输；系统取消 → 仅复位状态
 function onContinuousTaskCancel(info: backgroundTaskManager.ContinuousTaskCancelInfo): void {
-  let detailedReason: string = info.detailedReason !== undefined ? String(info.detailedReason) : '-';
-  let byUser: boolean = info.reason === backgroundTaskManager.ContinuousTaskCancelReason.USER_CANCEL;
+  // detailedReason 为 API 26 新增字段：低版本不读取，避免访问未定义能力
+  let supportsDetailedReason: boolean = deviceInfo.sdkApiVersion >= DETAILED_CANCEL_REASON_MIN_API &&
+    deviceInfo.apiAvailable(DETAILED_CANCEL_REASON_MIN_API);
+  let detailedReasonValue: number | undefined =
+    supportsDetailedReason ? info.detailedReason : undefined;
+  let detailedReason: string = detailedReasonValue !== undefined ? String(detailedReasonValue) : '-';
+  let byUser: boolean = isUserCancel(info.reason, detailedReasonValue);
   logger.debug('长时任务已取消 id=' + info.id + ' reason=' + info.reason +
     ' detailedReason=' + detailedReason);
   // 保活任务被取消：只结束保活，不影响仍在进行的传输
@@ -689,6 +895,13 @@ function onContinuousTaskCancel(info: backgroundTaskManager.ContinuousTaskCancel
     logger.debug('保活长时任务已取消');
     return;
   }
+  // 旧任务/未知任务的取消事件不能重置当前传输任务
+  if (info.id !== continuousTaskId) {
+    logger.debug('忽略过期长时任务取消 id=' + info.id);
+    return;
+  }
+  // 任务已被系统取消：清理可能存在的回前台延迟停止定时器
+  cancelForegroundStop();
   if (state === TransferTaskState.idle) {
     return;
   }
@@ -745,6 +958,8 @@ export function initBackgroundTransferService(): void {
  */
 export function startTransferTaskIfActive(context: common.UIAbilityContext): void {
   setAppForeground(false);
+  // 快速切回后台：取消前台延迟停止，复用仍在运行的任务
+  cancelForegroundStop();
   cachedContext = context;
   startTaskIfActiveInternal();
 }
@@ -785,7 +1000,14 @@ function stopLongTask(context: common.UIAbilityContext, taskId: number): void {
 
 // 传输长时任务申请内部实现（调用方须已确认为后台场景）
 function startTaskIfActiveInternal(): void {
+  // 申请任务时取消回前台延迟停止，避免旧定时器停掉新任务
+  cancelForegroundStop();
   if (state !== TransferTaskState.idle) {
+    return;
+  }
+  // 无通知权限时无法建立长时任务，直接退化为无保护后台
+  if (!isNotificationPermissionGranted()) {
+    logger.debug('通知权限未开启，跳过传输长时任务');
     return;
   }
   // 优先使用入口记录的上下文，缺省回退 AppCore 缓存的 UIAbilityContext
@@ -824,8 +1046,19 @@ function startTaskIfActiveInternal(): void {
       state = TransferTaskState.running;
       logger.debug('传输长时任务运行中 notificationId=' + res.notificationId +
         ' taskId=' + continuousTaskId);
-      // 首帧立即发布（同时满足实况进度“首次更新”的系统时限要求）
-      emitProgress(overall);
+      // 申请期间会话可能已结束或新增，不能使用申请前的 overall 发首帧：
+      // 已结束则直接收尾（后台补终态通知，前台静默停），仍有活跃会话则按最新快照发帧。
+      let fresh: OverallSnapshot = currentOverall(0);
+      if (!fresh.active) {
+        if (isAppForeground()) {
+          stopTaskInternal();
+        } else {
+          publishTerminal();
+        }
+        return;
+      }
+      trackCycleSessions();
+      emitProgress();
     })
     .catch((e: BusinessError) => {
       if (gen === startGeneration) {
@@ -840,6 +1073,11 @@ function startTaskIfActiveInternal(): void {
 /** 启动保活长时任务（独立于传输任务，固定 5 分钟）。 */
 function startKeepaliveTaskInternal(): void {
   if (keepaliveState !== TransferTaskState.idle) {
+    return;
+  }
+  // 无通知权限时无法建立保活长时任务
+  if (!isNotificationPermissionGranted()) {
+    logger.debug('通知权限未开启，跳过保活长时任务');
     return;
   }
   let context = cachedContext ?? getAppContext();
@@ -888,8 +1126,14 @@ function startKeepaliveTaskInternal(): void {
  */
 export function startWebKeepaliveIfEnabled(context: common.UIAbilityContext): void {
   setAppForeground(false);
+  cancelForegroundStop();
   cachedContext = context;
   if (!isBackgroundReceiveEnabled() || !backgroundServiceRunning()) {
+    return;
+  }
+  // 无通知权限时不建立保活任务，也不开启保活窗口
+  if (!isNotificationPermissionGranted()) {
+    logger.debug('通知权限未开启，跳过后台保活');
     return;
   }
   restartIdleKeepaliveWindow();
@@ -897,11 +1141,13 @@ export function startWebKeepaliveIfEnabled(context: common.UIAbilityContext): vo
 }
 
 /**
- * 回到前台（EntryAbility.onForeground）/Ability 销毁（onDestroy 兜底）：
- * 停止长时任务，通知随之消失，展示交还前台传输页。
+ * 回到前台（EntryAbility.onForeground）或 Ability 销毁（onDestroy 兜底）。
+ * 回前台延迟 3 秒停止传输任务：期间重新退后台则取消停止并复用任务，避免快速切换抖动；
+ * Ability 销毁时传 immediate=true，跳过宽限立即停止。
  */
-export function stopTransferTask(): void {
+export function stopTransferTask(immediate: boolean = false): void {
   setAppForeground(true);
+  cancelForegroundStop();
   // 两条长时任务独立，回前台都停止
   stopKeepaliveTaskInternal();
   // 回前台即视为用户已看到终态通知，统一撤销
@@ -909,6 +1155,11 @@ export function stopTransferTask(): void {
   if (state === TransferTaskState.idle) {
     return;
   }
-  logger.debug('回到前台/销毁时停止传输长时任务');
-  stopTaskInternal();
+  if (immediate) {
+    logger.debug('Ability 销毁，立即停止传输长时任务');
+    stopTaskInternal();
+    return;
+  }
+  logger.debug('回到前台，延迟停止传输长时任务');
+  scheduleForegroundStop();
 }

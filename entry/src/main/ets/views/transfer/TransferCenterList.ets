@@ -25,8 +25,7 @@ import {
   rowNeedsLargeHint,
   rowPercent,
   rowStage,
-  rowStageText,
-  rowCancelLabel
+  rowStageText
 } from '../../viewmodel/TransferCenterViewModel';
 import { SessionStatusBadge } from './SessionStatusBadge';
 import { copyText } from '../../utils/ClipboardUtil';
@@ -43,6 +42,9 @@ export struct TransferCenterList {
   }
   // 多选批量删除：上抛壳层弹二次确认弹窗（与「清空任务历史」同口径，由壳层承载弹窗本体）
   @Event onDeleteSelected: () => void = () => {
+  }
+  // 首个可见行下标上抛：壳层据此判断最新任务行是否仍在视口内（失败浮卡的抑制条件）
+  @Event onFirstVisibleIndexChange: (index: number) => void = (_index: number) => {
   }
 
   // 会话条目行不在组件内以「对象参数构建方法」产出：行 UI 直接内联在列表行迭代器内，
@@ -305,7 +307,7 @@ export struct TransferCenterList {
                         })
                     }
                   } else if (rowActions(ri.item.session).canCancel) {
-                    Button(rowCancelLabel(ri.item.session))
+                    Button($r('app.string.session_detail_cancel'))
                       .fontSize(DesignTokens.font.bodyS)
                       .height(36)
                       .backgroundColor($r('app.color.page_background'))
@@ -335,7 +337,7 @@ export struct TransferCenterList {
                   }
                 } else if (rowActions(ri.item.session).canCancel) {
                   // 任意方向进行中（含发送「等待对端接收/确认」）：单键「取消」
-                  Button(rowCancelLabel(ri.item.session))
+                  Button($r('app.string.session_detail_cancel'))
                     .fontSize(DesignTokens.font.bodyS)
                     .height(36)
                     .backgroundColor($r('app.color.page_background'))
@@ -412,6 +414,10 @@ export struct TransferCenterList {
       .onDidScroll((scrollOffset: number, _scrollState: ScrollState) => {
         let offset = this.scroller.currentOffset();
         this.onScrollDelta(scrollOffset, offset.yOffset);
+      })
+      // 首条可见行下标变化时上抛：第 0 行是最新任务，仍在视口内即无需浮卡提醒
+      .onScrollIndex((first: number, _last: number) => {
+        this.onFirstVisibleIndexChange(first);
       })
     }
     .width('100%')

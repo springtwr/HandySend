@@ -63,7 +63,7 @@ HandySend/
 │   │   ├── hvigorfile.ts             # BuildRustNapi + RustTest 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫 + Rust 测试）
 │   │   ├── Index.ets                  # HAR 入口
 │   │   └── libs/                     # .so 产物（arm64-v8a / x86_64，gitignore，增量判断依据）
-│   └── third_party/localsend/        # Git submodule（fork 定制分支 harmony-web-ui，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
+│   └── third_party/localsend/        # Git submodule（fork 定制分支 main，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
 ├── build-profile.json5               # 全局构建配置（含签名，gitignore）
 └── oh-package.json5                  # 全局依赖
 ```
@@ -87,7 +87,8 @@ HandySend/
 - 后台传输生命周期编排（详见 [architecture/background-transfer.md](architecture/background-transfer.md)）：
   - `onCreate` 初始化 `BackgroundTransferService`
   - `onBackground`：MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收，并启动后台传输任务（同步 `AppCore.setAppForeground(false)`）
-  - `onForeground`：停止后台传输任务、撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
+  - `onForeground`：延迟 3 秒停止后台传输任务（期间重新退后台则取消停止并复用），
+    停止保活任务，撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
   - `onBackground`：启动后台传输任务后同步一次后台关注通知，补发前台期间已存在的待确认请求
   - `onDestroy` 兜底停止
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回
@@ -216,7 +217,8 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 `entry/src/main/ets/service/BackgroundTransferService.ets`
 
 后台传输保护（手机/平板/PC 通用）：应用处于后台且存在活跃传输（LocalSend 发送/接收、MTA 发送/接收、Web 分享下载/上传）时申请独立的 `dataTransfer` 传输长时任务；
-「允许后台接收」开启且网页服务或 LocalSend 服务器运行时，另申请独立的 5 分钟空闲保活长时任务，两条任务各有通知、互不重置。
+「允许后台接收」开启、通知权限已开启且网页服务或 LocalSend 服务器运行时，另申请独立的 5 分钟空闲保活长时任务，
+两条任务各有通知、互不重置；通知权限未开启时设置项置灰，后台长时任务不申请。
 数据源唯一为统一会话注册表的协议无关聚合快照（待确认不计入活跃），服务为模块级单例、由 EntryAbility 生命周期驱动。
 
 启停驱动、终态处理、前台引导、删除通知取消等实现细节详见 [architecture/background-transfer.md](architecture/background-transfer.md)。
@@ -228,7 +230,7 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 应用处于后台时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）：
 只展示待确认请求（LocalSend / MTA 接收、Web 上传）。网页访问/网页下载不进入该通知，
 只写诊断日志并续期网页服务的有界后台保活。通知按统一注册表的待确认计数驱动发布/撤回，
-回到前台或相关会话结束即撤回；点击统一回到任务中心。
+回到前台或相关会话结束即撤回；单条待确认点击直达该请求详情，多条合并回到任务中心。
 
 详见 [architecture/background-transfer.md](architecture/background-transfer.md) §2。
 
@@ -454,7 +456,7 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 
 - 内容结构：方向说明（与分区标题同风格）→ 独立设备卡（位于文件区块上方，单层卡片容器内直接排布对端信息，不套内层色块）→ 平铺总进度与速度（位于文件区块上方，
   历史条目无实时进度时不渲染、无卡片背景）→ 三区块结构——「文件」区块（分区标题 + 文件清单卡片〔条目直排于卡片内、相邻条目以分隔线区隔；校验和可得时一并展示；
-  文本消息会话为文本预览卡片，不展示文件清单与字节进度〕）；「详情」区块（分区标题「传输详情」+ 完整信息卡片〔总大小/耗时/平均与峰值速度 + 结果与错误（同一卡片内，不单列分区） /
+  文本消息会话为文本预览卡片，不展示文件清单与字节进度〕）；「详情」区块（分区标题「传输详情」+ 完整信息卡片〔总大小/任务耗时/传输耗时/平均与峰值速度 + 结果与错误（同一卡片内，不单列分区） /
   本机与标识〕）；「时间线」区块（分区标题 + 时间线卡片），下接悬浮底部操作区；进度行（速度 / 剩余时间）与总体百分比同侧靠右对齐；时间点信息统一由时间线承载，详情区块不重复展示
 - 设备卡展示对端设备信息（来源/发送方式徽标、型号徽标，缺失项降级省略）；设备图标按来源解析（MTA 来源用品牌图标、其余用设备类型图标，与发送页设备列表同源，进行中与结束后一致）
   ；对端标识（LocalSend 指纹，或 MTA 对端的 BLE 设备地址）默认中间缩略（保留首尾字符），标签随来源中性化，点击后弹出完整内容（弹窗文本可长按自由选择复制，单行居中、多行左对齐）
@@ -463,7 +465,8 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   复制为长按整行（复制完整值并给出成功/失败提示，不附加来源标注）；本机与标识区块的两栏来源不同——「协议会话 ID」取自会话承载的协议层标识
   （协议无此概念或尚未回填时为空，展示统一占位），「会话标识」取自应用内统一会话标识（条目身份、详情取数依据）。耗时与平均速度的实时/归档双口径取数规则见
   [architecture/session-engine.md](architecture/session-engine.md) §4
-- 详情信息以 `@ObservedV2` 类承载可变字段（`@Trace`）并在刷新时**原地更新同一实例**，展示子组件直接读取该实例字段；刷新跟随既有的进度变更通知节奏，不引入独立定时器
+- 详情信息以 `@ObservedV2` 类承载可变字段（`@Trace`）并在刷新时**原地更新同一实例**，展示子组件直接读取该实例字段；刷新由进度变更通知驱动，
+  实时平均速度按 1 秒显示节流；详情页打开且会话未终结时另按 1 秒走时刷新任务/传输耗时（只重算墙钟相关展示值）
 - 文件区块按**统一预览规则**渲染，依赖「文件数量 + 文本类判定」（`isTextFile` 为唯一判定来源）与「可预览来源」守卫（守卫语义见
   [architecture/session-engine.md](architecture/session-engine.md) §4）：会话**仅一个文本类文件且为手动输入的文本消息**时**内联预览**
   （文本卡片可滚动；发送方向标题为「发送给 X 的文本」、接收方向为「来自 X 的文本」；文件选择器选中的 `.txt` 等文本文件按普通文件清单展示，可点击预览，
@@ -577,8 +580,10 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 为 0 时不显示。形态判定见 [8.5](#85-响应式设计)。
 
 主页根容器还承载两处全局行为（详见 [9. 状态管理](#9-状态管理)）：**新传输提示弹窗**——应用前台时收到新的待确认接收请求，
-在任意页面（含子页面）之上弹出统一提示（「查看」进入该会话详情、「稍后」/遮罩/返回键仅关闭；单槽位守卫、按会话标识去重；后台不弹、回前台补弹一次）；
-**通知深链**——点击后台传输 / 待确认通知携带「任务中心」深链意图，消费时先清空路由栈回到根、再切到任务页签。
+在任意页面（含子页面）之上弹出统一提示（「查看」进入该会话详情、「稍后」/遮罩/返回键仅关闭；单槽位守卫、按会话标识去重；后台不弹、回前台补弹一次，
+从通知进入前台时点击通知那一刻已存在的待确认请求除外）；
+**通知深链**——点击后台传输终态 / 待确认通知时，仅一个任务的通知直达该任务详情、多任务合并的通知回到任务中心；
+两种落点都先清空路由栈回到根、切到任务页签，详情落点再压入会话详情页。
 
 两处页签容器均显式指定 `index`（取自 `currentTabIndex`），使窗口跨断点导致页签容器重建后回到用户当前页签，
 标题栏文案与内容区保持一致；滚动位置的保存与恢复对滚动控制器读数做容错（控制器未绑定或已销毁时视为本次无有效位置，
@@ -598,6 +603,9 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 发送页设备展示与收藏口径：
 
 - 附近设备列表由来源注册表驱动渲染，点击设备即发送；条目上的心形图标提供一键收藏 / 取消收藏（写入方）
+- 发送页只反馈「点到了」与「为什么失败」：点击当帧确认发起，会话失败时弹出常驻失败浮卡（原因 + 查看详情/查看任务）；
+  进度与结果仍由任务页统一承担。加密不兼容在点击时前置说明，不产生秒失败任务
+  （见 `docs/architecture/session-engine.md` §11）
 - 收藏设备的查看与使用统一经方式区「其它方式」菜单的「收藏列表」入口打开的半模态面板承载
   （`views/FavoriteDevicesSheet.ets`，宿主为发送页根 Stack 的 `bindSheet`）：面板列出全部收藏设备并标注
   在线 / 离线，点击在线设备直接发送（与附近列表一致），点击离线设备先按已保存地址定向探测、成功后再发送、
@@ -688,7 +696,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 | 分区组件 | 内容 | 所属分组 |
 |----------|------|----------|
-| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 允许后台接收 + 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
+| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 允许后台接收（通知权限未开启时置灰） + 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
 | `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器与设备发现；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）<br>+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN<br>+ 高级设置折叠（含安全信息（证书）半屏弹窗）+ 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
 | `ReceiveSettingsSection` | 自动确认请求（半屏弹窗）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）<br>+ 允许接收开关（总开关关闭时置灰不可用）+ 显示互传提醒开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） | 互传联盟（MTA） |
@@ -760,8 +768,8 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 - **内容最大宽度**：md 800 / lg 960 / xl 1120，sm 不限制
 - **设备列表**：`SendTargetZone` 使用 GridRow/GridCol 栅格按断点切换列数（sm/md 单列、lg 2 列、xl 3 列），
   断点参照为窗口尺寸（默认）；单栏内容区宽度随窗口变化，按容器尺寸判定会低估列数。设备条目与任务页任务行同款，
-  逐条为独立卡片（`card_background` + `radius.lg` + 1vp 边框），外层不设包裹卡片；空态卡片按一条设备卡的高度对齐
-  （80vp = 120 − 2×20）
+  逐条为独立卡片（`card_background` + `radius.lg` + 1vp 边框），外层不设包裹卡片；设备区空态沿用任务页、
+  接收历史页的卡片模式（面板最小高度 120vp），为整区提供明确边界
 - **弹窗宽度**：统一 `constraintSize({ maxWidth: 480 })`
 - **PC（2in1）窗口**：`module.json5` orientation 配置 `auto_rotation_restricted`；运行时按 `deviceInfo.deviceType === '2in1'` 调用 `window.setWindowLimits({ minWidth: 480, minHeight: 640 })`
 - **深色模式**：完整 `dark/` 资源覆盖
@@ -799,26 +807,26 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   水平方向始终居中，副提示缺省时不渲染
 - **占满高度**：`fillHeight` 开启时占满可用高度并垂直居中（仅诊断日志页使用）；空态需与列表首行同位时，
   由调用点在组件外挂该页的左右页边距与首元素顶部间距（文件接收历史页取 16vp，与主页、发送页、设置页同一口径）
-- **面板高度统一**：空态面板的最小高度统一取 `DesignTokens.size.emptyStateMinHeight`(120vp)，使高度不随
-  文案行数与窗口宽度（窄屏折行）变化。卡片型空态由组件直接取该值；非卡片型空态（位于他人卡片内）
-  由调用方以该值减去外层卡片内边距反推出内容区最小值（`minHeight`），或由外层卡片直接约束整体高度
+- **面板高度统一**：卡片型空态的面板最小高度统一取 `DesignTokens.size.emptyStateMinHeight`(120vp)，使高度不随
+  文案行数与窗口宽度（窄屏折行）变化。非卡片型空态不套卡片，由所在容器按内容高度或整段居中排布
+  （如 Web 分享页整段居中、会话详情时间线按内容高度）
 - **卡片按该页条目形态跟随**：`useCard` 开启时套用与同页条目同款卡片（`radius.lg` + 1vp `border_light`
   边框 + `card_background` 背景）；左右内边距与条目文字对齐取 16vp，上下取 32vp。
-  条目是卡片的页面（任务页、网络接口半模态、文件接收历史页）开启；条目非卡片的页面
-  （诊断日志页、会话详情时间线）与已被卡片包裹的空态（发送页设备区、Web 分享页）保持关闭，避免第二层卡片与双重内边距。
-  发送页设备区的外层卡片由页面自建，整体高度与一条设备卡对齐
+  条目是卡片的页面（任务页、网络接口半模态、文件接收历史页、发送页设备区）开启；条目非卡片的页面
+  （诊断日志页）、页面背景上的整段空态（Web 分享页）与已被卡片包裹的空态（会话详情时间线）保持关闭，
+  避免第二层卡片与双重内边距。
 
 调用点：
 
-| 位置 | 文件 | useCard | fillHeight | minHeight |
-|------|------|---------|------------|-----------|
-| 任务页列表行级空态 | `views/transfer/TransferCenterList.ets` | 是 | 否 | — |
-| 网络接口半模态空态 | `views/settings/NetworkSettingsSection.ets` | 是 | 否 | — |
-| 文件接收历史页空态（与列表首行同位） | `pages/ReceiveHistoryPage.ets` | 是 | 否 | — |
-| 诊断日志页整页空态 | `pages/HttpLogsPage.ets` | 否 | 是 | — |
-| 发送页设备区空态（带条件引导）与无来源空态 | `components/send/SendTargetZone.ets` | 否 | 否 | — |
-| Web 分享页段落内空态 | `pages/ShareLinkPage.ets` | 否 | 否 | — |
-| 会话详情时间线空态 | `views/transfer/SessionTimeline.ets` | 否 | 否 | — |
+| 位置 | 文件 | useCard | fillHeight |
+|------|------|---------|------------|
+| 任务页列表行级空态 | `views/transfer/TransferCenterList.ets` | 是 | 否 |
+| 网络接口半模态空态 | `views/settings/NetworkSettingsSection.ets` | 是 | 否 |
+| 文件接收历史页空态（与列表首行同位） | `pages/ReceiveHistoryPage.ets` | 是 | 否 |
+| 诊断日志页整页空态 | `pages/HttpLogsPage.ets` | 否 | 是 |
+| 发送页设备区空态（带条件引导）与无来源空态 | `components/send/SendTargetZone.ets` | 是 | 否 |
+| Web 分享页段落内空态 | `pages/ShareLinkPage.ets` | 否 | 否 |
+| 会话详情时间线空态 | `views/transfer/SessionTimeline.ets` | 否 | 否 |
 
 ## 9. 状态管理
 
@@ -854,10 +862,14 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 - 新会话感知与前台提示：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与任务列表同源同时机刷新任务入口数量与待确认计数），刷新时比对注册表中的待确认会话，
   出现新会话即以 `autoOpenSessionId` 一次性信号通知 `MainTabFloating`；后者在应用前台任意页面（含子页面）之上弹出统一的新传输提示弹窗
   （`AlertDialogV2` 经 `openCustomDialog` 打开，「查看」推入该会话详情、「稍后」/遮罩/返回键仅关闭），单槽位守卫避免叠加、按会话标识去重不重复提示；
-  应用后台时不弹、回前台（`onPageShow`）补弹一次
-- 通知深链：通知点击意图经 Want 参数 `handysend.navigate=transferCenter` 传递，`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
-  `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，消费时先 `pathStack.clear()` 回到根、
-  再切到任务页签，保证从通知进入后展示任务中心列表
+  应用后台时不弹、回前台补弹一次（`onPageShow` 可能早于 `onForeground`，由变更总线回调兜底重试；
+  从通知进入前台时，点击通知那一刻已存在的待确认请求不再补弹）
+- 通知深链：通知点击意图经 Want 参数 `handysend.navigate`（`transferCenter` / `sessionDetail`）传递，
+  详情意图另携带 `handysend.sessionId`；`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
+  `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，
+  消费时先 `pathStack.clear(false)` 回到根、任务页签滚动位置归零并切到任务页签，详情落点再压入 `SessionDetailPage`。
+  落点口径：终态通知按本轮传输任务数、待确认通知按待确认数——仅一个任务时进详情，多个合并时进任务中心；
+  实况进度与保活通知的点击目标在申请长时任务时固定，始终保持任务中心
 - 任务入口数量：`MainTabViewModel.activeTransferCount` 取 `TransferSessionRegistry.getUnfinishedCount()`（非终态 = 进行中 + 待确认），
   窄屏底部页签与宽屏侧边栏共用同一字段，口径一致
 - 会话动作口径：`model/transfer/TransferSession.resolveSessionActions(stage, capabilities, isText)` 为唯一事实源，

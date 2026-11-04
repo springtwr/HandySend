@@ -50,9 +50,9 @@ export default function LogFormatTest() {
 
     // ── 上下文前缀细节 ──
 
-    it('session_id_is_truncated_to_8', 0, () => {
-      const ctx: LogContext = { sessionId: 'abcdefghijk' }
-      expect(buildContextPrefix(ctx)).assertEqual('[sid=abcdefgh] ')
+    it('session_id_is_kept_whole', 0, () => {
+      const ctx: LogContext = { sessionId: 'localsend-receive_1730567890123_7' }
+      expect(buildContextPrefix(ctx)).assertEqual('[sid=localsend-receive_1730567890123_7] ')
     })
 
     it('empty_context_fields_are_skipped', 0, () => {

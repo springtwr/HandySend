@@ -2700,11 +2700,16 @@ html[data-auth="open"] #gate {
   }
 
   function triggerZip(batchId) {
+    // 批次在服务端一次性消费：触发后立即作废预准备，避免再次点击复用已消费的 batchId
+    // 而得到 410「分享内容已更新」。勾选未变时重新预准备，保住连续点击的用户手势。
+    preparedBatchId = '';
+    preparedSignature = '';
     var a = document.createElement('a');
     a.href = BASE + '/web/download-batch?batch=' + encodeURIComponent(batchId);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    onSelectionChanged();
   }
 
   function triggerDownload(token, fileId) {

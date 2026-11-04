@@ -10,7 +10,6 @@ import {
 } from '../../model/NativeTypes';
 import {
   nativeDiscoveryDiscoverStaged,
-  nativeDiscoveryScanSubnet,
   nativeDiscoveryMulticastError,
   nativeDiscoveryAddDevice,
   nativeClientInfo,
@@ -18,7 +17,7 @@ import {
 } from '../NativeBridge';
 import { getFavorites, syncFavoriteFromDiscovery } from './FavoritesService';
 import { notifyChange, getServerFingerprint } from './AppCore';
-import { getHttpsEnabled, getPort } from './SettingsRepository';
+import { getHttpsEnabled, getPort, getDiscoveryTimeout } from './SettingsRepository';
 import { getLocalDeviceInfo } from './DeviceRepository';
 
 const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:DiscoveryRepository', '发现');
@@ -29,23 +28,30 @@ let discoveredDevices: Array<DiscoveredDevice> = [];
 let scanStartTime: number = 0; // 本次扫描的起始时间戳（离线判定基准 + debug 日志）
 let isScanning: boolean = false; // 是否正在扫描（防并发）
 let pendingRescan: boolean = false; // 扫描中收到新刷新请求的待补扫标志（合并排队，最多补扫一次）
+let pendingForceScan: boolean = false; // 排队补扫是否要求完整扫描（用户刷新触发）
 let lastMulticastError: string = ''; // 上次已写入诊断日志的组播错误文本（去重基准）
+// 扫描代数：发现服务重启/停止后递增。原生 discover_staged 在发现服务被停止后仍会跑完
+// （桥接层持有旧句柄），其回调若继续收尾，会误清新一轮扫描的 isScanning 并消费补扫请求。
+let scanGeneration: number = 0;
 
 export function clearDiscoveryState(): void {
   discoveredDevices = [];
 }
 
-// 重置扫描状态：discovery 被 stop 后旧的 discover_staged promise 会失效，
-// 不会再走到 finishScan()，需手动清理以避免遗留的 isScanning/pendingRescan
-// 干扰后续 triggerStagedDiscover()。
+// 重置扫描状态：discovery 被 stop 后旧的 discover_staged 调用仍会返回，
+// 由扫描代数使旧回调失效，并清理 isScanning/pendingRescan 等状态，
+// 避免干扰后续 triggerStagedDiscover()。
 export function resetScanState(): void {
   isScanning = false;
   pendingRescan = false;
+  pendingForceScan = false;
   scanStartTime = 0;
+  // 使在途扫描的回调过期（见 scanGeneration 注释）
+  scanGeneration++;
 }
 
 export function getDiscoveredDevices(): Array<DiscoveredDevice> {
-  // 离线设备的移除由刷新确认窗口负责（removeUnconfirmedDevices），此处不做 TTL 过期过滤
+  // 离线设备的移除由每轮扫描结束后的离线判定负责（removeUnconfirmedDevices），此处不做 TTL 过期过滤
   return discoveredDevices;
 }
 
@@ -244,7 +250,18 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
     lastSeen: Date.now(),
     channels: []
   };
+  // register 路径的发现日志：deviceFound 日志只覆盖 discovery 事件，
+  // 缺少这里无法区分设备是组播回写还是 register 回写发现的
+  let existing: DiscoveredDevice | undefined = findDeviceByFingerprint(fingerprint);
+  let isChanged: boolean = existing === undefined || deviceInfoChanged(existing, device);
   mergeDeviceIntoList(device);
+  if (isChanged) {
+    let reason: string = existing === undefined ? '新设备' : '信息变化';
+    logger.debug('设备发现[register/' + reason + ']: alias=' + info.alias +
+      ' fp=' + fingerprint.substring(0, 8) + ' host=' + ip + ':' + port +
+      ' protocol=' + nativeDevice.protocol +
+      ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
+  }
   notifyChange();
 
   addDeviceToNativeDiscovery(nativeDevice, 'register');
@@ -252,26 +269,33 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
 
 // ── 扫描 / 重新扫描 ──
 
-// 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求
-export function triggerStagedDiscover(): void {
+// 防并发/排队外壳：扫描进行中时合并排队（最多补扫一次），不静默丢弃刷新请求。
+// force=true 时始终执行子网扫描（用户刷新 / 启动首扫 / 网络变化后），用于发现
+// 完全不响应组播、只能通过 HTTP 探测发现的设备。
+export function triggerStagedDiscover(force: boolean = false): void {
   // 发现入口先做组播错误兜底记录（错误信号统一进诊断日志）
   logMulticastErrorIfChanged();
   if (isScanning) {
-    logger.debug('扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫');
+    logger.debug('扫描进行中（scanStartTime=' + scanStartTime + '），合并排队等待补扫' +
+      (force ? '（完整扫描）' : ''));
     pendingRescan = true;
+    pendingForceScan = pendingForceScan || force;
     return;
   }
-  runStagedDiscover();
+  runStagedDiscover(force);
 }
 
-// 扫描主体：向已知设备发送确认请求 + 组播广播发现新设备，
-// 3 秒确认窗口结束后移除未确认（离线）设备。
-function runStagedDiscover(): void {
+// 扫描主体：向已知设备发送确认请求 + 组播广播 + 子网探测发现设备，
+// 扫描结束后移除本轮未确认（离线）设备。force=true 时跳过确认收集，
+// 直接进行完整的双协议子网扫描。
+function runStagedDiscover(force: boolean): void {
   isScanning = true;
+  let generation: number = scanGeneration;
   // 记录本次扫描发起时刻，作为离线判定基准（handleDeviceFound 必然更新 lastSeen ≥ scanStartTime）
-  scanStartTime = Date.now();
-  logger.debug('开始 scanStartTime=' + scanStartTime + ' 已知设备=' + discoveredDevices.length +
-    ' 收藏=' + getFavorites().length);
+  let startedAt: number = Date.now();
+  scanStartTime = startedAt;
+  logger.debug('开始 scanStartTime=' + startedAt + ' generation=' + generation +
+    ' force=' + force + ' 已知设备=' + discoveredDevices.length + ' 收藏=' + getFavorites().length);
 
   let favDevices = getFavorites();
   let channels: Array<NativeDeviceChannel> = [];
@@ -341,8 +365,9 @@ function runStagedDiscover(): void {
     }
   }
   // 子网扫描兜底：组播不可靠时（AP 禁组播/WiFi 隔离）通过 HTTP 探测 /24 子网发现设备。
-  // discover_staged 仅在 3 秒确认窗口内无任何确认时才触发子网扫描，
-  // 组播正常时（有设备回应）不扫描，刷新速度不受影响。
+  // force=true 或本次扫描没有任何探测外确认（组播应答 / server register 回写）时触发：
+  // 已知设备探测成功只说明 HTTP 可达，不能证明组播可用，不能作为跳过依据。
+  // 扫描由原生层同时覆盖主协议与备用协议（局域网内可能只有一种协议的设备）。
   // 白名单/黑名单存储接口名（如 wlan0,eth0），按接口名过滤后取允许的接口 IP 做子网扫描
   let interfaceIps: Array<string> = [];
   let localInfo = getLocalDeviceInfo();
@@ -353,77 +378,71 @@ function runStagedDiscover(): void {
     }
   }
   let port = getPort();
-  // 确认窗口 3 秒：探测完成后的确认收集期
+  // 非强制扫描的确认收集期（force 时跳过，直接进入子网扫描）
   let graceMs = 3000;
 
   logger.debug('探测通道数 channels=' + channels.length + ': [' +
     channels.map((c) => c.host + ':' + c.port + ':' + c.protocol).join(', ') + ']' +
     ' interfaceIps=' + JSON.stringify(interfaceIps) + ' protocol=' + protocol +
-    ' graceMs=' + graceMs + ' altProtocol=' + altProtocol);
+    ' graceMs=' + graceMs + ' altProtocol=' + altProtocol + ' force=' + force +
+    ' timeoutMs=' + getDiscoveryTimeout());
 
   let t0 = Date.now();
   flushRustLogs();
-  nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, graceMs).then(async () => {
-    let elapsed = Date.now() - t0;
-    flushRustLogs();
-    logger.debug('分阶段设备发现完成，耗时=' + elapsed + 'ms（含 announce+probe+grace+子网扫描）' +
-      ' 此时列表=' + discoveredDevices.length + ' 台');
-    // 备用协议子网扫描兜底：主协议（如 http）无法探测仅支持另一种协议的设备
-    // （标准 LocalSend 默认 https，HandySend 用 http 时子网扫描探测不到 https-only 设备）。
-    // 仅当主协议扫描未确认任何新设备时执行，避免无条件双倍扫描。
-    if (!hasConfirmedSince(scanStartTime)) {
-      logger.debug('主协议无新确认，备用协议子网扫描兜底：' + altProtocol);
-      for (let i = 0; i < interfaceIps.length; i++) {
-        try {
-          await nativeDiscoveryScanSubnet(interfaceIps[i], port, altProtocol);
-        } catch (e) {
-          logger.warn('备用协议子网扫描失败 ' + interfaceIps[i] + ': ' + (e as Error).message);
-        }
+  nativeDiscoveryDiscoverStaged(channels, interfaceIps, port, protocol, altProtocol, graceMs, force)
+    .then((confirmedCount: number): void => {
+      if (generation !== scanGeneration) {
+        logger.debug('本轮扫描已被新一轮取代（generation=' + generation + '），丢弃收尾');
+        return;
       }
+      let elapsed = Date.now() - t0;
       flushRustLogs();
-    }
-    // 确认窗口结束：移除本次未确认的离线设备
-    removeUnconfirmedDevices(scanStartTime);
-    finishScan();
-  }).catch((e: Error) => {
-    let elapsed = Date.now() - t0;
-    flushRustLogs();
-    // 扫描失败/网络异常：保持设备列表不变（不清空），仅记录日志
-    logger.warn('分阶段设备发现失败（耗时=' + elapsed + 'ms）：' + e.message);
-    finishScan();
-  });
+      logger.debug('分阶段设备发现完成，耗时=' + elapsed + 'ms（含 announce+probe+' +
+        (force ? '双协议子网扫描' : 'grace+双协议子网扫描') + '）' +
+        ' 确认设备数=' + confirmedCount + ' 此时列表=' + discoveredDevices.length + ' 台');
+      // 扫描结束：移除本轮未确认的离线设备
+      removeUnconfirmedDevices(startedAt);
+      finishScan(generation);
+    }).catch((e: Error) => {
+      if (generation !== scanGeneration) {
+        logger.debug('过期扫描失败回调（generation=' + generation + '），忽略');
+        return;
+      }
+      let elapsed = Date.now() - t0;
+      flushRustLogs();
+      // 扫描失败/网络异常：保持设备列表不变（不清空），仅记录日志
+      logger.warn('分阶段设备发现失败（耗时=' + elapsed + 'ms）：' + e.message);
+      finishScan(generation);
+    });
 }
 
-// 自 scanStartTime 以来是否有设备被确认（lastSeen >= scanStartTime）
-function hasConfirmedSince(scanStartTime: number): boolean {
-  for (let i = 0; i < discoveredDevices.length; i++) {
-    if (discoveredDevices[i].lastSeen >= scanStartTime) {
-      return true;
-    }
+// 扫描收尾（then/catch 共用）：复位扫描状态；若期间收到排队请求则补扫一次。
+// 仅当代数与当前一致时收尾，过期扫描不得影响新一轮扫描的状态机。
+function finishScan(generation: number): void {
+  if (generation !== scanGeneration) {
+    logger.debug('过期扫描不得收尾（generation=' + generation + '）');
+    return;
   }
-  return false;
-}
-
-// 扫描收尾（then/catch 共用）：复位扫描状态；若期间收到排队请求则补扫一次
-function finishScan(): void {
   isScanning = false;
   if (pendingRescan) {
     pendingRescan = false;
-    logger.debug('消费排队请求，立即补扫一次（列表=' + discoveredDevices.length + ' 台）');
-    runStagedDiscover();
+    let force: boolean = pendingForceScan;
+    pendingForceScan = false;
+    logger.debug('消费排队请求，立即补扫一次（force=' + force + '，列表=' + discoveredDevices.length + ' 台）');
+    runStagedDiscover(force);
   } else {
     logger.debug('收尾完成（无排队），列表=' + discoveredDevices.length + ' 台');
   }
   notifyChange();
 }
 
-// 确认窗口结束：移除 lastSeen < scanStartTime 的未确认设备并记录日志
-function removeUnconfirmedDevices(scanStartTime: number): void {
+// 扫描结束：移除 lastSeen 早于本轮扫描开始时刻的未确认设备并记录日志
+function removeUnconfirmedDevices(startedAt: number): void {
   let confirmed: Array<DiscoveredDevice> = [];
   let removed: Array<string> = [];
   for (let i = 0; i < discoveredDevices.length; i++) {
     let dev = discoveredDevices[i];
-    if (dev.lastSeen >= scanStartTime) {
+    if (dev.lastSeen >= startedAt) {
       confirmed.push(dev);
     } else {
       let age = Date.now() - dev.lastSeen;
@@ -449,12 +468,12 @@ function flushRustLogs(): void {
   }
 }
 
-// 触发一次完整扫描流程（scanStartTime 与离线移除由 runStagedDiscover 内部处理）
+// 用户主动刷新：始终完整扫描（含子网），确保不响应组播的设备也能被找到
 export function rescanDevices(): void {
   let serverFingerprint: string = getServerFingerprint();
   if (serverFingerprint.length > 0) {
     logger.debug('rescanDevices 被调用（isScanning=' + isScanning + '）');
-    triggerStagedDiscover();
+    triggerStagedDiscover(true);
     notifyChange();
   }
 }

@@ -166,14 +166,17 @@ export struct GeneralSettingsSection {
       })
       .id('settings_alias_entry')
 
-      // 允许后台接收：仅控制无传输时的 5 分钟空闲保活，传输中始终保活
+      // 允许后台接收：仅控制无传输时的 5 分钟空闲保活，传输中始终保活；
+      // 通知权限未开启时置灰（后台长时任务无法建立）
       Row() {
         Text($r('app.string.background_receive_label'))
           .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
+          .fontColor(this.viewModel.notificationGranted ? $r('app.color.text_primary') :
+            $r('app.color.text_tertiary'))
           .layoutWeight(1)
 
         Toggle({ type: ToggleType.Switch, isOn: this.viewModel.backgroundReceive })
+          .enabled(this.viewModel.notificationGranted)
           .onChange((isOn: boolean) => {
             this.viewModel.setBackgroundReceiveValue(isOn);
           })
@@ -184,7 +187,8 @@ export struct GeneralSettingsSection {
       .constraintSize({ minHeight: DesignTokens.size.thumbSm })
       .alignItems(VerticalAlign.Center)
 
-      Text($r('app.string.background_receive_desc'))
+      Text(this.viewModel.notificationGranted ? $r('app.string.background_receive_desc') :
+        $r('app.string.background_receive_desc_notification_required'))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_secondary'))
         .alignSelf(ItemAlign.Start)

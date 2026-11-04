@@ -2,12 +2,13 @@
  * EmptyState.ets — 公共空态
  *
  * 统一承载「列表/内容为空」的提示：主标题与副提示的字号、颜色、间距与水平居中由本组件固定，
- * 调用点只传文案、开关（是否套卡片、是否占满可用高度并垂直居中、内容区最小高度）
+ * 调用点只传文案、开关（是否套卡片、是否占满可用高度并垂直居中）
  * 与可选的操作入口，样式统一由本组件维护。
  *
- * 卡片按该页条目形态跟随：条目是卡片的页面由调用点开启 useCard，条目非卡片的页面与已被卡片包裹的
- * 空态保持关闭，避免出现第二层卡片与双重内边距。卡片左右内边距与条目文字对齐（16vp），上下内边距取
- * 32vp；面板高度统一取 `DesignTokens.size.emptyStateMinHeight` 为下限，使高度不随文案行数与窗口宽度变化。
+ * 卡片按该页条目形态跟随：条目是卡片的页面由调用点开启 useCard，条目非卡片的页面、页面背景上的整段
+ * 空态与已被卡片包裹的空态保持关闭，避免出现第二层卡片与双重内边距。卡片左右内边距与条目文字对齐（16vp），
+ * 上下内边距取 32vp；卡片型空态的面板最小高度统一取 `DesignTokens.size.emptyStateMinHeight`，
+ * 使高度不随文案行数与窗口宽度变化。
  */
 
 import { DesignTokens } from '../common/DesignTokens';
@@ -27,27 +28,10 @@ export struct EmptyState {
   /** 操作入口点击回调 */
   @Event onAction: () => void = () => {
   }
-  /** 是否套用与同页条目同款的卡片（列表行级空态开启） */
+  /** 是否套用与同页条目同款的卡片（同页条目是卡片的空态开启） */
   @Param useCard: boolean = false
   /** 是否占满可用高度并垂直居中（整页空态开启） */
   @Param fillHeight: boolean = false
-  /**
-   * 非卡片型空态的内容区最小高度（vp，可缺省）。
-   * 卡片型空态的面板高度由组件统一取 `DesignTokens.size.emptyStateMinHeight`，无需调用方传入；
-   * 非卡片型空态自身无卡片、处在他人卡片内，由调用方按外层卡片的内边距反推传入。
-   */
-  @Param minHeight: number | undefined = undefined
-
-  /**
-   * 内容区最小高度：卡片型空态的卡片即面板，统一取面板最小高度，使高度不随文案行数与窗口宽度变化；
-   * 非卡片型空态由调用方给出，用于使其所在的外层卡片达到同一面板高度。
-   */
-  private contentMinHeight(): number {
-    if (this.useCard) {
-      return DesignTokens.size.emptyStateMinHeight
-    }
-    return this.minHeight ?? 0
-  }
 
   build() {
     // 外层只负责占位与居中：卡片装饰落在内层，避免 fillHeight 开启时卡片被拉伸成整页高的面板
@@ -102,9 +86,9 @@ export struct EmptyState {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
-      // 面板最小高度：卡片型取统一值、非卡片型取调用方给出的内容区最小值，
-      // 使各处空态面板同高，不因文案行数（窄屏折行）或有无副提示而变化
-      .constraintSize({ minHeight: this.contentMinHeight() })
+      // 面板最小高度：卡片型取统一值，非卡片型不设下限（由所在容器决定），
+      // 使卡片型空态面板同高，不因文案行数（窄屏折行）或有无副提示而变化
+      .constraintSize({ minHeight: this.useCard ? DesignTokens.size.emptyStateMinHeight : 0 })
       .justifyContent(FlexAlign.Center)
       // 卡片内边距：左右与同页条目文字对齐（16vp），上下取 32vp；卡片高度另由上方最小高度兜底
       .padding({

@@ -53,8 +53,10 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 >
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收
-> 时预创建目标文件并注册 fd（普通文件落 Download/`<包名>/`，文本消息落 `filesDir/text_recv/`；落盘前先做存储预留检查，不足直接拒绝）；取消/失败时删除预创建的不完整文件；文本消息
-> 落沙箱后文件名仅为内部实现细节，UI 不展示）、自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
+> 时预创建目标文件并注册 fd（普通文件落 Download/`<包名>/`，文本消息落 `filesDir/text_recv/`；
+> 落盘前先做存储预留检查，不足直接拒绝）；取消/失败时只删除预创建的未完成文件，
+> 已完成文件保留并补记接收历史；文本消息落沙箱后文件名仅为内部实现细节，UI 不展示）、
+> 自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
 > 三模式，文本消息同样按模式决策，纯文本消息自动接收时复制到剪贴板并在屏幕中央提示，可独立测试）；会话/待确认请求经 `LocalSendReceiveAdapter` 登记到
 > 注册表，确认/拒绝入口由中心经适配器回调本仓库。
 >
@@ -227,6 +229,9 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 2. 发送端启用 HTTPS + 接收端不支持 HTTPS → 错误，拒绝降级（返回 null）
 3. 发送端禁用 HTTPS + 接收端支持 HTTPS → 升级使用 HTTPS（接收端服务器只监听 HTTPS，明文连接无法建立）
 4. 发送端禁用 HTTPS + 接收端不支持 HTTPS → 使用 HTTP
+
+- 点击设备时前置拦截：发送页在建立会话前用同一函数判定（`SendContent.isProtocolBlocked`），命中第 2 条时不建任务、
+  改为弹说明对话框（关闭本机加密或让对方启用加密），不在本页改动全局开关；发送链路内的拒绝判定保留为防御纵深
 
 `senderProtocol`：接收端通过 `cert_fingerprint` 是否存在判断发送端协议（有证书→HTTPS，无证书→HTTP），存入 `PendingRequest.senderProtocol`，用于接收对话框验证按钮状态。
 

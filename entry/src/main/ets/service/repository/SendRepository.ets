@@ -496,7 +496,7 @@ export async function sendToDevice(
         let lastSessionId: string = nativeGetCurrentSendSessionId();
         if (lastSessionId.length > 0) {
           logger.debug('接收方忙碌（409），发送取消以清理会话 sessionId=' +
-            lastSessionId.substring(0, 8) + '… 重试 ' + busyRetries, sendCtx);
+            lastSessionId + '… 重试 ' + busyRetries, sendCtx);
           let cancelTarget: NativeCancelTarget = {
             ip: device.ip,
             port: device.port,
@@ -534,7 +534,7 @@ export async function sendToDevice(
         try {
           await nativeCancelTransfer(cancelTarget, cancelSessionId);
           logger.debug('发送失败后已发送取消 sessionId=' +
-            cancelSessionId.substring(0, 8) + '...)', { direction: 'send' });
+            cancelSessionId + '...)', { direction: 'send' });
         } catch (_ce) {
           logger.warn('发送失败后补发取消失败（非致命）：' + String(_ce), { direction: 'send' });
         }
@@ -612,6 +612,12 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   }
   if (result.error !== undefined && result.error.kind === 'statusCode') {
     logger.info('发送被拒绝：HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
+  } else if (result.error !== undefined && result.error.kind === 'cancelled') {
+    // 用户主动取消（删除通知/点击取消）是预期终态，不按错误记录
+    logger.info('发送已取消', { sessionId: result.sessionId, direction: 'send' });
+    if (errorMsg.length > 0) {
+      logger.debug('取消原因：' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
+    }
   } else {
     logger.error('发送失败：' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
   }

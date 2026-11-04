@@ -276,13 +276,18 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
 }
 
 // 删除某会话预创建的目标文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
-export function removeRecvTargetFiles(sessionId: string): void {
+// 列于 keepFileIds 的文件已完成写入、属于会话的部分交付物：保留并从清理范围排除；
+// 未提供时删除全部登记文件（拒绝/超时等尚未产生完成文件的路径）。
+export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<string, boolean>): void {
   let perFile: Record<string, string> | undefined = recvTargetPaths.get(sessionId);
   if (perFile === undefined) {
     return;
   }
   let keys: Array<string> = Object.keys(perFile);
   for (let k = 0; k < keys.length; k++) {
+    if (keepFileIds !== undefined && keepFileIds[keys[k]] === true) {
+      continue;
+    }
     try {
       fs.unlinkSync(perFile[keys[k]]);
     } catch (_e) {

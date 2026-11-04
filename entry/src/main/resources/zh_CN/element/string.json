@@ -449,6 +449,18 @@
       "value": "iOS 或安卓上的 LocalSend 有时虽然显示为打开状态，但服务并未真正启动。\n若无法发现设备，请清理后台并重新打开应用。"
     },
     {
+      "name": "troubleshoot_slow_transfer_title",
+      "value": "传输速度慢"
+    },
+    {
+      "name": "troubleshoot_slow_transfer_desc",
+      "value": "先做三个简单检查：\n① 两台设备都连接同一个 5GHz Wi-Fi，不要一台 5GHz、一台 2.4GHz（2.4GHz 会明显更慢）；\n② 查看 Wi-Fi 连接速度：系统设置 → WLAN → 点击已连接的 WLAN → 连接速度。如果低于 300Mbps，先靠近路由器或确认连接的是 5GHz 再试；如果显示 800Mbps 以上但传输仍慢，通常是路由器转发或另一台设备的限制。\n③ 用宽带测速作参考：宽带测速也走“设备→路由器”这段 Wi-Fi。如果宽带测速正常（例如 300M 宽带能到 30–40MB/s），但局域网传输明显更低，说明瓶颈在局域网转发或另一台设备；如果宽带测速也很低，先靠近路由器再测，排除 Wi-Fi 信号/频段问题；如果靠近后仍低，说明宽带速率较低，但宽带不参与局域网传输，与本问题无关。\n\n常见原因：\n· 两台设备都连同一个 5GHz 路由器时，数据要经路由器收一遍、再发一遍，实际速度通常只有单台设备单独测速时的一半左右；两台设备都通过同一个路由器 Wi-Fi 互传时，中低端家用路由器通常很难稳定超过 50MB/s。\n· 距离远、隔墙、信号弱，或周围 Wi-Fi 网络很多，都会让速度下降；\n· 大量小文件会比单个大文件慢，属于正常现象；\n· 电脑插网线时，如果网口或网线是百兆（100Mbps），理论上限约 12.5MB/s。"
+    },
+    {
+      "name": "troubleshoot_slow_transfer_highlight",
+      "value": "最有效的改善：\n直接用鸿蒙设备开启热点（鸿蒙设备一般可同时开启 Wi-Fi 和热点），让另一台设备连接热点后传输，速度普遍能超过 100MB/s。"
+    },
+    {
       "name": "troubleshoot_connection_title",
       "value": "无法连接"
     },
@@ -835,6 +847,34 @@
     {
       "name": "send_error_busy",
       "value": "对方忙，请稍后重试"
+    },
+    {
+      "name": "send_started_toast",
+      "value": "已开始发送至 %s"
+    },
+    {
+      "name": "send_failure_card_title",
+      "value": "无法发送到「%s」"
+    },
+    {
+      "name": "send_failure_card_title_multi",
+      "value": "%s 个任务失败"
+    },
+    {
+      "name": "send_failure_card_mixed",
+      "value": "各设备失败原因不同，请到任务页查看"
+    },
+    {
+      "name": "send_failure_card_action_tasks",
+      "value": "查看任务"
+    },
+    {
+      "name": "send_failure_card_action_detail",
+      "value": "查看详情"
+    },
+    {
+      "name": "send_protocol_block_title",
+      "value": "无法加密发送到「%s」"
     },
     {
       "name": "debug_log_label",
@@ -1685,8 +1725,12 @@
       "value": "本机设备与标识"
     },
     {
-      "name": "session_meta_duration_label",
-      "value": "耗时"
+      "name": "session_meta_task_duration_label",
+      "value": "任务耗时"
+    },
+    {
+      "name": "session_meta_transfer_duration_label",
+      "value": "传输耗时"
     },
     {
       "name": "session_meta_average_speed_label",
@@ -1981,12 +2025,12 @@
       "value": "后台传输中"
     },
     {
-      "name": "bg_transfer_content_transfer",
-      "value": "关闭通知会中断传输"
+      "name": "bg_transfer_content_percent",
+      "value": "%d%%"
     },
     {
       "name": "bg_transfer_content_tasks_percent",
-      "value": "%d 个任务 · %d%%"
+      "value": "共 %d 个任务 · %d%%"
     },
     {
       "name": "background_receive_label",
@@ -1995,6 +2039,10 @@
     {
       "name": "background_receive_desc",
       "value": "没有传输任务时，应用将在后台继续运行5分钟，期间可接收网页或 LocalSend 的传输请求"
+    },
+    {
+      "name": "background_receive_desc_notification_required",
+      "value": "使用此功能需要开启通知权限"
     },
     {
       "name": "web_access_stop",
@@ -2019,14 +2067,6 @@
     {
       "name": "session_waiting_peer_upload",
       "value": "等待上传"
-    },
-    {
-      "name": "session_end_web_access",
-      "value": "结束会话"
-    },
-    {
-      "name": "session_end_web_download",
-      "value": "结束下载"
     },
     {
       "name": "log_file_unavailable",

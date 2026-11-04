@@ -67,7 +67,7 @@ HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享�
    git submodule update --init
    ```
 
-   submodule 指向 fork 仓库 `springtwr/localsend_harmony-web-ui`，其默认分支即定制分支 `harmony-web-ui`，克隆后无需额外操作。
+   submodule 指向 fork 仓库 `springtwr/localsend-ohos`，其默认分支即定制分支 `main`，克隆后无需额外操作。
 
 2. 复制项目配置文件（**必须**）
    ```bash

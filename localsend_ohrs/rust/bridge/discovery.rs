@@ -6,14 +6,16 @@
 
 use crate::bridge::config;
 use crate::bridge::lock;
+use std::collections::HashSet;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde_json::Value;
 
 use localsend::discovery::{
     self, DeviceChannel, DeviceIdentity, DiscoveredDevice, DiscoveryConfig, DiscoveryEvent,
+    StatefulDevice,
 };
 use localsend::model::discovery::PROTOCOL_VERSION_V2;
 use localsend::multicast::MulticastDevice;
@@ -173,15 +175,33 @@ pub async fn discovery_scan_subnet(
     Ok(())
 }
 
-/// 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
+/// 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期（非强制时） → 子网扫描。
+///
+/// 返回本次扫描期间被确认的设备数（按指纹去重），供上层判断是否还需要补充扫描。
+///
+/// 子网扫描同时覆盖 `protocol` 与 `alt_protocol`：局域网内可能同时存在只支持
+/// http 或只支持 https 的设备（官方 LocalSend 默认 https、HandySend 默认 http），
+/// 只扫主协议会漏掉另一类设备。
+///
+/// 子网扫描只依据「已知通道探测之外」的确认：收藏或此前发现过的设备会应答探测，
+/// 但这只能证明 HTTP 可达，不能证明组播可用。若把它当成组播可用的证据，组播被
+/// 网络阻断时局域网内的新设备就永远发现不了，只能等对方主动广播。
+///
+/// `force_subnet_scan` 用于用户手动刷新、启动首扫与网络变化后的扫描：局域网内
+/// 可能存在完全不响应组播、只能通过 HTTP 探测发现的设备（如 PC 防火墙拦截入站
+/// 组播），此时任何组播/register 确认都不足以证明“没有漏设备”，必须完整扫描。
+/// 强制扫描时跳过宽限期（扫描本身就是兜底，无需再等待回应收集）。
+#[allow(clippy::too_many_arguments)]
 pub async fn discovery_discover_staged(
     state: &Mutex<BridgeState>,
     channels_json: &str,
     interface_ips_json: &str,
     port: u16,
     protocol: &str,
+    alt_protocol: &str,
     grace_ms: u32,
-) -> Result<(), BridgeError> {
+    force_subnet_scan: bool,
+) -> Result<u32, BridgeError> {
     let handle = {
         let s = lock(state);
         s.discovery_handle.clone()
@@ -230,18 +250,88 @@ pub async fn discovery_discover_staged(
     }
 
     let protocol_enum = identity::parse_protocol(protocol);
+    let alt_protocol_enum = identity::parse_protocol(alt_protocol);
+    let started = SystemTime::now();
 
-    handle
-        .discover_staged(
-            known_channels,
-            interface_ips,
-            port,
-            protocol_enum,
-            Duration::from_millis(grace_ms as u64),
-        )
-        .await
-        .map_err(|e| BridgeError::Upstream(anyhow::anyhow!("分阶段发现失败: {e:#}")))?;
-    Ok(())
+    // 发现服务被 stop/restart 后，在途扫描应立即收尾：继续等待宽限期、扫描子网
+    // 只会与新一轮扫描争抢网络且结果被上层丢弃。
+    let is_current = || {
+        let s = lock(state);
+        s.discovery_handle
+            .as_ref()
+            .map(|current| Arc::ptr_eq(current, &handle))
+            .unwrap_or(false)
+    };
+
+    // 广播与已知通道探测并行：广播要发完整轮次（数秒），不阻塞探测
+    let ((), probed) = tokio::join!(
+        handle.announce(),
+        handle.discover_known_http_channels(known_channels),
+    );
+    let probed =
+        probed.map_err(|e| BridgeError::Upstream(anyhow::anyhow!("探测已知通道失败: {e:#}")))?;
+
+    // 已知通道确认的设备指纹：这些确认不能证明组播可用
+    let mut probed_fingerprints: HashSet<String> = HashSet::new();
+    for device in &probed {
+        probed_fingerprints.insert(device.device.fingerprint.clone());
+    }
+
+    // 强制扫描时无需等待回应收集：子网探测本身就能覆盖不响应组播的设备
+    if !force_subnet_scan {
+        tokio::time::sleep(Duration::from_millis(grace_ms as u64)).await;
+    }
+    if !is_current() {
+        log::debug!("发现服务已被替换，终止本轮分阶段发现");
+        return Ok(0);
+    }
+
+    let confirmed_since = |device: &StatefulDevice| {
+        device
+            .logs
+            .last()
+            .map(|log| log.timestamp >= started)
+            .unwrap_or(false)
+    };
+    // 组播广播或服务器注册回写带来的确认：说明广播链路确实在工作。
+    // 强制扫描时无需判断（且省去一次 store 克隆）
+    let has_other_confirmation = !force_subnet_scan
+        && handle.devices().iter().any(|device| {
+            confirmed_since(device) && !probed_fingerprints.contains(&device.device.fingerprint)
+        });
+    if force_subnet_scan || !has_other_confirmation {
+        // 各接口 × 两种协议并行扫描：串行会让多接口设备的总耗时成倍增加。
+        // 单个组合失败不阻断其余组合：组播不可用或设备不响应组播时这是唯一的发现途径
+        let mut protocols = vec![protocol_enum];
+        if alt_protocol_enum != protocol_enum {
+            protocols.push(alt_protocol_enum);
+        }
+        let handle_ref = &handle;
+        let is_current_ref = &is_current;
+        let scans = interface_ips
+            .into_iter()
+            .flat_map(|ip| {
+                protocols
+                    .iter()
+                    .copied()
+                    .map(move |scan_protocol| (ip, scan_protocol))
+            })
+            .map(|(ip, scan_protocol)| async move {
+                if !is_current_ref() {
+                    return;
+                }
+                if let Err(err) = handle_ref.scan_subnet(ip, port, scan_protocol).await {
+                    log::warn!("子网扫描失败 {ip} ({scan_protocol:?}): {err:#}");
+                }
+            });
+        futures_util::future::join_all(scans).await;
+    }
+
+    Ok(handle
+        .devices()
+        .iter()
+        .filter(|device| confirmed_since(device))
+        .count() as u32)
 }
 
 /// 将发现流程之外确认的设备（例如来自服务器注册事件）加入存储。
@@ -387,7 +477,7 @@ mod tests {
     fn test_discover_staged_no_handle_errors() {
         let state = Mutex::new(BridgeState::new());
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            discovery_discover_staged(&state, "[]", "[]", 53317, "https", 1000).await
+            discovery_discover_staged(&state, "[]", "[]", 53317, "https", "http", 1000, false).await
         });
         assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
     }

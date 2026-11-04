@@ -58,6 +58,7 @@ import {
 import { TransferSession, SessionFilter, SessionStage, isTerminalStage } from '../model/transfer/TransferSession';
 import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
 import {
+  MTA_SEND_KEY,
   isMtaSendSessionActive,
   startMtaSend as startMtaSendFlow
 } from '../service/transfer/adapters/MtaSendAdapter';
@@ -118,6 +119,68 @@ export enum SendInitiateResult {
   blocked = 'blocked',
   /** 无暂存内容可发送 */
   noContent = 'no_content'
+}
+
+// ── 发送失败浮卡的数据源 ──
+
+/** 一次发送失败的可展示摘要（失败浮卡内容来源）。 */
+export interface SendFailureNotice {
+  /** 统一会话标识：单条失败时浮卡据此进入该会话详情页 */
+  sessionId: string
+  /** 对端设备名 */
+  alias: string
+  /** 失败原因（会话记录的本地化错误信息；可能为空，此时浮卡只展示标题） */
+  message: string
+}
+
+/** 一次 MTA 发起的结局：是否已结算，以及失败时的展示摘要。 */
+export class MtaSendOutcome {
+  /** 本次发起是否已有结论（会话全部终态，或确认未产生会话） */
+  settled: boolean = false
+  /** 失败摘要（成功/取消/未产生会话时为空） */
+  failure: SendFailureNotice | undefined = undefined
+}
+
+/** 需要向用户提示的失败终态：失败、部分失败与对方拒收；取消由用户主动发起，不提示。 */
+function isNotifiableFailureStage(stage: SessionStage): boolean {
+  return stage === SessionStage.failed || stage === SessionStage.partiallyFailed ||
+    stage === SessionStage.declined;
+}
+
+/**
+ * 从「本次点击后新建的会话」中挑选最近一条失败会话（纯函数，便于单测）：
+ * 只统计标识不在 beforeIds 中的会话，避免历史失败被当成本次结果重复提示；
+ * peerIp 非空时只取该设备的会话（局域网多设备可并发点击，须按目标区分）；
+ * 为空表示按协议取（MTA 会话不携带对端 IP，同一时刻只允许一个发送）。
+ */
+export function pickNewSendFailure(beforeIds: Array<string>, sessions: Array<TransferSession>,
+  peerIp: string): SendFailureNotice | undefined {
+  let latest: TransferSession | undefined = undefined;
+  for (let i = 0; i < sessions.length; i++) {
+    let session: TransferSession = sessions[i];
+    if (beforeIds.indexOf(session.id) >= 0) {
+      continue;
+    }
+    if (peerIp.length > 0 && session.peer.ip !== peerIp) {
+      continue;
+    }
+    if (!isNotifiableFailureStage(session.stage)) {
+      continue;
+    }
+    // 结束时刻相同时取后出现的一条（`sessions` 为注册表插入序）：
+    // 多个任务在同一毫秒失败时，"最近一条"必须确定为最后新建的那条
+    if (latest === undefined || session.finishedAt >= latest.finishedAt) {
+      latest = session;
+    }
+  }
+  if (latest === undefined) {
+    return undefined;
+  }
+  return {
+    sessionId: latest.id,
+    alias: latest.peer.displayName,
+    message: latest.errorMessage
+  };
 }
 
 // ── 从收藏面板发起发送的结果 ──
@@ -509,8 +572,9 @@ export class SendViewModel {
     let parts: Array<string> = [];
     for (let i = 0; i < devices.length; i++) {
       let d = devices[i];
+      // protocol 参与签名：对端切换协议后若签名不变，条目对象不会重建，发送会继续用旧协议
       parts.push(`${d.fingerprint}|${d.alias}|${this.favoriteAliasFor(d.fingerprint)}|${d.ip}` +
-        `|${d.port}|${d.deviceModel}|${d.deviceType}|${d.version}`);
+        `|${d.port}|${d.protocol}|${d.deviceModel}|${d.deviceType}|${d.version}`);
     }
     return parts.join('\n');
   }
@@ -1147,7 +1211,11 @@ export class SendViewModel {
     return isMtaSendSessionActive();
   }
 
-  /** 发起 MTA 发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接。 */
+  /**
+   * 发起 MTA 发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接。
+   * 建链完成即返回，不等待对端确认/传输结束——结果反馈由发送页按本次会话的终态监听
+   * （见 `mtaSendOutcome`）。
+   */
   startMtaSend(params: MtaSendRequest): void {
     let context = this.context;
     if (context === undefined) {
@@ -1349,6 +1417,69 @@ export class SendViewModel {
     return FavoriteSendResult.initiated;
   }
 
+  /** 本次点击后新建会话中的失败摘要（失败浮卡数据源；无失败返回 undefined）。 */
+  newSendFailure(ip: string, beforeIds: Array<string>): SendFailureNotice | undefined {
+    let filter: SessionFilter = { protocolKey: LOCAL_SEND_KEY };
+    return pickNewSendFailure(beforeIds, querySessions(filter), ip);
+  }
+
+  /** MTA 发送会话快照（失败提示据此排除历史会话）。 */
+  mtaSendSessionIds(): Array<string> {
+    let filter: SessionFilter = { protocolKey: MTA_SEND_KEY };
+    let sessions: Array<TransferSession> = querySessions(filter);
+    let ids: Array<string> = [];
+    for (let i = 0; i < sessions.length; i++) {
+      ids.push(sessions[i].id);
+    }
+    return ids;
+  }
+
+  /**
+   * 本次 MTA 发起的结局（供发送页在变更通知里轮询到终态）：
+   * - 已出现新会话且全部终态 → 结算，失败时给出摘要；
+   * - 新会话仍在进行 → 未结算；
+   * - 尚未出现新会话：发起中则继续等，否则视为本次未产生会话（预检失败等），结算且不提示。
+   * 不能依赖 `startMtaSend` 的返回时刻——建链完成就返回，早于对端确认与传输结束。
+   */
+  mtaSendOutcome(beforeIds: Array<string>): MtaSendOutcome {
+    let filter: SessionFilter = { protocolKey: MTA_SEND_KEY };
+    let sessions: Array<TransferSession> = querySessions(filter);
+    let freshCount: number = 0;
+    let pending: boolean = false;
+    for (let i = 0; i < sessions.length; i++) {
+      let session: TransferSession = sessions[i];
+      if (beforeIds.indexOf(session.id) >= 0) {
+        continue;
+      }
+      freshCount++;
+      if (!isTerminalStage(session.stage)) {
+        pending = true;
+      }
+    }
+    let outcome = new MtaSendOutcome();
+    if (freshCount === 0) {
+      outcome.settled = !isMtaSendSessionActive();
+      return outcome;
+    }
+    if (pending) {
+      return outcome;
+    }
+    outcome.settled = true;
+    outcome.failure = pickNewSendFailure(beforeIds, sessions, '');
+    return outcome;
+  }
+
+  /**
+   * 发起前的可发送性预判（与 sendToMultipleDeviceInline 同一判定）：
+   * 视图据此决定先给「已开始发送」确认还是直接给拦截提示，避免两条提示互相打架。
+   */
+  precheckSend(device: DiscoveredDevice): SendInitiateResult {
+    let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
+    return decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
+      this.hasActiveSendTo(device.ip), hasContent);
+  }
+
   /** 该目标是否存在进行中的发送会话（点击去重判定，来源＝统一会话注册表）。 */
   private hasActiveSendTo(ip: string): boolean {
     let filter: SessionFilter = { protocolKey: LOCAL_SEND_KEY };
@@ -1362,8 +1493,8 @@ export class SendViewModel {
     return false;
   }
 
-  /** 该目标当前在注册表中的发送会话标识集合（发送前快照）。 */
-  private sendSessionIdsForIp(ip: string): Array<string> {
+  /** 该目标当前在注册表中的发送会话标识集合（发送前快照；失败提示据此排除历史会话）。 */
+  sendSessionIdsForIp(ip: string): Array<string> {
     let filter: SessionFilter = { protocolKey: LOCAL_SEND_KEY };
     let sessions: Array<TransferSession> = querySessions(filter);
     let ids: Array<string> = [];

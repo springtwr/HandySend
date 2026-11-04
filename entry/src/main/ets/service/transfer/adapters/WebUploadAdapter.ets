@@ -89,8 +89,7 @@ function capabilities(): SessionCapabilities {
     needsConfirm: true,
     hasByteProgress: true,
     canSaveToGallery: true,
-    hasVerify: false,
-    cancelLabel: $r('app.string.session_end_web_access')
+    hasVerify: false
   };
 }
 

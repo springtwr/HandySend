@@ -194,7 +194,7 @@ export default function DiscoveryNativeTest() {
       let channels: Array<NativeDeviceChannel> = []
       let interfaceIps: Array<string> = []
       try {
-        await nativeDiscoveryDiscoverStaged(channels, interfaceIps, 53317, 'http', 500)
+        await nativeDiscoveryDiscoverStaged(channels, interfaceIps, 53317, 'http', 'https', 500, false)
       } catch (_e) {
         // 抛异常与静默返回均为合法行为
       }
@@ -212,12 +212,16 @@ export default function DiscoveryNativeTest() {
       let channels: Array<NativeDeviceChannel> = []
       let interfaceIps: Array<string> = []
       let threw: boolean = false
+      let confirmedCount: number = -1
       try {
-        await nativeDiscoveryDiscoverStaged(channels, interfaceIps, 53317, 'http', 200)
+        // 强制扫描路径：接口 IP 为空，不会真的扫子网，仅验证调用不抛异常
+        confirmedCount = await nativeDiscoveryDiscoverStaged(channels, interfaceIps, 53317, 'http', 'https', 200, true)
       } catch (_e) {
         threw = true
       }
       expect(!threw).assertTrue()
+      // 返回值为本次扫描确认的设备数（无已知通道、无接口时为 0）
+      expect(confirmedCount >= 0).assertTrue()
       let errorStr: string = nativeDiscoveryMulticastError()
       expect(typeof errorStr === 'string').assertTrue()
       nativeDiscoverySetAnswerAnnouncements(false)

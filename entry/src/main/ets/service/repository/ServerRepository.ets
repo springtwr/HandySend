@@ -301,7 +301,9 @@ function buildDiscoveryConfig(protocol: string): NativeDiscoveryConfig {
 
 // 重启发现（不停 HTTP 服务器）：刷新接口列表 → 重算白/黑名单 → stop + start discovery。
 // 用于网络接口变化后让组播 socket 绑定适配新接口，无需中断 HTTP 服务。
-export async function restartDiscovery(): Promise<void> {
+// force=true 时即使接口配置未变化也重启：连接断开/恢复后同名同 IP 的接口可能已丢失
+// 组播组成员关系，仅靠配置签名比较会跳过重启，导致组播静默失效。
+export async function restartDiscovery(force: boolean = false): Promise<void> {
   if (!serverRunning) {
     logger.debug('服务器未运行，跳过');
     return;
@@ -318,7 +320,7 @@ export async function restartDiscovery(): Promise<void> {
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
   let signature = computeDiscoverySignature(discoveryConfig);
-  if (signature === lastDiscoverySignature) {
+  if (!force && signature === lastDiscoverySignature) {
     logger.debug('配置未变化，跳过重启');
     notifyChange();
     return;
@@ -327,11 +329,11 @@ export async function restartDiscovery(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
-    // 旧的 discover_staged promise 因 stop 而失效，不会走到 finishScan()，
-    // 手动清理扫描状态，避免遗留 isScanning/pendingRescan 干扰后续扫描
-    resetScanState();
   } catch (_e) {
   }
+  // 无论停止是否抛错都复位扫描状态：原生 discover_staged 在 stop 后仍会跑完，
+  // 由扫描代数使旧回调失效，避免遗留 isScanning/pendingRescan 干扰后续扫描
+  resetScanState();
 
   try {
     logger.debug('port=' + discoveryConfig.port +
@@ -348,7 +350,8 @@ export async function restartDiscovery(): Promise<void> {
 
   // 立即通知 UI 更新警告状态（allInterfacesDisabled/noWifiWarning 可能已变化）
   notifyChange();
-  triggerStagedDiscover();
+  // 网络环境刚变化，完整扫描一次：新网络里可能有不响应组播、只能 HTTP 探测的设备
+  triggerStagedDiscover(true);
 }
 
 // 查询原生层的实际服务器状态并同步到模块状态
@@ -493,9 +496,10 @@ export async function startLocalServer(): Promise<string> {
     logger.error('设备发现启动失败：' + e);
   }
   // 启动扫描：discover_staged 是唯一入口
-  // （内部：announce + 收藏设备探测 + 宽限期后的条件子网扫描）
-  // 与 LocalSend Flutter 的 StartSmartScan 行为一致
-  triggerStagedDiscover();
+  // （内部：announce + 收藏设备探测 + 子网扫描）
+  // 启动首扫强制完整扫描：局域网内可能存在完全不响应组播、只能通过 HTTP 探测
+  // 发现的设备，仅在组播无确认时扫描会漏掉它们（直到用户手动刷新）
+  triggerStagedDiscover(true);
 
   // 请求轮询由 AppService 门面启动（结合服务器 +
   // 传输生命周期），以避免仓库循环依赖。
@@ -508,9 +512,9 @@ export async function stopLocalServer(): Promise<void> {
   try {
     nativeDiscoverySetAnswerAnnouncements(false);
     nativeDiscoveryStop();
-    resetScanState();
   } catch (_e) {
   }
+  resetScanState();
   // 网页服务由独立原生服务承载，与 LocalSend 服务器生命周期无关，此处不得联动停止
   try {
     await nativeStopServer();

@@ -9,13 +9,13 @@
 ```
 HandySend（主仓库，gitcode: springtwr/HandySend）
  └── localsend_ohrs/third_party/localsend（submodule = LocalSend 协议核心）
-      └── 定制仓库: GitCode springtwr/localsend_harmony-web-ui
-           └── harmony-web-ui 分支 = HandySend 定制（基于特定tag + 鸿蒙化）
+      └── 定制仓库: GitCode springtwr/localsend-ohos
+           └── main 分支 = HandySend 定制（基于特定tag + 鸿蒙化）
 ```
 
 - **submodule 机制**：主仓库只记录一个 commit hash（gitlink），`git submodule update` 按它检出。
 - **双 remote**（submodule 内）：
-  - `origin` = 定制仓库（ `https://gitcode.com/springtwr/localsend_harmony-web-ui.git` ）——检出与推送用
+  - `origin` = 定制仓库（ `https://gitcode.com/springtwr/localsend-ohos.git` ）——检出与推送用
   - `upstream` = localsend 官方（`https://gh-proxy.org/https://github.com/localsend/localsend.git` ，经 gh-proxy 代理）——仅拉取升级用，需要自己添加
 
 ### 0.2 Submodule 独立性
@@ -70,11 +70,11 @@ hvigorw assembleHar                      # 仅 Rust 原生库
 
 ```bash
 cd localsend_ohrs/third_party/localsend
-git checkout harmony-web-ui              # ① 切到定制分支
+git checkout main              # ① 切到定制分支
 # ② 修改代码
 git add <改动文件> && git commit -m "feat(web): ..."
 # ③ push 到定制仓库（否则 gitlink 指向的提交别人/其他 worktree/CI 拉不到）
-git push origin harmony-web-ui
+git push origin main
 
 # ④ 回主仓库：更新 gitlink 并提交
 cd <项目根目录>
@@ -130,18 +130,18 @@ git merge <本地分支>                     # ① 合并主仓库（本地 refs
 git submodule sync                       # ② 修复 remote
 # ③ 从本地 worktree 的 submodule 对象库拉取新提交（关键：对象库独立，需本地路径 fetch）
 git -C localsend_ohrs/third_party/localsend fetch \
-    <本地worktree绝对路径>/localsend_ohrs/third_party/localsend harmony-web-ui
+    <本地worktree绝对路径>/localsend_ohrs/third_party/localsend main
 git submodule update                     # ④ 检出新 gitlink 对应 commit
 ```
 
-⚠️ 本地路径 fetch 只是应急。**submodule 的 commit 最终必须 push 到定制仓库的 `harmony-web-ui`**，否则新 clone / CI / 其他机器 `git submodule update` 会失败。
+⚠️ 本地路径 fetch 只是应急。**submodule 的 commit 最终必须 push 到定制仓库的 `main`**，否则新 clone / CI / 其他机器 `git submodule update` 会失败。
 
 ### 4.4 在新 worktree 初始化 submodule 定制分支
 
 ```bash
 # 每个 worktree 的 submodule 需单独 fetch（对象库独立）
-git -C localsend_ohrs/third_party/localsend fetch origin harmony-web-ui
-git -C localsend_ohrs/third_party/localsend checkout -b harmony-web-ui origin/harmony-web-ui
+git -C localsend_ohrs/third_party/localsend fetch origin main
+git -C localsend_ohrs/third_party/localsend checkout -b main origin/main
 # 分支 HEAD 与 gitlink 一致时 submodule status 保持干净
 ```
 
@@ -174,7 +174,7 @@ tools/setup-worktree.sh -n ../HandySend-worktrees/dev    # 预演，只打印不
 ```bash
 cd localsend_ohrs/third_party/localsend
 git fetch upstream --tags                # 拉上游（含新 tag）
-git checkout -b upgrade-<版本>           # 实验分支，不直接动 harmony-web-ui
+git checkout -b upgrade-<版本>           # 实验分支，不直接动 main
 git rebase v1.18.2                       # 或 git rebase upstream/main
 # 解决冲突（重点：core 结构变更在 HandySend 桥接层的对应迁移）
 cargo test --target x86_64-unknown-linux-gnu --features full
@@ -182,14 +182,14 @@ git push -u origin upgrade-<版本>
 # 全量验证（含端到端）通过后，主仓库 gitlink 切到新分支/提交（可回退）
 ```
 
-> 推荐保留旧版本定制分支（如 harmony-web-ui）与新版本分支并行，验证通过再切换。
+> 推荐保留当前定制分支（main）与新版本分支并行，验证通过再切换。
 
 ## 6. 常见坑速查
 
 | 坑 | 现象 | 解法 |
 |---|---|---|
 | worktree submodule 独立 | 一个 worktree 提交了 submodule，另一个看不到/不更新 | 目标 worktree 跑 `git submodule sync` + `git submodule update`（未 push 时用 §4.3 本地路径 fetch） |
-| submodule 未 push 定制仓库 | 新 clone/CI 的 `git submodule update` 失败 | 改完 submodule **必须** `git push origin harmony-web-ui` |
+| submodule 未 push 定制仓库 | 新 clone/CI 的 `git submodule update` 失败 | 改完 submodule **必须** `git push origin main` |
 | 页面改动不生效 | 改了 html，构建后浏览器仍旧页面 | `rm -rf localsend_ohrs/package/libs/` 强制重编 |
 | pre-commit hook 拦截 | 检查全过但 commit 失败 | `git commit --no-verify` 兜底（正常应排查 hook） |
 | cargo test E0463 | 按 OHOS target 编译 | 加 `--target x86_64-unknown-linux-gnu` 参数 |

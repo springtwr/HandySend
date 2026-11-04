@@ -82,8 +82,13 @@ export struct SessionMetaSection {
         enableCopy: false
       })
       SingleLineValueRow({
-        label: $r('app.string.session_meta_duration_label'),
-        value: this.durationText(this.viewModel.meta.durationMs),
+        label: $r('app.string.session_meta_task_duration_label'),
+        value: this.durationText(this.viewModel.meta.taskDurationMs),
+        enableCopy: false
+      })
+      SingleLineValueRow({
+        label: $r('app.string.session_meta_transfer_duration_label'),
+        value: this.durationText(this.viewModel.meta.transferDurationMs),
         enableCopy: false
       })
       SingleLineValueRow({

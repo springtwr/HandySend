@@ -80,7 +80,7 @@ export default function VersionNativeTest() {
 
 运行输出以 `OHOS_REPORT_STATUS: consuming=<ms>` 逐用例给出耗时（`taskconsuming` 为总耗时），按数值倒序即可定位慢用例。经验上耗时集中在两类位置：
 
-- 上游库的固有等待：如 `nativeDiscoveryDiscoverStaged` 内部会扫描网卡子网段，测试侧只能通过 `graceMs` 参数影响其中一小段
+- 上游库的固有等待：如 `nativeDiscoveryDiscoverStaged` 内部会扫描网卡子网段，测试侧可通过 `graceMs`（确认收集期）与 `forceSubnetScan`（跳过收集、强制执行）参数控制其中一段
 - 需要决策或外部响应的链路：未被响应的决策会等满超时，按第 7~9 条编写可消除这部分开销
 
 `SecurityNativeTest` 的重置身份用例会触发 RSA 密钥生成（真机 release 下为亚秒级开销），属设备端必要开销。

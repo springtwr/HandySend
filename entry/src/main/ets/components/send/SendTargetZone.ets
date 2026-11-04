@@ -36,25 +36,25 @@ export struct SendTargetZone {
   // 官方分段标签选项集合：集合引用保持稳定，仅在协议开关变化时就地重建
   // （官方标注 items 为只读 @Param，整体替换在组件侧不被保证生效）
   @Local private sourceItemsValue: SegmentButtonV2Items = new SegmentButtonV2Items([])
-  // 当前已启用来源数：作为 @Local 参与条件渲染，保证协议开关变化时标签栏显隐被重新求值
-  //（visibleSources 读取的协议开关不是响应式状态，仅靠 sourceItemsValue 更新不足以重算外层 if）
-  @Local private enabledSourceCount: number = 0
   // 已构建选项对应的来源键签名（变化时才重建集合）
   private sourceKeySignature: string = ''
+  // 当前可见来源集合（响应式镜像）：来源键集合变化时整体替换。
+  // 副标题、空态文案与标签栏显隐都按可见来源派生；若每次渲染都读协议开关的实时值，
+  // ArkUI 无法感知开关变化，开关重开后仍可能保留上一来源的文案。
+  @Local private visibleSourcesValue: Array<DeviceSourceDescriptor> = []
 
   aboutToAppear(): void {
     this.syncSourceItems();
   }
 
-  /** 协议开关变化时重建分段标签选项（来源集合按开关常显，不随发现结果变化）。 */
+  /** 协议开关变化时刷新可见来源镜像并重建分段标签选项（来源集合按开关常显，不随发现结果变化）。 */
   @Monitor('viewModel.localSendEnabled', 'viewModel.mtaEnabled')
   onSourceToggleChanged(): void {
     this.syncSourceItems();
   }
 
   private syncSourceItems(): void {
-    let sources: Array<DeviceSourceDescriptor> = this.visibleSources();
-    this.enabledSourceCount = sources.length;
+    let sources: Array<DeviceSourceDescriptor> = filterEnabledDeviceSources(listSources());
     let signature: string = '';
     for (let i = 0; i < sources.length; i++) {
       signature = signature + sources[i].key + '|';
@@ -67,6 +67,8 @@ export struct SendTargetZone {
       return;
     }
     this.sourceKeySignature = signature;
+    // 先替换可见来源镜像，使副标题/空态文案在开关变化后随新集合重新求值
+    this.visibleSourcesValue = sources;
     let options: Array<SegmentButtonV2ItemOptions> = [];
     for (let i = 0; i < sources.length; i++) {
       options.push({ text: sources[i].label });
@@ -74,9 +76,9 @@ export struct SendTargetZone {
     this.sourceItemsValue = new SegmentButtonV2Items(options);
   }
 
-  /** 可见来源：协议开关开启的设备来源（注册表顺序），与是否发现设备无关。 */
+  /** 可见来源：来源键集合变化时由 syncSourceItems 更新的响应式镜像（注册表顺序）。 */
   private visibleSources(): Array<DeviceSourceDescriptor> {
-    return filterEnabledDeviceSources(listSources());
+    return this.visibleSourcesValue;
   }
 
   /** 当前选中来源（按选中下标派生；集合为空时返回 undefined）。 */
@@ -148,7 +150,7 @@ export struct SendTargetZone {
 
   /** 来源数 ≥2 且至少一个有设备时才显示标签栏；全部为空时回退总空态，不展示空标签。 */
   private shouldShowSourceTabs(): boolean {
-    return this.enabledSourceCount >= 2 && this.hasAnyDevice();
+    return this.visibleSources().length >= 2 && this.hasAnyDevice();
   }
 
   /**
@@ -249,42 +251,34 @@ export struct SendTargetZone {
   }
 
   /**
-   * 设备区空态卡片：外观与一条设备卡一致（card_background + radius.lg + 1vp 边框），
-   * 高度下限取一条设备卡的高度（统一空态面板高度 120 − 标准卡片上下内边距 2×20 = 80vp），
-   * 使有设备与无设备时目标区高度不跳变。
+   * 设备区空态卡片：沿用任务页、接收历史页的卡片模式（面板最小高度 120vp），
+   * 为整区提供明确边界；同页条目也是卡片，卡片外观（背景/圆角/边框）与设备卡同款。
    */
   @Builder
   emptyCard() {
-    Column() {
-      if (this.showCombinedEmptyState()) {
-        // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
-        // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启
-        EmptyState({
-          mainText: $r('app.string.send_no_source_title'),
-          actionText: $r('app.string.discovery_source_web'),
-          actionIcon: $r('sys.symbol.worldclock'),
-          onAction: () => {
-            this.onOpenWeb();
-          }
-        })
-          .id('send_no_source')
-      } else {
-        // 条件引导提示沿用警示语义色
-        EmptyState({
-          mainText: this.emptyText(),
-          hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
-          hintColor: $r('app.color.warning_orange')
-        })
-          .id('send_no_devices')
-      }
+    if (this.showCombinedEmptyState()) {
+      // 无任何已启用来源，或多来源全部无设备：总空态的主文案不绑定单一协议；
+      // 网页传输不依赖设备发现，始终给出入口——总开关关闭时进入页面即可开启
+      EmptyState({
+        mainText: $r('app.string.send_no_source_title'),
+        actionText: $r('app.string.discovery_source_web'),
+        actionIcon: $r('sys.symbol.worldclock'),
+        onAction: () => {
+          this.onOpenWeb();
+        },
+        useCard: true
+      })
+        .id('send_no_source')
+    } else {
+      // 条件引导提示沿用警示语义色
+      EmptyState({
+        mainText: this.emptyText(),
+        hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
+        hintColor: $r('app.color.warning_orange'),
+        useCard: true
+      })
+        .id('send_no_devices')
     }
-    .width('100%')
-    .padding(DesignTokens.space.md)
-    .constraintSize({ minHeight: DesignTokens.size.emptyStateMinHeight - DesignTokens.space.card * 2 })
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('app.color.card_background'))
-    .borderRadius(DesignTokens.radius.lg)
-    .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
   }
 
   @Builder

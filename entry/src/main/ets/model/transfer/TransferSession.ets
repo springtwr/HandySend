@@ -87,8 +87,6 @@ export interface SessionCapabilities {
   hasByteProgress: boolean
   canSaveToGallery: boolean
   hasVerify: boolean
-  // 可选：结束动作文案（如网页访问会话为“结束会话”，缺省为“取消传输”）
-  cancelLabel?: ResourceStr
 }
 
 /** 关键事件时间线（事件携带统一会话标识，供后续按会话检索诊断）。 */
@@ -221,7 +219,11 @@ export class TransferSession {
   // 传输性能指标（不可得时为 0）
   @Trace averageSpeedBps: number = 0
   @Trace peakSpeedBps: number = 0
+  // 会话开始时刻（创建/确认时刻）：列表排序与历史归档使用
   startedAt: number = 0
+  // 实际开始传输时刻（首个字节进度）；0 表示尚未传输过字节。
+  // 耗时与平均速度以此起点计时，不把等待确认、校验和计算与建链时间计入传输耗时
+  transferStartedAt: number = 0
   @Trace finishedAt: number = 0
   capabilities: SessionCapabilities = defaultCapabilities()
   @Trace timeline: Array<SessionTimelineEvent> = []
@@ -242,6 +244,27 @@ export function isTerminalStage(stage: SessionStage): boolean {
  */
 export function isPreparing(session: TransferSession): boolean {
   return !isTerminalStage(session.stage) && session.prepTotalBytes > 0;
+}
+
+/** 起止时刻各自截断毫秒后取差（秒级截断口径）；end 不晚于 start 时为 0。 */
+function truncatedElapsedMs(start: number, end: number): number {
+  if (end <= start) {
+    return 0;
+  }
+  return (Math.floor(end / 1000) - Math.floor(start / 1000)) * 1000;
+}
+
+/**
+ * 耗时（毫秒，展示口径）：起止时刻各自截断毫秒后取差，不足 1 秒记 1 秒
+ * （短时长同样真实发生过，不因截断成 0 而退化为占位符）。
+ * 起点缺失（0）或结束早于起点（时钟异常）时返回 0，由展示层降级为占位符。
+ */
+export function displayDurationMs(start: number, end: number): number {
+  if (start <= 0 || end < start) {
+    return 0;
+  }
+  let elapsed: number = truncatedElapsedMs(start, end);
+  return elapsed > 0 ? elapsed : 1000;
 }
 
 /** 是否成功类终态（用于聚合成败汇总）。 */

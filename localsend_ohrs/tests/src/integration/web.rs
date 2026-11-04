@@ -998,6 +998,88 @@ async fn test_capability_token_exchange_and_binding() {
     handle.abort();
 }
 
+/// 协议切换后 Cookie 名必须隔离：HTTPS 下发的 Cookie 带 `Secure`，
+/// 浏览器禁止 HTTP 源用同名非 Secure Cookie 覆盖它。若沿用同名，关闭加密传输后
+/// 输入正确访问码虽然服务端返回 200，`Set-Cookie` 却被浏览器丢弃，页面反复回到访问码页。
+#[tokio::test]
+async fn test_protocol_switch_uses_distinct_cookie_names() {
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
+
+    // 关闭加密传输（HTTP）：Cookie 不带 Secure，使用 HTTP 名。
+    let (http_status, http_headers, _) = http_post_bytes(
+        addr,
+        "/web/auth",
+        b"{\"password\":\"123456\"}",
+        &[
+            ("Content-Type", "application/json"),
+            ("User-Agent", "BrowserA"),
+        ],
+    )
+    .await;
+    assert_eq!(http_status, 200);
+    let http_cookie = header(&http_headers, "set-cookie").expect("登录应下发 Cookie");
+    assert!(http_cookie.starts_with("handysend_web_auth="));
+    assert!(!http_cookie.contains("Secure"));
+
+    // 打开加密传输（HTTPS）：改为 HTTPS 名并带 Secure。
+    state.caps.lock().unwrap().https_hint = true;
+    let (https_status, https_headers, _) = http_post_bytes(
+        addr,
+        "/web/auth",
+        b"{\"password\":\"123456\"}",
+        &[
+            ("Content-Type", "application/json"),
+            ("User-Agent", "BrowserA"),
+        ],
+    )
+    .await;
+    assert_eq!(https_status, 200);
+    let https_cookie = header(&https_headers, "set-cookie").expect("登录应下发 Cookie");
+    assert!(https_cookie.starts_with("handysend_web_auth_https="));
+    assert!(https_cookie.contains("Secure"));
+    let http_pair = http_cookie.split(';').next().expect("Cookie 格式非法");
+    let https_pair = https_cookie.split(';').next().expect("Cookie 格式非法");
+    assert_ne!(http_pair, https_pair, "两种协议的 Cookie 名不能相同");
+
+    // HTTPS 下只认 HTTPS 名：HTTP 名残留不放行，新 Cookie 放行（UA 需与登录时一致）。
+    let (old_cookie_status, _, _) = http_request_with_headers(
+        addr,
+        "GET",
+        "/caps",
+        &[("Cookie", http_pair), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(old_cookie_status, 401);
+    let (new_cookie_status, _, _) = http_request_with_headers(
+        addr,
+        "GET",
+        "/caps",
+        &[("Cookie", https_pair), ("User-Agent", "BrowserA")],
+    )
+    .await;
+    assert_eq!(new_cookie_status, 200);
+
+    // 能力令牌 Cookie 同样按协议隔离：两次换取得到不同的 Cookie 名。
+    *state.capability.lock().unwrap() = Some("cap-https".to_string());
+    let (_, cap_https_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-https", &[("User-Agent", "BrowserA")])
+            .await;
+    let cap_https = header(&cap_https_headers, "set-cookie").expect("换令牌应下发 Cookie");
+    assert!(cap_https.starts_with("handysend_web_cap_https="));
+    assert!(cap_https.contains("Secure"));
+
+    // 再次关闭加密传输：服务按新配置重建（新能力令牌），HTTP 名可正常写入。
+    state.caps.lock().unwrap().https_hint = false;
+    *state.capability.lock().unwrap() = Some("cap-http".to_string());
+    let (_, cap_http_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-http", &[("User-Agent", "BrowserA")]).await;
+    let cap_http = header(&cap_http_headers, "set-cookie").expect("换令牌应下发 Cookie");
+    assert!(cap_http.starts_with("handysend_web_cap="));
+    assert!(!cap_http.contains("Secure"));
+    handle.abort();
+}
+
 /// 仅能力令牌门禁时，prepare-download 也应直接授权，不等待应用确认。
 #[tokio::test]
 async fn test_capability_prepare_download_auto_accepts() {

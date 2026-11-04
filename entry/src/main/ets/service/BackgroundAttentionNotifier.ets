@@ -5,8 +5,8 @@
  * 收敛为**一条**系统通知。网页访问与下载不进入该通知：访问只写诊断日志并续期
  * 有界后台保活，下载批次由后台传输实况通知承载。
  *
- * 通知使用独立 id（与后台传输实况通知区分），点击回到任务中心。
- * 模块级单例，由 EntryAbility 生命周期与注册表变更共同驱动。
+ * 通知使用独立 id（与后台传输实况通知区分）：单条待确认点击直达该请求详情，
+ * 多条待确认点击回到任务中心。模块级单例，由 EntryAbility 生命周期与注册表变更共同驱动。
  */
 
 import { notificationManager } from '@kit.NotificationKit';
@@ -14,10 +14,14 @@ import { common, WantAgent } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getAppContext, isAppForeground } from './repository/AppCore';
 import {
-  getPendingCount,
+  getPendingSessionIds,
   subscribeSessions
 } from './transfer/TransferSessionRegistry';
-import { buildBackToFrontWantAgent, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
+import {
+  buildBackToFrontWantAgent,
+  NAV_TARGET_SESSION_DETAIL,
+  NAV_TARGET_TRANSFER_CENTER
+} from '../utils/WantAgentUtil';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -34,10 +38,17 @@ export enum AttentionKind {
 // 是否已发布（撤回幂等依据）与已发布时间
 let published: boolean = false;
 let publishedSignature: string = '';
-// 撤回代际：publish 在途期间发生撤回时递增，publish 完成后比对以补回收
+// 撤回代际：撤回使在途发布失效，发布完成后比对以补回收
 let withdrawGeneration: number = 0;
-// 缓存的可点击回前台 WantAgent（进程级复用）
+// 同步串行链与排队标记：连续变化只保留一次排队，轮到本次时按最新注册表状态重算，
+// 避免旧状态（数量 / 点击目标）的发布晚于新状态完成而覆盖通知
+let attentionSyncChain: Promise<void> = Promise.resolve();
+let attentionSyncQueued: boolean = false;
+// 撤回取消动作的串行链尾：发布前等待其完成，避免迟到的取消误删刚发布的新通知
+let lastWithdrawCancel: Promise<void> = Promise.resolve();
+// 缓存的可点击回前台 WantAgent（进程级复用；目标或会话标识变化时重建）
 let attentionWantAgent: WantAgent | undefined = undefined;
+let attentionWantAgentKey: string = '';
 // 注册表订阅状态
 let subscribed: boolean = false;
 
@@ -56,14 +67,18 @@ function getString(resId: number): string {
   return ctx.resourceManager.getStringSync(resId);
 }
 
-// 获取（惰性创建并缓存）点击通知回前台的 WantAgent，构建细节收敛于共享工具
-async function ensureWantAgent(context: common.UIAbilityContext): Promise<WantAgent> {
+// 获取（惰性创建并缓存）点击通知回前台的 WantAgent，构建细节收敛于共享工具；
+// 目标（任务中心 / 单条待确认详情）或会话标识变化时重建缓存
+async function ensureWantAgent(context: common.UIAbilityContext, target: string,
+  sessionId: string): Promise<WantAgent> {
+  let key: string = target + '|' + sessionId;
   let existing = attentionWantAgent;
-  if (existing !== undefined) {
+  if (existing !== undefined && attentionWantAgentKey === key) {
     return existing;
   }
-  let agent = await buildBackToFrontWantAgent(context, NAV_TARGET_TRANSFER_CENTER);
+  let agent = await buildBackToFrontWantAgent(context, target, sessionId);
   attentionWantAgent = agent;
+  attentionWantAgentKey = key;
   return agent;
 }
 
@@ -72,18 +87,39 @@ function buildPendingText(count: number): string {
   return template.replace('%d', String(count));
 }
 
-function buildSignature(kind: AttentionKind, pendingCount: number): string {
+/** 单条待确认时的目标会话标识；多条或数量异常时为空串（回任务中心）。 */
+function singleSessionId(sessionIds: Array<string>): string {
+  return sessionIds.length === 1 ? sessionIds[0] : '';
+}
+
+function buildSignature(kind: AttentionKind, sessionIds: Array<string>): string {
   if (kind === AttentionKind.pendingRequest) {
-    return 'pending:' + String(pendingCount);
+    // 数量与单条时的会话标识都参与判重：数量不变但换成另一条请求时也要重发，
+    // 否则通知的点击目标仍指向已被处理掉的旧请求
+    return 'pending:' + String(sessionIds.length) + ':' + singleSessionId(sessionIds);
   }
   return '';
+}
+
+/** 将取消通知动作排入串行链（同一通知 id 的取消不并发），返回链尾供发布前等待。 */
+function enqueueAttentionCancel(): Promise<void> {
+  lastWithdrawCancel = lastWithdrawCancel.then((): Promise<void> => {
+    return notificationManager.cancel(BACKGROUND_ATTENTION_NOTIFICATION_ID).then((): void => {
+      logger.debug('后台关注通知已撤回');
+    }).catch((e: BusinessError): void => {
+      logger.warn('撤回后台关注通知失败：' + e.code + ' ' + e.message);
+    });
+  });
+  return lastWithdrawCancel;
 }
 
 /**
  * 发布/更新后台关注通知。权限未授予或发布失败时静默，
  * 事件本身仍保留在任务列表，回到前台可继续处理。
+ * @param signature 本次内容签名：发布成功后记为已发布状态，供后续变更判重
  */
-async function publishAttention(kind: AttentionKind, pendingCount: number): Promise<void> {
+async function publishAttention(kind: AttentionKind, sessionIds: Array<string>,
+  signature: string): Promise<void> {
   let context = getAppContext();
   if (context === undefined) {
     return;
@@ -92,13 +128,24 @@ async function publishAttention(kind: AttentionKind, pendingCount: number): Prom
   let text: string;
   if (kind === AttentionKind.pendingRequest) {
     title = getString($r('app.string.pending_request_notification_title').id);
-    text = buildPendingText(pendingCount);
+    text = buildPendingText(sessionIds.length);
   } else {
     return;
   }
-  let signature: string = buildSignature(kind, pendingCount);
   try {
-    let agent = await ensureWantAgent(context);
+    // 单条直达该请求详情（进页即可接受/拒绝）；多条合并后不替用户挑其中一条
+    let genAtPublish: number = withdrawGeneration;
+    let target: string = sessionIds.length === 1 ? NAV_TARGET_SESSION_DETAIL : NAV_TARGET_TRANSFER_CENTER;
+    let agent = await ensureWantAgent(context, target, singleSessionId(sessionIds));
+    if (genAtPublish !== withdrawGeneration) {
+      // 构建点击目标期间已撤回：不再发布
+      return;
+    }
+    // 等待仍在途的撤回取消完成：避免其迟到后删掉本次发布
+    await lastWithdrawCancel;
+    if (genAtPublish !== withdrawGeneration) {
+      return;
+    }
     let request: notificationManager.NotificationRequest = {
       id: BACKGROUND_ATTENTION_NOTIFICATION_ID,
       notificationSlotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
@@ -111,14 +158,10 @@ async function publishAttention(kind: AttentionKind, pendingCount: number): Prom
       },
       wantAgent: agent
     };
-    let genAtPublish: number = withdrawGeneration;
     await notificationManager.publish(request);
     if (genAtPublish !== withdrawGeneration) {
-      // await 期间已发生撤回：立即回收刚发布的通知，避免残留
-      notificationManager.cancel(BACKGROUND_ATTENTION_NOTIFICATION_ID)
-        .catch((e: BusinessError): void => {
-          logger.warn('撤回后台关注通知失败：' + e.code + ' ' + e.message);
-        });
+      // await 期间已发生撤回：排入取消链，避免与后续发布交错（迟到取消会误删新通知）
+      enqueueAttentionCancel();
       return;
     }
     published = true;
@@ -130,28 +173,43 @@ async function publishAttention(kind: AttentionKind, pendingCount: number): Prom
 }
 
 /**
- * 按当前后台状态同步关注通知（幂等）：
+ * 按当前注册表状态同步关注通知（串行执行，状态在轮到本次时重新读取）：
  * - 前台：撤回通知；
- * - 后台且有待确认请求：展示待确认数量；
+ * - 后台且有待确认请求：单条直达详情，多条展示待确认数量并回任务中心；
  * - 其余：撤回。
  */
-export function refreshBackgroundAttention(): void {
+async function applyAttentionState(): Promise<void> {
   if (isAppForeground()) {
     withdrawBackgroundAttention();
     return;
   }
-  let pendingCount: number = getPendingCount();
-  let kind: AttentionKind = resolveAttentionKind(pendingCount);
+  let pendingIds: Array<string> = getPendingSessionIds();
+  let kind: AttentionKind = resolveAttentionKind(pendingIds.length);
   if (kind === AttentionKind.none) {
     withdrawBackgroundAttention();
     return;
   }
-  let signature: string = buildSignature(kind, pendingCount);
+  let signature: string = buildSignature(kind, pendingIds);
   if (published && signature === publishedSignature) {
     return;
   }
-  publishAttention(kind, pendingCount).catch((e: Object): void => {
-    logger.warn('发布后台关注通知失败：' + String(e));
+  await publishAttention(kind, pendingIds, signature);
+}
+
+/**
+ * 请求同步后台关注通知：连续变化合并为一次排队，轮到本次时按最新注册表状态重算，
+ * 避免较早的发布晚于较新状态完成而覆盖通知内容与点击目标。
+ */
+export function refreshBackgroundAttention(): void {
+  if (attentionSyncQueued) {
+    return;
+  }
+  attentionSyncQueued = true;
+  attentionSyncChain = attentionSyncChain.then((): Promise<void> => {
+    attentionSyncQueued = false;
+    return applyAttentionState();
+  }).catch((e: Object): void => {
+    logger.warn('同步后台关注通知失败：' + String(e));
   });
 }
 
@@ -166,11 +224,7 @@ export function withdrawBackgroundAttention(): void {
   }
   published = false;
   publishedSignature = '';
-  notificationManager.cancel(BACKGROUND_ATTENTION_NOTIFICATION_ID).then(() => {
-    logger.debug('后台关注通知已撤回');
-  }).catch((e: BusinessError) => {
-    logger.warn('撤回后台关注通知失败：' + e.code + ' ' + e.message);
-  });
+  enqueueAttentionCancel();
 }
 
 /** 初始化：订阅注册表变化，按后台关注事件发布/撤回通知（进程级幂等）。 */

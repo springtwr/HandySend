@@ -1,4 +1,4 @@
-import { pasteboard } from '@kit.BasicServicesKit';
+import { pasteboard, deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import {
@@ -12,17 +12,20 @@ import {
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
-  subscribe, unsubscribe, connectByIp, getPort
+  subscribe, unsubscribe, connectByIp, getPort,
+  getHttpsEnabled, resolveSendProtocol
 } from '../service/AppService';
 import { DiscoveredDevice, StagedFile, FavoriteDevice } from '../model/Types';
 import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
-import { getSheetWidth, isWideWidth } from '../common/Breakpoints';
+import { getSheetWidth, isNarrowWidth, isWidescreenSideBarLayout, isWideWidth } from '../common/Breakpoints';
 import {
   SendViewModel,
   SendInitiateResult,
+  SendFailureNotice,
+  MtaSendOutcome,
   FavoriteSendResult,
   shouldShowPartialProtocolDisabledHint,
   shouldShowProtocolDisabledHint
@@ -34,7 +37,7 @@ import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
-import { isMtaDevice } from '../model/mta/MtaMainModels';
+import { isMtaDevice, MtaSendRequest } from '../model/mta/MtaMainModels';
 import { isDemoDevice } from '../service/demo/DemoDevices';
 import { DemoScenarioType } from '../service/demo/DemoData';
 import { triggerScenario } from '../service/demo/DemoScenarioService';
@@ -71,6 +74,14 @@ export struct SendContent {
   // 跳转设置页（仅切换页签，不直接改动开关）
   @Event onOpenSettings: () => void = () => {
   }
+  // 切到任务页（多条失败的动作入口）
+  @Event onOpenTaskCenter: () => void = () => {
+  }
+  // 打开指定会话详情（单条失败的动作入口；宿主负责先回根再切换页签）
+  @Event onOpenSessionDetail: (sessionId: string) => void = (_sessionId: string) => {
+  }
+  // 当前是否应由浮卡提醒失败（宿主判定页面可见性：任务列表在场/应用在后台时不打扰）
+  @Event shouldShowSendFailureCard: () => boolean = (): boolean => true
   private refreshCallback: () => void = () => {
   }
   // 文本发送弹窗（B 类 CustomContentDialogV2）输入值
@@ -94,6 +105,32 @@ export struct SendContent {
   // 收藏设备面板（半模态）显隐与面板状态
   @Local isShowFavoritesSheet: boolean = false
   @Local favoritesPanelViewModel: FavoriteDevicesViewModel = new FavoriteDevicesViewModel()
+  // ── 发送结果反馈：开始确认 toast + 失败浮卡 ──
+  // 浮卡内容由 @Local 承载：同一张卡片在连续失败时就地更新，不叠加多个弹窗
+  @Local private sendFailureTitle: string = ''
+  @Local private sendFailureBody: string = ''
+  @Local private sendFailureMulti: boolean = false
+  private sendFailureSessionId: string = ''
+  private sendFailureCount: number = 0
+  private sendFailureLastMessage: string = ''
+  // 多条失败时失败原因是否一致：一致才展示具体原因，不一致只提示去任务页查看
+  private sendFailureUniform: boolean = true
+  private sendFailureDialogId: number = -1
+  // 浮卡实例打开的窗口断点签名与代次：跨形态后旧实例不可信，代次用于作废其迟到回调
+  private sendFailureCardBreakpoint: string = ''
+  private sendFailureCardGeneration: number = 0
+  // 协议不兼容拦截：展示文案（只说明不提供动作，改不改设置由用户自行决定）
+  @Local private protocolBlockedAlias: string = ''
+  @Local private protocolBlockedMessage: string = ''
+  private protocolBlockDialogId: number = -1
+  // 协议弹窗打开的窗口断点签名与代次：跨形态后旧实例不可信
+  private protocolBlockBreakpoint: string = ''
+  private protocolBlockGeneration: number = 0
+  // 页面已销毁标记：在途发送的回调不再触碰 UI，避免在已销毁的组件上取 UIContext
+  private isDetached: boolean = false
+  // MTA 发起前会话快照：建链完成即返回，不能靠发起返回判定结果，
+  // 改在变更通知里等本次新建会话进入终态（见 checkMtaSendWatch）
+  private mtaWatchBeforeIds: Array<string> | undefined = undefined
 
   // 发现快照刷新时更新面板在线状态（面板打开期间设备上线/离线实时反映）
   @Monitor('viewModel.discoveredDevices')
@@ -112,11 +149,14 @@ export struct SendContent {
   }
 
   aboutToAppear(): void {
+    this.isDetached = false;
     // 收藏面板：绑定在线快照来源并订阅收藏变更（新增/重命名/删除面板实时同步）
     this.favoritesPanelViewModel.attach(this.viewModel);
     this.favoritesPanelViewModel.subscribeFavorites();
     this.refreshCallback = () => {
       this.viewModel.refresh();
+      // MTA 发送的终态只能从注册表变更通知里拿到（发起返回早于对端确认）
+      this.checkMtaSendWatch();
     };
     subscribe(this.refreshCallback);
     this.viewModel.refresh();
@@ -150,8 +190,11 @@ export struct SendContent {
   }
 
   aboutToDisappear(): void {
+    this.isDetached = true;
     unsubscribe(this.refreshCallback);
     this.favoritesPanelViewModel.unsubscribeFavorites();
+    // 浮卡挂在 UIContext 层，不随页面销毁自动消失：离开发送页时主动关闭
+    this.closeSendFailureCard();
   }
 
   // 连接警告横幅文案：按优先级取一条（无警告时返回 undefined）。
@@ -459,6 +502,11 @@ export struct SendContent {
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
       return;
     }
+    // 可预知的加密不兼容在点击时拦截：不建任务、不产生「点击即失败」，改为可操作说明
+    if (this.isProtocolBlocked(device)) {
+      this.openProtocolBlockedDialog(device);
+      return;
+    }
     // 大文件先二次确认（取消/发送两键），确认后按设备类型分发
     this.runAfterLargeFileConfirm(() => {
       // MTA（互传联盟）设备：走 MTA 发送编排（会话仍统一登记到注册表）
@@ -467,10 +515,55 @@ export struct SendContent {
         return;
       }
       // 点击设备即发送：统一走内联发送（无单/多目标模式差异，停留发送页）
-      this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
-        this.showSendInitiateFeedback(result);
-      });
+      this.beginInlineSend(device);
     });
+  }
+
+  /** 该目标是否因加密不兼容无法发送（判定与发送链路共用 resolveSendProtocol）。 */
+  private isProtocolBlocked(device: DiscoveredDevice): boolean {
+    if (isMtaDevice(device)) {
+      return false;
+    }
+    return resolveSendProtocol(getHttpsEnabled(), device.protocol === 'https') === null;
+  }
+
+  /**
+   * 发起内联发送并给出结果反馈：
+   * 点击当帧即确认「已开始发送」（不引入人为延迟）；会话终结为失败时弹出失败浮卡。
+   * 预判不可发起（忙/无内容）时不弹开始确认，避免两条提示互相打架。
+   */
+  private beginInlineSend(device: DiscoveredDevice): void {
+    let pre: SendInitiateResult = this.viewModel.precheckSend(device);
+    if (pre !== SendInitiateResult.initiated) {
+      this.showSendInitiateFeedback(pre);
+      return;
+    }
+    // 发送前快照：失败提示只认本次点击后新建的会话，历史失败不会被重复提示
+    let beforeIds: Array<string> = this.viewModel.sendSessionIdsForIp(device.ip);
+    this.showSendToast($r('app.string.send_started_toast'), device.alias);
+    this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
+      if (this.isDetached) {
+        return;
+      }
+      // 竞态兜底：预判后被并发操作拦截时按实际结果补提示
+      this.showSendInitiateFeedback(result);
+      let failure: SendFailureNotice | undefined = this.viewModel.newSendFailure(device.ip, beforeIds);
+      if (failure !== undefined) {
+        this.showSendFailureCard(failure);
+      }
+    }).catch((e: Object) => {
+      logger.error('发送启动失败：' + String(e));
+    });
+  }
+
+  /** 发送结果轻提示（%s 为目标设备名）。 */
+  private showSendToast(text: Resource, alias: string): void {
+    this.getUIContext()
+      .getPromptAction()
+      .showToast({
+        message: getStringSync(this.getUIContext(), text).replace('%s', alias),
+        duration: 1500
+      });
   }
 
   // 发送发起结果的可见反馈：被拦截/无内容给出轻提示，已发起保持正常路径（无提示）
@@ -484,6 +577,319 @@ export struct SendContent {
         .getPromptAction()
         .showToast({ message: $r('app.string.send_select_file_first'), duration: 2000, alignment: Alignment.Center });
     }
+  }
+
+  // ── 失败浮卡：只负责提醒与原因，操作收敛到任务区（详情页或任务列表） ──
+
+  /**
+   * 展示失败浮卡：已打开时就地更新（多次失败合并为一张卡，按任务数计，不按设备去重）。
+   * 单条展示设备名 + 原因；多条不再挑某一台设备，原因一致时展示该原因，不一致时指引去任务页。
+   */
+  private showSendFailureCard(notice: SendFailureNotice): void {
+    // 失败行已在眼前（任务列表）或应用不在前台（结果由系统通知/任务列表承载）时不弹卡
+    if (!this.shouldShowSendFailureCard()) {
+      logger.debug('失败浮卡跳过：结果已在当前页面可见或应用不在前台');
+      return;
+    }
+    // 窗口形态已变化：旧浮层随页面重建消失，句柄与合并计数一并作废，从本条重新开始
+    // （必须在累加计数之前判断，否则重置后标题会显示成「0 个任务失败」）
+    let breakpoint: string = this.breakpointSignature();
+    if (this.sendFailureCardBreakpoint.length > 0 && this.sendFailureCardBreakpoint !== breakpoint) {
+      logger.debug('窗口形态已变化，重建失败浮卡');
+      this.discardSendFailureCard();
+      this.resetSendFailureCard();
+    }
+    this.sendFailureCount = this.sendFailureCount + 1;
+    let multi: boolean = this.sendFailureCount > 1;
+    this.sendFailureMulti = multi;
+    if (!multi) {
+      this.sendFailureUniform = true;
+      this.sendFailureSessionId = notice.sessionId;
+    } else {
+      this.sendFailureUniform = this.sendFailureUniform && notice.message === this.sendFailureLastMessage;
+    }
+    this.sendFailureLastMessage = notice.message;
+    this.sendFailureTitle = multi ?
+      getStringSync(this.getUIContext(), $r('app.string.send_failure_card_title_multi'))
+        .replace('%s', this.sendFailureCount.toString()) :
+      getStringSync(this.getUIContext(), $r('app.string.send_failure_card_title'))
+        .replace('%s', notice.alias);
+    if (!multi) {
+      // 原因为空时只展示标题，不重复「发送失败」这类无信息量的兜底文案
+      this.sendFailureBody = notice.message;
+    } else if (this.sendFailureUniform) {
+      this.sendFailureBody = notice.message;
+    } else {
+      this.sendFailureBody = getStringSync(this.getUIContext(), $r('app.string.send_failure_card_mixed'));
+    }
+    this.openSendFailureCard(breakpoint);
+  }
+
+  /** 窗口断点签名（宽|高）：跨形态后旧浮卡实例不可信。 */
+  private breakpointSignature(): string {
+    return this.breakpointInfo.widthBreakpoint + '|' + this.breakpointInfo.heightBreakpoint;
+  }
+
+  /** 打开浮卡（幂等：已打开时只靠 @Local 内容更新，不重复 open）。 */
+  private openSendFailureCard(breakpoint: string): void {
+    // -1 空闲、-2 打开中、>=0 已打开：打开中同样视为已占用，避免同帧连续失败开出多张卡
+    if (this.sendFailureDialogId !== -1) {
+      return;
+    }
+    this.sendFailureDialogId = -2;
+    this.sendFailureCardBreakpoint = breakpoint;
+    // 代次用于作废旧实例的迟到回调：形态变化后旧实例可能稍后才回调 onDidDisappear，
+    // 不设代次会把新实例刚写入的内容清空
+    this.sendFailureCardGeneration = this.sendFailureCardGeneration + 1;
+    let generation: number = this.sendFailureCardGeneration;
+    // 只有宽屏侧边栏形态才贴右下角做桌面式通知；平板竖屏虽然够宽但仍用底部页签，按底部摆放。
+    // 宽度：窄屏占窗口 92%，平板/宽屏固定窄卡，避免细长条铺满屏幕
+    let sideBarLayout: boolean = isWidescreenSideBarLayout(this.breakpointInfo.widthBreakpoint,
+      this.breakpointInfo.heightBreakpoint, deviceInfo.deviceType) &&
+      canIUse('SystemCapability.UIDesign.HDSPattern.Standard');
+    let narrow: boolean = isNarrowWidth(this.breakpointInfo.widthBreakpoint);
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.sendFailureCard();
+      },
+      // 非模态：不遮挡页面、不拦截周边操作；浮在页面之上但位于系统弹窗之下
+      isModal: false,
+      autoCancel: false,
+      alignment: sideBarLayout ? DialogAlignment.BottomEnd : DialogAlignment.Bottom,
+      // 窄屏/平板抬升一行避开底部页签与手势区；宽屏无底部页签，只留页边距
+      offset: sideBarLayout ? { dx: -DesignTokens.space.lg, dy: -DesignTokens.space.lg } :
+        { dx: 0, dy: -DesignTokens.size.tabBarClearance },
+      width: sideBarLayout ? 400 : (narrow ? '92%' : 480),
+      // 卡片外观画在弹窗背板上：内容区不再自带底色与描边，避免叠出两层边框
+      maskColor: Color.Transparent,
+      backgroundColor: $r('app.color.card_background'),
+      backgroundBlurStyle: BlurStyle.NONE,
+      cornerRadius: DesignTokens.radius.lg,
+      borderWidth: DesignTokens.component.borderSlim,
+      borderColor: $r('app.color.danger_red'),
+      shadow: { radius: 12, color: '#33000000', offsetY: 4 },
+      onDidDisappear: () => {
+        if (generation !== this.sendFailureCardGeneration) {
+          return;
+        }
+        this.sendFailureDialogId = -1;
+        this.resetSendFailureCard();
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        // 打开期间又被重建（代次已变）时丢弃旧实例，避免它的 id 覆盖新实例
+        if (generation !== this.sendFailureCardGeneration) {
+          this.closeDialogById(id);
+          return;
+        }
+        this.sendFailureDialogId = id;
+      })
+      .catch(() => {
+        if (generation !== this.sendFailureCardGeneration) {
+          return;
+        }
+        this.sendFailureDialogId = -1;
+        this.resetSendFailureCard();
+      });
+  }
+
+  /** 按 id 关闭弹窗；实例可能已随窗口重建消失，关闭失败可忽略。 */
+  private closeDialogById(id: number): void {
+    if (id < 0) {
+      return;
+    }
+    try {
+      this.getUIContext().getPromptAction().closeCustomDialog(id);
+    } catch (_e) {
+    }
+  }
+
+  /** 作废旧浮卡实例但保留内容（随后会按新内容重开）。 */
+  private discardSendFailureCard(): void {
+    this.sendFailureCardGeneration = this.sendFailureCardGeneration + 1;
+    this.closeDialogById(this.sendFailureDialogId);
+    this.sendFailureDialogId = -1;
+  }
+
+  /** 关闭浮卡并清空内容。 */
+  private closeSendFailureCard(): void {
+    this.sendFailureCardGeneration = this.sendFailureCardGeneration + 1;
+    this.closeDialogById(this.sendFailureDialogId);
+    this.sendFailureDialogId = -1;
+    this.resetSendFailureCard();
+  }
+
+  private resetSendFailureCard(): void {
+    this.sendFailureTitle = '';
+    this.sendFailureBody = '';
+    this.sendFailureMulti = false;
+    this.sendFailureSessionId = '';
+    this.sendFailureCount = 0;
+    this.sendFailureLastMessage = '';
+    this.sendFailureUniform = true;
+    this.sendFailureCardBreakpoint = '';
+  }
+
+  /**
+   * 浮卡动作：单条失败直接进该会话详情（原因/文件/时间线都在那里）；
+   * 多条失败进任务页，由用户自己挑要看的任务——合并后不替用户选其中一条。
+   */
+  private openFailureTarget(): void {
+    let multi: boolean = this.sendFailureMulti;
+    let sessionId: string = this.sendFailureSessionId;
+    this.closeSendFailureCard();
+    if (!multi && sessionId.length > 0) {
+      this.onOpenSessionDetail(sessionId);
+      return;
+    }
+    this.onOpenTaskCenter();
+  }
+
+  @Builder
+  sendFailureCard() {
+    Row({ space: DesignTokens.space.sm }) {
+      SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+        .fontSize(DesignTokens.font.iconInline)
+        .fontColor([$r('app.color.danger_red')])
+
+      Column({ space: DesignTokens.space.mini }) {
+        Text(this.sendFailureTitle)
+          .fontSize(DesignTokens.font.bodyM)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.danger_red'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        if (this.sendFailureBody.length > 0) {
+          Text(this.sendFailureBody)
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.text_secondary'))
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Button(this.sendFailureMulti ? $r('app.string.send_failure_card_action_tasks') :
+        $r('app.string.send_failure_card_action_detail'))
+        .fontSize(DesignTokens.font.bodyS)
+        .height(DesignTokens.size.inlineButton)
+        .fontColor($r('app.color.text_on_color'))
+        .backgroundColor($r('app.color.accent_blue'))
+        .borderRadius(DesignTokens.radius.max)
+        .onClick(() => {
+          this.openFailureTarget();
+        })
+        .id('send_failure_action')
+
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(DesignTokens.font.iconInline)
+        .fontColor([$r('app.color.text_secondary')])
+        .responseRegion({
+          x: -8,
+          y: -8,
+          width: 40,
+          height: 40
+        })
+        .onClick(() => {
+          this.closeSendFailureCard();
+        })
+        .id('send_failure_close')
+    }
+    .width('100%')
+    .padding(DesignTokens.space.md)
+    // 底色、圆角、描边与阴影由弹窗外壳统一绘制，内容区只负责排版，避免两层边框
+    .id('send_failure_card')
+  }
+
+  // ── 协议不兼容拦截弹窗（点击时就地说明，不建任务） ──
+
+  private openProtocolBlockedDialog(device: DiscoveredDevice): void {
+    let breakpoint: string = this.breakpointSignature();
+    // 同一形态下已有弹窗时忽略连点；形态变化后旧实例不可信，作废重开
+    if (this.protocolBlockDialogId !== -1) {
+      if (this.protocolBlockBreakpoint === breakpoint) {
+        return;
+      }
+      this.discardProtocolBlockedDialog();
+    }
+    this.protocolBlockDialogId = -2;
+    this.protocolBlockBreakpoint = breakpoint;
+    this.protocolBlockGeneration = this.protocolBlockGeneration + 1;
+    let generation: number = this.protocolBlockGeneration;
+    this.protocolBlockedAlias = device.alias;
+    // 复用发送链路已有的本地化文案（含设备名与两种处理方式）
+    this.protocolBlockedMessage = getStringSync(this.getUIContext(), $r('app.string.protocol_mismatch_error'))
+      .replace('%s', device.alias);
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.protocolBlockedDialog();
+      },
+      onDidDisappear: () => {
+        if (generation !== this.protocolBlockGeneration) {
+          return;
+        }
+        this.protocolBlockDialogId = -1;
+        this.protocolBlockBreakpoint = '';
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        if (generation !== this.protocolBlockGeneration) {
+          this.closeDialogById(id);
+          return;
+        }
+        this.protocolBlockDialogId = id;
+      })
+      .catch(() => {
+        if (generation !== this.protocolBlockGeneration) {
+          return;
+        }
+        this.protocolBlockDialogId = -1;
+        this.protocolBlockBreakpoint = '';
+      });
+  }
+
+  /** 作废旧协议弹窗实例（随后按新形态重开）。 */
+  private discardProtocolBlockedDialog(): void {
+    this.protocolBlockGeneration = this.protocolBlockGeneration + 1;
+    this.closeDialogById(this.protocolBlockDialogId);
+    this.protocolBlockDialogId = -1;
+  }
+
+  private closeProtocolBlockedDialog(): void {
+    this.protocolBlockGeneration = this.protocolBlockGeneration + 1;
+    this.closeDialogById(this.protocolBlockDialogId);
+    this.protocolBlockDialogId = -1;
+    this.protocolBlockBreakpoint = '';
+  }
+
+  /**
+   * 协议不兼容说明弹窗：只告知原因与两条可行路径，不在本页改动全局加密设置。
+   * 关闭加密会重启 LocalSend 服务（中断接收、取消在途校验和），应由用户在设置页自行决定。
+   */
+  @Builder
+  protocolBlockedDialog() {
+    AlertDialogV2({
+      primaryTitle: getStringSync(this.getUIContext(), $r('app.string.send_protocol_block_title'))
+        .replace('%s', this.protocolBlockedAlias),
+      content: this.protocolBlockedMessage,
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.closeProtocolBlockedDialog();
+        }
+      })
+    })
+    // 宽屏下限制弹窗最大宽度，避免铺满过宽
+      .constraintSize({ maxWidth: 480 })
+      .id('send_protocol_blocked_dialog')
   }
 
   // MTA 单目标发送：编排（服务生命周期/收发互斥/注册表登记）由 MTA 发送适配器承接，
@@ -502,7 +908,34 @@ export struct SendContent {
         .showToast({ message: $r('app.string.mta_transfer_no_content'), duration: 2000, alignment: Alignment.Center });
       return;
     }
+    this.beginMtaSend(device, params);
+  }
+
+  /**
+   * 发起 MTA 发送并给出与局域网一致的反馈：点击当帧确认开始，会话终结为失败时弹浮卡。
+   * 结果只能等会话终态：`startMtaSend` 在建链（写回 P2pInfo）后就返回，
+   * 早于对端确认/传输，按发起返回查询会漏掉「对方拒绝」这类终态。
+   */
+  private beginMtaSend(device: DiscoveredDevice, params: MtaSendRequest): void {
+    this.mtaWatchBeforeIds = this.viewModel.mtaSendSessionIds();
+    this.showSendToast($r('app.string.send_started_toast'), device.alias);
     this.viewModel.startMtaSend(params);
+  }
+
+  /** 检查本次 MTA 发起的结局：已结算则停止监听，失败时弹浮卡。 */
+  private checkMtaSendWatch(): void {
+    let beforeIds: Array<string> | undefined = this.mtaWatchBeforeIds;
+    if (beforeIds === undefined) {
+      return;
+    }
+    let outcome: MtaSendOutcome = this.viewModel.mtaSendOutcome(beforeIds);
+    if (!outcome.settled) {
+      return;
+    }
+    this.mtaWatchBeforeIds = undefined;
+    if (outcome.failure !== undefined && !this.isDetached) {
+      this.showSendFailureCard(outcome.failure);
+    }
   }
 
   // 点击网页图标：进入统一的「网页传输」面板。
@@ -768,9 +1201,13 @@ export struct SendContent {
       return;
     }
     let device: DiscoveredDevice = result;
-    // 复用「点击设备即发送」的内联流程，并据返回结果给出可见反馈
-    let outcome: SendInitiateResult = await this.viewModel.sendToMultipleDeviceInline(device);
-    this.showSendInitiateFeedback(outcome);
+    // 与点击设备同一套前置判定：加密不兼容时先说明，不产生秒失败任务
+    if (this.isProtocolBlocked(device)) {
+      this.openProtocolBlockedDialog(device);
+      return;
+    }
+    // 复用「点击设备即发送」的内联反馈（开始确认 + 失败浮卡）
+    this.beginInlineSend(device);
   }
 
   // ── 收藏设备面板 ──

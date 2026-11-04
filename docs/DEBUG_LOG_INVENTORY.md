@@ -241,7 +241,7 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 
 | 字段 | 输出键 | 说明 | 截断规则 |
 |------|--------|------|----------|
-| sessionId | `sid` | 会话 ID | 取前 8 字符 |
+| sessionId | `sid` | 会话 ID | 不截断 |
 | fileId | `fid` | 文件 ID | 不截断 |
 | direction | `dir` | 传输方向（send/recv/share） | — |
 | targetAlias | `alias` | 目标设备别名 | — |

@@ -504,15 +504,22 @@ export async function nativeStartDiscoveryV2(config: NativeDiscoveryConfig): Pro
 
 /**
  * 分阶段发现设备：广播 → 探测已知通道 → 等待宽限期 → 回退子网扫描。
+ * 回退扫描同时覆盖 protocol 与 altProtocol（局域网内可能只有其中一种协议的设备）。
+ * forceSubnetScan=true 时跳过宽限期并始终扫描子网（用户刷新 / 启动首扫），
+ * 用于发现完全不响应组播、只能通过 HTTP 探测发现的设备。
+ * 返回本次扫描期间确认的设备数。
  */
 export async function nativeDiscoveryDiscoverStaged(
   channels: Array<NativeDeviceChannel>,
   interfaceIps: Array<string>,
   port: number,
   protocol: string,
-  graceMs: number
-): Promise<void> {
-  await discoveryDiscoverStaged(JSON.stringify(channels), JSON.stringify(interfaceIps), port, protocol, graceMs);
+  altProtocol: string,
+  graceMs: number,
+  forceSubnetScan: boolean
+): Promise<number> {
+  return await discoveryDiscoverStaged(JSON.stringify(channels), JSON.stringify(interfaceIps), port, protocol,
+    altProtocol, graceMs, forceSubnetScan);
 }
 
 /**

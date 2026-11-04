@@ -71,8 +71,10 @@ export interface SessionHistoryEntry {
   errorMessage: string
   errorCode: string
   // ── 时间与耗时 ──
+  // 会话开始时刻（创建时刻）：任务耗时 = finishedAt − startedAt
   startedAt: number
   finishedAt: number
+  // 传输耗时（首个字节进度 → finishedAt；从未传输过字节时为 0）
   durationMs: number
   // ── 传输性能 ──
   averageSpeedBps: number

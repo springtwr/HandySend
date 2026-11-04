@@ -90,6 +90,11 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 - ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/testing/instrument-test-guide.md`）：
   Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
   无可用设备时以 `devecocli check arkts` 静态检查 + 构建验证，Rust 侧用 `cargo test`
+- `devecocli check arkts` 有以下已知误报，可忽略，以 `devecocli build` 结果为准：
+  - `Cannot find module 'entry/BuildProfile'`：该模块由 hvigor 构建阶段生成，静态检查时尚未产出
+  - `@Entry` 根节点为 `HdsNavigation` 等 `@kit.UIDesignKit` 组件时报非容器：
+    规则未识别该组件库
+  - `Unknown resource name 'app_name'`：应用名定义在 `AppScope/resources`，规则只检查模块资源
 - 详细构建指南见 `docs/BUILD.md`
 
 ## 输出要求
