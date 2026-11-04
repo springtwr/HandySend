@@ -612,6 +612,12 @@ function finishSendFailure(result: NativeSendResult, files: Array<SendFileItem>)
   }
   if (result.error !== undefined && result.error.kind === 'statusCode') {
     logger.info('发送被拒绝：HTTP ' + result.error.status, { sessionId: result.sessionId, direction: 'send' });
+  } else if (result.error !== undefined && result.error.kind === 'cancelled') {
+    // 用户主动取消（删除通知/点击取消）是预期终态，不按错误记录
+    logger.info('发送已取消', { sessionId: result.sessionId, direction: 'send' });
+    if (errorMsg.length > 0) {
+      logger.debug('取消原因：' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
+    }
   } else {
     logger.error('发送失败：' + errorMsg, { sessionId: result.sessionId, direction: 'send' });
   }
