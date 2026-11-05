@@ -1416,6 +1416,8 @@ html[data-auth="open"] #gate {
   var uploadRetryTimer = -1;
   var uploadRetryCount = 0;
   var uploadPreparing = false;
+  // 建会话请求会挂起等待对方确认：延迟展示等待提示，避免免确认快速应答时一闪而过
+  var uploadWaitTimer = -1;
   // 登录后需要恢复的动作：首次建会话或上传中途被 401 打断
   var pendingUpload = null;
   var tabAvailable = { download: false, upload: false };
@@ -2324,6 +2326,7 @@ html[data-auth="open"] #gate {
       return;
     }
     if (token === ulToken) {
+      clearWaitingConfirm();
       setUploading(false);
       $('upload-btn').disabled = true;
       $('upload-picker').disabled = true;
@@ -3124,7 +3127,10 @@ html[data-auth="open"] #gate {
   $('tab-upload').addEventListener('click', function () {
     hide('status-retry');
     setStatus('');
-    setSegmentStatus('upload', '');
+    // 发送进行中（含等待对方确认）：保留发送状态提示，切回页签不抹掉
+    if (!uploading) {
+      setSegmentStatus('upload', '');
+    }
     clearTabDot('upload');
     activateTab('upload');
   });
@@ -3356,6 +3362,8 @@ html[data-auth="open"] #gate {
   function startUpload(dtos, files) {
     setUploading(true);
     uploadRetryCount = 0;
+    // 新一次发送开始：先清掉上一次遗留的错误/完成提示
+    setSegmentStatus('upload', '');
     pendingUpload = { dtos: dtos, files: files };
     prepareUpload(dtos, files);
   }
@@ -3365,6 +3373,8 @@ html[data-auth="open"] #gate {
       return;
     }
     uploadPreparing = true;
+    // 请求会一直挂起直到对方确认：稍后仍未返回即展示等待提示
+    scheduleWaitingConfirm();
     var url = BASE + '/web/prepare-upload';
     if (ulToken) {
       url += '?token=' + encodeURIComponent(ulToken);
@@ -3377,6 +3387,7 @@ html[data-auth="open"] #gate {
     }).then(function (response) {
       return handleUploadPrepare(response, dtos, files);
     }).catch(function (err) {
+      clearWaitingConfirm();
       if (err && err.authRequired) {
         // 保持 uploading；登录后由 pendingUpload 恢复
         return;
@@ -3411,9 +3422,27 @@ html[data-auth="open"] #gate {
     uploadRetryCount = 0;
   }
 
+  // 建会话请求挂起时展示「等待对方确认」：延迟到 600ms 再显示，
+  // 避免对方免确认、响应很快时提示一闪而过。
+  function scheduleWaitingConfirm() {
+    clearWaitingConfirm();
+    uploadWaitTimer = setTimeout(function () {
+      uploadWaitTimer = -1;
+      setSegmentStatus('upload', t('waitingConfirm'));
+    }, 600);
+  }
+
+  function clearWaitingConfirm() {
+    if (uploadWaitTimer >= 0) {
+      clearTimeout(uploadWaitTimer);
+      uploadWaitTimer = -1;
+    }
+  }
+
   // statusKey 为空时保留调用方已设置的具体状态（拒绝/超时/网络错误等）
   function failUpload(statusKey) {
     clearUploadRetry();
+    clearWaitingConfirm();
     if (statusKey) {
       setSegmentStatus('upload', t(statusKey), 'warning');
     }
@@ -3423,6 +3452,7 @@ html[data-auth="open"] #gate {
   }
 
   function handleUploadPrepare(response, dtos, files) {
+    clearWaitingConfirm();
     if (response.status === 409) {
       var pendingToken = response.headers.get('X-Handysend-Token');
       if (pendingToken) {
@@ -3452,6 +3482,8 @@ html[data-auth="open"] #gate {
     return response.json().then(function (data) {
       clearUploadRetry();
       pendingUpload = null;
+      // 对方已确认：撤下等待提示，进入逐文件上传
+      setSegmentStatus('upload', '');
       setUploadToken(data.token);
       uploadNext(0, Object.keys(dtos), files, data.token, 0);
     });
@@ -3536,6 +3568,7 @@ html[data-auth="open"] #gate {
   }
 
   function completeUpload(token) {
+    clearWaitingConfirm();
     setSegmentStatus('upload', t('uploadDone'));
     setUploading(false);
     pendingUpload = null;

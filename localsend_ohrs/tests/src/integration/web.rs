@@ -450,6 +450,10 @@ async fn test_single_page_and_unknown_path() {
     );
     assert!(body.contains("prepare-upload"), "单页应含上传建会话逻辑");
     assert!(
+        body.contains("scheduleWaitingConfirm") && body.contains("clearWaitingConfirm"),
+        "单页应在建会话挂起时提示等待对方确认，并在应答后撤销"
+    );
+    assert!(
         body.contains("handysend_dl_token"),
         "下载与上传 token 应分键存储"
     );
