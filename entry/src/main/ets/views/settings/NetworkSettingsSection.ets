@@ -312,7 +312,7 @@ export struct NetworkSettingsSection {
                 Toggle({ type: ToggleType.Switch, isOn: this.isInterfaceEnabled(netIf.name, netIf.type) })
                   .onChange((isOn: boolean) => {
                     let name = netIf.name;
-                    logger.debug(name + ': ' + (isOn ? '白名单' : '黑名单'));
+                    logger.debug('网络接口 ' + name + (isOn ? ' 加入白名单' : ' 移入黑名单'));
                     if (isOn) {
                       // 打开：从黑名单移到白名单
                       this.localBlacklist = this.removeFromList(this.localBlacklist, name);

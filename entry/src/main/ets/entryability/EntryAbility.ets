@@ -303,7 +303,7 @@ export default class EntryAbility extends UIAbility {
         let content: string = record.content ?? '';
         let title: string = record.title ?? '';
         let utd: string = record.utd ?? '';
-        logger.debug('handleShareWant 记录[' + i + ']: utd=' + utd +
+        logger.debug('分享意图记录[' + i + ']：utd=' + utd +
           ' uri_empty=' + (uri.length === 0) + ' content_empty=' + (content.length === 0));
         if (uri.length > 0) {
           // URI 非空 → 文件 URI 通道

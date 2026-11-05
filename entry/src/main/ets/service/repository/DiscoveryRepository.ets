@@ -204,7 +204,7 @@ export function handleDeviceFound(event: NativeDeviceFoundEvent): void {
   if (isChanged) {
     let sinceScan = isScanning ? (now - scanStartTime) : -1;
     let reason: string = existing === undefined ? '新设备' : '信息变化';
-    logger.debug('设备发现[' + reason + ']: alias=' + alias + ' fp=' + fingerprint.substring(0, 8) +
+    logger.debug('设备发现[' + reason + ']: alias=' + alias + ' fp=' + fingerprint +
       ' host=' + host + ':' + devPort + ' protocol=' + devProtocol +
       ' lastSeen=' + now + ' 距扫描开始=' + sinceScan + 'ms' +
       ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
@@ -258,7 +258,7 @@ export function handleRegisterEventTyped(event: NativeRegisterEvent): void {
   if (isChanged) {
     let reason: string = existing === undefined ? '新设备' : '信息变化';
     logger.debug('设备发现[register/' + reason + ']: alias=' + info.alias +
-      ' fp=' + fingerprint.substring(0, 8) + ' host=' + ip + ':' + port +
+      ' fp=' + fingerprint + ' host=' + ip + ':' + port +
       ' protocol=' + nativeDevice.protocol +
       ' isScanning=' + isScanning + ' listSize=' + discoveredDevices.length);
   }
@@ -446,7 +446,7 @@ function removeUnconfirmedDevices(startedAt: number): void {
       confirmed.push(dev);
     } else {
       let age = Date.now() - dev.lastSeen;
-      removed.push(dev.alias + '(fp=' + dev.fingerprint.substring(0, 8) + ' age=' + age + 'ms)');
+      removed.push(dev.alias + '(fp=' + dev.fingerprint + ' age=' + age + 'ms)');
     }
   }
   if (removed.length > 0) {
@@ -472,7 +472,7 @@ function flushRustLogs(): void {
 export function rescanDevices(): void {
   let serverFingerprint: string = getServerFingerprint();
   if (serverFingerprint.length > 0) {
-    logger.debug('rescanDevices 被调用（isScanning=' + isScanning + '）');
+    logger.debug('重新扫描设备（isScanning=' + isScanning + '）');
     triggerStagedDiscover(true);
     notifyChange();
   }

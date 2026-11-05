@@ -365,7 +365,7 @@ export async function sendToDevice(
   // 只输出一行汇总：逐文件日志在数百个文件时会单独占满日志缓冲，淹没真正有用的记录
   logger.debug('发送清单 文件数=' + files.length + ' 总字节=' + totalBytes + ' 已带校验和=' + hashedCount,
     sendCtx);
-  logger.debug(actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
+  logger.debug('发送地址：' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
   // 这里弹出输入框让用户输入 PIN 后带 pin 重试；用户取消则按 401 错误结束。
   const MAX_PIN_ATTEMPTS = 5;

@@ -220,7 +220,7 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
   }
   if (updated) {
     saveHistory();
-    logger.debug('sessionId=' + sessionId + ' saved=' + saved);
+    logger.debug('接收历史相册状态更新 会话=' + sessionId + ' saved=' + saved);
   }
 }
 
@@ -233,7 +233,7 @@ export function updateGallerySavedStatusById(id: string, saved: boolean): void {
     }
     history[i] = copyEntryWithGalleryStatus(history[i], saved);
     saveHistory();
-    logger.debug('id=' + id + ' saved=' + saved);
+    logger.debug('接收历史相册状态更新 条目=' + id + ' saved=' + saved);
     return;
   }
 }
@@ -264,7 +264,7 @@ export function updateGallerySavedStatusByPath(path: string, saved: boolean): vo
   }
   if (updated) {
     saveHistory();
-    logger.debug('path=' + path + ' saved=' + saved);
+    logger.debug('接收历史相册状态更新 路径=' + path + ' saved=' + saved);
   }
 }
 

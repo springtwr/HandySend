@@ -46,6 +46,7 @@ import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
 import { nativeMtaFetchThumbnail } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
+import { maskSecret } from '../../utils/LogRedaction';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
 import {
@@ -145,7 +146,7 @@ export class MtaReceiveService {
     this.bindTransferHandlers();
     this.ble.registerEvents(this.bleHandlers);
     this.p2p.registerEvents(this.p2pHandlers);
-    this.appendLog('服务', 'MTA 接收页就绪', LogLevels.INFO);
+    this.appendLog('服务', 'MTA 接收页就绪', LogLevels.DEBUG);
     this.appendLog('服务', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
   }
 
@@ -313,17 +314,6 @@ export class MtaReceiveService {
     logger.log(level, `${source}: ${content}`);
   }
 
-  /** 群组口令等敏感文本的打码形式：保留首尾各 2 字符，其余以 * 代替；长度不足 5 时全部打码 */
-  private maskSecret(text: string): string {
-    if (text.length === 0) {
-      return '';
-    }
-    if (text.length <= 4) {
-      return '*'.repeat(text.length);
-    }
-    return `${text.substring(0, 2)}${'*'.repeat(text.length - 4)}${text.substring(text.length - 2)}`;
-  }
-
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
   private resetSessionState(): void {
     this.sessionActive = false;
@@ -353,7 +343,7 @@ export class MtaReceiveService {
       this.requestWaitTimerId = -1;
       if (this.state.stage === ReceiverStage.NEGOTIATED) {
         this.setError('等待接收请求超时');
-        this.failAndReset('等待接收请求超时');
+        this.failAndReset('等待接收请求超时', LogLevels.WARN);
       }
     }, MtaConstants.REQUEST_WAIT_TIMEOUT_MS);
   }
@@ -468,7 +458,7 @@ export class MtaReceiveService {
     let taskId = request !== undefined ? request.taskId : '';
     try {
       await this.transfer.rejectRequest(taskId);
-      this.appendLog('WS', '已回送拒绝状态（等待用户确认超时）', LogLevels.INFO);
+      this.appendLog('WS', '已回送拒绝状态（等待用户确认超时）', LogLevels.DEBUG);
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
     } catch (e) {
       this.appendLog('WS', '回送拒绝状态失败：' + String(e), LogLevels.ERROR);
@@ -519,7 +509,7 @@ export class MtaReceiveService {
     this.bleHandlers.onAdvertiseStateChange = (running: boolean, detail: string): void => {
       this.state.advertisingRunning = running;
       this.notifyState();
-      // 广播启停为生命周期里程碑记 info；停止后的状态明细属诊断，记 debug
+      // 广播启停的状态明细属诊断，记 debug；服务启动/停止由服务层统一记 info
       this.appendLog('广播', detail, LogLevels.DEBUG);
     };
     this.bleHandlers.onGattConnectionChange = (deviceId: string, stateText: string): void => {
@@ -577,13 +567,13 @@ export class MtaReceiveService {
   private bindTransferHandlers(): void {
     this.transfer.setEventHandlers(this.transferHandlers);
     this.transferHandlers.onWsOpen = (): void => {
-      this.appendLog('WS', '连接已建立，等待版本协商', LogLevels.INFO);
+      this.appendLog('WS', '连接已建立，等待版本协商', LogLevels.DEBUG);
     };
     this.transferHandlers.onVersionNegotiated = (version: number): void => {
       this.setStage(ReceiverStage.NEGOTIATED);
       this.linkTiming.mark('版本协商', Date.now());
       this.scheduleRequestWaitTimeout();
-      this.appendLog('WS', '版本协商完成', LogLevels.INFO);
+      this.appendLog('WS', '版本协商完成', LogLevels.DEBUG);
       this.appendLog('WS', `版本=${version} threadLimit=${MtaConstants.THREAD_LIMIT}`, LogLevels.DEBUG);
     };
     this.transferHandlers.onReceiveRequest = (request: ReceiveRequest): void => {
@@ -619,7 +609,7 @@ export class MtaReceiveService {
     if (stage === ReceiverStage.WS_CONNECTING || stage === ReceiverStage.NEGOTIATED ||
       stage === ReceiverStage.REQUEST_RECEIVED) {
       this.setError('WS 连接被对方关闭');
-      this.failAndReset('WS 连接被对方关闭');
+      this.failAndReset('WS 连接被对方关闭', LogLevels.WARN);
       return;
     }
     if (stage === ReceiverStage.DOWNLOADING) {
@@ -643,7 +633,7 @@ export class MtaReceiveService {
     let port = this.state.transferPort;
     if (goIp.length === 0 || port <= 0) {
       this.setError('GO IP 或端口缺失，无法建立 WS');
-      this.failAndReset('GO IP 或端口缺失');
+      this.failAndReset('GO IP 或端口缺失', LogLevels.WARN);
       return;
     }
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
@@ -694,7 +684,7 @@ export class MtaReceiveService {
     }
     if (!success) {
       this.setError('WS 连接失败');
-      this.failAndReset('WS 连接失败');
+      this.failAndReset('WS 连接失败', LogLevels.WARN);
     }
   }
 
@@ -716,17 +706,24 @@ export class MtaReceiveService {
 
   /** 收到完整 P2pInfo：解析 → 解密凭据 → p2pConnect 加入群组 → 取得 GO IP */
   private handleP2pInfoReceived(deviceId: string, payloadText: string): void {
-    this.appendLog('GATT', `完整接收 P2pInfo 来自 ${deviceId}: ${payloadText}`, LogLevels.DEBUG);
     if (this.sessionActive) {
-      this.appendLog('GATT', '已有会话在处理，忽略重复 P2pInfo', LogLevels.WARN);
+      this.appendLog('GATT', '已有会话在处理，忽略重复 P2pInfo', LogLevels.DEBUG);
       return;
     }
     let info = parseP2pInfo(payloadText);
     if (info === undefined) {
-      this.appendLog('GATT', 'P2pInfo JSON 解析失败', LogLevels.ERROR);
+      // 解析失败时只记录来源与长度，避免把可能含明文口令的原始载荷写入日志
+      this.appendLog('GATT',
+        `完整接收 P2pInfo 来自 ${deviceId} 解析失败 原始长度=${payloadText.length}`, LogLevels.DEBUG);
+      this.appendLog('GATT', 'P2pInfo JSON 解析失败', LogLevels.WARN);
       this.setError('P2pInfo 解析失败');
       return;
     }
+    // 群组口令按打码输出；key 只记录长度，避免原始报文进入日志
+    this.appendLog('GATT',
+      `完整接收 P2pInfo 来自 ${deviceId} id=${info.id} ssid=${info.ssid} psk=${maskSecret(info.psk)}` +
+        ` mac=${info.mac} port=${info.port} key长度=${info.key.length}`,
+      LogLevels.DEBUG);
     this.sessionActive = true;
     this.linkStartMs = Date.now();
     // 接收侧建链计时起点：收到对端完整凭据（P2pInfo）时刻
@@ -766,7 +763,7 @@ export class MtaReceiveService {
     this.linkTiming.mark('凭据解密', Date.now());
     // 群组口令属临时凭据：正文按打码输出并降为 debug，避免明文口令进入常规日志
     this.appendLog('P2P',
-      `凭据解密成功 ssid=${credentials.ssid} psk=${this.maskSecret(credentials.psk)} mac=${credentials.mac}`,
+      `凭据解密成功 ssid=${credentials.ssid} psk=${maskSecret(credentials.psk)} mac=${credentials.mac}`,
       LogLevels.DEBUG);
 
     // 2) p2pConnect 加入发送方 WiFi Direct 组（不影响已连 WiFi）
@@ -776,12 +773,12 @@ export class MtaReceiveService {
     this.notifyState();
     if (!result.connected) {
       this.setError(result.detail);
-      this.failAndReset(result.detail);
+      this.failAndReset(result.detail, LogLevels.WARN);
       return;
     }
     this.setStage(ReceiverStage.P2P_CONNECTED);
     this.linkTiming.mark('入组完成', Date.now());
-    this.appendLog('P2P', '已加入发送方直连组', LogLevels.INFO);
+    this.appendLog('P2P', '已加入发送方直连组', LogLevels.DEBUG);
     this.appendLog('P2P', `直连组 GO IP=${result.goIp} 端口=${this.state.transferPort}`, LogLevels.DEBUG);
 
     // 3) 建立 WS 并完成版本协商
@@ -805,9 +802,9 @@ export class MtaReceiveService {
   }
 
   /** 本次会话失败：记录阶段并复位到等待状态 */
-  private failAndReset(reason: string): void {
+  private failAndReset(reason: string, level: string = LogLevels.ERROR): void {
     this.setStage(ReceiverStage.FAILED);
-    this.appendLog('服务', `本次接收失败：${reason}，正在复位到等待状态`, LogLevels.ERROR);
+    this.appendLog('服务', `本次接收失败：${reason}，正在复位到等待状态`, level);
     this.resetToWaiting().catch((e: Object): void => {
       this.appendLog('服务', '复位异常：' + String(e), LogLevels.WARN);
     });
@@ -1007,11 +1004,11 @@ export class MtaReceiveService {
       let deviceInfoJson = this.buildDeviceInfoJson(publicKey);
       let preview = await this.startAdvertisingWithCurrentBrand();
       // 广播预览本身含换行，先折叠为单行，保证一条日志一事件
-      this.appendLog('广播', '广播已启动', LogLevels.INFO);
+      this.appendLog('广播', '广播已启动', LogLevels.DEBUG);
       this.appendLog('广播', `广播预览：${preview.split('\n').join('；')}`, LogLevels.DEBUG);
       await this.ble.startGattServer(deviceInfoJson);
-      this.appendLog('GATT', 'GATT 服务端已启动', LogLevels.INFO);
-      this.appendLog('GATT', `DeviceInfo=${deviceInfoJson}`, LogLevels.DEBUG);
+      this.appendLog('GATT', 'GATT 服务端已启动', LogLevels.DEBUG);
+      this.appendLog('GATT', `GATT 服务端 DeviceInfo=${deviceInfoJson}`, LogLevels.DEBUG);
       this.state.serviceRunning = true;
       this.state.advertisingRunning = this.ble.isAdvertising();
       this.state.gattRunning = this.ble.isGattRunning();
@@ -1122,7 +1119,7 @@ export class MtaReceiveService {
     if (storageError.length > 0) {
       this.appendLog('服务', storageError, LogLevels.WARN);
       this.setError(storageError);
-      this.failAndReset(storageError);
+      this.failAndReset(storageError, LogLevels.WARN);
       return;
     }
     let textPath: string = '';
@@ -1136,7 +1133,7 @@ export class MtaReceiveService {
     }
     this.appendLog('服务',
       '用户已接受文本消息，已落盘并完成接收', LogLevels.INFO);
-    this.appendLog('下载', `文本路径=${textPath} 任务=${request.taskId}`, LogLevels.DEBUG);
+    this.appendLog('下载', `文本已落盘：路径=${textPath} 任务=${request.taskId}`, LogLevels.DEBUG);
     // 上抛真实保存路径（供统一会话回填逐文件路径）：不影响协议报文与对端可见内容
     if (textSavedNotifier !== undefined) {
       textSavedNotifier(textPath);
@@ -1150,7 +1147,7 @@ export class MtaReceiveService {
     this.recordTextHistory(request, textPath);
     try {
       await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
-      this.appendLog('WS', '已回送成功状态，本次文本接收完成', LogLevels.INFO);
+      this.appendLog('WS', '已回送成功状态，本次文本接收完成', LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('WS', '回送成功状态失败：' + String(e), LogLevels.ERROR);
     }
@@ -1207,7 +1204,7 @@ export class MtaReceiveService {
     if (storageError.length > 0) {
       this.appendLog('下载', storageError, LogLevels.WARN);
       this.setError(storageError);
-      this.failAndReset(storageError);
+      this.failAndReset(storageError, LogLevels.WARN);
       return;
     }
     let goIp = this.state.goIpAddress;
@@ -1223,7 +1220,7 @@ export class MtaReceiveService {
     try {
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
         this.downloadDir, request.totalSize);
-      this.appendLog('下载', '下载、解压与落盘完成', LogLevels.INFO);
+      this.appendLog('下载', '下载、解压与落盘完成', LogLevels.DEBUG);
       this.state.savedFiles = result.savedFiles;
       // 透传逐文件展示元数据（文件名 + 大小 + 真实类型），供页面完成后渲染文件列表
       this.state.receivedFiles = result.files;
@@ -1258,12 +1255,12 @@ export class MtaReceiveService {
         await earlyStatus;
       }
       if (this.successStatusSent) {
-        this.appendLog('WS', '本次接收完成', LogLevels.INFO);
+        this.appendLog('WS', '本次接收完成', LogLevels.DEBUG);
       } else {
         try {
           await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
           this.successStatusSent = true;
-          this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
+          this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.DEBUG);
         } catch (e) {
           this.appendLog('WS', '回送成功状态失败：' + String(e), LogLevels.ERROR);
         }
@@ -1293,7 +1290,7 @@ export class MtaReceiveService {
   private async sendUserCancelStatus(taskId: string): Promise<void> {
     try {
       await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE, taskId);
-      this.appendLog('WS', '已回送取消状态（用户拒绝）', LogLevels.INFO);
+      this.appendLog('WS', '已回送取消状态（用户拒绝）', LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('WS', '回送取消状态失败：' + String(e), LogLevels.DEBUG);
     }

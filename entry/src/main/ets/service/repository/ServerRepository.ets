@@ -336,7 +336,7 @@ export async function restartDiscovery(force: boolean = false): Promise<void> {
   resetScanState();
 
   try {
-    logger.debug('port=' + discoveryConfig.port +
+    logger.debug('v2 发现配置：port=' + discoveryConfig.port +
       ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
@@ -480,7 +480,7 @@ export async function startLocalServer(): Promise<string> {
   // 服务器以当前设置运行——无需重启
   clearServerNeedsRestart();
   logger.info('服务器已启动');
-  logger.debug('服务器 fingerprint=' + handle.fingerprint.substring(0, 10) + '...');
+  logger.debug('服务器 fingerprint=' + handle.fingerprint);
 
   // 启动 Rust 核心发现
   try {

@@ -413,7 +413,7 @@ export function initAppService(context: common.UIAbilityContext): void {
     // Ability 重建时 context 实例会变化，仍需刷新以免后续操作使用失效上下文；
     // 其余模块级状态（日志/事件订阅/原生身份/网络监听）进程内只初始化一次
     setAppContext(context);
-    logger.debug('initAppService 已跳过：已初始化');
+    logger.debug('应用服务初始化已跳过：已初始化');
     return;
   }
   appServiceInitialized = true;

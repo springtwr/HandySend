@@ -350,7 +350,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
   let infoFp: string = (event.senderFingerprint !== undefined && event.senderFingerprint !== null) ?
     event.senderFingerprint : '';
   if (sessionId.length === 0) {
-    logger.warn('上传准备事件缺少会话标识，已忽略');
+    logger.debug('上传准备事件缺少会话标识，已忽略');
     return;
   }
   let senderAlias: string = event.senderAlias;
@@ -391,7 +391,7 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       acceptWithTargets(sid, allFileIds).then((acceptError: string) => {
         if (acceptError.length > 0) {
           receiveSessionStates[sid] = 'failed';
-          logger.warn('会话自动接收失败 ' + sid + ': ' + acceptError);
+          logger.warn('会话自动接收失败 会话=' + sid + '，原因=' + acceptError);
         }
       }).catch((e: Error) => {
         logger.warn('自动确认接收失败：' + e.message);
@@ -971,7 +971,7 @@ function acceptPrepareFailedMessage(): string {
 // 否则返回可直接展示给用户的失败原因（调用方透传到会话错误信息）。
 async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<string> {
   if (fileIds.length === 0) {
-    logger.error('接受时文件列表为空，拒绝会话');
+    logger.debug('接受时文件列表为空，拒绝会话');
     try {
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
@@ -991,7 +991,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   let targetPaths: Record<string, string> | undefined =
     await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId]);
   if (targetPaths === undefined) {
-    logger.error('准备接收目标失败，拒绝会话');
+    logger.warn('准备接收目标失败，拒绝会话');
     try {
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
@@ -1208,7 +1208,7 @@ function cleanupSessionReceiveFiles(sessionId: string): void {
     planInterruptedReceiveCleanup(sessionId, sessionFileMap[sessionId], completedFileIds);
   if (plan.completedEntries.length > 0 && sessionPartialHistoryRecorded[sessionId] !== true) {
     sessionPartialHistoryRecorded[sessionId] = true;
-    logger.info('会话中断时保留已完成文件 ' + plan.completedEntries.length + ' 个 会话=' + sessionId);
+    logger.info('会话中断时保留已完成文件 ' + plan.completedEntries.length + ' 个', { sessionId: sessionId });
     // 历史写入失败不得中断清理：已完成文件已落盘，半成品仍需删除
     try {
       recordPartialReceiveHistory(sessionId, plan.completedEntries);

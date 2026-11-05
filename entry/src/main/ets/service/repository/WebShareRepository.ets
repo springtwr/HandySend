@@ -464,7 +464,7 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
     return false;
   }
   if (port <= 0) {
-    logger.error('网页服务启动失败：无效 port ' + port);
+    logger.warn('网页服务启动失败：无效 port ' + port);
     markWebServiceUnavailable();
     return false;
   }
@@ -774,7 +774,7 @@ export async function startWebUpload(): Promise<void> {
       nativeSetWebServiceUploadEnabled(true);
       webUploadEnabled = true;
     } catch (e) {
-      logger.error('打开网页上传入口失败：' + e);
+      logger.warn('打开网页上传入口失败：' + e);
     }
     notifyChange();
     return;
@@ -813,7 +813,7 @@ export async function unmountShare(): Promise<void> {
     }
     logger.info('分享文件已撤下');
   } catch (e) {
-    logger.error('撤下分享文件失败：' + e);
+    logger.warn('撤下分享文件失败：' + e);
   }
   notifyChange();
 }
@@ -836,7 +836,7 @@ export async function disableWebUpload(): Promise<void> {
     }
     logger.info('网页上传入口已关闭');
   } catch (e) {
-    logger.error('关闭网页上传入口失败：' + e);
+    logger.warn('关闭网页上传入口失败：' + e);
   }
   notifyChange();
 }
@@ -1047,12 +1047,12 @@ export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent):
   if (event.error !== undefined && event.error.length > 0) {
     summary += ' 原因=' + event.error;
   }
-  logger.debug('网页下载结果=' + event.outcome);
   if (event.outcome === 'failed' || event.outcome === 'partiallyFailed') {
     logger.warn(summary);
   } else {
     logger.info(summary);
   }
+  logger.debug('网页下载结果=' + event.outcome);
   notifyChange();
 }
 
@@ -1073,7 +1073,7 @@ export function applyWebSendAllowed(enabled: boolean): void {
     });
   } else if (getWebReceiveAllowed() && !webUploadEnabled) {
     startWebUpload().catch((e: Error) => {
-      logger.error('网页传输开启后补开上传入口失败：' + String(e));
+      logger.warn('网页传输开启后补开上传入口失败：' + String(e));
     });
   }
 }
@@ -1088,11 +1088,11 @@ export function applyWebReceiveAllowed(enabled: boolean): void {
   }
   if (enabled) {
     ensureWebUpload().catch((e: Error) => {
-      logger.error('允许上传开启后确保上传入口失败：' + String(e));
+      logger.warn('允许上传开启后确保上传入口失败：' + String(e));
     });
   } else {
     disableWebUpload().catch((e: Error) => {
-      logger.error('允许上传关闭后关闭上传入口失败：' + String(e));
+      logger.warn('允许上传关闭后关闭上传入口失败：' + String(e));
     });
   }
 }
@@ -1137,7 +1137,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
   ensureUploadArchiveSubscribed();
   let token: string = event.token;
   if (token.length === 0) {
-    logger.warn('网页上传请求缺少 token，已忽略');
+    logger.debug('网页上传请求缺少 token，已忽略');
     return;
   }
   let ip: string = event.ip;
@@ -1365,7 +1365,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
       downloadDir = '';
     }
     if (downloadDir.length === 0) {
-      logger.error('上传落盘目录不可用 token=' + redactSessionToken(token));
+      logger.warn('上传落盘目录不可用 token=' + redactSessionToken(token));
       return false;
     }
   }
@@ -1373,7 +1373,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
   // 否则服务端创建临时文件会因目录不存在而直接失败。
   let textDir: string = isTextMessage ? ensureRecvTextDir() : '';
   if (isTextMessage && textDir.length === 0) {
-    logger.error('上传文本目录不可用 token=' + redactSessionToken(token));
+    logger.warn('上传文本目录不可用 token=' + redactSessionToken(token));
     return false;
   }
   interface UploadTargetJson {
@@ -1387,7 +1387,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     let f = session.files[i];
     let dir: string = isTextMessage ? textDir : downloadDir;
     if (dir.length === 0) {
-      logger.error('上传落盘目录缺失 token=' + redactSessionToken(token));
+      logger.warn('上传落盘目录缺失 token=' + redactSessionToken(token));
       return false;
     }
     let fileName: string = uniquePath(dir, f.fileName);

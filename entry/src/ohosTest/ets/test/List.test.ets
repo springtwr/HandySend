@@ -60,6 +60,7 @@ import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
 import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
 import LogFileFormatTest from './utils/LogFileFormatTest.test'
 import DebugLogBudgetTest from './utils/DebugLogBudgetTest.test'
+import LogRedactionTest from './utils/LogRedactionTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -159,6 +160,7 @@ export default function testsuite() {
   WebAccessCodeTest()
   LogFileFormatTest()
   DebugLogBudgetTest()
+  LogRedactionTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()

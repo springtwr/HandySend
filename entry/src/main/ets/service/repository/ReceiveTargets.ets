@@ -115,7 +115,7 @@ async function ensureReceiveDir(): Promise<boolean> {
     recvDirPathCache = new fileUri.FileUri(uris[0]).path;
     return true;
   } catch (e) {
-    logger.error('获取接收目录失败：' + e);
+    logger.warn('获取接收目录失败：' + e);
     return false;
   }
 }
@@ -256,7 +256,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
         } catch (_unlinkErr) {
         }
       }
-      logger.error('准备接收目标失败 fileId=' + fileId + '：' + e);
+      logger.warn('准备接收目标失败 fileId=' + fileId + '：' + e);
     }
   }
   if (!allOk || Object.keys(perFile).length !== fileIds.length) {

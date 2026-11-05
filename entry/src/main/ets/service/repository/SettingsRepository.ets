@@ -173,7 +173,7 @@ export function loadFromPreferences(): void {
 // ── 加密 / HTTPS ──
 
 export function setHttpsEnabled(enabled: boolean): void {
-  logger.debug(httpsEnabled.toString() + ' → ' + enabled.toString());
+  logger.debug('HTTPS 开关：' + httpsEnabled.toString() + ' → ' + enabled.toString());
   httpsEnabled = enabled;
   // 立即持久化，避免应用退出时丢失设置
   preferencesRepo.setBoolean(KEY_ENCRYPTED_TRANSFER, enabled);
@@ -661,7 +661,7 @@ export function getDiscoveryTimeout(): number {
 }
 
 export function setNetworkWhitelist(list: string): void {
-  logger.debug('\'' + list + '\'');
+  logger.debug('网络白名单：\'' + list + '\'');
   preferencesRepo.setString(KEY_NETWORK_WHITELIST, list);
   notifyChange();
 }
@@ -671,7 +671,7 @@ export function getNetworkWhitelist(): string {
 }
 
 export function setNetworkBlacklist(list: string): void {
-  logger.debug('\'' + list + '\'');
+  logger.debug('网络黑名单：\'' + list + '\'');
   preferencesRepo.setString(KEY_NETWORK_BLACKLIST, list);
   notifyChange();
 }
