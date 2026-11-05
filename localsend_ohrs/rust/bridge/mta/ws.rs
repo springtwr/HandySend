@@ -632,6 +632,15 @@ fn check_version_ack(payload: Option<&str>) -> Option<String> {
     }
 }
 
+/// 判断发送失败原因是否属于对端可解释行为（取消、关闭、超时、版本不兼容）。
+/// 这类结果不记为 error，避免把正常终态误判成故障。
+fn is_peer_expected_reason(reason: &str) -> bool {
+    reason.contains("取消")
+        || reason.contains("关闭了连接")
+        || reason.contains("超时")
+        || reason.contains("不兼容")
+}
+
 /// 记录并发射发送失败事件，随后终止会话。
 ///
 /// 先发事件再终止：失败路径的用户可见结果与既有路径一致（不因收尾过程而延后呈现）；
@@ -644,7 +653,11 @@ async fn fail_ws<S>(
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
-    log::error!("MTA 发送失败：{reason}");
+    if is_peer_expected_reason(&reason) {
+        log::warn!("MTA 发送未完成：{reason}");
+    } else {
+        log::error!("MTA 发送失败：{reason}");
+    }
     send_event(&ctx.event_tx, BridgeEvent::MtaSendFailed { reason }).await;
     terminate_session(ws, TerminatePath::Fail, session_start, false).await;
 }

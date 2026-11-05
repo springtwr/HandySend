@@ -293,7 +293,7 @@ async fn handle_file_upload(
     };
     let Some(target_tx) = target_tx else {
         log::warn!(
-            "FileUpload: 会话无待处理目标 session={} file={}",
+            "文件上传：会话无待处理目标 session={} file={}",
             session_id,
             file_id
         );
@@ -314,7 +314,7 @@ async fn handle_file_upload(
         match registered {
             Some(recv_fd) => {
                 log::debug!(
-                    "recv: fd 直接保存 session={} file={} path={}",
+                    "接收：fd 直接保存 session={} file={} path={}",
                     session_id,
                     file_id,
                     recv_fd.path
@@ -328,7 +328,7 @@ async fn handle_file_upload(
             }
             None => {
                 log::warn!(
-                    "FileUpload: 会话无已注册目标 fd session={} file={}，上传失败（无沙箱回退）",
+                    "文件上传：会话无已注册目标 fd session={} file={}，上传失败（无沙箱回退）",
                     session_id,
                     file_id
                 );
@@ -343,7 +343,7 @@ async fn handle_file_upload(
         // 文件名先消毒，避免路径穿越写出到保存目录之外
         let safe_name = crate::bridge::identity::sanitize_file_name(file_name.to_string());
         let save_path = format!("{}{}", save_dir, safe_name);
-        log::debug!("recv: save_path={}", save_path);
+        log::debug!("接收：save_path={}", save_path);
         localsend::http::server::common::save::FileUploadTarget::Path {
             path: std::path::PathBuf::from(&save_path),
             result_tx,
@@ -403,7 +403,7 @@ async fn handle_file_upload(
             .await;
         }
         log::debug!(
-            "recv-progress: 流已结束 session={} file={} last={}/{}",
+            "接收进度：流已结束 session={} file={} last={}/{}",
             sid_progress,
             fid_progress,
             last_reported,
@@ -427,18 +427,18 @@ async fn handle_file_upload(
                     },
                 )
                 .await;
-                log::debug!("recv-progress: 文件保存成功 session={} file={}", sid, fid);
+                log::debug!("接收进度：文件保存成功 session={} file={}", sid, fid);
             }
             Ok(Err(err)) => {
                 log::error!(
-                    "recv-progress: 文件保存失败 session={} file={} error={}",
+                    "接收进度：文件保存失败 session={} file={} error={}",
                     sid,
                     fid,
                     err
                 );
             }
             Err(_) => {
-                log::debug!("recv-progress: 文件上传已取消 session={} file={}", sid, fid);
+                log::debug!("接收进度：文件上传已取消 session={} file={}", sid, fid);
             }
         }
     });
@@ -707,7 +707,7 @@ pub fn cancel_local_session(
                 .cancel(peer_protocol, &peer_ip, peer_port, &sid)
                 .await;
             log::debug!(
-                "cancel-local-session: 已向发送方 {}:{} 发送 /cancel，session={}",
+                "本地会话取消：已向发送方 {}:{} 发送 /cancel，session={}",
                 peer_ip,
                 peer_port,
                 sid
@@ -737,7 +737,7 @@ pub async fn create_server(
     let show_token = config::opt_str_field(&config, "showToken")?;
 
     log::debug!(
-        "create_server: alias={} use_https={} port={} save_dir={}",
+        "创建服务器：alias={} use_https={} port={} save_dir={}",
         alias,
         use_https,
         port,

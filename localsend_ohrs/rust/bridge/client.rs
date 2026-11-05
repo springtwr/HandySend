@@ -49,7 +49,7 @@ pub async fn prepare_send(
     public_key: Option<String>,
 ) -> Result<String, BridgeError> {
     log::debug!(
-        "prepare_send: ip={} port={} proto={:?} has_fp={} has_pk={}",
+        "准备发送：ip={} port={} proto={:?} has_fp={} has_pk={}",
         target_ip,
         target_port,
         target_protocol,
@@ -317,7 +317,7 @@ pub async fn send_files(
     for (idx, file) in files.iter().enumerate() {
         if session_cancel.is_cancelled() {
             log::debug!(
-                "send-files: 文件 {}/{} 发送前已取消，中断循环",
+                "发送文件：文件 {}/{} 发送前已取消，中断循环",
                 idx + 1,
                 total_files
             );
@@ -374,7 +374,7 @@ pub async fn send_files(
                     break;
                 }
                 log::warn!(
-                    "send-files: 文件 {}/{} 上传失败 ({}): {e}",
+                    "发送文件：文件 {}/{} 上传失败 ({}): {e}",
                     idx + 1,
                     total_files,
                     file_id
@@ -475,13 +475,13 @@ fn read_fd_into_channel(
                 }
             }
             Err(e) => {
-                log::error!("send-files: pread 读取失败 file={label} offset={offset}: {e}");
+                log::error!("发送文件：pread 读取失败 file={label} offset={offset}: {e}");
                 let _ = read_error_tx.send(e);
                 break;
             }
         }
     }
-    log::debug!("send-files: pread 读取结束 file={label} 字节={offset}");
+    log::debug!("发送文件：pread 读取结束 file={label} 字节={offset}");
 }
 
 /// 上传单个文件（使用会话级取消令牌与会话级 HTTP 客户端）。
@@ -683,13 +683,10 @@ pub async fn cancel_transfer_remote(
 /// 本地取消：触发指定会话的 CancellationToken（不向远端发请求）。
 pub fn cancel_transfer(state: &BridgeState, session_id: &str) {
     if let Some(cancel) = state.active_transfers.get(session_id) {
-        log::debug!("cancel: 触发取消 session={}", session_id);
+        log::debug!("取消：触发取消 session={}", session_id);
         cancel.cancel();
     } else {
-        log::debug!(
-            "cancel: 会话无 active_transfers 记录 session={}",
-            session_id
-        );
+        log::debug!("取消：会话无 active_transfers 记录 session={}", session_id);
     }
 }
 
@@ -789,7 +786,7 @@ pub async fn register_device(
             Err(e) => {
                 last_error =
                     format!("{proto:?} register to {target_ip}:{target_port} failed: {e:#}");
-                log::debug!("{}", last_error);
+                log::debug!("注册失败：{last_error}");
                 continue;
             }
         }
