@@ -58,6 +58,7 @@ import {
   PendingNavigation,
 } from '../service/AppService';
 import { isAppForeground } from '../service/repository/AppCore';
+import { isDesktopWindowMinimized } from '../service/BackgroundAttentionNotifier';
 import { NAV_TARGET_SESSION_DETAIL, NAV_TARGET_TRANSFER_CENTER } from '../utils/WantAgentUtil';
 import {
   isSaveToGallery, getLocalSendEnabled, getMtaEnabled,
@@ -359,6 +360,15 @@ struct MainTabFloating {
     // 记录后跳过本次前台的补弹；点击之后新到达的请求不在集合内，仍正常提示
     if (pending.target.length > 0) {
       this.suppressedTransferPromptSessionIds = getPendingSessionIds();
+      // 通知进入前可能已打开新传输提示（如窗口最小化前弹出）：先收起，
+      // 避免它浮在通知目标页面之上；id 未就绪时复位标记，由 openCustomDialog 回调兜底关闭
+      if (this.newTransferDialogOpen) {
+        if (this.newTransferDialogId >= 0) {
+          this.closeNewTransferDialog();
+        } else {
+          this.resetNewTransferDialogState();
+        }
+      }
     }
     if (pending.target === NAV_TARGET_SESSION_DETAIL && pending.sessionId.length > 0) {
       if (!hasSessionOrHistory(pending.sessionId)) {
@@ -396,7 +406,8 @@ struct MainTabFloating {
    * 点击之后新到达的请求仍正常提示。
    */
   private tryOpenNewTransferDialog(): void {
-    if (!isAppForeground()) {
+    // PC 最小化时窗口不可见，不弹应用内提示，由后台关注通知/角标承担提醒
+    if (!isAppForeground() || isDesktopWindowMinimized()) {
       return;
     }
     let sessionId: string = this.viewModel.autoOpenSessionId;

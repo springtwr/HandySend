@@ -8,7 +8,8 @@ import {
 } from '../../../../main/ets/service/BackgroundTransferService'
 import {
   AttentionKind,
-  resolveAttentionKind
+  resolveAttentionKind,
+  shouldPublishAttention
 } from '../../../../main/ets/service/BackgroundAttentionNotifier'
 import {
   SessionCreateInput,
@@ -88,6 +89,14 @@ export default function BackgroundAggregateTest() {
       expect(resolveAttentionKind(0)).assertEqual(AttentionKind.none)
       expect(resolveAttentionKind(2)).assertEqual(AttentionKind.pendingRequest)
       expect(resolveAttentionKind(1)).assertEqual(AttentionKind.pendingRequest)
+    })
+
+    // ── 关注提醒时机：后台或 PC 最小化时发布，前台正常显示时不打扰 ──
+    it('attentionPublish_backgroundOrMinimized', 0, () => {
+      expect(shouldPublishAttention(true, false)).assertFalse()
+      expect(shouldPublishAttention(true, true)).assertTrue()
+      expect(shouldPublishAttention(false, false)).assertTrue()
+      expect(shouldPublishAttention(false, true)).assertTrue()
     })
 
     // ── 协议无关聚合（来自注册表） ──
