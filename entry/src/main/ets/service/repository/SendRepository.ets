@@ -774,14 +774,23 @@ async function buildSendFileItem(uri: string, index: number,
   return item;
 }
 
+// 带 context 的纯路径函数：冷启动（AppCore 尚未保存 context）与运行期共用同一口径。
+function sendThumbnailDirOf(context: common.Context): string {
+  return context.cacheDir + '/send/';
+}
+
+// 旧版本遗留的发送临时目录（已不再写入，仅冷启动清理）。
+function legacySendDirOf(context: common.Context): string {
+  return context.filesDir + '/send/';
+}
+
 // 带 context 的清理变体：供冷启动（EntryAbility.onCreate）清扫
-// {cacheDir}/send/（手动文本暂存临时目录）使用——此时 AppCore 尚未保存
+// {cacheDir}/send/（发送缩略图缓存）与旧版本遗留的 {filesDir}/send/
+// （手动文本暂存，已不再写入，全量删除安全）使用——此时 AppCore 尚未保存
 // 应用 context，无法在仓库层自行取 context。
-// 清理 {cacheDir}/send/，并顺带清空旧版本遗留的 {filesDir}/send/
-// （已不再写入，全量删除安全）。
 export function cleanupSendDirWithContext(context: common.UIAbilityContext): void {
-  clearDirContents(context.cacheDir + '/send/');
-  clearDirContents(context.filesDir + '/send/');
+  clearDirContents(sendThumbnailDirOf(context));
+  clearDirContents(legacySendDirOf(context));
 }
 
 // 「发送文本」目录：发送产物（sharedText_*.txt）与手动暂存文本的统一落盘目录，
@@ -804,7 +813,7 @@ export function sendThumbnailDir(): string {
   if (appContext === undefined) {
     return '';
   }
-  return appContext.cacheDir + '/send/';
+  return sendThumbnailDirOf(appContext);
 }
 
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。

@@ -155,34 +155,43 @@ export function getServerFingerprint(): string {
 // Rust 服务器 save_dir（{filesDir}/HandySend/，持久目录）：
 // Rust 层用于 TLS 身份持久化（identity.pem，见 localsend_ohrs/rust/bridge/identity.rs），
 // 接收文件不落此处（普通文件经 fd-direct 落用户设置的接收目录，文本消息落 filesDir/text_recv/）。
+// 带 context 的纯路径函数与运行期读取共用同一口径，供冷启动（AppCore 尚未保存 context）复用。
+function receiveSaveDirOf(context: common.Context): string {
+  return context.filesDir + '/HandySend/';
+}
+
 export function getReceiveSaveDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
     return '';
   }
-  return appContext.filesDir + '/HandySend/';
+  return receiveSaveDirOf(appContext);
 }
 
 // 接收相关临时目录（{cacheDir}/receive/，带尾斜杠）：
 // fd-direct 流程下普通接收文件落用户设置的接收目录、文本消息落 filesDir/text_recv/，
 // 此处仅作旧路径回退与孤儿文件清扫；
 // 异常退出残留属应用缓存，可经系统存储设置清除。
+function receiveCacheDirOf(context: common.Context): string {
+  return context.cacheDir + '/receive/';
+}
+
 export function getReceiveCacheDir(): string {
   let appContext = getAppContext();
   if (appContext === undefined) {
     return '';
   }
-  return appContext.cacheDir + '/receive/';
+  return receiveCacheDirOf(appContext);
 }
 
 // 冷启动清扫接收相关临时目录（EntryAbility.onCreate 调用，此时 AppCore
 // 尚未保存应用 context，需显式传入）：
 // 1. {cacheDir}/receive/：接收临时/回退目录，冷启动无进行中会话，全量删除安全；
-// 2. 旧版本遗留的 {filesDir}/HandySend/：曾用作接收文件落盘目录，清除其中
-//    临时残留，但保留 identity.pem/identity.key（Rust TLS 身份持久化文件，
-//    两者缺一即失效，见 localsend_ohrs/rust/bridge/identity.rs）。
+// 2. {filesDir}/HandySend/：当前用于 TLS 身份持久化（identity.pem/identity.key），
+//    同时清理旧版本遗留的接收临时残留；身份文件必须保留，两者缺一即失效，
+//    见 localsend_ohrs/rust/bridge/identity.rs。
 export function cleanupReceiveCacheDirWithContext(context: common.UIAbilityContext): void {
-  let cacheDir: string = context.cacheDir + '/receive/';
+  let cacheDir: string = receiveCacheDirOf(context);
   try {
     let cacheNames: Array<string> = fs.listFileSync(cacheDir);
     for (let i = 0; i < cacheNames.length; i++) {
@@ -194,7 +203,7 @@ export function cleanupReceiveCacheDirWithContext(context: common.UIAbilityConte
   } catch (_e) {
     // 目录不存在——忽略
   }
-  let legacyDir: string = context.filesDir + '/HandySend/';
+  let legacyDir: string = receiveSaveDirOf(context);
   try {
     let legacyNames: Array<string> = fs.listFileSync(legacyDir);
     for (let i = 0; i < legacyNames.length; i++) {

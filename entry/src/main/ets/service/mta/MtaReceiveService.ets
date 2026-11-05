@@ -67,6 +67,30 @@ import { DialogService } from '../DialogService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
 
+// MTA 接收预览缩略图缓存目录名（应用缓存根下的专用子目录）
+const MTA_THUMB_DIR_NAME: string = 'mta_thumb';
+
+/** MTA 接收预览缩略图目录（不带尾斜杠，匹配 Rust 端 `{target_dir}/文件名` 拼接） */
+function mtaThumbnailDirOf(context: common.Context): string {
+  return context.cacheDir + '/' + MTA_THUMB_DIR_NAME;
+}
+
+/** 冷启动清理 MTA 接收预览缩略图缓存；缩略图仅供确认阶段预览，可安全删除 */
+export function cleanupMtaThumbnailDirWithContext(context: common.UIAbilityContext): void {
+  let dir: string = mtaThumbnailDirOf(context);
+  try {
+    let names: Array<string> = fs.listFileSync(dir);
+    for (let i = 0; i < names.length; i++) {
+      try {
+        fs.unlinkSync(dir + '/' + names[i]);
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+    // 目录不存在——忽略
+  }
+}
+
 // 文本落盘完成通知（由协议仓库注入）：把文本文件的真实保存路径上抛，
 // 供统一会话回填逐文件路径（详情页据路径读取内容预览）。不参与协议行为。
 let textSavedNotifier: ((savedPath: string) => void) | undefined = undefined;
@@ -412,7 +436,7 @@ export class MtaReceiveService {
 
   /**
    * 拉取发送端提供的缩略图（图片/视频预览）：经 Rust 请求 `/thumbnail?taskId=`，
-   * 结果落到应用缓存目录并把路径写入状态，供确认界面展示。
+   * 结果落到应用缓存下的 mta_thumb 专用目录并把路径写入状态，供确认界面展示。
    * 属可选增强：任何失败只记日志，不影响接收流程。
    */
   private async fetchRequestThumbnail(request: ReceiveRequest): Promise<void> {
@@ -422,7 +446,15 @@ export class MtaReceiveService {
     if (context === undefined || goIp.length === 0 || port <= 0) {
       return;
     }
-    let targetDir = context.cacheDir;
+    let targetDir: string = mtaThumbnailDirOf(context);
+    try {
+      if (!fs.accessSync(targetDir)) {
+        fs.mkdirSync(targetDir, true);
+      }
+    } catch (e) {
+      this.appendLog('预览', '创建缩略图缓存目录失败：' + String(e), LogLevels.WARN);
+      return;
+    }
     this.appendLog('预览', `开始拉取发送端缩略图 任务=${request.taskId}`, LogLevels.DEBUG);
     let path = await nativeMtaFetchThumbnail(goIp, port, request.taskId, targetDir,
       MtaConstants.MAX_THUMBNAIL_BYTES);

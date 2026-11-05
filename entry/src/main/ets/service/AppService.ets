@@ -329,6 +329,9 @@ export { startMtaDiscoveryScan,
   getLocalMtaDeviceIdHex,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
 
+// MTA 接收预览缩略图缓存清理（冷启动）
+export { cleanupMtaThumbnailDirWithContext } from './mta/MtaReceiveService';
+
 // MTA 广播名称口径（与广播编码同源）
 export { mtaBroadcastName } from './mta/MtaBleCommon';
 

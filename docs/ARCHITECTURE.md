@@ -68,6 +68,9 @@ HandySend/
 └── oh-package.json5                  # 全局依赖
 ```
 
+> 应用沙箱目录的唯一来源、尾斜杠约定与冷启动清理入口见
+> [architecture/app-paths.md](architecture/app-paths.md)。
+
 ## 4. 核心模块
 
 ### 4.1 EntryAbility

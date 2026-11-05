@@ -26,6 +26,7 @@ import {
   setPendingNavigation,
   cleanupSendDirWithContext,
   cleanupReceiveCacheDirWithContext,
+  cleanupMtaThumbnailDirWithContext,
   startMtaReceiveIfEnabled,
   stopMtaReceive,
   stopLocalServer,
@@ -406,10 +407,12 @@ export default class EntryAbility extends UIAbility {
           try {
             // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
             // 意外退出后 cache 目录中的文件成为孤儿；冷启动时必无进行中的
-            // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
-            // 该回调仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
+            // 暂存/接收，全量删除安全（含 MTA 预览缩略图与旧版本 files 目录残留，
+            // TLS 身份保留）。该回调仅冷启动执行一次（再次拉起走 onNewWant），
+            // 不会误删活文件。
             cleanupSendDirWithContext(this.context);
             cleanupReceiveCacheDirWithContext(this.context);
+            cleanupMtaThumbnailDirWithContext(this.context);
             // 全局注册 MaterialIcons 字体，用于指纹图标渲染（首屏不渲染该字体）
             // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
             uiContext.getFont().registerFont({
