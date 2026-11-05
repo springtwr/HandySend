@@ -1,9 +1,10 @@
 /**
  * BackgroundAttentionNotifier.ets — 后台关注通知层
  *
- * 应用在后台时，把需要用户关注的待确认请求（LocalSend / MTA 接收、Web 上传）
- * 收敛为**一条**系统通知。网页访问与下载不进入该通知：访问只写诊断日志并续期
- * 有界后台保活，下载批次由后台传输实况通知承载。
+ * 应用退到后台或 PC 主窗口最小化时，把需要用户关注的待确认请求
+ * （LocalSend / MTA 接收、Web 上传）收敛为**一条**系统通知，并在 PC/2in1 上同步应用角标。
+ * 网页访问与下载不进入该通知：访问只写诊断日志并续期有界后台保活，
+ * 下载批次由后台传输实况通知承载。
  *
  * 通知使用独立 id（与后台传输实况通知区分）：单条待确认点击直达该请求详情，
  * 多条待确认点击回到任务中心。模块级单例，由 EntryAbility 生命周期与注册表变更共同驱动。
@@ -11,8 +12,9 @@
 
 import { notificationManager } from '@kit.NotificationKit';
 import { common, WantAgent } from '@kit.AbilityKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { getAppContext, isAppForeground } from './repository/AppCore';
+import { isNotificationPermissionGranted } from './PermissionService';
 import {
   getPendingSessionIds,
   subscribeSessions
@@ -51,12 +53,77 @@ let attentionWantAgent: WantAgent | undefined = undefined;
 let attentionWantAgentKey: string = '';
 // 注册表订阅状态
 let subscribed: boolean = false;
+// PC 主窗口是否最小化：最小化与 UIAbility 前后台切换不是同一口径，
+// 部分机型最小化时 onBackground 未触发，需单独据此决定是否发布通知与角标
+let desktopWindowMinimized: boolean = false;
+// 角标设置串行链与最近一次已请求的角标数：避免异步设置乱序与重复调用
+let badgeChain: Promise<void> = Promise.resolve();
+let requestedBadgeNumber: number = -1;
 
 /**
  * 关注类别决策（纯函数）：仅有待确认请求时发布通知，其余情况不发布。
  */
 export function resolveAttentionKind(pendingCount: number): AttentionKind {
   return pendingCount > 0 ? AttentionKind.pendingRequest : AttentionKind.none;
+}
+
+/**
+ * 是否需要以系统通知/角标提醒用户（纯函数）：
+ * 应用退到后台，或 PC 主窗口最小化时为真；最小化不能只按 onBackground 判断。
+ */
+export function shouldPublishAttention(appForeground: boolean, windowMinimized: boolean): boolean {
+  return !appForeground || windowMinimized;
+}
+
+/**
+ * 同步 PC 主窗口最小化状态：窗口状态变化时由 EntryAbility 调用。
+ * 最小化与恢复都会触发一次关注通知重算，保证已有待确认请求能补发/撤回。
+ */
+export function setDesktopWindowMinimized(minimized: boolean): void {
+  if (deviceInfo.deviceType !== '2in1') {
+    return;
+  }
+  if (desktopWindowMinimized === minimized) {
+    return;
+  }
+  desktopWindowMinimized = minimized;
+  logger.debug('PC 主窗口最小化状态变化：' + String(minimized));
+  refreshBackgroundAttention();
+}
+
+/** PC 主窗口是否最小化：供页面判断是否适合弹应用内新传输提示。 */
+export function isDesktopWindowMinimized(): boolean {
+  return desktopWindowMinimized;
+}
+
+/**
+ * 设置应用角标（仅 PC/2in1）：数量与后台关注通知保持一致（均为待确认数），
+ * 通知撤回或待确认请求清零时清空角标；手机/平板只保留后台通知，不设置系统角标。
+ */
+function syncBadge(count: number): void {
+  if (deviceInfo.deviceType !== '2in1') {
+    return;
+  }
+  let target: number = count > 0 ? count : 0;
+  if (target === requestedBadgeNumber) {
+    return;
+  }
+  if (!isNotificationPermissionGranted()) {
+    // 未授权时不记录目标值：用户后续在设置中开启通知后，下一次同步仍能补设
+    requestedBadgeNumber = -1;
+    return;
+  }
+  requestedBadgeNumber = target;
+  badgeChain = badgeChain.then(async (): Promise<void> => {
+    try {
+      await notificationManager.setBadgeNumber(target);
+      logger.debug('应用角标已设置：' + String(target));
+    } catch (e) {
+      // 设置失败时复位目标值，下一次待确认变化或回到前台时仍可重试
+      requestedBadgeNumber = -1;
+      logger.warn('设置应用角标失败：' + JSON.stringify(e));
+    }
+  });
 }
 
 function getString(resId: number): string {
@@ -137,13 +204,15 @@ async function publishAttention(kind: AttentionKind, sessionIds: Array<string>,
     let genAtPublish: number = withdrawGeneration;
     let target: string = sessionIds.length === 1 ? NAV_TARGET_SESSION_DETAIL : NAV_TARGET_TRANSFER_CENTER;
     let agent = await ensureWantAgent(context, target, singleSessionId(sessionIds));
-    if (genAtPublish !== withdrawGeneration) {
-      // 构建点击目标期间已撤回：不再发布
+    if (genAtPublish !== withdrawGeneration ||
+      !shouldPublishAttention(isAppForeground(), desktopWindowMinimized)) {
+      // 构建点击目标期间已撤回，或应用已回到前台/窗口已恢复：不再发布
       return;
     }
     // 等待仍在途的撤回取消完成：避免其迟到后删掉本次发布
     await lastWithdrawCancel;
-    if (genAtPublish !== withdrawGeneration) {
+    if (genAtPublish !== withdrawGeneration ||
+      !shouldPublishAttention(isAppForeground(), desktopWindowMinimized)) {
       return;
     }
     let request: notificationManager.NotificationRequest = {
@@ -166,6 +235,8 @@ async function publishAttention(kind: AttentionKind, sessionIds: Array<string>,
     }
     published = true;
     publishedSignature = signature;
+    // 角标与通知同源：仅在有未处理待确认请求时显示数量
+    syncBadge(sessionIds.length);
     logger.debug('后台关注通知已发布 kind=' + kind);
   } catch (e) {
     logger.warn('发布后台关注通知失败：' + JSON.stringify(e));
@@ -175,11 +246,11 @@ async function publishAttention(kind: AttentionKind, sessionIds: Array<string>,
 /**
  * 按当前注册表状态同步关注通知（串行执行，状态在轮到本次时重新读取）：
  * - 前台：撤回通知；
- * - 后台且有待确认请求：单条直达详情，多条展示待确认数量并回任务中心；
+ * - 后台/最小化且有待确认请求：单条直达详情，多条展示数量并回任务中心；
  * - 其余：撤回。
  */
 async function applyAttentionState(): Promise<void> {
-  if (isAppForeground()) {
+  if (!shouldPublishAttention(isAppForeground(), desktopWindowMinimized)) {
     withdrawBackgroundAttention();
     return;
   }
@@ -219,6 +290,8 @@ export function refreshBackgroundAttention(): void {
 export function withdrawBackgroundAttention(): void {
   // 无论是否已发布均递增代际：拦截「撤回先于 publish 完成」的在途发布
   withdrawGeneration++;
+  // 回到前台或待确认请求清零时同步清空角标；即使通知未发布也要清
+  syncBadge(0);
   if (!published) {
     return;
   }
