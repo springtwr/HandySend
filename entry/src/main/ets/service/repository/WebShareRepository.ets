@@ -55,7 +55,8 @@ import {
   listWebAddresses,
   pickWebAddress
 } from '../../model/WebAddress';
-import { ensureRecvDownloadDir, ensureRecvTextDir, uniquePath } from './ReceiveTargets';
+import { ensureRecvTextDir, uniquePath } from './ReceiveTargets';
+import { consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory } from './ReceiveDirectory';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { copyText } from '../../utils/ClipboardUtil';
 import { DialogService } from '../DialogService';
@@ -1262,7 +1263,7 @@ export function acceptWebUpload(token: string): void {
   if (token.length === 0) {
     return;
   }
-  // 落盘目标计算需异步（Download 目录授权）：浏览器在等待决策，
+  // 落盘目标计算需异步（接收目录授权）：浏览器在等待决策，
   // 此处 fire-and-forget，完成后放行或拒绝。
   prepareUploadTargets(token).then((ready: boolean): void => {
     if (!ready) {
@@ -1343,7 +1344,7 @@ setWebUploadInvokers(
 
 /**
  * 为待确认上传会话计算落盘目标并下发原生层。
- * 普通文件进 Download/<包名>/（重名自动加后缀）；单文本消息（message.txt）
+ * 普通文件进接收目录（默认 Download/<包名>/；重名自动加后缀）；单文本消息（message.txt）
  * 进接收文本目录。目录不可用时返回 false，调用方据此拒绝。
  */
 async function prepareUploadTargets(token: string): Promise<boolean> {
@@ -1355,18 +1356,22 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     session.files[0].fileType === 'text/plain' &&
     session.files[0].fileName === 'message.txt' &&
     isWebUploadTextMessage(session.id);
-  // 文本消息只落应用私有文本目录，不依赖 Download 目录授权；
-  // 普通文件才需要惰性获取 Download/<包名>/。
+  // 文本消息只落应用私有文本目录，不依赖接收目录授权；
+  // 普通文件才需要惰性解析接收目录。
   let downloadDir: string = '';
   if (!isTextMessage) {
     try {
-      downloadDir = await ensureRecvDownloadDir();
+      downloadDir = await ensureReceiveDirectory();
     } catch (_e) {
       downloadDir = '';
     }
     if (downloadDir.length === 0) {
       logger.warn('上传落盘目录不可用 token=' + redactSessionToken(token));
       return false;
+    }
+    // 自定义目录失效已回退默认目录：上传继续，但需提示用户保存位置已变化
+    if (consumeReceiveDirectoryFallbackNotice()) {
+      DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
     }
   }
   // 文本消息目录是应用沙箱私有目录：首次使用前必须显式创建，

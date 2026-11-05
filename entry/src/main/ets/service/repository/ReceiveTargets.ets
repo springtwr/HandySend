@@ -1,9 +1,10 @@
 // 接收直写目标（fd-direct）管理：接收文件在确认接收时预创建并注册 fd，
 // Rust 网络流直接写入最终位置。
-// 本模块持有 Download/<包名>/ 目录缓存与会话目标路径登记表，
+// 本模块持有会话目标路径登记表；接收目录统一由 ReceiveDirectory 提供，
 // 会话状态（sessionFileMap/sessionFilePaths 等）仍归 ReceiveRepository 所有。
 
-import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { ensureReceiveDirectory } from './ReceiveDirectory';
 import {
   nativeSanitizeFileName, nativeRegisterRecvFileFd, nativeDiscardRecvFileFds
 } from '../NativeBridge';
@@ -22,11 +23,6 @@ export interface ReceivedFileEntry {
   fileType: string
   preview?: string
 }
-
-// Download/<包名>/ 目录的持久化授权 URI 与路径（应用运行期惰性缓存；
-// 会话目标准备时经 DocumentViewPicker.save(DOWNLOAD) 获取，一次获取多次复用）
-let recvDirUriCache: string = '';
-let recvDirPathCache: string = '';
 
 // 「接收文本」目录：接收文本消息的落盘目录，位于应用私有持久目录（filesDir/text_recv/）下，
 // 与发送文本目录（filesDir/text_send/）分目录存放、清理判据共用同一前缀集合。
@@ -47,7 +43,7 @@ function isRecvTextEntry(entry: ReceivedFileEntry): boolean {
 }
 
 // 会话已预注册的直写目标文件路径：sessionId → (fileId → 最终路径)。
-// 用于会话取消/失败时清理不完整的文件（Download 与接收文本目录均在此登记）；
+// 用于会话取消/失败时清理不完整的文件（自定义接收目录、默认下载目录与接收文本目录均在此登记）；
 // 成功会话的文件即交付物、不清除。
 let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
 
@@ -96,46 +92,6 @@ export function uniquePath(dir: string, fileName: string): string {
   return renamed;
 }
 
-// 惰性获取 Download/<包名>/ 目录（DocumentViewPicker.save 的 DOWNLOAD 模式：
-// 不弹选择界面、返回的 URI 具备持久化授权），进程内缓存复用。
-async function ensureReceiveDir(): Promise<boolean> {
-  if (recvDirUriCache.length > 0 && recvDirPathCache.length > 0) {
-    return true;
-  }
-  try {
-    let saveOptions = new picker.DocumentSaveOptions();
-    saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
-    let documentPicker = new picker.DocumentViewPicker();
-    let uris: Array<string> = await documentPicker.save(saveOptions);
-    if (uris === undefined || uris.length === 0) {
-      logger.warn('获取接收目录失败：结果为空');
-      return false;
-    }
-    recvDirUriCache = uris[0];
-    recvDirPathCache = new fileUri.FileUri(uris[0]).path;
-    return true;
-  } catch (e) {
-    logger.warn('获取接收目录失败：' + e);
-    return false;
-  }
-}
-
-/**
- * 确保 Download/<包名>/ 目录可用并返回其路径（归一化去尾斜杠）；不可得返回空串。
- * 进程内缓存复用，供落盘前的存储预留检查使用。
- */
-export async function ensureRecvDownloadDir(): Promise<string> {
-  if (!(await ensureReceiveDir())) {
-    return '';
-  }
-  let dirPath: string = recvDirPathCache;
-  // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接
-  if (dirPath.endsWith('/')) {
-    dirPath = dirPath.substring(0, dirPath.length - 1);
-  }
-  return dirPath;
-}
-
 /** 确保接收文本目录存在并返回其路径；应用上下文缺失时返回空串。 */
 export function ensureRecvTextDir(): string {
   let dir: string = recvTextDir();
@@ -166,7 +122,7 @@ function findEntryIndex(entries: Array<ReceivedFileEntry>, fileId: string): numb
   return -1;
 }
 
-/** 本次待接收集合中是否含普通文件条目（需 Download 目录）。 */
+/** 本次待接收集合中是否含普通文件条目（需接收目录）。 */
 function needsDownloadDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>): boolean {
   for (let i = 0; i < fileIds.length; i++) {
     let idx: number = findEntryIndex(entries, fileIds[i]);
@@ -191,8 +147,8 @@ function needsTextDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>)
 // 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
 // registerRecvFileFd；同时把最终路径回写到传入的条目（filePath/fileName，
 // 供历史/相册/文本使用）并返回 fileId → 最终路径映射。
-// 文本消息条目落应用私有接收文本目录（filesDir/text_recv/），普通文件落 Download/<包名>/，
-// 重名规则一致（自动加序号、不覆盖）。
+// 文本消息条目落应用私有接收文本目录（filesDir/text_recv/），普通文件落用户设置的接收目录
+// （默认 Download/<包名>/），重名规则一致（自动加序号、不覆盖）。
 // 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 undefined（调用方拒绝会话）。
 export async function prepareRecvTargets(sessionId: string, fileIds: Array<string>,
   entries: Array<ReceivedFileEntry> | undefined): Promise<Record<string, string> | undefined> {
@@ -200,10 +156,10 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
     return undefined;
   }
   // 按条目是否文本消息决定目标目录：文本目录为应用沙箱（mkdir 直建），
-  // 普通文件目录经 DocumentViewPicker 惰性获取；任一所需目录不可得即整体拒绝
+  // 普通文件目录由 ReceiveDirectory 统一解析；任一所需目录不可得即整体拒绝
   let needDownload: boolean = needsDownloadDir(entries, fileIds);
   let needText: boolean = needsTextDir(entries, fileIds);
-  let downloadDir: string = needDownload ? await ensureRecvDownloadDir() : '';
+  let downloadDir: string = needDownload ? await ensureReceiveDirectory() : '';
   let textDir: string = needText ? ensureRecvTextDir() : '';
   if (needDownload && downloadDir.length === 0) {
     return undefined;
@@ -221,7 +177,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       continue;
     }
     let entry: ReceivedFileEntry = entries[entryIdx];
-    // 文本消息条目落接收文本目录（沙箱），其余落 Download 目录
+    // 文本消息条目落接收文本目录（沙箱），其余落接收目录
     let dirPath: string = isRecvTextEntry(entry) ? textDir : downloadDir;
     let destPath: string = '';
     let opened: fs.File | undefined = undefined;

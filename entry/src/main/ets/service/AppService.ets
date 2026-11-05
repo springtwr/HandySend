@@ -40,6 +40,7 @@ import { initBackgroundAttentionNotifier } from './BackgroundAttentionNotifier';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog, triggerRefresh } from './repository/AppCore';
+import { activateConfiguredReceiveDirectory } from './repository/ReceiveDirectory';
 import {
   loadFromPreferences,
   getTheme,
@@ -134,6 +135,8 @@ export { setHttpsEnabled,
   setReceivePin,
   setSaveToGallery,
   isSaveToGallery,
+  getReceiveDirectoryUri,
+  setReceiveDirectoryUri,
   setBackgroundReceiveEnabled,
   isBackgroundReceiveEnabled,
   setDestination,
@@ -505,6 +508,11 @@ export function initAppService(context: common.UIAbilityContext): void {
   setAppContext(context);
   loadFromPreferences();
   initDeviceIdentity();
+
+  // 启动时激活自定义接收目录的持久授权：接收历史/详情页按路径读取文件时需要
+  activateConfiguredReceiveDirectory().catch((e: Error) => {
+    logger.warn('激活接收目录授权失败：' + String(e));
+  });
 
   // 初始化统一会话引擎（协议适配器事件订阅；适配器在文件头部导入以完成注册）
   try {

@@ -24,6 +24,9 @@ export const KEY_SAVE_TO_GALLERY: string = 'saveToGallery';
 
 export const KEY_DESTINATION: string = 'destination';
 
+// 接收文件保存目录 URI：空串表示默认 Download/<包名>/
+export const KEY_RECEIVE_DIRECTORY_URI: string = 'receiveDirectoryUri';
+
 export const KEY_THEME: string = 'theme';
 
 export const KEY_LOCALE: string = 'locale';

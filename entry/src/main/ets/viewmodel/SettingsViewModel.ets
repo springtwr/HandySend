@@ -4,6 +4,8 @@ import {
   setReceivePin,
   setSaveToGallery,
   setDestination,
+  getReceiveDirectoryUri,
+  setReceiveDirectoryUri,
   setCustomAlias,
   getCustomAlias,
   setTheme,
@@ -104,12 +106,24 @@ import { getLocalInterfaces, updateLocalInterfaces } from '../service/AppService
 import { NetworkInterface } from '../model/Types';
 import { WebPortError, validateWebPort } from '../model/WebAddress';
 import {
+  consumeReceiveDirectoryFallbackNotice,
+  ensureReceiveDirectory,
+  invalidateReceiveDirectoryCache,
+  isReceiveDirectorySelectionSupported,
+  pickReceiveDirectory,
+  ReceiveDirectoryPickResult,
+  ReceiveDirectoryPickStatus,
+  receiveDirectoryDisplayName,
+  receiveDirectoryUserPath
+} from '../service/repository/ReceiveDirectory';
+import {
   DEFAULT_ENCRYPTED_TRANSFER,
   DEFAULT_AUTO_CONFIRM_MODE,
   DEFAULT_RECEIVE_PIN,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_BACKGROUND_RECEIVE,
   DEFAULT_DESTINATION,
+  DEFAULT_RECEIVE_DIRECTORY_URI,
   DEFAULT_THEME,
   DEFAULT_LOCALE,
   DEFAULT_HIDE_TAB_BAR_ON_SCROLL,
@@ -193,6 +207,10 @@ export class SettingsViewModel {
   @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
   @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
   @Trace public destination: string = DEFAULT_DESTINATION
+  // 接收文件保存目录：URI 为空表示默认 Download/<包名>/（界面显示应用名）。
+  // 展示名与相对路径由 UI 每次构建时从 URI 实时计算，确保特殊目录名随语言切换刷新。
+  @Trace public receiveDirectoryUri: string = DEFAULT_RECEIVE_DIRECTORY_URI
+  @Trace public receiveDirectorySupported: boolean = true
   @Trace public advancedSettings: boolean = DEFAULT_ADVANCED_SETTINGS
   @Trace public port: number = DEFAULT_PORT
   @Trace public multicastGroup: string = DEFAULT_MULTICAST_GROUP
@@ -253,6 +271,8 @@ export class SettingsViewModel {
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
     this.destination = getDestination();
+    this.receiveDirectoryUri = getReceiveDirectoryUri();
+    this.receiveDirectorySupported = isReceiveDirectorySelectionSupported();
     this.theme = getTheme();
     this.locale = getLocale();
     this.hideTabBarOnScroll = isHideTabBarOnScroll();
@@ -271,6 +291,19 @@ export class SettingsViewModel {
     // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
     this.notificationGranted = isNotificationPermissionGranted();
     this.bluetoothGranted = isBluetoothPermissionGranted();
+    // 设置页打开时校验自定义接收目录：目录已删除/授权失效时由 ReceiveDirectory
+    // 回退默认目录并清除设置，这里回读一次保证界面立即显示默认值
+    if (this.receiveDirectoryUri.length > 0) {
+      ensureReceiveDirectory().then((path: string): void => {
+        this.receiveDirectoryUri = getReceiveDirectoryUri();
+        // 默认目录也不可用时不提示“已改为默认目录”，避免误导
+        if (path.length > 0 && consumeReceiveDirectoryFallbackNotice()) {
+          DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
+        }
+      }).catch((e: Error): void => {
+        logger.warn('校验接收目录失败：' + String(e));
+      });
+    }
   }
 
   subscribe(): void {
@@ -292,6 +325,8 @@ export class SettingsViewModel {
       // 权限可能已在系统侧变更（如从设置页返回），一并重新查询
       this.notificationGranted = isNotificationPermissionGranted();
       this.bluetoothGranted = isBluetoothPermissionGranted();
+      // 自定义接收目录失效时会被后台清除，此处同步刷新，避免设置页继续显示旧目录
+      this.receiveDirectoryUri = getReceiveDirectoryUri();
       // 接口列表可能已刷新（网络变化时），通知 UI 重新读取
       this.interfaceListVersion++;
     };
@@ -337,6 +372,49 @@ export class SettingsViewModel {
   setGallerySaveEnabled(on: boolean): void {
     this.saveToGallery = on;
     setSaveToGallery(on);
+  }
+
+  /**
+   * 选择自定义接收目录：拉起系统目录选择器并持久化读写授权。
+   * 返回 success/default/cancelled/failed；default 表示用户选中了默认目录，按恢复默认处理。
+   */
+  async chooseReceiveDirectory(): Promise<ReceiveDirectoryPickStatus> {
+    if (!this.receiveDirectorySupported) {
+      return 'failed';
+    }
+    let ctx = getAppContext();
+    if (ctx === undefined) {
+      return 'failed';
+    }
+    let result: ReceiveDirectoryPickResult = await pickReceiveDirectory(ctx);
+    if (result.status === 'success' && result.uri.length > 0) {
+      setReceiveDirectoryUri(result.uri);
+      invalidateReceiveDirectoryCache();
+      this.receiveDirectoryUri = result.uri;
+      logger.info('接收文件保存目录已更新：' + receiveDirectoryUserPath(result.uri));
+    } else if (result.status === 'default') {
+      // 用户直接选中应用的默认目录：等同恢复默认，避免显示 Download/<包名>
+      this.resetReceiveDirectory();
+    }
+    return result.status;
+  }
+
+  /** 恢复默认接收目录（Download/<包名>/） */
+  resetReceiveDirectory(): void {
+    setReceiveDirectoryUri(DEFAULT_RECEIVE_DIRECTORY_URI);
+    invalidateReceiveDirectoryCache();
+    this.receiveDirectoryUri = DEFAULT_RECEIVE_DIRECTORY_URI;
+    logger.info('接收文件保存目录已恢复默认');
+  }
+
+  /** 自定义目录的展示名；每次调用按当前语言解析特殊目录名 */
+  getReceiveDirectoryDisplayName(): string {
+    return receiveDirectoryDisplayName(this.receiveDirectoryUri);
+  }
+
+  /** 自定义目录的用户可见路径；每次调用按当前语言解析特殊目录名 */
+  getReceiveDirectoryUserPath(): string {
+    return receiveDirectoryUserPath(this.receiveDirectoryUri);
   }
 
   /** 允许后台接收：仅控制无传输时的 5 分钟空闲保活，传输中不受影响 */
@@ -727,6 +805,9 @@ export class SettingsViewModel {
     setBackgroundReceiveEnabled(DEFAULT_BACKGROUND_RECEIVE);
     this.destination = DEFAULT_DESTINATION;
     setDestination(DEFAULT_DESTINATION);
+    this.receiveDirectoryUri = DEFAULT_RECEIVE_DIRECTORY_URI;
+    setReceiveDirectoryUri(DEFAULT_RECEIVE_DIRECTORY_URI);
+    invalidateReceiveDirectoryCache();
 
     // 主题与外观
     this.theme = DEFAULT_THEME;

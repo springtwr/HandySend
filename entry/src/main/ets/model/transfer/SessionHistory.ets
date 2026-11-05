@@ -182,7 +182,7 @@ export function upsertHistory(entries: Array<SessionHistoryEntry>,
  * 记录一旦删除即失去全部引用（文件名仅为内部实现细节，UI 不向用户展示）。
  * 方向不可靠——发送方向既可能是自建文本也可能是 picker 选中的用户原始文件。
  *
- * 该判据天然排除两类不可删文件：picker 原始文件（用户数据）与 Download 落盘文件
+ * 该判据天然排除两类不可删文件：picker 原始文件（用户数据）与接收目录落盘文件
  * （其删除权归文件接收历史页，与本页不重合）。
  *
  * @param path 文件路径（可缺省 / 空串）

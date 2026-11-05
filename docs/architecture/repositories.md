@@ -26,7 +26,8 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
-| `ReceiveTargets.ets` | 接收直写目标登记：Download 目录授权缓存、接收文本目录与目标路径登记表，供取消/失败清理与相册保存读取 |
+| `ReceiveDirectory.ets` | 接收目录唯一来源：默认 `Download/<包名>/`（DOWNLOAD 模式）、<br>自定义目录（FOLDER Picker + 读写持久授权）、启动激活与失效回退 |
+| `ReceiveTargets.ets` | 接收直写目标登记：接收文本目录与目标路径登记表，<br>供取消/失败清理与相册保存读取；接收目录由 `ReceiveDirectory.ets` 统一提供 |
 | `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与会话登记；下载任务经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
@@ -53,7 +54,8 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 >
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收
-> 时预创建目标文件并注册 fd（普通文件落 Download/`<包名>/`，文本消息落 `filesDir/text_recv/`；
+> 时预创建目标文件并注册 fd（普通文件落接收目录，默认 `Download/<包名>/`，
+> 文本消息落 `filesDir/text_recv/`；
 > 落盘前先做存储预留检查，不足直接拒绝）；取消/失败时只删除预创建的未完成文件，
 > 已完成文件保留并补记接收历史；文本消息落沙箱后文件名仅为内部实现细节，UI 不展示）、
 > 自动接收决策纯函数 `computeShouldAutoAccept`（off/paired/on
@@ -192,8 +194,11 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 文本内容在所有链路上都是**文件**，会话与历史上只保留路径与元数据：
 
-- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 按条目是否文本消息分流目标目录——普通文件落 `Download/<包名>/`，
-  文本消息落应用私有接收文本目录（`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供），重名规则一致（`uniquePath`，同名自动加序号、不覆盖）；
+- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 按条目是否文本消息分流目标目录——普通文件落
+  `ReceiveDirectory.ensureReceiveDirectory` 提供的接收目录（默认 `Download/<包名>/`，
+  用户可在设置中自定义），
+  文本消息落应用私有接收文本目录（`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供），
+  重名规则一致（`uniquePath`，同名自动加序号、不覆盖）；
   接收完成处理不读取全文、不删除文本文件，文件长期保留在接收文本目录。
 - **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**先做存储预留检查、再把文本写入接收文本目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
 - **发送**：局域网手输文本（`SendViewModel.stageTextFile`）与互传发送文本（`MtaSendService.writeSharedTextFile`）写入应用**私有持久目录** `filesDir/text_send/`，

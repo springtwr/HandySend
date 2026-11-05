@@ -22,7 +22,7 @@ import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { getMimeForFileName } from './MimeUtils';
 import { getLogger } from './Logger';
-import { ensureUriAccess } from './UriPermission';
+import { ensureUriAccess, ensureWritableUriAccess } from './UriPermission';
 import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:FileLocation', '文件定位');
@@ -248,6 +248,18 @@ function resolveOpenMime(fileType: string, fileName: string): string {
 /**
  * 打开文件所在目录（经系统文件管理器）：不可定位或文件缺失时不执行打开。
  */
+/** 文档类 URI 的父目录 URI：接收目录的持久授权挂在目录上，文件 URI 本身没有单独授权 */
+function containingDocsDirectoryUri(uri: string): string {
+  if (!uri.startsWith('file://docs/')) {
+    return '';
+  }
+  let slash: number = uri.lastIndexOf('/');
+  if (slash <= 'file://docs/'.length) {
+    return '';
+  }
+  return uri.substring(0, slash);
+}
+
 /**
  * 探测重试：媒体库 / 文件框架的授权在进程启动初期可能尚未就绪，
  * 此时按 URI 打开会返回 Operation not permitted，稍后重试即可成功。
@@ -256,7 +268,17 @@ function resolveOpenMime(fileType: string, fileName: string): string {
 async function probeWithAccess(location: FileLocation): Promise<FileProbe> {
   // 先激活持久化授权：Picker 的临时授权只在一定时间内有效（与进程是否重启无关）
   await ensureUriAccess(location.uri);
-  return probeFile(location);
+  let probe: FileProbe = probeFile(location);
+  if (probe !== FileProbe.denied) {
+    return probe;
+  }
+  // 接收目录中的文件：持久化授权记录在目录 URI 上，激活父目录后重试
+  let dirUri: string = containingDocsDirectoryUri(location.uri);
+  if (dirUri.length > 0) {
+    await ensureWritableUriAccess(dirUri);
+    probe = probeFile(location);
+  }
+  return probe;
 }
 
 export async function openContainingFolder(context: common.UIAbilityContext,

@@ -9,6 +9,7 @@ import {
   KEY_RECEIVE_PIN,
   KEY_SAVE_TO_GALLERY,
   KEY_DESTINATION,
+  KEY_RECEIVE_DIRECTORY_URI,
   KEY_THEME,
   KEY_LOCALE,
   KEY_HIDE_TAB_BAR_ON_SCROLL,
@@ -45,6 +46,7 @@ import {
   DEFAULT_RECEIVE_PIN,
   DEFAULT_SAVE_TO_GALLERY,
   DEFAULT_DESTINATION,
+  DEFAULT_RECEIVE_DIRECTORY_URI,
   DEFAULT_THEME,
   DEFAULT_LOCALE,
   DEFAULT_HIDE_TAB_BAR_ON_SCROLL,
@@ -86,6 +88,7 @@ let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
 let receivePin: string = DEFAULT_RECEIVE_PIN;
 let saveToGallery: boolean = DEFAULT_SAVE_TO_GALLERY;
 let destination: string = DEFAULT_DESTINATION;
+let receiveDirectoryUri: string = DEFAULT_RECEIVE_DIRECTORY_URI;
 let theme: string = DEFAULT_THEME;
 let locale: string = DEFAULT_LOCALE;
 let hideTabBarOnScroll: boolean = DEFAULT_HIDE_TAB_BAR_ON_SCROLL;
@@ -138,6 +141,7 @@ export function loadFromPreferences(): void {
   saveToGallery = preferencesRepo.getBoolean(KEY_SAVE_TO_GALLERY, DEFAULT_SAVE_TO_GALLERY);
   backgroundReceiveEnabled = preferencesRepo.getBoolean(KEY_BACKGROUND_RECEIVE, DEFAULT_BACKGROUND_RECEIVE);
   destination = preferencesRepo.getString(KEY_DESTINATION, DEFAULT_DESTINATION);
+  receiveDirectoryUri = preferencesRepo.getString(KEY_RECEIVE_DIRECTORY_URI, DEFAULT_RECEIVE_DIRECTORY_URI);
   theme = preferencesRepo.getString(KEY_THEME, DEFAULT_THEME);
   locale = preferencesRepo.getString(KEY_LOCALE, DEFAULT_LOCALE);
   hideTabBarOnScroll = preferencesRepo.getBoolean(KEY_HIDE_TAB_BAR_ON_SCROLL, DEFAULT_HIDE_TAB_BAR_ON_SCROLL);
@@ -224,6 +228,19 @@ export function setSaveToGallery(enabled: boolean): void {
 
 export function isSaveToGallery(): boolean {
   return saveToGallery;
+}
+
+/** 接收文件保存目录 URI：空串表示默认 Download/<包名>/。 */
+export function getReceiveDirectoryUri(): string {
+  return receiveDirectoryUri;
+}
+
+export function setReceiveDirectoryUri(uri: string): void {
+  receiveDirectoryUri = uri;
+  preferencesRepo.setString(KEY_RECEIVE_DIRECTORY_URI, uri);
+  // 目录选择后立即落盘：避免用户选完马上退出导致下次启动回到默认目录
+  preferencesRepo.flushNow();
+  notifyChange();
 }
 
 export function setBackgroundReceiveEnabled(enabled: boolean): void {

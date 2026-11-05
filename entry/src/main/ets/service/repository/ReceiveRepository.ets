@@ -23,9 +23,9 @@ import {
   nativeDiscardRecvFileFds
 } from '../NativeBridge';
 import {
-  ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets,
-  ensureRecvDownloadDir
+  ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets
 } from './ReceiveTargets';
+import { consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory } from './ReceiveDirectory';
 import { getFavorites } from './FavoritesService';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { getAppContext, notifyChange } from './AppCore';
@@ -771,7 +771,7 @@ function finishReceiveSession(sessionId: string): void {
       recordReceiveHistory(sessionId, sessionEntries, senderAlias, pathMap);
     }
   } else {
-    // 非文本分支：文件已在 Download/<包名>/ 就位（fd-direct），
+    // 非文本分支：文件已在接收目录就位（fd-direct），
     // 无需导出；历史 path 直接用登记的真实路径（含去重后文件名）
     let pathMap: Record<string, string> = {};
     if (sessionEntries !== undefined && sessionEntries.length > 0) {
@@ -898,7 +898,7 @@ function collectSessionFileIds(sessionId: string): Array<string> {
 // ── 请求响应 ──
 
 // 落盘前存储预留检查：按请求声明的文件大小汇总判定落盘卷可用空间
-// （文本条目落沙箱、普通文件落 Download，按同卷合并判定）。
+// （文本条目落沙箱、普通文件落接收目录，按同卷合并判定）。
 // 大小均未知（轮询路径未登记）或目录/查询不可得时跳过检查、记录后放行；
 // 不足时返回可直接展示的原因，调用方拒绝会话。
 async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string>): Promise<string> {
@@ -915,7 +915,7 @@ async function checkStorageBeforeAccept(sessionId: string, fileIds: Array<string
     logger.debug('跳过存储检查：会话 ' + sessionId + ' 无声明大小');
     return '';
   }
-  let dir: string = await ensureRecvDownloadDir();
+  let dir: string = await ensureReceiveDirectory();
   if (dir.length === 0) {
     // 目录不可得时跳过检查：目标准备阶段会整体拒绝，不在此处误报存储不足
     return '';
@@ -1008,7 +1008,6 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
   try {
     nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');
-    return '';
   } catch (e) {
     // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
     logger.error('接受响应失败：' + e);
@@ -1016,6 +1015,17 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     removeRecvTargetFiles(sessionId);
     return acceptPrepareFailedMessage();
   }
+  // 接收已放行：再校验一次目录，纯文本接收不落普通目录，但也要让用户感知保存目录失效。
+  // 此步骤失败不影响已放行的接收，单独兜底。
+  try {
+    let receiveDir: string = await ensureReceiveDirectory();
+    if (receiveDir.length > 0 && consumeReceiveDirectoryFallbackNotice()) {
+      DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
+    }
+  } catch (e) {
+    logger.warn('接收放行后校验保存目录失败：' + String(e));
+  }
+  return '';
 }
 
 export async function respondToRequest(sessionId: string, accept: boolean,
@@ -1201,7 +1211,7 @@ function recordPartialReceiveHistory(sessionId: string,
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
 // fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，
-// 含 Download/<包名>/ 普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
+// 含接收目录普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
 // 已完成文件是会话的部分交付物：保留并补记接收历史，只有未完成文件按半成品删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   let plan: InterruptedReceiveCleanupPlan =

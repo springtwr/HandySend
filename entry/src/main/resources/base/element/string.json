@@ -261,6 +261,38 @@
       "value": "Require the sender to enter a PIN when sending files to you. Leave empty to disable"
     },
     {
+      "name": "receive_directory_label",
+      "value": "File save location"
+    },
+    {
+      "name": "receive_directory_desc",
+      "value": "Received files are saved in \"Download/HandySend\" by default"
+    },
+    {
+      "name": "receive_directory_huawei_share",
+      "value": "Huawei Share"
+    },
+    {
+      "name": "receive_directory_compatible_data",
+      "value": "Compatible data"
+    },
+    {
+      "name": "receive_directory_unsupported",
+      "value": "Custom save locations are only supported on HarmonyOS 7.0 and later"
+    },
+    {
+      "name": "receive_directory_reset",
+      "value": "Reset to default"
+    },
+    {
+      "name": "receive_directory_pick_failed",
+      "value": "Failed to set save location"
+    },
+    {
+      "name": "receive_directory_fallback_toast",
+      "value": "The previous save location is unavailable. Files are saved to:\nDownload/HandySend"
+    },
+    {
       "name": "save_to_gallery_label",
       "value": "Save to gallery"
     },

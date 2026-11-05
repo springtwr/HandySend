@@ -261,6 +261,38 @@
       "value": "向你发送文件时要求对方输入 PIN 码，留空则禁用"
     },
     {
+      "name": "receive_directory_label",
+      "value": "文件保存目录"
+    },
+    {
+      "name": "receive_directory_desc",
+      "value": "接收到的文件默认保存在「Download/便捷快传」"
+    },
+    {
+      "name": "receive_directory_huawei_share",
+      "value": "华为分享"
+    },
+    {
+      "name": "receive_directory_compatible_data",
+      "value": "兼容应用数据"
+    },
+    {
+      "name": "receive_directory_unsupported",
+      "value": "仅鸿蒙7.0及以上设备支持自定义保存目录"
+    },
+    {
+      "name": "receive_directory_reset",
+      "value": "恢复默认"
+    },
+    {
+      "name": "receive_directory_pick_failed",
+      "value": "设置保存目录失败"
+    },
+    {
+      "name": "receive_directory_fallback_toast",
+      "value": "原保存目录不可用，已改为默认目录：\nDownload/便捷快传"
+    },
+    {
       "name": "save_to_gallery_label",
       "value": "保存到相册"
     },

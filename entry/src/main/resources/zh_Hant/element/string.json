@@ -261,6 +261,38 @@
       "value": "向你傳送檔案時要求對方輸入 PIN 碼，留空則停用"
     },
     {
+      "name": "receive_directory_label",
+      "value": "檔案儲存目錄"
+    },
+    {
+      "name": "receive_directory_desc",
+      "value": "接收到的檔案預設儲存在「Download/便捷快傳」"
+    },
+    {
+      "name": "receive_directory_huawei_share",
+      "value": "華為分享"
+    },
+    {
+      "name": "receive_directory_compatible_data",
+      "value": "相容應用程式資料"
+    },
+    {
+      "name": "receive_directory_unsupported",
+      "value": "僅鴻蒙7.0及以上裝置支援自訂儲存目錄"
+    },
+    {
+      "name": "receive_directory_reset",
+      "value": "還原預設"
+    },
+    {
+      "name": "receive_directory_pick_failed",
+      "value": "設定儲存目錄失敗"
+    },
+    {
+      "name": "receive_directory_fallback_toast",
+      "value": "原儲存目錄無法使用，已改為預設目錄：\nDownload/便捷快傳"
+    },
+    {
       "name": "save_to_gallery_label",
       "value": "儲存到相簿"
     },

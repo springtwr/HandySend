@@ -153,7 +153,7 @@ Ability 重建不会重置 DEBUG 状态。
 |----|----|----------|
 | GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel、PermissionService 等 |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets, SendViewModel, SendContent, WebShareRepository 等（完整清单见注 1） |
+| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets,<br>ReceiveDirectory, SendViewModel, SendContent, WebShareRepository 等（完整清单见注 1） |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, service/repository/FavoritesService, SettingsViewModel |
@@ -162,8 +162,8 @@ Ability 重建不会重置 DEBUG 状态。
 > GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission。
 >
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository, ReceiveRepository,
-> ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ShareLinkViewModel,
-> RustWeb（网页传输 Rust 日志归并）, ChecksumRepository, GallerySaveService,
+> ReceiveTargets, ReceiveDirectory, SendViewModel, SendContent, WebShareRepository,
+> ShareLinkViewModel, RustWeb（网页传输 Rust 日志归并）, ChecksumRepository, GallerySaveService,
 > VideoThumbnailUtil, ImageThumbnailUtil, FileEntryThumb,
 > service/transfer/*（会话引擎与协议适配器）, TransferCenterViewModel,
 > SessionDetailViewModel, SessionDetailPage, BackgroundTransferService, BackgroundAttentionNotifier。
@@ -430,9 +430,11 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   应用自建文件——收发文本落盘副本（`filesDir/text_send/` 与 `filesDir/text_recv/`），其唯一用途是详情页预览文本内容，
   记录一旦删除即失去全部引用，故无条件清理、无需用户决策。清理判据以
   **路径前缀**（`SessionHistory.isSelfBuiltFilePath`，覆盖发送与接收文本目录）而非传输方向为准——方向不可靠：
-  接收方向的普通文件落 `Download/`，而发送方向既可能是自建文本也可能是 picker 选中的用户原始文件。
+  接收方向的普通文件落用户设置的接收目录（默认 `Download/<包名>/`），而发送方向既可能是自建文本，
+  也可能是 picker 选中的用户原始文件。
   该判据天然排除两类不可删文件：**picker 原始文件**（用户数据，删除即数据丢失）与
-  **Download 落盘文件**（其删除权归文件接收历史页，见 [ReceiveHistoryPage 行为细节](#receivehistorypage-行为细节)——
+  **接收目录落盘文件**（其删除权归文件接收历史页，
+  见 [ReceiveHistoryPage 行为细节](#receivehistorypage-行为细节)——
   同一批接收文件在任务页是会话级记录、在接收历史页是文件级记录，两页都删会互相留失效引用）。
   弹窗文案不提及该清理：该文件对用户不可感知，属实现细节而非需用户知晓或决策的事项
 - 上述文件清理由 `SessionHistoryStore.removeSelfBuiltFilesOf` 统一承担（`clearSessionHistory` 与
@@ -498,7 +500,8 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   [architecture/session-engine.md](architecture/session-engine.md) §9）；调整这些公共实现即两页同步生效
 - 条目操作菜单：公共项为「预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册」（可用性同详情页条目，应用私有文本仅「打开所在位置」置灰；
   保存到相册仅图片 / 视频且非图库来源时展示，已保存过的条目置灰为「已保存到相册」），其后追加本页专有项「复制」（读取文件本身全文，超读取上限截断并明确提示截断）与
-  「删除记录」（保留既有确认流程；单条文本消息记录的确认改用不带文件名的通用文案）；「打开所在位置」的可用性**只依据路径非空**（Download 落盘文件不再因其来源被禁用），
+  「删除记录」（保留既有确认流程；单条文本消息记录的确认改用不带文件名的通用文案）；
+  「打开所在位置」的可用性**只依据路径非空**（接收目录落盘文件不再因其来源被禁用），
   点击时先确认文件未缺失，文件缺失则提示且不打开目录
 - 条目级可得性口径（`viewmodel/ReceiveHistoryItemViewModel`）：`canViewFullText` = 文本类且路径非空且未超预览阈值；`canCopyText` = 文本类且路径非空；
   `isPreviewOverLimit` = 文本类且路径非空且超预览阈值；`canOpenContainingFolder` = 路径非空；`isSandboxText` = 路径位于收发文本目录内；
@@ -687,7 +690,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 | 分区组件 | 内容 | 所属分组 |
 |----------|------|----------|
-| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 允许后台接收（通知权限未开启时置灰） + 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
+| `GeneralSettingsSection` | 设备名称（随机/系统名称）<br>+ 文件保存目录（默认 `Download/<包名>/`，默认值显示应用名；API 26+ 可选自定义目录，低版本置灰）<br>+ 允许后台接收（通知权限未开启时置灰）<br>+ 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
 | `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器与设备发现；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）<br>+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN<br>+ 高级设置折叠（含安全信息（证书）半屏弹窗）+ 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
 | `ReceiveSettingsSection` | 自动确认请求（半屏弹窗）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）<br>+ 允许接收开关（总开关关闭时置灰不可用）+ 显示互传提醒开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） | 互传联盟（MTA） |

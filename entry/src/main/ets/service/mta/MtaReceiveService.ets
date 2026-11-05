@@ -6,8 +6,8 @@
  * 所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
  */
 
-import { common, bundleManager } from '@kit.AbilityKit';
-import { fileIo as fs, fileUri, statfs } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
+import { fileIo as fs, statfs } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
   DeviceInfoJson,
@@ -60,6 +60,10 @@ import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/M
 import { isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntries } from '../repository/ReceiveHistoryService';
 import { ensureRecvTextDir, uniquePath } from '../repository/ReceiveTargets';
+import {
+  consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory, getReceiveDirectoryPath
+} from '../repository/ReceiveDirectory';
+import { DialogService } from '../DialogService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
 
@@ -108,7 +112,7 @@ export class MtaReceiveService {
   private rustLogTimerId: number = -1;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
   private startingUp: boolean = false;
-  /** 接收文件落盘目录（Download/<bundleName>/） */
+  /** 接收文件落盘目录（默认 Download/<bundleName>/，可由用户自定义） */
   private downloadDir: string = '';
   /** 建链计时起点（收到完整 P2pInfo 时刻） */
   private linkStartMs: number = 0;
@@ -140,30 +144,17 @@ export class MtaReceiveService {
   /** 注入应用上下文（启动服务前调用） */
   init(context: common.Context): void {
     this.context = context;
-    this.downloadDir = this.resolveDownloadDir(context);
+    // 接收目录由 ReceiveDirectory 统一解析；自定义目录的授权需异步激活，
+    // 因此首次接收前可能尚无路径，实际目录在 downloadAndSave 开始时再确保。
+    this.downloadDir = getReceiveDirectoryPath();
     this.bindBleHandlers();
     this.bindP2pHandlers();
     this.bindTransferHandlers();
     this.ble.registerEvents(this.bleHandlers);
     this.p2p.registerEvents(this.p2pHandlers);
     this.appendLog('服务', 'MTA 接收页就绪', LogLevels.DEBUG);
-    this.appendLog('服务', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
-  }
-
-  /**
-   * 解析接收文件落盘目录：DOWNLOAD 模式 Download/<bundleName>/。
-   * 通过 DOWNLOAD 模式 URI 取沙箱路径，失败时回退应用 filesDir。
-   */
-  private resolveDownloadDir(context: common.Context): string {
-    try {
-      let bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
-      let info = bundleManager.getBundleInfoForSelfSync(bundleFlags);
-      let uri = `file://docs/storage/Users/currentUser/Download/${info.name}`;
-      return new fileUri.FileUri(uri).path;
-    } catch (e) {
-      logger.warn('解析 DOWNLOAD 目录失败，回退应用目录：' + String(e));
-      return `${context.filesDir}/mta_received`;
-    }
+    this.appendLog('服务', `保存目录=${this.downloadDir.length > 0 ? this.downloadDir : '首次接收时解析'}`,
+      LogLevels.DEBUG);
   }
 
   /** 当前状态快照 */
@@ -1198,6 +1189,19 @@ export class MtaReceiveService {
   }
 
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
+    // 统一从 ReceiveDirectory 取目录：用户在设置页切换目录后，本次接收即使用最新目录
+    this.downloadDir = await ensureReceiveDirectory();
+    if (this.downloadDir.length === 0) {
+      this.appendLog('下载', '接收目录不可用', LogLevels.ERROR);
+      this.setError('接收目录不可用');
+      this.failAndReset('接收目录不可用');
+      return;
+    }
+    // 自定义目录失效已回退默认目录：接收继续，但需提示用户保存位置已变化
+    if (consumeReceiveDirectoryFallbackNotice()) {
+      DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
+    }
+    this.appendLog('下载', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
     this.setStage(ReceiverStage.DOWNLOADING);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
     let storageError = await this.checkStorageReserve(request);

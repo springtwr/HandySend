@@ -255,7 +255,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 - 每客户端独立上传槽（不占用 v2 全局单槽）；默认需确认，接受即全量；面板可开启“上传免确认”，
   与暂存文件列表解耦，应用重启或手动停止网页服务后重置
-- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，
+- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进用户设置的接收目录，默认
+  `Download/<包名>/`，重名自动加后缀；
   文本条目进接收文本目录（首次使用时创建）；仅单条文本消息记为文本消息）；
   服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
 - 未完成字节写在目标目录下的应用保留子目录 `.handysend-upload-part/`（与最终文件同父目录，完成后原子改名）；
@@ -283,11 +284,14 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 - **发送**：`prepareSendFiles` 不拷贝文件，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前优先 `dup` 暂存句柄，句柄失效时按路径打开，并携带 `fd`。
   fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
-- **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经 `ensureReceiveDir` 获取 Download/`<包名>/`（`DocumentViewPicker.save`
-  DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
+- **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
+  `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
+  DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→
+  `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
   `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由
   `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 只删除预创建的未完成目标文件，已完成文件保留并补记接收历史
-- **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件 `Download/<包名>/`、文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
+- **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件落接收目录、
+  文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
 ### 网页资产（自研单页）
