@@ -1,13 +1,14 @@
 /**
  * SessionFileList.ets — 详情页文件清单
  *
- * 逐文件条目：左侧类型图标 / 图片与视频缩略区 + 文件名 + 大小 + 独立进度条 + 百分比 + 状态徽标；
- * 校验和可得时以公共单行值行展示（单行中间省略、点击弹窗、长按复制）。
+ * 逐文件条目：首行由类型图标 / 图片与视频缩略区、文件名（最多两行）、大小与状态列组成，
+ * 首行内容在 48vp 最小行高内垂直居中（与发送页暂存列表一致，单行 / 两行文件名首行等高）；
+ * 其下为通栏的独立进度条与百分比。
  * 条目直接排布于外层文件卡片容器内（不套独立色块），相邻条目之间以分隔线区隔。
  * 直接读取可观测视图模型的实时清单（进度 / 阶段随 `@Trace` 字段刷新）。
  * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，仅列文件与状态。
- * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册），
- * 不再按文件类型隐式绑定点击行为。
+ * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册 / 校验和），
+ * 校验和不再固定展示，仅在文件有校验和时作为菜单项提供完整值弹窗；不再按文件类型隐式绑定点击行为。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
@@ -20,12 +21,17 @@ import { isSaveToGalleryCandidate } from '../../utils/GallerySavePolicy';
 import { isTextPreviewable, needsOverLimitHint } from '../../utils/FilePreviewPolicy';
 import { FileEntryMenuItems, FileEntryMenuOptions } from '../../components/FileEntryActions';
 import { FileEntryThumb } from '../../components/FileEntryThumb';
-import { SingleLineValueRow } from '../../components/SingleLineValueRow';
 import { sessionFileStageBgColor, sessionFileStageColor, sessionFileStageLabel } from './SessionStatusBadge';
 
 /** 首屏之后预加载缩略图的行数与错峰间隔：滚动时缩略图已就绪，不再逐张冒出 */
 const THUMB_PRELOAD_ROWS: number = 12;
 const THUMB_PRELOAD_STEP_MS: number = 90;
+
+/**
+ * 条目首行最小行高：与发送页暂存列表的 48vp 行高一致。
+ * 缩略图、文件名（最多两行）、大小与状态列在该高度内垂直居中，单行与两行文件名首行保持等高。
+ */
+const ENTRY_FIRST_ROW_MIN_HEIGHT: number = 48;
 
 @ComponentV2
 export struct SessionFileList {
@@ -42,6 +48,9 @@ export struct SessionFileList {
   }
   // 保存到相册（仅接收方向的图片 / 视频条目提供）
   @Event onSaveToGallery: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
+  // 查看校验和（由详情页统一弹出完整值弹窗，与页内其它弹窗同一层管理）
+  @Event onShowChecksum: (file: SessionFile) => void = (_file: SessionFile) => {
   }
 
   private percentOf(file: SessionFile): number {
@@ -93,6 +102,11 @@ export struct SessionFileList {
       },
       onSaveToGallery: (): void => {
         this.onSaveToGallery(file);
+      },
+      // 校验和只在文件确有值时提供菜单项，不再占据条目内的固定展示位
+      showChecksum: file.checksum.length > 0,
+      onShowChecksum: (): void => {
+        this.onShowChecksum(file);
       }
     };
   }
@@ -130,6 +144,7 @@ export struct SessionFileList {
                 .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.sm })
             }
 
+            // 首行：缩略图 + 文件名 + 大小 / 状态列，内容整体在固定行高内垂直居中
             Row({ space: DesignTokens.space.sm }) {
               // 左侧类型图标 / 图片与视频缩略区（按需懒加载，失败回退类型图标）
               FileEntryThumb({
@@ -140,67 +155,58 @@ export struct SessionFileList {
                 fileName: ri.item.fileName
               })
 
-              Column() {
-                Row() {
-                  Text(ri.item.fileName)
-                    .fontSize(DesignTokens.font.bodyM)
-                    .fontColor($r('app.color.text_primary'))
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .layoutWeight(1)
-                  Text(formatSizeDetailed(ri.item.totalBytes))
-                    .fontSize(DesignTokens.font.bodyS)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .margin({ left: DesignTokens.space.sm })
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Center)
+              // 详情页以完整辨识文件为目标：文件名最多两行，超出省略；
+              // 无空格长串按字符断行，避免整段被挤出可视区
+              Text(ri.item.fileName)
+                .fontSize(DesignTokens.font.bodyM)
+                .fontColor($r('app.color.text_primary'))
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .wordBreak(WordBreak.BREAK_ALL)
+                .layoutWeight(1)
 
-                Row({ space: DesignTokens.space.sm }) {
-                  if (this.viewModel.hasByteProgress()) {
-                    Progress({ value: this.percentOf(ri.item), total: 100, type: ProgressType.Linear })
-                      .width('100%')
-                      .height(DesignTokens.size.progressBarHeight)
-                      .color($r('app.color.accent_blue'))
-                      .backgroundColor($r('app.color.border_light'))
-                      .layoutWeight(1)
-                    Text(Math.round(this.percentOf(ri.item)) + '%')
-                      .fontSize(DesignTokens.font.captionM)
-                      .fontColor($r('app.color.text_secondary'))
-                      .width(DesignTokens.space.xl + 8)
-                      .textAlign(TextAlign.End)
-                  } else {
-                    Blank()
-                  }
-
-                  Text(sessionFileStageLabel(ri.item.stage))
-                    .fontSize(DesignTokens.font.captionM)
-                    .fontColor(sessionFileStageColor(ri.item.stage))
-                    .backgroundColor(sessionFileStageBgColor(ri.item.stage))
-                    .padding({
-                      left: DesignTokens.space.tiny,
-                      right: DesignTokens.space.tiny,
-                      top: DesignTokens.space.mini,
-                      bottom: DesignTokens.space.mini
-                    })
-                    .borderRadius(DesignTokens.radius.sm)
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Center)
-                .margin({ top: DesignTokens.space.tiny })
-
-                // 校验和：协议 / 链路提供时以公共单行值行展示（单行中间省略、点击弹窗、长按复制）；不可得不渲染该行
-                SingleLineValueRow({
-                  label: $r('app.string.session_detail_checksum_label'),
-                  value: ri.item.checksum,
-                  valueAlignEnd: false
-                })
+              // 大小与状态列：同列右对齐，整体垂直居中（不要求与文件名首行对齐）
+              Column({ space: DesignTokens.space.tiny }) {
+                Text(formatSizeDetailed(ri.item.totalBytes))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_tertiary'))
+                Text(sessionFileStageLabel(ri.item.stage))
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor(sessionFileStageColor(ri.item.stage))
+                  .backgroundColor(sessionFileStageBgColor(ri.item.stage))
+                  .padding({
+                    left: DesignTokens.space.tiny,
+                    right: DesignTokens.space.tiny,
+                    top: DesignTokens.space.mini,
+                    bottom: DesignTokens.space.mini
+                  })
+                  .borderRadius(DesignTokens.radius.sm)
               }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
+              .alignItems(HorizontalAlign.End)
             }
             .width('100%')
-            .alignItems(VerticalAlign.Top)
+            .constraintSize({ minHeight: ENTRY_FIRST_ROW_MIN_HEIGHT })
+            .alignItems(VerticalAlign.Center)
+
+            // 传输进度：通栏展示，左右边缘与卡片内容区一致；无字节进度时不渲染
+            if (this.viewModel.hasByteProgress()) {
+              Row({ space: DesignTokens.space.sm }) {
+                Progress({ value: this.percentOf(ri.item), total: 100, type: ProgressType.Linear })
+                  .width('100%')
+                  .height(DesignTokens.size.progressBarHeight)
+                  .color($r('app.color.accent_blue'))
+                  .backgroundColor($r('app.color.border_light'))
+                  .layoutWeight(1)
+                Text(Math.round(this.percentOf(ri.item)) + '%')
+                  .fontSize(DesignTokens.font.captionM)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width(DesignTokens.space.xl + 8)
+                  .textAlign(TextAlign.End)
+              }
+              .width('100%')
+              .margin({ top: DesignTokens.space.xxs })
+              .alignItems(VerticalAlign.Center)
+            }
           }
           .width('100%')
           // 条目点击弹出统一操作菜单（不再按文件类型隐式绑定点击行为）

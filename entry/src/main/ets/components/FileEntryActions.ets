@@ -7,6 +7,7 @@
  * 「用其他应用打开」走应用文件分享机制，不受影响。
  * 接收方向的图片/视频另有可选「保存到相册」项：已保存过时保留该项但置灰为「已保存到相册」，
  * 未被置灰时点击进入保存弹窗（SaveButton 授权后写入相册）。
+ * 会话详情文件清单另有可选「校验和」项：仅在文件确有校验和时展示，点击弹出完整值弹窗。
  *
  * 使用约定：调用方在组件内以 `Menu() { FileEntryMenuItems(options) ... }` 包一层后绑定到行上
  * （`bindMenu`），既可在末尾追加本页专有项（接收历史页的复制文本 / 删除记录），
@@ -36,6 +37,9 @@ export interface FileEntryMenuOptions {
   /** 「保存到相册」是否可用；为 false 时展示为「已保存到相册」并置灰 */
   canSaveToGallery?: boolean
   onSaveToGallery?: () => void
+  /** 是否展示「校验和」项（可选；会话详情文件清单仅在文件有校验和时展示） */
+  showChecksum?: boolean
+  onShowChecksum?: () => void
 }
 
 /** 公共菜单项集合（须由调用方包在 `Menu()` 内使用）。 */
@@ -89,6 +93,17 @@ export function FileEntryMenuItems(options: FileEntryMenuOptions) {
       .onClick(() => {
         if (options.onCopyText !== undefined) {
           options.onCopyText();
+        }
+      })
+  }
+  if (options.showChecksum === true) {
+    MenuItem({
+      content: $r('app.string.session_detail_checksum_label'),
+      startIcon: $r('sys.symbol.checkmark_shield_fill')
+    })
+      .onClick(() => {
+        if (options.onShowChecksum !== undefined) {
+          options.onShowChecksum();
         }
       })
   }
