@@ -157,15 +157,16 @@ Ability 重建不会重置 DEBUG 状态。
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, service/repository/FavoritesService, SettingsViewModel |
-| MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
+| MTA | 0x0006 | service/mta/*、MtaRepository |
 
 > GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission。
 >
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository, ReceiveRepository,
-> ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ChecksumRepository,
-> GallerySaveService, VideoThumbnailUtil, ImageThumbnailUtil, FileEntryThumb,
+> ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ShareLinkViewModel,
+> RustWeb（网页传输 Rust 日志归并）, ChecksumRepository, GallerySaveService,
+> VideoThumbnailUtil, ImageThumbnailUtil, FileEntryThumb,
 > service/transfer/*（会话引擎与协议适配器）, TransferCenterViewModel,
-> SessionDetailViewModel, BackgroundTransferService, BackgroundAttentionNotifier。
+> SessionDetailViewModel, SessionDetailPage, BackgroundTransferService, BackgroundAttentionNotifier。
 
 **消息格式**：`[模块] 内容`；带上下文为 `[模块] [sid=.. dir=..] 内容`；Rust 来源为 `[模块] Rust: 内容`。
 模块标签集中前置，保证 `grep '\[模块\]'` 无歧义过滤；正文数据方括号（如 `[wlan0]`）保留不影响过滤。日志消息不得含换行符。
