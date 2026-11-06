@@ -89,12 +89,13 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## 构建与验证
 
 - 非必要不直接调用 hvigorw/hdc/ohpm 等底层工具（本条仅约束智能体，人类按 `docs/BUILD.md` 执行；仪器测试除外，见下条）
-- ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/testing/instrument-test-guide.md`）：
-  Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
+- ArkTS 侧单元测试统一为设备端测试（Instrument Test，流程见 `docs/testing/instrument-test-guide.md`）：
+  Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry -p coverage=false`；
+  控制台不打印用例输出，结果见 `entry/.test/default/intermediates/ohosTest/coverage_data/`；
   无可用设备时以 `devecocli check arkts` 静态检查 + 构建验证，Rust 侧用 `cargo test`
-- `onDeviceTest` 的覆盖率报错（`getjsCoverageData failed`、`getInitCoverageData failed`）是 hvigor
+- `hvigorw onDeviceTest` 的覆盖率报错（`getjsCoverageData failed`、`getInitCoverageData failed`）是 hvigor
   `@ohos/coverage` 插件缺陷，与 Linux/DevEco Studio 平台支持无关，不要从系统环境方向排查；
-  需要可信用例结果时用 hdc 直连并加 `-s coverage false`；覆盖率报告可能缺失或为空。已知原因：
+  加 `-p coverage=false` 关闭覆盖率采集与报告生成即可跑完全量用例；覆盖率报告可能缺失或为空。已知原因：
   - `spawnSync` 未放宽 Node 默认 1 MiB `maxBuffer`，`aa test` 的覆盖率 JSON 超限时 stdout 被截断
   - `init_coverage.json` 跨增量构建只追加不重置（实测累积到 162 MB）；
     主模块与 ohosTest 并发编译时，插件对整文件加/去外层花括号存在竞争，可能写入错位 `}`

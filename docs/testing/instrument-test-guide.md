@@ -4,43 +4,100 @@
 
 ## 前置条件
 
-- 鸿蒙真机已连接并开启 USB 调试
-- 应用已安装到设备
+- 鸿蒙真机/模拟器已连接并开启 USB 调试
 - @ohos/hypium 依赖已配置（见根目录 `oh-package.json5` devDependencies）
 
 ## 运行命令
 
-Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试。需先安装应用到设备。全量运行耗时见下文「耗时」一节。
+Instrument Test 运行于真机/模拟器，可调用系统 API 和原生 .so 函数，统一承载 ArkTS 侧全部单元测试。全量运行耗时见下文「耗时」一节。
+
+### 方式一：onDeviceTest
+
+一条命令完成构建、安装与运行，适合日常回归。
 
 ```bash
-# 全量 Instrument Test
-hvigorw onDeviceTest -p module=entry
+# 全量
+hvigorw onDeviceTest -p module=entry -p coverage=false
 
 # 指定测试套件
-hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest
+hvigorw onDeviceTest -p module=entry -p coverage=false -p scope=ServerNativeTest
 
-# 指定单个用例
-hvigorw onDeviceTest -p module=entry -p scope=ServerNativeTest#createServer_returns_valid_handle
+# 指定单个用例（套件名#用例名）
+hvigorw onDeviceTest -p module=entry -p coverage=false \
+  -p scope=ServerNativeTest_Running#createServer_server_running_with_valid_fingerprint
 ```
 
-> 同时连接多台设备时 `onDeviceTest` 会在设备选择阶段失败（`ExecuteCommand need connect-key?`）：其覆盖率插件调用 hdc 时未指定设备序列号。此时断开多余设备，或改用下节的 hdc 直连方式。
+`-p coverage=false` 关闭覆盖率采集与报告生成。开启覆盖率时，插件在 `spawnSync` 的输出上限内会被
+`OHOS_REPORT_COVERAGE_DATA` 截断，进而报 `getjsCoverageData failed`。
 
-### hdc 直连
+该命令不把测试输出打印到控制台，而是追加写入：
 
-无需 DevEco Studio 设备管理，也可绕开多设备选择问题。设备序列号由 `hdc list targets` 查询。
+- `entry/.test/default/intermediates/ohosTest/coverage_data/coverage.log`：逐用例状态与汇总
+- `entry/.test/default/intermediates/ohosTest/coverage_data/test_result.txt`：用例结果与汇总
 
 ```bash
-# 1. 构建并签名测试包（onDeviceTest 的构建阶段即产出，其后的部署失败可忽略）
-hvigorw onDeviceTest -p module=entry
-
-# 2. 安装主包与测试包
-hdc -t 127.0.0.1:5555 install -r entry/build/default/outputs/default/entry-default-signed.hap
-hdc -t 127.0.0.1:5555 install -r entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap
-
-# 3. 运行（-s coverage false 关闭覆盖率采集，避免额外的采集与回传开销）
-hdc -t 127.0.0.1:5555 shell aa test -b com.springtwr.handysend -m entry_test \
-  -s unittest /ets/testrunner/OpenHarmonyTestRunner -s timeout 15000 -s coverage false
+# 查看最近一次汇总
+grep "OHOS_REPORT_RESULT" \
+  entry/.test/default/intermediates/ohosTest/coverage_data/coverage.log | tail -1
 ```
+
+注意：
+
+- 日志为追加写入，多次运行后需取最后一条汇总，或先清空日志
+- 运行前会先卸载应用再安装，应用数据会被清空
+- 多台设备同时连接时该命令会失败（内部 hdc 调用未指定设备），此时断开多余设备或改用方式二
+
+### 方式二：hdc 直连
+
+构建、安装、运行分开执行，可实时查看用例输出，也可用 `-t` 指定设备。
+
+#### 1. 构建测试包
+
+```bash
+hvigorw --mode module -p module=entry@ohosTest -p product=default -p buildMode=debug assembleHap
+```
+
+产物：
+
+- 主包：`entry/build/default/outputs/default/entry-default-signed.hap`
+- 测试包：`entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap`
+
+主包未改动时可复用已有产物，只需重新构建测试包。
+
+#### 2. 安装到设备
+
+设备序列号由 `hdc list targets` 查询；只连接一台设备时可省略 `-t`。
+
+```bash
+hdc -t <序列号> install -r entry/build/default/outputs/default/entry-default-signed.hap
+hdc -t <序列号> install -r entry/build/default/outputs/ohosTest/entry-ohosTest-signed.hap
+```
+
+#### 3. 运行测试
+
+```bash
+# 全量
+hdc -t <序列号> shell aa test -b com.springtwr.handysend -m entry_test \
+  -s unittest /ets/testrunner/OpenHarmonyTestRunner -s timeout 15000 -s coverage false
+
+# 指定测试套件
+hdc -t <序列号> shell aa test -b com.springtwr.handysend -m entry_test \
+  -s unittest /ets/testrunner/OpenHarmonyTestRunner -s class ServerNativeTest \
+  -s timeout 15000 -s coverage false
+
+# 指定单个用例（套件名#用例名）
+hdc -t <序列号> shell aa test -b com.springtwr.handysend -m entry_test \
+  -s unittest /ets/testrunner/OpenHarmonyTestRunner \
+  -s class ServerNativeTest_Running#createServer_server_running_with_valid_fingerprint \
+  -s timeout 15000 -s coverage false
+```
+
+说明：
+
+- `-s coverage false` 关闭覆盖率采集，避免额外的采集与回传开销
+- `-s class` 对应 `describe` 的套件名，`#` 后为 `it` 的用例名；精确匹配，同一文件内的其他 `describe` 不会一并执行
+- `aa test` 不支持 release 签名应用（错误码 10106002），本项目默认使用 debug 签名
+- 同时连接多台设备时 `-t` 必须指定，否则 hdc 报 `ExecuteCommand need connect-key?`
 
 ## 编写规范
 
@@ -72,7 +129,12 @@ export default function VersionNativeTest() {
 
 ## 测试报告
 
-测试结果通过 DevEco Studio 的测试运行窗口查看，包含通过/失败/跳过统计。
+- 方式一：结果写入 `coverage_data/coverage.log` 与 `test_result.txt`（路径见上文），控制台只显示任务状态
+- 方式二：结果直接输出到 `aa test` 的标准输出，逐用例打印 `OHOS_REPORT_STATUS`，结束时汇总
+  `Tests run`、`Failure` 等统计
+- DevEco Studio：测试运行窗口的结果树（通过/失败/跳过统计）
+
+失败用例附带错误信息与堆栈。
 
 ## 耗时
 

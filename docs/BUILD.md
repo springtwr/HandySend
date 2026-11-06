@@ -10,9 +10,6 @@
 
 **Linux**：华为官方未提供 Linux 版本，可使用社区版 [devecostudio-linux](https://github.com/alex3236/devecostudio-linux)（Arch Linux），默认安装路径 `/opt/devecostudio`
 
-ArkTS 侧单元测试为统一设备端测试（`hvigorw onDeviceTest`），在 Linux 上需连接真机/模拟器运行；无可用设备时以
-`devecocli check arkts` 静态检查 + 构建作为替代验证，Rust 侧使用 `cargo test`（运行方式见「§8 运行测试」）。
-
 ### 1.2 Rust 工具链
 
 ```bash
@@ -348,12 +345,13 @@ rm -rf localsend_ohrs/package/libs
 
 | 测试层 | 运行环境 | 运行方式 |
 |--------|----------|----------|
-| Instrument Test（ArkTS 全部单元测试） | 真机/模拟器 | `hvigorw onDeviceTest -p module=entry` |
+| Instrument Test（ArkTS 全部单元测试） | 真机/模拟器 | `hvigorw onDeviceTest -p module=entry -p coverage=false` |
 | Rust 桥接层单元测试 | Linux 开发机 | `hvigorw RustTestUnit -p module=localsend_ohrs` 或 cargo test |
 | Rust 桥接层集成测试 | Linux 开发机 | `hvigorw RustTestIntegration -p module=localsend_ohrs` 或 cargo test |
 | Rust 上游 localsend crate 测试 | Linux 开发机 | `hvigorw RustTestUpstream -p module=localsend_ohrs` 或 cargo test |
 
 - Instrument Test 运行命令、hdc 直连方式与编写规范见 [testing/instrument-test-guide.md](testing/instrument-test-guide.md)
+- 无可用真机/模拟器时，ArkTS 侧以 `devecocli check arkts` 静态检查 + 构建作为替代验证
 - Rust 三层测试的命令、参数说明与耗时优化见 [testing/rust-test.md](testing/rust-test.md)
 - CI 流水线中的测试矩阵见 [CI_CD.md](CI_CD.md)
 
