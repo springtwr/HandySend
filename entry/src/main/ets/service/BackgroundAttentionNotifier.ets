@@ -1,7 +1,7 @@
 /**
  * BackgroundAttentionNotifier.ets — 后台关注通知层
  *
- * 应用退到后台或 PC 主窗口最小化时，把需要用户关注的待确认请求
+ * 应用退到后台、PC 主窗口最小化或失去焦点时，把需要用户关注的待确认请求
  * （LocalSend / MTA 接收、Web 上传）收敛为**一条**系统通知，并在 PC/2in1 上同步应用角标。
  * 网页访问与下载不进入该通知：访问只写诊断日志并续期有界后台保活，
  * 下载批次由后台传输实况通知承载。
@@ -56,6 +56,9 @@ let subscribed: boolean = false;
 // PC 主窗口是否最小化：最小化与 UIAbility 前后台切换不是同一口径，
 // 部分机型最小化时 onBackground 未触发，需单独据此决定是否发布通知与角标
 let desktopWindowMinimized: boolean = false;
+// PC 主窗口是否获得焦点：窗口未最小化但被其他窗口遮挡时也会失去焦点，
+// 此时应用内提示不可见，需要系统通知与角标兜底
+let desktopWindowFocused: boolean = true;
 // 角标设置串行链与最近一次已请求的角标数：避免异步设置乱序与重复调用
 let badgeChain: Promise<void> = Promise.resolve();
 let requestedBadgeNumber: number = -1;
@@ -69,10 +72,12 @@ export function resolveAttentionKind(pendingCount: number): AttentionKind {
 
 /**
  * 是否需要以系统通知/角标提醒用户（纯函数）：
- * 应用退到后台，或 PC 主窗口最小化时为真；最小化不能只按 onBackground 判断。
+ * 应用退到后台、PC 主窗口最小化或失去焦点（可能被其他窗口遮挡）时为真；
+ * 最小化不能只按 onBackground 判断。
  */
-export function shouldPublishAttention(appForeground: boolean, windowMinimized: boolean): boolean {
-  return !appForeground || windowMinimized;
+export function shouldPublishAttention(appForeground: boolean, windowMinimized: boolean,
+  windowFocused: boolean): boolean {
+  return !appForeground || windowMinimized || !windowFocused;
 }
 
 /**
@@ -94,6 +99,22 @@ export function setDesktopWindowMinimized(minimized: boolean): void {
 /** PC 主窗口是否最小化：供页面判断是否适合弹应用内新传输提示。 */
 export function isDesktopWindowMinimized(): boolean {
   return desktopWindowMinimized;
+}
+
+/**
+ * 同步 PC 主窗口焦点状态：窗口获得/失去焦点时由 EntryAbility 调用。
+ * 失去焦点不一定是最小化（可能只是被其他窗口遮挡），仍需发布通知与角标。
+ */
+export function setDesktopWindowFocused(focused: boolean): void {
+  if (deviceInfo.deviceType !== '2in1') {
+    return;
+  }
+  if (desktopWindowFocused === focused) {
+    return;
+  }
+  desktopWindowFocused = focused;
+  logger.debug('PC 主窗口焦点状态变化：' + String(focused));
+  refreshBackgroundAttention();
 }
 
 /**
@@ -205,14 +226,14 @@ async function publishAttention(kind: AttentionKind, sessionIds: Array<string>,
     let target: string = sessionIds.length === 1 ? NAV_TARGET_SESSION_DETAIL : NAV_TARGET_TRANSFER_CENTER;
     let agent = await ensureWantAgent(context, target, singleSessionId(sessionIds));
     if (genAtPublish !== withdrawGeneration ||
-      !shouldPublishAttention(isAppForeground(), desktopWindowMinimized)) {
-      // 构建点击目标期间已撤回，或应用已回到前台/窗口已恢复：不再发布
+      !shouldPublishAttention(isAppForeground(), desktopWindowMinimized, desktopWindowFocused)) {
+      // 构建点击目标期间已撤回，或应用已回到前台且窗口可见/获得焦点：不再发布
       return;
     }
     // 等待仍在途的撤回取消完成：避免其迟到后删掉本次发布
     await lastWithdrawCancel;
     if (genAtPublish !== withdrawGeneration ||
-      !shouldPublishAttention(isAppForeground(), desktopWindowMinimized)) {
+      !shouldPublishAttention(isAppForeground(), desktopWindowMinimized, desktopWindowFocused)) {
       return;
     }
     let request: notificationManager.NotificationRequest = {
@@ -245,12 +266,12 @@ async function publishAttention(kind: AttentionKind, sessionIds: Array<string>,
 
 /**
  * 按当前注册表状态同步关注通知（串行执行，状态在轮到本次时重新读取）：
- * - 前台：撤回通知；
- * - 后台/最小化且有待确认请求：单条直达详情，多条展示数量并回任务中心；
+ * - 前台且窗口可见、获得焦点：撤回通知；
+ * - 后台/最小化/失焦且有待确认请求：单条直达详情，多条展示数量并回任务中心；
  * - 其余：撤回。
  */
 async function applyAttentionState(): Promise<void> {
-  if (!shouldPublishAttention(isAppForeground(), desktopWindowMinimized)) {
+  if (!shouldPublishAttention(isAppForeground(), desktopWindowMinimized, desktopWindowFocused)) {
     withdrawBackgroundAttention();
     return;
   }

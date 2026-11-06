@@ -91,12 +91,14 @@ export default function BackgroundAggregateTest() {
       expect(resolveAttentionKind(1)).assertEqual(AttentionKind.pendingRequest)
     })
 
-    // ── 关注提醒时机：后台或 PC 最小化时发布，前台正常显示时不打扰 ──
-    it('attentionPublish_backgroundOrMinimized', 0, () => {
-      expect(shouldPublishAttention(true, false)).assertFalse()
-      expect(shouldPublishAttention(true, true)).assertTrue()
-      expect(shouldPublishAttention(false, false)).assertTrue()
-      expect(shouldPublishAttention(false, true)).assertTrue()
+    // ── 关注提醒时机：后台、PC 最小化或失焦时发布，前台聚焦时不打扰 ──
+    it('attentionPublish_backgroundMinimizedOrUnfocused', 0, () => {
+      expect(shouldPublishAttention(true, false, true)).assertFalse()
+      expect(shouldPublishAttention(true, false, false)).assertTrue()
+      expect(shouldPublishAttention(true, true, true)).assertTrue()
+      expect(shouldPublishAttention(true, true, false)).assertTrue()
+      expect(shouldPublishAttention(false, false, true)).assertTrue()
+      expect(shouldPublishAttention(false, false, false)).assertTrue()
     })
 
     // ── 协议无关聚合（来自注册表） ──

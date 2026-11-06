@@ -53,6 +53,7 @@ import {
 } from '../service/BackgroundTransferService';
 import {
   refreshBackgroundAttention,
+  setDesktopWindowFocused,
   setDesktopWindowMinimized,
   withdrawBackgroundAttention
 } from '../service/BackgroundAttentionNotifier';
@@ -170,8 +171,9 @@ const PRIVACY_STATE_CHANGED_EVENT: string = 'usual.event.PRIVACY_STATE_CHANGED';
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
-  // PC 主窗口状态监听回调引用，用于 onWindowStageDestroy 退订
+  // PC 主窗口状态/焦点监听回调引用，用于 onWindowStageDestroy 退订
   private windowStatusCallback: ((status: window.WindowStatusType) => void) | null = null;
+  private windowEventCallback: ((event: window.WindowEventType) => void) | null = null;
   // 系统语言/地区变化公共事件的订阅者引用，用于 onDestroy 退订
   private localeSubscriber: commonEventManager.CommonEventSubscriber | null = null;
   // 隐私签署结果公共事件的订阅者引用，用于 onDestroy 退订
@@ -361,6 +363,8 @@ export default class EntryAbility extends UIAbility {
     this.unsubscribePrivacyStateChanged();
     // 偏好写入为防抖刷盘，进程终止前全部强制落盘，防止 pending 写入丢失
     flushAllPreferences();
+    // 退出前撤回待确认提醒与角标，避免应用退出后残留已失效的提醒
+    withdrawBackgroundAttention();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
     stopTransferTask(true);
     // 兜底清理：正常退出链路（onBackground 停 MTA → 页面 aboutToDisappear
@@ -398,8 +402,8 @@ export default class EntryAbility extends UIAbility {
         // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，弹出二次确认（继续/退出）
         if (deviceInfo.deviceType === '2in1') {
           this.registerCloseIntercept(windowStage);
-          // 最小化与前后台切换不是同一口径，需单独同步窗口状态以驱动通知与角标
-          this.registerWindowStatusAttention();
+          // 最小化/失焦与前后台切换不是同一口径，需单独同步窗口状态以驱动通知与角标
+          this.registerDesktopWindowAttention();
         }
         // 以下初始化不参与首屏渲染，延后至内容加载完成后执行（让出主线程），
         // 避免阻塞首帧、缩短启动窗停留；延后回调内自持 try/catch 兜底异常，防止未捕获错误
@@ -555,42 +559,59 @@ export default class EntryAbility extends UIAbility {
   }
 
   /**
-   * 注册 PC 主窗口状态监听（仅 2in1）：
-   * 部分机型最小化窗口时不会驱动 UIAbility 进入后台，后台关注通知只按 onBackground
-   * 判断会漏掉最小化场景；把窗口状态同步给关注通知层，由其补发/撤回通知与角标。
+   * 注册 PC 主窗口状态与焦点监听（仅 2in1）：
+   * 部分机型最小化窗口时不会驱动 UIAbility 进入后台；窗口未最小化但被其他窗口
+   * 遮挡时也会失去焦点。两者都需要通知与角标兜底，不能只按 onBackground 判断。
    */
-  private registerWindowStatusAttention(): void {
-    if (this.mainWindow === null || this.windowStatusCallback !== null) {
+  private registerDesktopWindowAttention(): void {
+    if (this.mainWindow === null) {
       return;
     }
-    let callback = (status: window.WindowStatusType): void => {
+    let statusCallback = (status: window.WindowStatusType): void => {
       setDesktopWindowMinimized(status === window.WindowStatusType.MINIMIZE);
     };
+    let eventCallback = (event: window.WindowEventType): void => {
+      if (event === window.WindowEventType.WINDOW_ACTIVE) {
+        setDesktopWindowFocused(true);
+      } else if (event === window.WindowEventType.WINDOW_INACTIVE) {
+        setDesktopWindowFocused(false);
+      }
+    };
     try {
-      this.mainWindow.on('windowStatusChange', callback);
-      this.windowStatusCallback = callback;
-      // 注册时同步一次初值：冷启动窗口通常未最小化，置 false 使状态与实例一致
+      if (this.windowStatusCallback === null) {
+        this.mainWindow.on('windowStatusChange', statusCallback);
+        this.windowStatusCallback = statusCallback;
+      }
+      if (this.windowEventCallback === null) {
+        this.mainWindow.on('windowEvent', eventCallback);
+        this.windowEventCallback = eventCallback;
+      }
+      // 注册时同步一次初值：冷启动窗口通常未最小化；焦点按实际状态取
       setDesktopWindowMinimized(this.mainWindow.getWindowStatus() === window.WindowStatusType.MINIMIZE);
-      logger.debug('PC 主窗口状态监听已注册');
+      setDesktopWindowFocused(this.mainWindow.isFocused());
+      logger.debug('PC 主窗口状态与焦点监听已注册');
     } catch (e) {
-      logger.warn('注册 PC 主窗口状态监听失败：' + JSON.stringify(e));
+      logger.warn('注册 PC 主窗口状态与焦点监听失败：' + JSON.stringify(e));
     }
   }
 
-  /** 退订 PC 主窗口状态监听，避免窗口销毁后回调仍持有 Ability 引用。 */
-  private unregisterWindowStatusAttention(): void {
-    if (this.windowStatusCallback === null) {
-      return;
-    }
+  /** 退订 PC 主窗口状态与焦点监听，避免窗口销毁后回调仍持有 Ability 引用。 */
+  private unregisterDesktopWindowAttention(): void {
     if (this.mainWindow !== null) {
       try {
-        this.mainWindow.off('windowStatusChange', this.windowStatusCallback);
-        logger.debug('PC 主窗口状态监听已退订');
+        if (this.windowStatusCallback !== null) {
+          this.mainWindow.off('windowStatusChange', this.windowStatusCallback);
+        }
+        if (this.windowEventCallback !== null) {
+          this.mainWindow.off('windowEvent', this.windowEventCallback);
+        }
+        logger.debug('PC 主窗口状态与焦点监听已退订');
       } catch (e) {
-        logger.warn('退订 PC 主窗口状态监听失败：' + JSON.stringify(e));
+        logger.warn('退订 PC 主窗口状态与焦点监听失败：' + JSON.stringify(e));
       }
     }
     this.windowStatusCallback = null;
+    this.windowEventCallback = null;
   }
 
   // 2in1 设备上约束窗口最小尺寸（480x640vp）。手机/平板不受影响（设备类型不符直接跳过）。
@@ -618,7 +639,7 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
-    this.unregisterWindowStatusAttention();
+    this.unregisterDesktopWindowAttention();
     this.mainWindow = null;
     logger.info('Ability 窗口舞台销毁（onWindowStageDestroy）');
     // 随后可能进入 onDestroy 并关闭文件，这里同步落盘，避免异步 flush 与关闭竞态
@@ -636,11 +657,18 @@ export default class EntryAbility extends UIAbility {
     syncSystemLanguageIfFollowing();
     // 回前台延迟停止长时任务（通知随之消失）；3 秒内重新退后台则取消停止并复用任务
     stopTransferTask();
-    // 同步复位 PC 最小化标记：窗口状态事件可能晚于前后台事件或缺失，
-    // 避免回到前台后仍按最小化状态发布通知
+    // 同步复位 PC 最小化/焦点标记：窗口状态事件可能晚于前后台事件或缺失，
+    // 避免回到前台后仍按最小化或失焦状态发布通知
     setDesktopWindowMinimized(false);
-    // 回到前台：撤回后台关注通知（用户可在应用内处理请求）
-    withdrawBackgroundAttention();
+    if (this.mainWindow !== null) {
+      try {
+        setDesktopWindowFocused(this.mainWindow.isFocused());
+      } catch (e) {
+        logger.warn('读取主窗口焦点状态失败：' + JSON.stringify(e));
+      }
+    }
+    // 回到前台：按实际焦点状态重算关注通知（有焦点则撤回，无焦点仍保留提醒）
+    refreshBackgroundAttention();
     triggerRefresh();
     // 进入前台按「允许接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);

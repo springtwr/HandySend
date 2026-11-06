@@ -91,13 +91,14 @@ HandySend/
   - `onCreate` 初始化 `BackgroundTransferService`
   - `onBackground`：MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收，并启动后台传输任务（同步 `AppCore.setAppForeground(false)`）
   - `onForeground`：延迟 3 秒停止后台传输任务（期间重新退后台则取消停止并复用），
-    停止保活任务，撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
+    停止保活任务，按主窗口焦点状态重算后台关注通知并恢复前台状态（`setAppForeground(true)`）
   - `onBackground`：启动后台传输任务后同步一次后台关注通知，补发前台期间已存在的待确认请求
-  - `onDestroy` 兜底停止
+  - `onDestroy` 兜底停止并撤回后台关注通知/角标
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回
   true 阻止关闭，并异步弹出应用内二次确认（继续/退出），选"退出"主动终止应用（平台无主窗口隐藏能力，不接入状态栏托盘、也不最小化窗口）
-- 2in1 设备注册主窗口 `windowStatusChange` 监听（API 11+）：把窗口最小化状态同步给后台关注层，
-  用于在主窗口最小化、但 UIAbility 未必进入 `onBackground` 的场景下补发/撤回通知与角标；窗口恢复时撤回
+- 2in1 设备注册主窗口 `windowStatusChange` 与 `windowEvent` 监听（API 11+）：把窗口最小化与焦点状态
+  同步给后台关注层，用于主窗口最小化或被其他窗口遮挡、但 UIAbility 未必进入 `onBackground` 的场景下
+  补发/撤回通知与角标；窗口恢复且获得焦点时撤回
 
 ### 4.2 AppService ★ 核心业务门面
 
@@ -233,10 +234,10 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 
 `entry/src/main/ets/service/BackgroundAttentionNotifier.ets`
 
-应用退到后台或 PC 主窗口最小化时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知
+应用退到后台、PC 主窗口最小化或失去焦点（可能被其他窗口遮挡）时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知
 （独立通知 id，与实况进度通知区分）：只展示待确认请求（LocalSend / MTA 接收、Web 上传）。
 网页访问/网页下载不进入该通知，只写诊断日志并续期网页服务的有界后台保活。
-通知按统一注册表的待确认计数驱动发布/撤回，回到前台、窗口恢复或相关会话结束即撤回；
+通知按统一注册表的待确认计数驱动发布/撤回，回到前台且窗口获得焦点、窗口恢复或相关会话结束即撤回；
 单条待确认点击直达该请求详情，多条合并回到任务中心。
 PC/2in1 上同时设置应用角标（`setBadgeNumber`，数量与通知同源），撤回时清空；
 手机/平板只保留后台通知，不设置系统角标。
