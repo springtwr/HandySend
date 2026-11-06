@@ -20,6 +20,7 @@ import {
 } from '../common/Breakpoints';
 import { common } from '@kit.AbilityKit';
 import { getStringSyncFromContext } from '../utils/ResourceUtil';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../utils/OverlayCloseBus';
 
 /**
  * HttpLogsPage
@@ -39,14 +40,20 @@ export struct HttpLogsPage {
   @Local isFollowing: boolean = true
   // 日志设置弹层
   @Local showLogSettings: boolean = false
+  // 新传输直达详情前的弹层收起：本页只处理日志设置半模态
+  private overlayCloseCallback: () => void = (): void => {
+    this.showLogSettings = false;
+  }
 
   aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
     this.viewModel.loadLogs();
     this.viewModel.subscribeLogs();
   }
 
   aboutToDisappear(): void {
     // 成对退订，防止页面销毁后仍被日志通道回调持有
+    unsubscribeOverlayClose(this.overlayCloseCallback);
     this.viewModel.unsubscribeLogs();
   }
 

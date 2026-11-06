@@ -20,6 +20,7 @@ import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
 import { DesignTokens } from '../common/DesignTokens';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../utils/OverlayCloseBus';
 import { getSheetWidth, isNarrowWidth, isWidescreenSideBarLayout, isWideWidth } from '../common/Breakpoints';
 import {
   SendViewModel,
@@ -98,6 +99,14 @@ export struct SendContent {
   private largeFileConfirmResolve: ((ok: boolean) => void) | undefined = undefined
   // 收藏设备面板（半模态）显隐与面板状态
   @Local isShowFavoritesSheet: boolean = false
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的收藏面板与发送弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.isShowFavoritesSheet = false;
+    this.settleLargeFileConfirm(false);
+    this.closeProtocolBlockedDialog();
+    this.closeActiveDialog();
+    this.closeSendFailureCard();
+  }
   @Local favoritesPanelViewModel: FavoriteDevicesViewModel = new FavoriteDevicesViewModel()
   // ── 发送结果反馈：开始确认 toast + 失败浮卡 ──
   // 浮卡内容由 @Local 承载：同一张卡片在连续失败时就地更新，不叠加多个弹窗
@@ -144,6 +153,7 @@ export struct SendContent {
 
   aboutToAppear(): void {
     this.isDetached = false;
+    subscribeOverlayClose(this.overlayCloseCallback);
     // 收藏面板：绑定在线快照来源并订阅收藏变更（新增/重命名/删除面板实时同步）
     this.favoritesPanelViewModel.attach(this.viewModel);
     this.favoritesPanelViewModel.subscribeFavorites();
@@ -185,6 +195,7 @@ export struct SendContent {
 
   aboutToDisappear(): void {
     this.isDetached = true;
+    unsubscribeOverlayClose(this.overlayCloseCallback);
     unsubscribe(this.refreshCallback);
     this.favoritesPanelViewModel.unsubscribeFavorites();
     // 浮卡挂在 UIContext 层，不随页面销毁自动消失：离开发送页时主动关闭

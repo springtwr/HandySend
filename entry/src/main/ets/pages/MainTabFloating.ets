@@ -66,10 +66,9 @@ import {
 } from '../service/repository/SettingsRepository';
 import {
   querySessions, getSession, getPendingSessionIds, hasSessionOrHistory, subscribeSessions,
-  unsubscribeSessions, declineSession
+  unsubscribeSessions
 } from '../service/transfer/TransferSessionRegistry';
 import {
-  SessionDataFlow,
   SessionFilter,
   SessionStage,
   TransferSession
@@ -86,6 +85,8 @@ import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
 import { SendViewModel, shouldShowPartialProtocolDisabledHint } from '../viewmodel/SendViewModel';
 import { getStringSync } from '../utils/ResourceUtil';
+import { requestCloseOverlays } from '../utils/OverlayCloseBus';
+import { isSessionDetailOpen } from '../utils/SessionDetailStack';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 
@@ -144,13 +145,7 @@ struct MainTabFloating {
   @Local private deleteSelectedDialogMessage: string = ''
   // 当前打开的批量删除确认弹窗 id（关闭时使用）
   private deleteSelectedDialogId: number = -1
-  // 新传输提示弹窗：在场标记（单槽位守卫，覆盖打开未决期的重入）、弹窗 id（关闭用）与当前待提示会话
-  private newTransferDialogOpen: boolean = false
-  private newTransferDialogId: number = -1
-  private newTransferDialogSessionId: string = ''
-  // 新传输提示弹窗正文（打开时构造，关闭时清空）
-  @Local private newTransferDialogMessage: string = ''
-  // 点击通知进入前台时已存在的待确认会话：通知已承担提醒，本次前台不再补弹这些会话的提示
+  // 点击通知进入前台时已存在的待确认会话：通知已承担提醒，本次前台不再补开详情页
   private suppressedTransferPromptSessionIds: Array<string> = []
   // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
   private navBarVisible: boolean = true
@@ -186,12 +181,12 @@ struct MainTabFloating {
     }
   }
 
-  // 变更总线回调：通知深链（热启动经变更总线送达）与回前台补弹共用。
+  // 变更总线回调：通知深链（热启动经变更总线送达）与回前台补开详情页共用。
   // 真机实测 onPageShow 可能早于 EntryAbility.onForeground（页面先显示、前台标志后更新），
-  // 此时 onPageShow 内的补弹会因非前台被跳过；onForeground 末尾的 triggerRefresh 再经此处兜底一次。
+  // 此时 onPageShow 内的补开详情页会因非前台被跳过；onForeground 末尾的 triggerRefresh 再经此处兜底一次。
   private navigationCallback: () => void = (): void => {
     this.handlePendingNavigation();
-    this.tryOpenNewTransferDialog();
+    this.tryOpenPendingSessionDetail();
   }
 
   aboutToAppear(): void {
@@ -202,7 +197,6 @@ struct MainTabFloating {
     // 相册保存自动提示回调：订阅本身延后到首帧之后，但回调字段须在订阅前完成赋值
     this.galleryPromptCallback = (): void => {
       this.detectAutoGalleryPrompt();
-      this.syncNewTransferDialogWithSession();
     };
 
     // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
@@ -274,7 +268,7 @@ struct MainTabFloating {
     this.updateMtaScanByVisibility();
 
     // 角标刷新订阅统一变更总线（与任务列表同源同时机）；
-    // 新的待确认会话经 autoOpenSessionId 信号（见 onAutoOpenSessionChanged）弹出新传输提示弹窗
+    // 新的待确认会话经 autoOpenSessionIds 队列（见 onAutoOpenSessionChanged）逐条进入详情页
     this.viewModel.start();
     // 发送页视图模型由页面宿主持有：在此注入上下文并订阅收藏，内容组件重建不改变其生命周期
     this.sendViewModel.init(context);
@@ -296,9 +290,9 @@ struct MainTabFloating {
     // 置真首帧内容就绪标志：@Local 赋值触发一次重建，三个页签的重量级内容在同一帧内构建
     this.firstFrameContentReady = true;
 
-    // 启动期间可能已有网页访问提示/待确认会话到达：首帧之后再消费，避免和首屏构建抢弹窗
+    // 启动期间可能已有网页访问提示/待确认会话到达：首帧之后再消费，避免和首屏构建抢页面
     setTimeout(() => {
-        this.tryOpenNewTransferDialog();
+        this.tryOpenPendingSessionDetail();
     }, 0);
   }
 
@@ -351,24 +345,22 @@ struct MainTabFloating {
    * 消费通知深链信号：单任务通知直达该任务详情，其余（多条合并 / 实况进度 / 保活）回任务中心。
    * 两种落点都复用失败浮卡的跳转口径——回根、任务页签滚动归零并切到任务页签，
    * 保证返回时落在任务列表顶部而不是退出时所在页面或旧滚动位置；
-   * 从通知进入前台时，点击通知那一刻已存在的待确认请求不再补弹（见 tryOpenNewTransferDialog）；
+   * 从通知进入前台时，点击通知那一刻已存在的待确认请求不再补开详情页（见 tryOpenPendingSessionDetail）；
    * 信号为一次性，消费即清空，重复触发无副作用。
    */
   private handlePendingNavigation(): void {
     let pending: PendingNavigation = consumePendingNavigation();
     // 通知进入前台（任务中心或详情）：点击时已存在的待确认会话由通知承担提醒，
-    // 记录后跳过本次前台的补弹；点击之后新到达的请求不在集合内，仍正常提示
+    // 记录后跳过本次前台的补开；点击之后新到达的请求不在集合内，仍正常进入详情
     if (pending.target.length > 0) {
       this.suppressedTransferPromptSessionIds = getPendingSessionIds();
-      // 通知进入前可能已打开新传输提示（如窗口最小化前弹出）：先收起，
-      // 避免它浮在通知目标页面之上；id 未就绪时复位标记，由 openCustomDialog 回调兜底关闭
-      if (this.newTransferDialogOpen) {
-        if (this.newTransferDialogId >= 0) {
-          this.closeNewTransferDialog();
-        } else {
-          this.resetNewTransferDialogState();
-        }
+      // 通知落点页要被推到最前：先收起当前弹层；未保存修改走各自确认
+      try {
+        this.closeRootOverlays();
+      } catch (e) {
+        logger.warn('收起主页弹层异常：' + String(e));
       }
+      requestCloseOverlays();
     }
     if (pending.target === NAV_TARGET_SESSION_DETAIL && pending.sessionId.length > 0) {
       if (!hasSessionOrHistory(pending.sessionId)) {
@@ -390,187 +382,81 @@ struct MainTabFloating {
   }
 
   /**
-   * 收到新的接收请求（新的待确认会话）：在应用前台任意页面之上弹出新传输提示弹窗。
-   * 消费 autoOpenSessionId 信号；非前台不消费（保留待回前台补弹，见 onPageShow 与变更总线回调）；
-   * 已有弹窗在场时不消费（保留信号，弹窗关闭后再试），保证同一时刻仅一个弹窗。
+   * 收到新的接收请求（新的待确认会话）：在应用前台且窗口可见时逐条进入这些会话的详情页。
+   * 接收任务优先级高于当前页面；后打开的详情页覆盖先打开的页面，用户逐条处理后返回。
+   * 消费 autoOpenSessionIds 队列；非前台不消费（保留待回前台补开，见 onPageShow 与变更总线回调）。
    */
-  @Monitor('viewModel.autoOpenSessionId')
+  @Monitor('viewModel.autoOpenSessionVersion')
   onAutoOpenSessionChanged(): void {
-    this.tryOpenNewTransferDialog();
+    this.tryOpenPendingSessionDetail();
   }
 
   /**
-   * 尝试弹出新传输提示弹窗：仅在应用前台、存在待提示信号且当前无弹窗在场时打开；
-   * 信号在打开前消费（会话已消失时同样消费，避免残留重复触发）。
-   * 从通知进入前台时，点击通知那一刻已存在的待确认请求只消费信号、不再叠加提示弹窗；
-   * 点击之后新到达的请求仍正常提示。
+   * 尝试进入待确认会话详情页：仅前台、非最小化、队列非空时执行；
+   * 队列在导航前消费；通知进入前台的抑制集合只对当前这一批生效。
    */
-  private tryOpenNewTransferDialog(): void {
-    // PC 最小化时窗口不可见，不弹应用内提示，由后台关注通知/角标承担提醒
+  private tryOpenPendingSessionDetail(): void {
+    // 首帧内容就绪前不导航，避免与首屏构建抢页面；就绪后由启动回调补一次
+    if (!this.firstFrameContentReady) {
+      return;
+    }
+    // PC 最小化时窗口不可见，不跳转，由后台关注通知/角标承担提醒
     if (!isAppForeground() || isDesktopWindowMinimized()) {
       return;
     }
-    let sessionId: string = this.viewModel.autoOpenSessionId;
-    if (sessionId.length === 0) {
+    let sessionIds: Array<string> = this.viewModel.autoOpenSessionIds;
+    if (sessionIds.length === 0) {
       return;
     }
-    if (this.newTransferDialogOpen) {
-      return;
-    }
-    this.viewModel.autoOpenSessionId = '';
-    let suppressed: boolean = this.suppressedTransferPromptSessionIds.indexOf(sessionId) >= 0;
-    // 提示槽位一次只处理一个会话：通知进入时的旧集合到此失效，后续新请求仍照常提示
-    this.suppressedTransferPromptSessionIds = [];
-    if (suppressed) {
-      logger.debug('通知进入前台，跳过本次补弹 session=' + sessionId);
-      return;
-    }
-    let session = getSession(sessionId);
-    if (session === undefined || session.stage !== SessionStage.awaitingConfirmation) {
-      // 会话已消失或已不处于待确认（被处理 / 超时 / 已开始）：仅消费信号，不弹窗
-      return;
-    }
-    this.newTransferDialogSessionId = sessionId;
-    this.newTransferDialogMessage = this.buildNewTransferMessage(session);
-    logger.debug('补弹新传输提示 session=' + sessionId);
-    this.openNewTransferDialog();
-  }
-
-  /**
-   * 新传输提示弹窗正文：对端名称 + 文件数量（按当前会话即时解析模板占位符）。
-   *
-   * 文案按数据流向区分：本机外发（如浏览器下载）是「对方向本机索取」，
-   * 用「想要下载」而非「想要发送」，否则动作方向与事实相反。
-   */
-  private buildNewTransferMessage(session: TransferSession): string {
-    let peer: string = session.peer.displayName.length > 0 ? session.peer.displayName :
-      getStringSync(this.getUIContext(), $r('app.string.session_peer_unknown_device'));
-    // 对端发来的文本消息不按文件计数：统一表达为「发来 1 条消息」，避免出现「1 个文件」
-    if (session.textMessage && session.dataFlow === SessionDataFlow.inbound) {
-      let textTemplate: string = getStringSync(this.getUIContext(),
-        $r('app.string.new_transfer_alert_message_text'));
-      return textTemplate.replace('%s', peer);
-    }
-    let templateRes: Resource = session.dataFlow === SessionDataFlow.outbound ?
-      $r('app.string.new_transfer_alert_message_outbound') : $r('app.string.new_transfer_alert_message');
-    let template: string = getStringSync(this.getUIContext(), templateRes);
-    return template.replace('%s', peer).replace('%d', String(session.files.length));
-  }
-
-  /**
-   * 打开新传输提示弹窗（单槽位）：
-   * 打开前同步置位在场标记（覆盖 openCustomDialog 未决期间的重入），
-   * 关闭/打开失败均复位并尝试补弹在场期间到达的其它新会话，保证提示不丢失。
-   */
-  private openNewTransferDialog(): void {
-    this.newTransferDialogOpen = true;
-    let dialogOptions: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.newTransferConfirmDialog();
-      },
-      onDidDisappear: () => {
-        // 点击遮罩/返回键关闭同样经此复位（会话保持待确认，任务中心仍可处理）
-        this.resetNewTransferDialogState();
-            this.tryOpenNewTransferDialog();
+    this.viewModel.autoOpenSessionIds = [];
+    // 先筛出仍待确认的会话：整批都已失效时不要无谓关闭用户当前弹层
+    let validIds: Array<string> = [];
+    for (let i = 0; i < sessionIds.length; i++) {
+      let sessionId: string = sessionIds[i];
+      if (this.suppressedTransferPromptSessionIds.indexOf(sessionId) >= 0) {
+        continue;
       }
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(dialogOptions)
-      .then((id: number) => {
-        this.newTransferDialogId = id;
-        // 打开未决期间会话已终结（如等待确认超时）：立即收起，
-        // 否则会留下一个不归属任何会话、点按无意义的弹窗
-        if (!this.newTransferDialogOpen) {
-          this.closeNewTransferDialog();
-        }
-      })
-      .catch(() => {
-        // 打开失败：复位状态并尝试补弹，避免待提示信号丢失
-        this.resetNewTransferDialogState();
-        this.tryOpenNewTransferDialog();
-      });
-  }
-
-  /**
-   * 让提示弹窗跟随会话状态收口。
-   *
-   * 会话可能在用户应答前终结（等待确认超时、对端取消、被别处处理）：
-   * 此时弹窗若继续停留，用户点任何一键都会作用在已消失的会话上。
-   */
-  private syncNewTransferDialogWithSession(): void {
-    if (!this.newTransferDialogOpen || this.newTransferDialogSessionId.length === 0) {
+      if (isSessionDetailOpen(sessionId)) {
+        // 同一会话的详情页已在栈中：不重复推入
+        logger.debug('会话详情已打开，跳过重复入栈 session=' + sessionId);
+        continue;
+      }
+      let session = getSession(sessionId);
+      if (session === undefined || session.stage !== SessionStage.awaitingConfirmation) {
+        // 会话已消失或已不处于待确认（被处理 / 超时 / 已开始）：跳过该条
+        logger.debug('待处理会话已不可用，跳过 session=' + sessionId);
+        continue;
+      }
+      validIds.push(sessionId);
+    }
+    this.suppressedTransferPromptSessionIds = [];
+    if (validIds.length === 0) {
       return;
     }
-    let session = getSession(this.newTransferDialogSessionId);
-    if (session !== undefined && session.stage === SessionStage.awaitingConfirmation) {
-      return;
+    // 先收起主页自持弹层，再广播给设置页等子组件；带未保存修改的弹层会自行弹确认
+    try {
+      this.closeRootOverlays();
+    } catch (e) {
+      logger.warn('收起主页弹层异常：' + String(e));
     }
-    let timedOut: boolean = session !== undefined && session.errorCode === 'pending_timeout';
-    if (this.newTransferDialogId >= 0) {
-      this.closeNewTransferDialog();
-    } else {
-      this.resetNewTransferDialogState();
-    }
-    if (timedOut) {
-      this.getUIContext()
-        .getPromptAction()
-        .showToast({
-          message: $r('app.string.new_transfer_confirm_timeout'),
-          duration: 2500,
-          alignment: Alignment.Center
-        });
+    requestCloseOverlays();
+    // 按到达顺序逐条推入：后打开的页面覆盖先打开的页面，用户返回时逐条处理
+    for (let i = 0; i < validIds.length; i++) {
+      let sessionId: string = validIds[i];
+      logger.debug('直接打开新传输详情 session=' + sessionId);
+      let params: Record<string, string> = { 'sessionId': sessionId };
+      this.pathStack.pushPathByName('SessionDetailPage', params);
     }
   }
 
-  /** 复位新传输提示弹窗状态（在场标记、弹窗 id 与文案）。 */
-  private resetNewTransferDialogState(): void {
-    this.newTransferDialogOpen = false;
-    this.newTransferDialogId = -1;
-    this.newTransferDialogMessage = '';
-    this.newTransferDialogSessionId = '';
-  }
-
-  /** 关闭新传输提示弹窗（弹窗 id 尚未就绪时为空操作）。 */
-  private closeNewTransferDialog(): void {
-    if (this.newTransferDialogId >= 0) {
-      this.getUIContext().getPromptAction().closeCustomDialog(this.newTransferDialogId);
-      this.newTransferDialogId = -1;
+  /** 收起主页自持的弹窗/半模态；有未保存修改的弹层由各自组件处理确认。 */
+  private closeRootOverlays(): void {
+    if (this.isShowLocalDeviceSheet) {
+      this.isShowLocalDeviceSheet = false;
     }
-  }
-
-  /** 新传输提示弹窗（「拒绝」/「查看」两键；拒绝立即释放单会话槽位，查看进入详情再决策）。 */
-  @Builder
-  newTransferConfirmDialog() {
-    AlertDialogV2({
-      primaryTitle: $r('app.string.new_transfer_alert_title'),
-      content: this.newTransferDialogMessage,
-      primaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.session_detail_decline'),
-        action: () => {
-          // 拒绝：关闭弹窗并按拒绝收尾（与任务中心/详情页拒绝键同源），不再保留待确认
-          let sessionId: string = this.newTransferDialogSessionId;
-          this.closeNewTransferDialog();
-          if (sessionId.length > 0) {
-            declineSession(sessionId);
-          }
-        }
-      }),
-      secondaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.new_transfer_alert_view'),
-        action: () => {
-          let sessionId: string = this.newTransferDialogSessionId;
-          this.closeNewTransferDialog();
-          if (sessionId.length > 0) {
-            let params: Record<string, string> = { 'sessionId': sessionId };
-            this.pathStack.pushPathByName('SessionDetailPage', params);
-          }
-        }
-      })
-    })
-    // 宽屏下限制弹窗最大宽度，避免铺满过宽（与项目既有弹窗一致）
-      .constraintSize({ maxWidth: 480 })
-      .id('main_tab_new_transfer_dialog')
+    this.closeClearHistoryDialog();
+    this.closeDeleteSelectedDialog();
+    this.closeGallerySaveDialog();
   }
 
   // ── 相册保存自动提示（由设置项驱动） ──
@@ -765,10 +651,9 @@ struct MainTabFloating {
     this.updateMtaScanByVisibility();
     // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
     this.handlePendingNavigation();
-    // 覆盖「待确认请求在后台到达、回到前台」的场景：补弹一次（非前台时未消费信号）。
+    // 覆盖「待确认请求在后台到达、回到前台」的场景：补开详情页一次（非前台时未消费信号）。
     // 真机实测 onPageShow 可能早于 onForeground，这里被前台判断拦下时由变更总线回调兜底重试。
-    this.tryOpenNewTransferDialog();
-    // 网页访问提示同样在回到前台时补弹
+    this.tryOpenPendingSessionDetail();
   }
 
   onPageHide(): void {

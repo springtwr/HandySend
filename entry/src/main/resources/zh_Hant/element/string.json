@@ -1833,30 +1833,6 @@
       "value": "開啟檔案失敗"
     },
     {
-      "name": "new_transfer_alert_title",
-      "value": "新的傳輸請求"
-    },
-    {
-      "name": "new_transfer_alert_message",
-      "value": "%s 發來 %d 個檔案"
-    },
-    {
-      "name": "new_transfer_alert_message_text",
-      "value": "%s 發來 1 則訊息"
-    },
-    {
-      "name": "new_transfer_alert_message_outbound",
-      "value": "%s 想要下載 %d 個檔案"
-    },
-    {
-      "name": "new_transfer_confirm_timeout",
-      "value": "等待確認逾時，請求已關閉"
-    },
-    {
-      "name": "new_transfer_alert_view",
-      "value": "檢視"
-    },
-    {
       "name": "favorites_online",
       "value": "線上"
     },

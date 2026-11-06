@@ -14,6 +14,7 @@ import { getPeerDeviceIconResource } from '../../utils/DeviceIconUtil';
 import { hasDisplayText } from '../../service/transfer/adapters/SessionAdapter';
 import { abbreviateMiddle } from '../../utils/FormatUtil';
 import { SessionStatusBadge } from './SessionStatusBadge';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 // 指纹缩略保留的首/尾字符数（中间以省略号连接，避免仅末尾截断丢失尾段信息）
 const FINGERPRINT_HEAD_LEN: number = 11;
@@ -31,6 +32,18 @@ export struct SessionHeader {
   // 指纹弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local fingerprintContentWidth: number = 0
   private fingerprintDialogId: number = -1
+  // 新传输直达详情前的弹层收起：关闭本组件打开的指纹弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.closeFingerprintDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
 
   /** 徽标统一样式（来源/发送方式 / 型号共用）。 */
   @Builder
