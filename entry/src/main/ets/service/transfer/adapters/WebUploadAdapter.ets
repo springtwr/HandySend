@@ -457,6 +457,8 @@ const adapter: SessionAdapter = {
       expireInvoker(key);
     }
     textPreviewCache.delete(sessionId);
+    // 服务端会话移除后必须同步收口统一会话，否则任务会一直停留在进行中
+    finish(sessionId, SessionStage.cancelled, '已结束任务', 'user_cancelled');
   },
   retry: (): void => {
   },

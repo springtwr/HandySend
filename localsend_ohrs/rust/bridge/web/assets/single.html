@@ -1403,8 +1403,18 @@ html[data-auth="open"] #gate {
 (function () {
   'use strict';
   var BASE = '';
+  // 新标签页/复制标签页会复制 sessionStorage；上传会话归属原标签页，非刷新进入时丢弃
+  if (!isReloadNavigation()) {
+    sessionStorage.removeItem('handysend_ul_token');
+    sessionStorage.removeItem('handysend_ul_share');
+    sessionStorage.removeItem('handysend_ul_client');
+  }
   var dlToken = sessionStorage.getItem('handysend_dl_token') || '';
+  // 上传 token 跨页面保留：刷新后据此恢复上传状态，会话结束前不允许再次发送
   var ulToken = sessionStorage.getItem('handysend_ul_token') || '';
+  // 上传所属分享：与 caps 的 shareId 不一致说明服务已重启/换分享，旧 token 直接丢弃
+  var ulShareId = sessionStorage.getItem('handysend_ul_share') || '';
+  var capsShareId = '';
   var filesData = {};
   // 应用暂存列表的展示顺序（文件标识）；为空时回退按文件名排序
   var fileOrder = [];
@@ -1417,7 +1427,11 @@ html[data-auth="open"] #gate {
   var uploadRetryCount = 0;
   var uploadPreparing = false;
   // 建会话请求会挂起等待对方确认：延迟展示等待提示，避免免确认快速应答时一闪而过
-  var uploadWaitTimer = -1;
+  // 刷新后恢复上传会话状态：恢复期间保持发送入口禁用，直到旧会话结束
+  var restoringUpload = false;
+  var uploadStatusTimer = -1;
+  // 首次 caps 已核对分享归属：之后才允许开始恢复轮询
+  var restoreChecked = false;
   // 登录后需要恢复的动作：首次建会话或上传中途被 401 打断
   var pendingUpload = null;
   var tabAvailable = { download: false, upload: false };
@@ -1493,6 +1507,8 @@ html[data-auth="open"] #gate {
     uploadDone: '发送完成。',
     uploadFailedRetry: '发送失败，请重试。',
     uploadInterrupted: '网络错误，发送已中断。',
+    uploadInProgress: '上次发送仍在进行中…',
+    restoreInterrupted: '上次发送已中断，请重新发送。',
     pinTitle: '请输入访问码',
     pinConfirm: '确定',
     pinError: '访问码错误。',
@@ -1532,6 +1548,19 @@ html[data-auth="open"] #gate {
       return i18n[key];
     }
     return FALLBACK_ZH[key] || key;
+  }
+
+  /** 是否为刷新进入：仅刷新保留上传会话；新标签页/复制标签页按新页面处理。 */
+  function isReloadNavigation() {
+    try {
+      var entries = performance.getEntriesByType('navigation');
+      if (entries !== undefined && entries.length > 0) {
+        return entries[0].type === 'reload';
+      }
+    } catch (_e) {
+    }
+    // 无法判定时按刷新保留，避免误丢可恢复会话
+    return true;
   }
 
   function $(id) { return document.getElementById(id); }
@@ -1660,7 +1689,12 @@ html[data-auth="open"] #gate {
     // 丢弃后由登录成功的 caps/prepare 重新建立，避免新服务下仍展示上次的文件列表。
     resetDownloadList();
     setDownloadToken('');
-    setUploadToken('');
+    // 恢复态遇 401：旧会话已不可恢复，登录后按新会话处理；普通上传保留 pendingUpload 供登录后恢复
+    if (restoringUpload) {
+      abandonRestoredUpload();
+    } else {
+      setUploadToken('');
+    }
     showGateError(errorKey);
     $('gate-input').value = '';
     setTimeout(function () {
@@ -1740,6 +1774,11 @@ html[data-auth="open"] #gate {
           }
           loadCaps(true);
           return;
+        }
+        // 刷新后恢复中的上传在登录前被 401 打断：登录后继续恢复；
+        // 首次 caps 尚未核对时由下面的 loadCaps 触发核对
+        if (restoringUpload && restoreChecked) {
+          pollUploadStatus();
         }
         var resumeDownload = downloadLoadStarted && Object.keys(filesData).length === 0;
         loadCaps(false);
@@ -2098,6 +2137,23 @@ html[data-auth="open"] #gate {
   }
 
   function applyCaps(caps) {
+    capsShareId = caps.shareId || '';
+    // 分享已停止/更换（含恢复期间服务重启）：旧上传 token 直接丢弃，不进入恢复态
+    if (restoringUpload &&
+      (caps.shareState !== 'active' ||
+        (ulShareId && capsShareId && capsShareId !== ulShareId))) {
+      abandonRestoredUpload();
+    } else if (!restoreChecked) {
+      restoreChecked = true;
+      if (restoringUpload) {
+        if (!ulShareId) {
+          // 旧页面版本未记录分享标识：无法确认归属，按失效处理
+          abandonRestoredUpload();
+        } else {
+          pollUploadStatus();
+        }
+      }
+    }
     if (caps.shareState !== 'active') {
       cancelListReload();
       resetDownloadList();
@@ -2148,7 +2204,10 @@ html[data-auth="open"] #gate {
     if (!capsInitialized) {
       capsInitialized = true;
       var wantUpload = window.location.pathname.replace(/\/$/, '') === '/upload';
-      if (wantUpload && caps.uploadEnabled) {
+      if (restoringUpload) {
+        // 刷新前上传仍在进行：保持在发送页展示恢复状态
+        activeTab = 'upload';
+      } else if (wantUpload && caps.uploadEnabled) {
         activeTab = 'upload';
       } else if (caps.hasDownload) {
         activeTab = 'download';
@@ -2320,19 +2379,22 @@ html[data-auth="open"] #gate {
     scheduleListReload();
   }
 
-  /** 上传会话结束：只更新上传分段；下载已改用批次 ended 事件。 */
+  /** 上传会话结束：结束本次发送并恢复可重试入口；下载已改用批次 ended 事件。 */
   function handleSessionEnd(token) {
-    if (!token) {
+    if (!token || token !== ulToken) {
       return;
     }
-    if (token === ulToken) {
-      clearWaitingConfirm();
-      setUploading(false);
-      $('upload-btn').disabled = true;
-      $('upload-picker').disabled = true;
-      $('text-input').disabled = true;
-      setSegmentStatus('upload', t('accessEndedReload'), 'warning');
+    // 刷新后恢复中：旧会话结束即恢复正常发送入口
+    if (restoringUpload) {
+      endRestoredUpload();
+      return;
     }
+    clearUploadRetry();
+    clearUploadStatusTimer();
+    setUploading(false);
+    pendingUpload = null;
+    setSegmentStatus('upload', t('restoreInterrupted'), 'warning');
+    setUploadToken('');
   }
 
   function setDownloadToken(token) {
@@ -3356,12 +3418,50 @@ html[data-auth="open"] #gate {
       sessionStorage.setItem('handysend_ul_token', ulToken);
     } else {
       sessionStorage.removeItem('handysend_ul_token');
+      setUploadShareId('');
     }
+  }
+
+  function setUploadShareId(shareId) {
+    ulShareId = shareId || '';
+    if (ulShareId) {
+      sessionStorage.setItem('handysend_ul_share', ulShareId);
+    } else {
+      sessionStorage.removeItem('handysend_ul_share');
+    }
+  }
+
+  // 页面实例标识：同标签页刷新保留，关闭/新标签页重新生成；用于建会话响应丢失后的重试复用
+  function clientId() {
+    var id = '';
+    try {
+      id = sessionStorage.getItem('handysend_ul_client') || '';
+    } catch (_e) {
+    }
+    if (!id) {
+      id = randomClientId();
+      try {
+        sessionStorage.setItem('handysend_ul_client', id);
+      } catch (_e) {
+      }
+    }
+    return id;
+  }
+
+  function randomClientId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      try {
+        return crypto.randomUUID();
+      } catch (_e) {
+      }
+    }
+    return 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
   }
 
   function startUpload(dtos, files) {
     setUploading(true);
     uploadRetryCount = 0;
+    clearUploadStatusTimer();
     // 新一次发送开始：先清掉上一次遗留的错误/完成提示
     setSegmentStatus('upload', '');
     pendingUpload = { dtos: dtos, files: files };
@@ -3373,11 +3473,9 @@ html[data-auth="open"] #gate {
       return;
     }
     uploadPreparing = true;
-    // 请求会一直挂起直到对方确认：稍后仍未返回即展示等待提示
-    scheduleWaitingConfirm();
-    var url = BASE + '/web/prepare-upload';
+    var url = BASE + '/web/prepare-upload?client=' + encodeURIComponent(clientId());
     if (ulToken) {
-      url += '?token=' + encodeURIComponent(ulToken);
+      url += '&token=' + encodeURIComponent(ulToken);
     }
     request(url, {
       method: 'POST',
@@ -3387,7 +3485,6 @@ html[data-auth="open"] #gate {
     }).then(function (response) {
       return handleUploadPrepare(response, dtos, files);
     }).catch(function (err) {
-      clearWaitingConfirm();
       if (err && err.authRequired) {
         // 保持 uploading；登录后由 pendingUpload 恢复
         return;
@@ -3422,53 +3519,43 @@ html[data-auth="open"] #gate {
     uploadRetryCount = 0;
   }
 
-  // 建会话请求挂起时展示「等待对方确认」：延迟到 600ms 再显示，
-  // 避免对方免确认、响应很快时提示一闪而过。
-  function scheduleWaitingConfirm() {
-    clearWaitingConfirm();
-    uploadWaitTimer = setTimeout(function () {
-      uploadWaitTimer = -1;
-      setSegmentStatus('upload', t('waitingConfirm'));
-    }, 600);
-  }
-
-  function clearWaitingConfirm() {
-    if (uploadWaitTimer >= 0) {
-      clearTimeout(uploadWaitTimer);
-      uploadWaitTimer = -1;
-    }
-  }
-
   // statusKey 为空时保留调用方已设置的具体状态（拒绝/超时/网络错误等）
   function failUpload(statusKey) {
     clearUploadRetry();
-    clearWaitingConfirm();
+    clearUploadStatusTimer();
     if (statusKey) {
       setSegmentStatus('upload', t(statusKey), 'warning');
     }
+    // 放弃本次上传即结束服务端会话，避免下一次发送与旧会话并存
+    finishUploadSession(ulToken);
     setUploading(false);
     pendingUpload = null;
     setUploadToken('');
   }
 
   function handleUploadPrepare(response, dtos, files) {
-    clearWaitingConfirm();
-    if (response.status === 409) {
-      var pendingToken = response.headers.get('X-Handysend-Token');
-      if (pendingToken) {
-        setUploadToken(pendingToken);
-      }
-      setSegmentStatus('upload', t('waitingConfirm'));
-      scheduleUploadRetry(dtos, files, 25);
-      return undefined;
+    if (response.status === 202) {
+      return response.json().then(function (data) {
+        clearUploadRetry();
+        setUploadToken(data.token);
+        if (data.shareId) {
+          setUploadShareId(data.shareId);
+        } else if (capsShareId) {
+          setUploadShareId(capsShareId);
+        }
+        waitForUploadAccept(dtos, files, data.token);
+      });
     }
-    if (response.status === 403) {
-      failUpload('rejected');
-      return undefined;
-    }
-    if (response.status === 408) {
-      failUpload('confirmTimeoutRetry');
-      return undefined;
+    if (response.status === 200) {
+      return response.json().then(function (data) {
+        clearUploadRetry();
+        pendingUpload = null;
+        // 对方已确认：直接进入逐文件上传
+        setSegmentStatus('upload', '');
+        setUploadToken(data.token);
+        setUploadShareId(data.shareId);
+        uploadNext(0, Object.keys(dtos), files, data.token, 0);
+      });
     }
     if (response.status === 404) {
       failUpload('shareEndedRetry');
@@ -3479,14 +3566,48 @@ html[data-auth="open"] #gate {
       failUpload();
       return undefined;
     }
-    return response.json().then(function (data) {
-      clearUploadRetry();
-      pendingUpload = null;
-      // 对方已确认：撤下等待提示，进入逐文件上传
-      setSegmentStatus('upload', '');
-      setUploadToken(data.token);
-      uploadNext(0, Object.keys(dtos), files, data.token, 0);
-    });
+    return undefined;
+  }
+
+  /** 建会话已返回 202：轮询等待应用确认，确认后开始逐文件上传。 */
+  function waitForUploadAccept(dtos, files, token) {
+    pendingUpload = {
+      resume: function () {
+        waitForUploadAccept(dtos, files, token);
+      }
+    };
+    request(BASE + '/web/upload-status?token=' + encodeURIComponent(token), { cache: 'no-store' })
+      .then(function (response) {
+        if (response.status === 403 || response.status === 404) {
+          failUpload('uploadFailedRetry');
+          return undefined;
+        }
+        if (!response.ok) {
+          throw new Error('status ' + response.status);
+        }
+        return response.json().then(function (data) {
+          if (data.state === 'accepted') {
+            pendingUpload = null;
+            clearUploadRetry();
+            setSegmentStatus('upload', '');
+            uploadNext(0, Object.keys(dtos), files, token, 0);
+            return;
+          }
+          setSegmentStatus('upload', t('waitingConfirm'));
+          uploadStatusTimer = setTimeout(function () {
+            waitForUploadAccept(dtos, files, token);
+          }, 2000);
+        });
+      })
+      .catch(function (err) {
+        if (err && err.authRequired) {
+          // 登录后由 submitGate 恢复
+          return;
+        }
+        uploadStatusTimer = setTimeout(function () {
+          waitForUploadAccept(dtos, files, token);
+        }, 2000);
+      });
   }
 
   function uploadNext(index, ids, files, token, attempt) {
@@ -3568,7 +3689,7 @@ html[data-auth="open"] #gate {
   }
 
   function completeUpload(token) {
-    clearWaitingConfirm();
+    clearUploadStatusTimer();
     setSegmentStatus('upload', t('uploadDone'));
     setUploading(false);
     pendingUpload = null;
@@ -3581,6 +3702,172 @@ html[data-auth="open"] #gate {
     $('upload-progress').innerHTML = '';
     $('text-input').value = '';
     updateSelectedUi();
+  }
+
+  // ========== 刷新后恢复上传会话 ==========
+
+  /** 页面加载时若存在上传 token，先置恢复态；分享归属由首次 caps 核对后再开始轮询。 */
+  function restoreUploadSession() {
+    if (restoringUpload || !ulToken) {
+      return;
+    }
+    restoringUpload = true;
+    setUploading(true);
+    activateTab('upload');
+    setSegmentStatus('upload', t('uploadInProgress'));
+  }
+
+  /** 轮询会话状态：服务端同时按页面心跳处理，取消离开宽限。 */
+  function pollUploadStatus() {
+    if (!restoringUpload || !ulToken) {
+      return;
+    }
+    request(BASE + '/web/upload-status?token=' + encodeURIComponent(ulToken), { cache: 'no-store' })
+      .then(function (response) {
+        if (response.status === 403 || response.status === 404) {
+          endRestoredUpload();
+          return undefined;
+        }
+        if (!response.ok) {
+          throw new Error('status ' + response.status);
+        }
+        return response.json().then(function (data) {
+          if (!restoringUpload) {
+            return;
+          }
+          handleRestoredStatus(data);
+        });
+      })
+      .catch(function (err) {
+        if (!restoringUpload) {
+          return;
+        }
+        if (err && err.authRequired) {
+          // 登录后由 submitGate 继续轮询
+          return;
+        }
+        uploadStatusTimer = setTimeout(pollUploadStatus, 2000);
+      });
+  }
+
+  /** 恢复态状态分流：完成→成功收口；已接受但刷新后无法续传→结束会话；待确认→继续等待。 */
+  function handleRestoredStatus(data) {
+    if (restoredAllDone(data)) {
+      finishRestoredUpload();
+      return;
+    }
+    if (data.state === 'accepted') {
+      interruptRestoredUpload();
+      return;
+    }
+    applyRestoredStatus(data);
+    uploadStatusTimer = setTimeout(pollUploadStatus, 2000);
+  }
+
+  function applyRestoredStatus(data) {
+    if (data.state === 'pending') {
+      setSegmentStatus('upload', t('waitingConfirm'));
+    } else {
+      setSegmentStatus('upload', t('uploadInProgress'));
+    }
+    if (data.files !== undefined && data.files.length > 0) {
+      renderRestoredFiles(data.files);
+    }
+  }
+
+  function restoredAllDone(data) {
+    var files = data.files;
+    if (files === undefined || files.length === 0) {
+      return false;
+    }
+    // 条目可能因 413/落盘失败被移除：数量少于声明数说明清单不完整，不能按成功收口
+    if (data.declaredFiles !== undefined && files.length < data.declaredFiles) {
+      return false;
+    }
+    for (var i = 0; i < files.length; i++) {
+      if (!files[i].done) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** 恢复态文件列表：只展示名称/大小，不提供移除入口。 */
+  function renderRestoredFiles(files) {
+    var html = '';
+    for (var i = 0; i < files.length; i++) {
+      html += '<div class="upload-item">' +
+        '<div class="upload-row">' +
+        '<div class="file-badge" aria-hidden="true">' + esc(fileBadge(files[i].fileName)) + '</div>' +
+        '<div class="upload-info">' +
+        '<div class="upload-name">' + esc(files[i].fileName) + '</div>' +
+        '<div class="upload-size">' + formatBytes(files[i].size) + '</div>' +
+        '</div>' +
+        '</div>' +
+        '</div>';
+    }
+    $('upload-progress').innerHTML = html;
+  }
+
+  function clearUploadStatusTimer() {
+    if (uploadStatusTimer >= 0) {
+      clearTimeout(uploadStatusTimer);
+      uploadStatusTimer = -1;
+    }
+  }
+
+  /** 旧会话已结束：恢复正常发送入口，等待用户重新选择文件发送。 */
+  function endRestoredUpload() {
+    if (!restoringUpload) {
+      return;
+    }
+    clearUploadStatusTimer();
+    restoringUpload = false;
+    setSegmentStatus('upload', t('uploadFailedRetry'), 'warning');
+    setUploadToken('');
+    setUploading(false);
+    $('upload-progress').innerHTML = '';
+  }
+
+  /** 刷新后无法续传：应用已接受但浏览器没有文件数据，结束会话并提示重新发送。 */
+  function interruptRestoredUpload() {
+    if (!restoringUpload) {
+      return;
+    }
+    clearUploadStatusTimer();
+    restoringUpload = false;
+    setSegmentStatus('upload', t('restoreInterrupted'), 'warning');
+    finishUploadSession(ulToken);
+    setUploadToken('');
+    setUploading(false);
+    $('upload-progress').innerHTML = '';
+  }
+
+  /** 服务已重启/更换分享：旧 token 不可能有效，静默丢弃，不显示失败提示。 */
+  function abandonRestoredUpload() {
+    if (!restoringUpload) {
+      return;
+    }
+    clearUploadStatusTimer();
+    restoringUpload = false;
+    setSegmentStatus('upload', '');
+    setUploadToken('');
+    setUploading(false);
+    $('upload-progress').innerHTML = '';
+  }
+
+  /** 旧会话全部文件已落盘：按成功收口。 */
+  function finishRestoredUpload() {
+    if (!restoringUpload) {
+      return;
+    }
+    clearUploadStatusTimer();
+    restoringUpload = false;
+    setSegmentStatus('upload', t('uploadDone'));
+    finishUploadSession(ulToken);
+    setUploadToken('');
+    setUploading(false);
+    $('upload-progress').innerHTML = '';
   }
 
   // ========== 主题/语言菜单交互 ==========
@@ -3632,7 +3919,7 @@ html[data-auth="open"] #gate {
     }
   });
 
-  // 页面关闭/刷新：先标记离开；刷新会在宽限内重新心跳并取消结束。
+  // 页面关闭/刷新：标记离开；刷新后的新页面按 token 恢复上传状态，宽限到期后收口
   window.addEventListener('pagehide', function () {
     if (ulToken) {
       navigator.sendBeacon(BASE + '/web/leave?token=' + encodeURIComponent(ulToken));
@@ -3688,6 +3975,8 @@ html[data-auth="open"] #gate {
     }, 30);
   }
   loadI18n(langPref).then(function () {
+    // 有旧 token 时先置恢复态（锁定页也先置位，登录后按 caps 核对分享归属）
+    restoreUploadSession();
     if (!isLocked) {
       loadCaps(false);
     }

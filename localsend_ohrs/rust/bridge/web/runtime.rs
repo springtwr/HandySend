@@ -217,6 +217,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
             upload_enabled: config.upload_enabled,
             share_state: ShareState::Active,
             https_hint: config.use_https,
+            share_id: String::new(),
         })),
         alias: Arc::new(Mutex::new(config.alias)),
         share_id: Arc::new(Mutex::new(format!(
