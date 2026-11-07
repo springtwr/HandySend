@@ -350,13 +350,15 @@ async fn handle_file_upload(
             progress_tx: Some(progress_tx),
         }
     };
-    if let Err(_returned) = target_tx.send(target) {
+    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    if let Err(localsend::http::server::common::save::FileUploadTarget::Fd { fd, .. }) =
+        target_tx.send(target)
+    {
         // 接收端已丢弃时关闭随目标退回的句柄，避免泄漏
-        #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
-        if let localsend::http::server::common::save::FileUploadTarget::Fd { fd, .. } = _returned {
-            let _ = unsafe { std::fs::File::from_raw_fd(fd) };
-        }
+        let _ = unsafe { std::fs::File::from_raw_fd(fd) };
     }
+    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    let _ = target_tx.send(target);
 
     let sid = session_id.to_string();
     let fid = file_id.to_string();

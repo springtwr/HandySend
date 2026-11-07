@@ -78,6 +78,10 @@ pub struct UploadFile {
 pub struct UploadSession {
     /// 浏览器 UUID。
     pub token: String,
+    /// 页面实例标识（同标签页刷新保留；关闭/新标签页不同）。
+    pub client_id: String,
+    /// 建会话声明清单的指纹（同 client 重试时用于判断是否同一批文件）。
+    pub batch_key: String,
     /// 归属分享标识。
     pub share_id: String,
     /// 创建时的对端 IP。
@@ -92,6 +96,8 @@ pub struct UploadSession {
     pub state: UploadState,
     /// 本次允许上传的文件表。
     pub files: HashMap<String, UploadFile>,
+    /// 建会话时声明的文件数（文件条目可能因 413/落盘失败被移除，用于判定清单是否完整）。
+    pub declared_files: usize,
     /// 是否已开始上传（任一文件收到首字节）。
     pub download_started: bool,
 }
@@ -284,6 +290,8 @@ mod tests {
         let now = Instant::now();
         let session = UploadSession {
             token: token.to_string(),
+            client_id: "client-1".to_string(),
+            batch_key: "batch-1".to_string(),
             share_id: "share-1".to_string(),
             peer_ip: "192.168.1.2".to_string(),
             user_agent: None,
@@ -293,6 +301,7 @@ mod tests {
                 decision_tx: Some(tx),
             },
             files: HashMap::new(),
+            declared_files: 0,
             download_started: false,
         };
         (session, rx)

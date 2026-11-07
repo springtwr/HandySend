@@ -436,10 +436,10 @@ fn fd_pread_content(
     const CHANNEL_CAPACITY: usize = 4;
     let (tx, rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
     let label = file_label.to_string();
-    // 后台阻塞读取：显式忽略 JoinHandle，fd 所有权已由任务接管
-    let _ = tokio::task::spawn_blocking(move || {
+    // 后台阻塞读取：显式丢弃 JoinHandle，fd 所有权已由任务接管
+    drop(tokio::task::spawn_blocking(move || {
         read_fd_into_channel(fd, label, tx, read_error_tx);
-    });
+    }));
     FileContent::Stream(rx)
 }
 
