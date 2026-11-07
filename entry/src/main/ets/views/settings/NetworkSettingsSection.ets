@@ -19,6 +19,7 @@ import { DEFAULT_PORT, DEFAULT_MULTICAST_GROUP } from '../../model/SettingsDefau
 import { ReceiveSettingsSection } from './ReceiveSettingsSection';
 import { CertificateSheet } from './CertificateSheet';
 import { AlertDialogV2, CustomContentDialogV2, AdvancedDialogV2Button, promptAction, uiObserver } from '@kit.ArkUI';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 const logger = getLogger(LogDomains.NETWORK, 'HandySend:NetworkSettings', '网络设置');
 
@@ -46,6 +47,66 @@ export struct NetworkSettingsSection {
   }
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 网络接口弹层退出确认是否在场：避免多条新请求连续触发时叠加确认框
+  private networkInterfaceClosePending: boolean = false
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的弹层
+  private overlayCloseCallback: () => void = (): void => {
+    this.requestCloseNetworkInterfaceSheet();
+    if (this.isShowCertificateSheet) {
+      this.isShowCertificateSheet = false;
+    }
+    this.closeActiveDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  /**
+   * 请求关闭网络接口弹层：无未保存修改直接关闭；有修改走既有丢弃确认。
+   * 取消确认时弹层保持打开，待用户后续自行关闭。
+   */
+  private requestCloseNetworkInterfaceSheet(): void {
+    if (!this.isShowNetworkInterfaceSheet || this.networkInterfaceClosePending) {
+      return;
+    }
+    if (!this.hasUnsavedChanges()) {
+      this.isShowNetworkInterfaceSheet = false;
+      return;
+    }
+    this.networkInterfaceClosePending = true;
+    this.confirmDiscardNetworkChanges((): void => {
+      this.networkInterfaceClosePending = false;
+      this.isShowNetworkInterfaceSheet = false;
+    }, (): void => {
+      this.networkInterfaceClosePending = false;
+    });
+  }
+
+  /** 未保存修改的丢弃确认；afterClose 在用户选择丢弃后执行。 */
+  private confirmDiscardNetworkChanges(afterClose: () => void, onCancel: () => void): void {
+    this.getUIContext().showAlertDialog({
+      message: $r('app.string.unsaved_changes_message'),
+      autoCancel: true,
+      alignment: DialogAlignment.Bottom,
+      cancel: onCancel,
+      primaryButton: {
+        value: $r('app.string.dialog_cancel'),
+        action: onCancel
+      },
+      secondaryButton: {
+        enabled: true,
+        defaultFocus: true,
+        style: DialogButtonStyle.HIGHLIGHT,
+        value: $r('app.string.discard'),
+        action: afterClose
+      }
+    });
+  }
 
   // 监听接口列表版本变化，弹窗开着时自动刷新。
   // 仅在接口数据实际变化时刷新，避免 notifyChange 触发的 interfaceListVersion 递增
@@ -819,27 +880,10 @@ export struct NetworkSettingsSection {
             },
             onWillDismiss: (dismissSheetAction: DismissSheetAction) => {
               if (this.hasUnsavedChanges()) {
-                // 有未保存修改时，弹窗确认是否丢弃
-                this.getUIContext().showAlertDialog({
-                  message: $r('app.string.unsaved_changes_message'),
-                  autoCancel: true,
-                  alignment: DialogAlignment.Bottom,
-                  primaryButton: {
-                    value: $r('app.string.dialog_cancel'),
-                    action: () => {
-                      // 取消关闭，弹窗保持打开
-                    }
-                  },
-                  secondaryButton: {
-                    enabled: true,
-                    defaultFocus: true,
-                    style: DialogButtonStyle.HIGHLIGHT,
-                    value: $r('app.string.discard'),
-                    action: () => {
-                      // 用户选择丢弃，关闭弹窗
-                      dismissSheetAction.dismiss();
-                    }
-                  }
+                // 有未保存修改时，弹窗确认是否丢弃；取消则面板保持打开
+                this.confirmDiscardNetworkChanges((): void => {
+                  dismissSheetAction.dismiss();
+                }, (): void => {
                 });
               } else {
                 // 无修改，直接关闭

@@ -15,6 +15,7 @@ import {
   uiObserver
 } from '@kit.ArkUI';
 import { DEFAULT_AUTO_CONFIRM_MODE } from '../../model/SettingsDefaults';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 interface AutoConfirmOption {
   value: string
@@ -56,6 +57,19 @@ export struct ReceiveSettingsSection {
   @Local pendingPinValue: string = ''
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的弹层
+  private overlayCloseCallback: () => void = (): void => {
+    this.isShowAutoConfirmSheet = false;
+    this.closeActiveDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
 
   // 当前自动确认模式的显示名
   private getAutoConfirmLabel(): ResourceStr {

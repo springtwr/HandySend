@@ -13,6 +13,7 @@ import {
   uiObserver
 } from '@kit.ArkUI';
 import { getStringSync } from '../../utils/ResourceUtil';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 /**
  * WebSettingsSection.ets — 网页传输设置分组：发送 / 接收两个允许开关，
@@ -36,6 +37,21 @@ export struct WebSettingsSection {
   @Local private isAdvancedExpanded: boolean = false
   @Local private pendingPort: string = ''
   private activeDialogId: number = -1
+  // 网络接口弹层退出确认是否在场：避免多条新请求连续触发时叠加确认框
+  private interfaceClosePending: boolean = false
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的弹层
+  private overlayCloseCallback: () => void = (): void => {
+    this.requestCloseInterfaceSheet();
+    this.closeActiveDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
 
   // ── 端口弹窗 ──
 
@@ -115,6 +131,45 @@ export struct WebSettingsSection {
       this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
       this.activeDialogId = -1;
     }
+  }
+
+  /** 请求关闭网络接口弹层：无未保存修改直接关闭；有修改走既有丢弃确认。 */
+  private requestCloseInterfaceSheet(): void {
+    if (!this.isShowInterfaceSheet || this.interfaceClosePending) {
+      return;
+    }
+    if (!this.hasUnsavedInterfaceChanges()) {
+      this.isShowInterfaceSheet = false;
+      return;
+    }
+    this.interfaceClosePending = true;
+    this.confirmDiscardInterfaceChanges((): void => {
+      this.interfaceClosePending = false;
+      this.isShowInterfaceSheet = false;
+    }, (): void => {
+      this.interfaceClosePending = false;
+    });
+  }
+
+  /** 未保存修改的丢弃确认；afterClose 在用户选择丢弃后执行。 */
+  private confirmDiscardInterfaceChanges(afterClose: () => void, onCancel: () => void): void {
+    this.getUIContext().showAlertDialog({
+      message: $r('app.string.unsaved_changes_message'),
+      autoCancel: true,
+      alignment: DialogAlignment.Bottom,
+      cancel: onCancel,
+      primaryButton: {
+        value: $r('app.string.dialog_cancel'),
+        action: onCancel
+      },
+      secondaryButton: {
+        enabled: true,
+        defaultFocus: true,
+        style: DialogButtonStyle.HIGHLIGHT,
+        value: $r('app.string.discard'),
+        action: afterClose
+      }
+    });
   }
 
   // ── 网络接口多选弹窗 ──
@@ -515,26 +570,10 @@ export struct WebSettingsSection {
       },
       onWillDismiss: (dismissSheetAction: DismissSheetAction) => {
         if (this.hasUnsavedInterfaceChanges()) {
-          // 有未保存修改时，弹窗确认是否丢弃
-          this.getUIContext().showAlertDialog({
-            message: $r('app.string.unsaved_changes_message'),
-            autoCancel: true,
-            alignment: DialogAlignment.Bottom,
-            primaryButton: {
-              value: $r('app.string.dialog_cancel'),
-              action: () => {
-                // 取消关闭，弹窗保持打开
-              }
-            },
-            secondaryButton: {
-              enabled: true,
-              defaultFocus: true,
-              style: DialogButtonStyle.HIGHLIGHT,
-              value: $r('app.string.discard'),
-              action: () => {
-                dismissSheetAction.dismiss();
-              }
-            }
+          // 有未保存修改时，弹窗确认是否丢弃；取消则面板保持打开
+          this.confirmDiscardInterfaceChanges((): void => {
+            dismissSheetAction.dismiss();
+          }, (): void => {
           });
         } else {
           dismissSheetAction.dismiss();

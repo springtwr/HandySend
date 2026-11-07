@@ -401,7 +401,7 @@ export class MtaReceiveService {
    * `THUMBNAIL_PREFETCH_BUDGET_MS`），随后进入待确认阶段。
    * 请求必须在预取开始前写入状态：预取写回缩略图路径的守卫以「状态已持有该请求」
    * 为判据，若预取先于写入，则快路径（预算内取回）下守卫恒为假、路径被丢弃；
-   * 命中预览的提示弹窗会直接带缩略图，未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
+   * 命中预览的待确认详情页会直接带缩略图，未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
    */
   private async handleReceiveRequest(request: ReceiveRequest): Promise<void> {
     this.cancelRequestWaitTimeout();

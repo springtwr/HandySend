@@ -153,7 +153,7 @@ export class MtaConstants {
   static readonly DOWNLOAD_HEADER_TIMEOUT_MS: number = 30000;
   /** 接收端拉取发送端缩略图的字节上限（防滥用；超出即放弃预览，不影响接收） */
   static readonly MAX_THUMBNAIL_BYTES: number = 1024 * 1024;
-  /** 接收端进入待确认界面前预取缩略图的等待预算（毫秒）：超时即放行，避免拖延提示弹窗 */
+  /** 接收端进入待确认界面前预取缩略图的等待预算（毫秒）：超时即放行，避免拖延待确认详情页展示 */
   static readonly THUMBNAIL_PREFETCH_BUDGET_MS: number = 600;
   /** 接收解压后允许的总大小上限（字节，防 zip bomb；作为参数传入 Rust；对端官方口径无大小限制，本上限仅作炸弹防线，落地前另有存储预留检查） */
   static readonly MAX_UNZIP_TOTAL_BYTES: number = 1024 * 1024 * 1024 * 1024;

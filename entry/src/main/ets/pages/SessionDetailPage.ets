@@ -54,6 +54,8 @@ import {
 import { needsOverLimitHint } from '../utils/FilePreviewPolicy';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../utils/OverlayCloseBus';
+import { markSessionDetailOpen, markSessionDetailClosed } from '../utils/SessionDetailStack';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话详情');
 
@@ -83,14 +85,33 @@ export struct SessionDetailPage {
   private checksumDialogId: number = -1
   // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
   private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
+  // 本页是否已登记到会话详情栈（避免重复 aboutToAppear 造成重复记录）
+  private detailMarkedOpen: boolean = false
+  // 新传输直达详情前的弹层收起：关闭本页自己打开的文件预览/校验和/相册保存弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.closeFilePreviewDialog();
+    this.closeChecksumDialog();
+    this.closeGallerySaveDialog();
+  }
 
   aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let params: SessionDetailParams = this.pageParam as SessionDetailParams;
+    if (!this.detailMarkedOpen) {
+      markSessionDetailOpen(params.sessionId);
+      this.detailMarkedOpen = true;
+    }
     this.viewModel.load(params.sessionId);
   }
 
   aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+    let params: SessionDetailParams = this.pageParam as SessionDetailParams;
+    if (this.detailMarkedOpen) {
+      markSessionDetailClosed(params.sessionId);
+      this.detailMarkedOpen = false;
+    }
     this.viewModel.unload();
   }
 

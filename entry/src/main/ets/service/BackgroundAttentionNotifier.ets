@@ -96,7 +96,7 @@ export function setDesktopWindowMinimized(minimized: boolean): void {
   refreshBackgroundAttention();
 }
 
-/** PC 主窗口是否最小化：供页面判断是否适合弹应用内新传输提示。 */
+/** PC 主窗口是否最小化：供页面判断是否适合自动打开新传输详情页。 */
 export function isDesktopWindowMinimized(): boolean {
   return desktopWindowMinimized;
 }

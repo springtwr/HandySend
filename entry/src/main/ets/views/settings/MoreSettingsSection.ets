@@ -16,6 +16,7 @@ import { LogAttachmentResult } from '../../model/LogFileTypes';
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 // 更多设置分组（关于/反馈/评价/赞助/诊断日志/恢复默认）。
 // 关于/反馈/评价/赞助半屏弹窗直接绑定在本组件，各自独立。
@@ -36,6 +37,22 @@ export struct MoreSettingsSection {
   @Local attachDiagnosticLogs: boolean = false
   // 当前打开的 A 类弹窗 id（接触开发者弹窗关闭时使用）
   private activeDialogId: number = -1
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的四个半模态与弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.isShowAboutSheet = false;
+    this.isShowRateSheet = false;
+    this.isShowFeedbackSheet = false;
+    this.isShowSponsorSheet = false;
+    this.closeActiveDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
   // 打开诊断日志页意图：本组件不持有导航栈，经此上抛由持有栈的页面执行
   @Event onOpenDiagnosticLogs: () => void = () => {
   }

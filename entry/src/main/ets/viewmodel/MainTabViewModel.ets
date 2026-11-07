@@ -19,7 +19,7 @@ const logger = getLogger(LogDomains.DISCOVERY, 'HandySend:MainTab', '主页');
  * 每次会话变化都从注册表重算，不存在「角标有数字而列表无/0%」的不同步来源。
  *
  * 待确认请求由协议适配器登记为注册表中的待确认会话；收到新的接收请求（新的待确认会话）时，
- * 经 `autoOpenSessionId` 通知主页面在应用前台任意页面之上弹出新传输提示弹窗，供用户「查看」或「拒绝」。
+ * 经 `autoOpenSessionIds` 通知主页面逐条进入这些会话的详情页，由用户在详情页确认/拒绝或关闭/复制。
  *
  * 接收完成不触发任何自动跳转（尤其不得以会话标识进入详情页）：
  * 接收结果由任务与会话详情页按需展示，避免以未就绪/已回收的会话进入空白详情页。
@@ -30,9 +30,11 @@ export class MainTabViewModel {
   @Trace public activeTransferCount: number = 0
   /** 待确认会话数 */
   @Trace public pendingCount: number = 0
-  /** 待提示的新待确认会话标识（空串表示无）；页面消费后置空 */
-  @Trace public autoOpenSessionId: string = ''
-  /** 已感知的待确认会话标识（同一会话不重复提示） */
+  /** 待打开的新待确认会话标识队列（空数组表示无）；页面消费后清空 */
+  @Trace public autoOpenSessionIds: Array<string> = []
+  /** 队列变更版本：数组属性监听在部分运行时不稳定，用标量版本保证页面一定收到通知 */
+  @Trace public autoOpenSessionVersion: number = 0
+  /** 已感知的待确认会话标识（同一会话不重复入队） */
   private knownPendingIds: Array<string> = []
   // 上次输出的待确认计数：变更总线为全局通知，无关变更（发现/设置等）也会触发本 VM，
   // 计数未变时不再重复输出同一行
@@ -75,28 +77,34 @@ export class MainTabViewModel {
   }
 
   /**
-   * 感知新到达的待确认会话：与已感知集合比较，出现新标识时置位「待提示会话」信号。
-   * 页面（MainTabFloating）消费该信号弹出新传输提示弹窗；同一会话在提示后被确认/拒绝而消失时
-   * 不会再误触发。
+   * 感知新到达的待确认会话：与已感知集合比较，出现新标识时追加到待打开队列。
+   * 页面（MainTabFloating）消费队列，逐条进入这些会话的详情页；同一会话只入队一次。
    */
   private detectNewPendingSession(): void {
     let filter: SessionFilter = { stage: SessionStage.awaitingConfirmation };
     let pending: Array<TransferSession> = querySessions(filter);
     let currentIds: Array<string> = [];
-    let newSessionId: string = '';
+    let newIds: Array<string> = [];
     for (let i = 0; i < pending.length; i++) {
       let id: string = pending[i].id;
       currentIds.push(id);
       if (this.knownPendingIds.indexOf(id) < 0) {
-        newSessionId = id;
+        newIds.push(id);
       }
     }
     this.knownPendingIds = currentIds;
-    // 取舍声明：多个新待确认会话同帧并发到达时只提示最后一个
-    // （提示仅为便捷引导，任务列表可见全部待确认会话）
-    if (newSessionId.length > 0 && newSessionId !== this.autoOpenSessionId) {
-      logger.debug('新的待确认任务：' + newSessionId);
-      this.autoOpenSessionId = newSessionId;
+    if (newIds.length === 0) {
+      return;
     }
+    // 追加而不是覆盖：页面尚未消费完上一批时，新请求继续排在队尾
+    let queue: Array<string> = this.autoOpenSessionIds.slice();
+    for (let i = 0; i < newIds.length; i++) {
+      if (queue.indexOf(newIds[i]) < 0) {
+        queue.push(newIds[i]);
+      }
+    }
+    logger.debug('新的待确认任务数：' + newIds.length);
+    this.autoOpenSessionIds = queue;
+    this.autoOpenSessionVersion = this.autoOpenSessionVersion + 1;
   }
 }

@@ -2,6 +2,7 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 import { getSystemDeviceName } from '../../utils/AliasGenerator';
 import { CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 // 通用（接收与发送）分区：设备名称 / 文件保存目录 / 允许后台接收 / 保存到相册 / 自动清空选中文件 /
 // 通知与「设备发现和连接」权限。
@@ -17,6 +18,18 @@ export struct GeneralSettingsSection {
   }
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 新传输直达详情前的弹层收起：本组件只处理设备名称输入弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.closeActiveDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
 
   private getDefaultAlias(): string {
     return getSystemDeviceName();

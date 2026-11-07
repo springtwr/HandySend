@@ -18,6 +18,7 @@ import {
 } from '../../common/LanguageConstants';
 import { uiObserver } from '@kit.ArkUI';
 import { DEFAULT_THEME } from '../../model/SettingsDefaults';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 interface ThemeOption {
   value: string
@@ -39,6 +40,19 @@ export struct AppearanceSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   @Local isShowLanguageSheet: boolean = false
   @Local isShowThemeSheet: boolean = false
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的两个半模态
+  private overlayCloseCallback: () => void = (): void => {
+    this.isShowLanguageSheet = false;
+    this.isShowThemeSheet = false;
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
 
   // 当前主题的显示名
   private getThemeLabel(): ResourceStr {

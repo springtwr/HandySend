@@ -1833,30 +1833,6 @@
       "value": "打开文件失败"
     },
     {
-      "name": "new_transfer_alert_title",
-      "value": "新的传输请求"
-    },
-    {
-      "name": "new_transfer_alert_message",
-      "value": "%s 发来 %d 个文件"
-    },
-    {
-      "name": "new_transfer_alert_message_text",
-      "value": "%s 发来 1 条消息"
-    },
-    {
-      "name": "new_transfer_alert_message_outbound",
-      "value": "%s 想要下载 %d 个文件"
-    },
-    {
-      "name": "new_transfer_confirm_timeout",
-      "value": "等待确认超时，请求已关闭"
-    },
-    {
-      "name": "new_transfer_alert_view",
-      "value": "查看"
-    },
-    {
       "name": "favorites_online",
       "value": "在线"
     },
