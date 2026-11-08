@@ -315,8 +315,10 @@ async fn handle_file_upload(
         match registered {
             Some(recv_fd) => {
                 let final_path = recv_fd.path.clone();
-                let temp_path =
-                    crate::bridge::temp_workspace::temp_path_for(std::path::Path::new(&final_path));
+                let temp_path = crate::bridge::temp_workspace::temp_path_for(
+                    std::path::Path::new(&final_path),
+                    crate::bridge::temp_workspace::TEMP_SUBDIR_LOCAL_SEND,
+                );
                 log::debug!(
                     "接收：fd 直接保存 session={} file={} path={} temp={}",
                     session_id,
@@ -442,8 +444,13 @@ async fn handle_file_upload(
                             temp_path,
                             final_path
                         );
-                    } else if let Some(dir) = std::path::Path::new(&temp_path).parent() {
-                        let _ = std::fs::remove_dir(dir);
+                    } else {
+                        if let Some(dir) = std::path::Path::new(&final_path).parent() {
+                            crate::bridge::temp_workspace::remove_temp_dir_if_empty(
+                                dir,
+                                crate::bridge::temp_workspace::TEMP_SUBDIR_LOCAL_SEND,
+                            );
+                        }
                         log::debug!(
                             "接收：临时文件已提交 session={} file={} final={}",
                             sid,

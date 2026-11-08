@@ -4,6 +4,10 @@
 import { describe, it, beforeAll, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { uniquePath } from '../../../../main/ets/service/repository/ReceiveTargets'
+import {
+  TEMP_DIR_NAME,
+  TEMP_SUBDIR_WEB
+} from '../../../../main/ets/model/transfer/TransferTempPaths'
 import { getTestCacheDir, ensureDir } from '../helper/TestHelper'
 
 // 在目标目录创建一个空文件（制造同名冲突场景）
@@ -49,6 +53,17 @@ export default function ReceiveTargetsTest() {
       writeFile(dir, '.hidden')
       // 以点号开头的隐藏文件不视为扩展名
       expect(uniquePath(dir, '.hidden')).assertEqual('.hidden (1)')
+    })
+
+    it('uniquePath_respects_temp_reservation', 0, () => {
+      let tempDir = dir + '/' + TEMP_DIR_NAME + '/' + TEMP_SUBDIR_WEB
+      ensureDir(tempDir)
+      // 最终路径尚未出现，但其他协议已在临时区预留同名文件
+      writeFile(tempDir, 'reserved.jpg')
+      expect(uniquePath(dir, 'reserved.jpg')).assertEqual('reserved (1).jpg')
+      // 预留文件存在时，带序号的名字也不能重复占用
+      writeFile(tempDir, 'reserved (1).jpg')
+      expect(uniquePath(dir, 'reserved.jpg')).assertEqual('reserved (2).jpg')
     })
   })
 }

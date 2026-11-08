@@ -2,11 +2,19 @@
  * TransferTempPaths.ets — 接收落盘临时区的路径规则
  *
  * 与 Rust 侧 `bridge/temp_workspace.rs` 的 `.handysend-temp/` 规则保持一致：
- * 未完成文件写在最终文件同父目录的应用独占隐藏子目录中，完成后 rename 到最终路径。
- * 旧名 `.handysend-upload-part` 作为 legacy 目录做 best-effort 清理。
+ * 未完成文件写在最终文件同父目录的应用独占隐藏目录中，完成后 rename 到最终路径。
+ * 临时区按协议分子目录，避免不同协议的同名文件互相截断；临时文件存在即表示
+ * 该最终文件名已被占用。旧名 `.handysend-upload-part` 作为 legacy 目录清理。
  */
 
 export const TEMP_DIR_NAME: string = '.handysend-temp';
+
+/** 各接收协议的临时子目录名。 */
+export const TEMP_SUBDIR_LOCAL_SEND: string = 'local-send';
+export const TEMP_SUBDIR_MTA: string = 'mta';
+export const TEMP_SUBDIR_WEB: string = 'web';
+export const TEMP_SUBDIRS: Array<string> =
+  [TEMP_SUBDIR_LOCAL_SEND, TEMP_SUBDIR_MTA, TEMP_SUBDIR_WEB];
 
 export const LEGACY_TEMP_DIR_NAMES: Array<string> = ['.handysend-upload-part'];
 
@@ -22,8 +30,8 @@ export function baseNameOf(path: string): string {
   return index >= 0 ? path.substring(index + 1) : path;
 }
 
-/** 最终路径对应的临时目录。 */
-export function tempDirForFinal(finalPath: string): string {
+/** 最终路径对应的临时区根目录。 */
+export function tempRootForFinal(finalPath: string): string {
   let dir: string = dirNameOf(finalPath);
   if (dir.length === 0) {
     return TEMP_DIR_NAME;
@@ -31,7 +39,21 @@ export function tempDirForFinal(finalPath: string): string {
   return dir + '/' + TEMP_DIR_NAME;
 }
 
-/** 最终路径对应的临时文件路径。 */
-export function tempPathForFinal(finalPath: string): string {
-  return tempDirForFinal(finalPath) + '/' + baseNameOf(finalPath);
+/** 最终路径在指定协议子目录下的临时目录。 */
+export function tempDirForFinal(finalPath: string, subdir: string): string {
+  return tempRootForFinal(finalPath) + '/' + subdir;
+}
+
+/** 最终路径在指定协议子目录下的临时文件路径。 */
+export function tempPathForFinal(finalPath: string, subdir: string): string {
+  return tempDirForFinal(finalPath, subdir) + '/' + baseNameOf(finalPath);
+}
+
+/** 最终路径在所有协议临时子目录下的候选临时路径（用于恢复时兜底清理）。 */
+export function tempPathsForFinal(finalPath: string): Array<string> {
+  let result: Array<string> = [];
+  for (let i = 0; i < TEMP_SUBDIRS.length; i++) {
+    result.push(tempPathForFinal(finalPath, TEMP_SUBDIRS[i]));
+  }
+  return result;
 }

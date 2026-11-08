@@ -96,7 +96,11 @@ import {
   removeSessionDraft,
   saveSessionDraft
 } from '../transfer/SessionDraftStore';
-import { tempPathForFinal } from '../../model/transfer/TransferTempPaths';
+import {
+  dirNameOf,
+  TEMP_SUBDIR_WEB,
+  tempPathForFinal
+} from '../../model/transfer/TransferTempPaths';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页传输');
 
@@ -1163,7 +1167,7 @@ function writeWebUploadDraft(session: TransferSession): void {
       occurrence: f.occurrence,
       checksum: f.checksum,
       finalPath: f.path,
-      tempPath: f.path.length > 0 ? tempPathForFinal(f.path) : '',
+      tempPath: f.path.length > 0 ? tempPathForFinal(f.path, TEMP_SUBDIR_WEB) : '',
       stage: f.stage,
       bytesSent: f.bytesSent,
       completedAt: completedAtFor(previous, f.fileId,
@@ -1247,7 +1251,7 @@ function updateWebUploadDraftDone(token: string, fileId: string, path: string): 
     }
     if (path.length > 0) {
       file.finalPath = path;
-      file.tempPath = tempPathForFinal(path);
+      file.tempPath = tempPathForFinal(path, TEMP_SUBDIR_WEB);
     }
     file.stage = SessionFileStage.completed;
     file.bytesSent = file.totalBytes;
@@ -1476,6 +1480,63 @@ setWebUploadInvokers(
 // ── 上传落盘目标与历史归档 ──
 
 /**
+ * 创建网页上传的临时占位文件：临时文件存在即代表对应最终文件名已被占用，
+ * 其他协议的同名接收会据此选择带序号的文件名，避免提交前互相截断。
+ */
+function reserveWebUploadTempPath(finalPath: string): string | undefined {
+  let tempPath: string = tempPathForFinal(finalPath, TEMP_SUBDIR_WEB);
+  let tempDir: string = dirNameOf(tempPath);
+  let file: fs.File | undefined = undefined;
+  try {
+    if (tempDir.length > 0 && !fs.accessSync(tempDir)) {
+      fs.mkdirSync(tempDir, true);
+    }
+    file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY |
+      fs.OpenMode.TRUNC);
+    return tempPath;
+  } catch (e) {
+    logger.warn('创建网页上传临时占位失败：' + tempPath + '：' + String(e));
+    return undefined;
+  } finally {
+    if (file !== undefined) {
+      try {
+        fs.closeSync(file);
+      } catch (_e) {
+      }
+    }
+  }
+}
+
+/** 下发目标失败时清理本次已创建的网页上传占位文件。 */
+function releaseWebUploadTempPaths(paths: Array<string>): void {
+  let dirs: Record<string, boolean> = {};
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      fs.unlinkSync(paths[i]);
+    } catch (_e) {
+    }
+    let dir: string = dirNameOf(paths[i]);
+    if (dir.length > 0) {
+      dirs[dir] = true;
+    }
+  }
+  let dirKeys: Array<string> = Object.keys(dirs);
+  for (let i = 0; i < dirKeys.length; i++) {
+    try {
+      fs.rmdirSync(dirKeys[i]);
+    } catch (_e) {
+    }
+    let parent: string = dirNameOf(dirKeys[i]);
+    if (parent.length > 0) {
+      try {
+        fs.rmdirSync(parent);
+      } catch (_e) {
+      }
+    }
+  }
+}
+
+/**
  * 为待确认上传会话计算落盘目标并下发原生层。
  * 普通文件进接收目录（默认 Download/<包名>/；重名自动加后缀）；单文本消息（message.txt）
  * 进接收文本目录。目录不可用时返回 false，调用方据此拒绝。
@@ -1519,6 +1580,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     path: string
   }
   let targets: Array<UploadTargetJson> = [];
+  let tempPlaceholders: Array<string> = [];
   // 同一批内同名文件（来自不同目录）也要各自落盘，不能共用同一目标路径
   let reserved: Record<string, boolean> = {};
   for (let i = 0; i < session.files.length; i++) {
@@ -1526,6 +1588,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     let dir: string = isTextMessage ? textDir : downloadDir;
     if (dir.length === 0) {
       logger.warn('上传落盘目录缺失 token=' + redactSessionToken(token));
+      releaseWebUploadTempPaths(tempPlaceholders);
       return false;
     }
     let fileName: string = uniquePath(dir, f.fileName);
@@ -1538,17 +1601,26 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
       serial++;
     }
     reserved[dir + '/' + fileName] = true;
-    targets.push({ fileId: f.fileId, path: dir + '/' + fileName });
+    let finalPath: string = dir + '/' + fileName;
+    let tempPath: string | undefined = reserveWebUploadTempPath(finalPath);
+    if (tempPath === undefined) {
+      releaseWebUploadTempPaths(tempPlaceholders);
+      return false;
+    }
+    tempPlaceholders.push(tempPath);
+    targets.push({ fileId: f.fileId, path: finalPath });
   }
   let applied: number = 0;
   try {
     applied = nativeSetWebUploadTargets(token, JSON.stringify(targets));
   } catch (e) {
     logger.error('下发上传目标失败 token=' + redactSessionToken(token) + '：' + e);
+    releaseWebUploadTempPaths(tempPlaceholders);
     return false;
   }
   if (applied !== targets.length) {
     logger.warn('上传目标部分未生效 applied=' + applied);
+    releaseWebUploadTempPaths(tempPlaceholders);
     return false;
   }
   // 最终路径确定后同步到草稿，强杀恢复据此判断文件是否已完成。
@@ -1561,7 +1633,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
           continue;
         }
         draft.files[j].finalPath = target.path;
-        draft.files[j].tempPath = tempPathForFinal(target.path);
+        draft.files[j].tempPath = tempPathForFinal(target.path, TEMP_SUBDIR_WEB);
         break;
       }
     }

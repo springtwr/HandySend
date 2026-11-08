@@ -67,7 +67,11 @@ import {
   updateReceiveSessionFilePath,
   LOCAL_RECEIVE_KEY
 } from '../transfer/adapters/LocalSendReceiveAdapter';
-import { dirNameOf, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
+import {
+  dirNameOf,
+  TEMP_SUBDIR_LOCAL_SEND,
+  tempPathForFinal
+} from '../../model/transfer/TransferTempPaths';
 import { findByProtocol } from '../transfer/TransferSessionRegistry';
 import {
   SESSION_DRAFT_SCHEMA_VERSION,
@@ -156,7 +160,8 @@ function writeLocalSendDraft(sessionId: string, stage: SessionStage): void {
       occurrence: 1,
       checksum: '',
       finalPath: entry.filePath,
-      tempPath: entry.filePath.length > 0 ? tempPathForFinal(entry.filePath) : '',
+      tempPath: entry.filePath.length > 0 ?
+        tempPathForFinal(entry.filePath, TEMP_SUBDIR_LOCAL_SEND) : '',
       stage: completed ? SessionFileStage.completed : SessionFileStage.waiting,
       bytesSent: completed ? totalBytes : 0,
       completedAt: completed ? Date.now() : 0,
@@ -201,7 +206,7 @@ function updateLocalSendDraftDone(sessionId: string, fileId: string, path: strin
     }
     if (path.length > 0) {
       file.finalPath = path;
-      file.tempPath = tempPathForFinal(path);
+      file.tempPath = tempPathForFinal(path, TEMP_SUBDIR_LOCAL_SEND);
     }
     file.stage = SessionFileStage.completed;
     file.bytesSent = file.totalBytes;

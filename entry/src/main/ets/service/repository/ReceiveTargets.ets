@@ -5,7 +5,14 @@
 
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { ensureReceiveDirectory } from './ReceiveDirectory';
-import { dirNameOf, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
+import {
+  dirNameOf,
+  LEGACY_TEMP_DIR_NAMES,
+  TEMP_DIR_NAME,
+  TEMP_SUBDIR_LOCAL_SEND,
+  TEMP_SUBDIRS,
+  tempPathForFinal
+} from '../../model/transfer/TransferTempPaths';
 import {
   nativeSanitizeFileName, nativeRegisterRecvFileFd, nativeDiscardRecvFileFds
 } from '../NativeBridge';
@@ -61,6 +68,28 @@ function fileExistsAtPath(path: string): boolean {
 }
 
 /**
+ * 目标目录中该文件名是否已被临时文件占用。
+ * 接收临时区按协议分子目录；临时文件存在即代表对应最终文件名已被预留，
+ * 避免并发的同名接收在传输完成前选中同一最终路径。
+ */
+function tempNameReserved(dir: string, fileName: string): boolean {
+  for (let i = 0; i < TEMP_SUBDIRS.length; i++) {
+    let candidate: string = dir + '/' + TEMP_DIR_NAME + '/' + TEMP_SUBDIRS[i] + '/' + fileName;
+    if (fileExistsAtPath(candidate)) {
+      return true;
+    }
+  }
+  // 旧版临时目录中的残留同样视为占用，避免覆盖尚未清理的半成品
+  for (let i = 0; i < LEGACY_TEMP_DIR_NAMES.length; i++) {
+    let candidate: string = dir + '/' + LEGACY_TEMP_DIR_NAMES[i] + '/' + fileName;
+    if (fileExistsAtPath(candidate)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 检测目标目录中的同名文件冲突，返回不冲突的文件名。
  * 若 dir/fileName 已存在，则在文件名和扩展名之间插入 " (N)" 编号后缀（N 从 1 递增）。
  * - 无扩展名：README → README (1)
@@ -69,7 +98,7 @@ function fileExistsAtPath(path: string): boolean {
  */
 export function uniquePath(dir: string, fileName: string): string {
   let candidatePath: string = dir + '/' + fileName;
-  if (!fileExistsAtPath(candidatePath)) {
+  if (!fileExistsAtPath(candidatePath) && !tempNameReserved(dir, fileName)) {
     return fileName;
   }
   // 分离文件名主干和扩展名（基于最后一个点号）
@@ -88,7 +117,7 @@ export function uniquePath(dir: string, fileName: string): string {
   let n: number = 1;
   let renamed: string = stem + ' (' + n + ')' + ext;
   candidatePath = dir + '/' + renamed;
-  while (fileExistsAtPath(candidatePath)) {
+  while (fileExistsAtPath(candidatePath) || tempNameReserved(dir, renamed)) {
     n++;
     renamed = stem + ' (' + n + ')' + ext;
     candidatePath = dir + '/' + renamed;
@@ -194,7 +223,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       }
       let uniqueName: string = uniquePath(dirPath, name);
       destPath = dirPath + '/' + uniqueName;
-      tempPath = tempPathForFinal(destPath);
+      tempPath = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND);
       let tempDir: string = dirNameOf(tempPath);
       if (tempDir.length > 0 && !fs.accessSync(tempDir)) {
         fs.mkdirSync(tempDir, true);

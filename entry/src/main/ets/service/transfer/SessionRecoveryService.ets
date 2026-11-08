@@ -21,7 +21,13 @@ import {
   isTerminalStage
 } from '../../model/transfer/TransferSession';
 import { ReceiveHistoryEntry } from '../../model/Types';
-import { baseNameOf, dirNameOf, LEGACY_TEMP_DIR_NAMES, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
+import {
+  baseNameOf,
+  dirNameOf,
+  LEGACY_TEMP_DIR_NAMES,
+  TEMP_SUBDIRS,
+  tempPathsForFinal
+} from '../../model/transfer/TransferTempPaths';
 import {
   SessionDraft,
   SessionDraftFile,
@@ -275,28 +281,47 @@ function cleanupTempFile(file: SessionDraftFile): void {
   if (file.finalPath.length === 0 && file.tempPath.length === 0) {
     return;
   }
-  let tempPath: string = file.tempPath.length > 0 ? file.tempPath :
-    tempPathForFinal(file.finalPath);
-  if (tempPath.length === 0) {
-    return;
-  }
-  try {
-    if (fs.accessSync(tempPath)) {
-      fs.unlinkSync(tempPath);
+  // 有显式临时路径时只清理该路径；旧草稿没有记录子目录时，枚举全部协议子目录兜底。
+  let tempPaths: Array<string> = file.tempPath.length > 0 ? [file.tempPath] :
+    tempPathsForFinal(file.finalPath);
+  let tempDirs: Record<string, boolean> = {};
+  for (let i = 0; i < tempPaths.length; i++) {
+    let tempPath: string = tempPaths[i];
+    if (tempPath.length === 0) {
+      continue;
     }
-  } catch (e) {
-    logger.debug('清理临时文件失败：' + tempPath + '：' + String(e));
-  }
-  let tempDir: string = dirNameOf(tempPath);
-  if (tempDir.length === 0) {
-    return;
-  }
-  try {
-    if (fs.accessSync(tempDir)) {
-      fs.rmdirSync(tempDir);
+    try {
+      if (fs.accessSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    } catch (e) {
+      logger.debug('清理临时文件失败：' + tempPath + '：' + String(e));
     }
-  } catch (_e) {
-    // 目录非空说明还有其他残留或用户文件，保留。
+    let tempDir: string = dirNameOf(tempPath);
+    if (tempDir.length > 0) {
+      tempDirs[tempDir] = true;
+    }
+  }
+  let dirKeys: Array<string> = Object.keys(tempDirs);
+  for (let i = 0; i < dirKeys.length; i++) {
+    try {
+      if (fs.accessSync(dirKeys[i])) {
+        fs.rmdirSync(dirKeys[i]);
+      }
+    } catch (_e) {
+      // 目录非空说明还有其他残留或用户文件，保留。
+    }
+    // 仅当被删除的是协议子目录时，才尝试移除其父级临时区根目录；
+    // 旧版草稿的显式临时路径可能直接位于根目录，不能误删其父级用户目录。
+    if (TEMP_SUBDIRS.indexOf(baseNameOf(dirKeys[i])) >= 0) {
+      let root: string = dirNameOf(dirKeys[i]);
+      if (root.length > 0) {
+        try {
+          fs.rmdirSync(root);
+        } catch (_e) {
+        }
+      }
+    }
   }
   cleanupLegacyTempDirs(file.finalPath);
 }

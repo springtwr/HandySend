@@ -1703,7 +1703,7 @@ async fn test_upload_flow_to_disk() {
     assert!(!state.uploads.lock().unwrap().contains(&token));
     assert!(landed.exists(), "完成回执不应删除已落盘文件");
     assert_eq!(std::fs::read(&landed).unwrap(), content);
-    let part_dir = state.upload_dir.lock().unwrap().join(".handysend-temp");
+    let part_dir = state.upload_dir.lock().unwrap().join(".handysend-temp/web");
     assert!(!part_dir.exists(), "会话终结后空临时目录应被删除");
     handle.abort();
 }
@@ -1794,7 +1794,7 @@ async fn test_upload_status_reports_pending_session() {
 async fn test_stale_upload_parts_cleaned_on_next_upload() {
     let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
     let dir = state.upload_dir.lock().unwrap().clone();
-    let part_dir = dir.join(".handysend-temp");
+    let part_dir = dir.join(".handysend-temp/web");
     std::fs::create_dir_all(&part_dir).unwrap();
     let orphan = part_dir.join("orphan.txt");
     let user_file = dir.join("user.txt");
@@ -1876,7 +1876,7 @@ async fn test_upload_size_enforcement() {
     )
     .await;
     assert_eq!(status, 413);
-    let part_dir = state.upload_dir.lock().unwrap().join(".handysend-temp");
+    let part_dir = state.upload_dir.lock().unwrap().join(".handysend-temp/web");
     assert!(!part_dir.exists(), "超量失败后空临时目录应被删除");
     // 短包。
     let token = prepare_upload_accepted(

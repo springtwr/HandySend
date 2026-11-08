@@ -6,11 +6,10 @@
 //! Download 与接收历史。接受即全量（不再逐文件挑）。
 //!
 //! 未完成的字节写在目标目录下的应用保留子目录
-//! `.handysend-temp/`，完成后同目录原子改名。会话终结时
-//! 删除未完成文件并移除已空的子目录；子目录是本应用独占的临时区，
-//! 进程被强制终止时遗留的半成品在下次接受上传时清理，不会触碰
-//! 目标目录里的用户文件。旧名 `.handysend-upload-part/` 作为 legacy
-//! 目录 best-effort 清理。
+//! `.handysend-temp/web/`，完成后同目录原子改名。会话终结时删除未完成文件并
+//! 移除已空的子目录；网页协议子目录由本应用独占，进程被强制终止时遗留的
+//! 半成品在下次接受上传时清理，不会触碰其他协议临时文件或用户文件。旧名
+//! `.handysend-upload-part/` 作为 legacy 目录 best-effort 清理。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -21,18 +20,14 @@ use tokio::sync::oneshot;
 use crate::bridge::temp_workspace;
 use crate::bridge::web::session::{SessionEndReason, SessionTimeouts};
 
-/// 目标目录内的应用保留临时子目录名（测试断言用；实现见 temp_workspace）。
-#[cfg(test)]
-pub(crate) const PART_DIR_NAME: &str = temp_workspace::TEMP_DIR_NAME;
-
-/// 未完成上传的临时目录（与最终文件同父目录，保证改名是同一文件系统内的原子操作）。
+/// 未完成上传的临时目录（网页协议子目录；与最终文件同父目录，保证原子改名）。
 pub(crate) fn part_dir(final_path: &str) -> PathBuf {
-    temp_workspace::temp_dir(final_path)
+    temp_workspace::temp_dir(final_path, temp_workspace::TEMP_SUBDIR_WEB)
 }
 
-/// 未完成上传的临时文件路径（文件名与最终文件同名，父目录为应用保留子目录）。
+/// 未完成上传的临时文件路径（文件名与最终文件同名，父目录为网页协议子目录）。
 pub(crate) fn part_path(final_path: &str) -> PathBuf {
-    temp_workspace::temp_path(final_path)
+    temp_workspace::temp_path(final_path, temp_workspace::TEMP_SUBDIR_WEB)
 }
 
 /// 上传会话状态：待确认（持有决策发送端）/ 已接受。
@@ -175,8 +170,8 @@ impl UploadStore {
     ///
     /// 接受新一批上传前顺带清理目标目录内应用保留临时区的遗留文件：
     /// 进程被强制终止时这些半成品不会走到过期/拒绝路径，只能在此兜底；
-    /// 清理范围仅限 `.handysend-temp/` 内且不属于任何活跃会话的文件，
-    /// 不会删除最终交付文件或用户自己的文件。
+    /// 清理范围仅限网页协议子目录 `.handysend-temp/web/` 内且不属于任何
+    /// 活跃上传会话的文件，不会删除最终交付文件、其他协议临时文件或用户文件。
     pub fn set_targets(&mut self, token: &str, targets: &[(String, String)]) -> usize {
         let Some(session) = self.sessions.get_mut(token) else {
             return 0;
@@ -210,8 +205,10 @@ impl UploadStore {
             }
         }
         for dir in dirs {
-            // 同时清理当前临时区与旧版本 legacy 目录。
-            temp_workspace::cleanup_stale(&dir, &active);
+            // 只清理网页协议自己的临时子目录与旧版本 legacy 目录，
+            // 不触碰 LocalSend/MTA 正在写入的临时文件。
+            temp_workspace::cleanup_namespace(&dir, temp_workspace::TEMP_SUBDIR_WEB, &active);
+            temp_workspace::cleanup_legacy(&dir, &active);
         }
         applied
     }
@@ -279,6 +276,9 @@ pub(crate) fn cleanup_session_parts(session: &UploadSession) {
     }
     for dir in dirs {
         let _ = std::fs::remove_dir(&dir);
+        if let Some(root) = dir.parent() {
+            let _ = std::fs::remove_dir(root);
+        }
     }
 }
 
@@ -397,15 +397,11 @@ mod tests {
 
     #[test]
     fn test_part_path_stays_in_reserved_dir() {
-        let path = part_path("/dl/dir/a.txt");
-        assert_eq!(
-            path,
-            PathBuf::from("/dl/dir").join(PART_DIR_NAME).join("a.txt")
-        );
-        assert_eq!(
-            part_dir("/dl/dir/a.txt"),
-            PathBuf::from("/dl/dir").join(PART_DIR_NAME)
-        );
+        let expected_dir = PathBuf::from("/dl/dir")
+            .join(temp_workspace::TEMP_DIR_NAME)
+            .join(temp_workspace::TEMP_SUBDIR_WEB);
+        assert_eq!(part_path("/dl/dir/a.txt"), expected_dir.join("a.txt"));
+        assert_eq!(part_dir("/dl/dir/a.txt"), expected_dir);
     }
 
     #[test]
@@ -486,9 +482,10 @@ mod tests {
     fn test_set_targets_cleans_stale_parts_only() {
         let dir = std::env::temp_dir().join(format!("handysend-part-clean-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join(PART_DIR_NAME)).unwrap();
+        let web_temp = part_dir(&dir.join("probe.txt").to_string_lossy());
+        std::fs::create_dir_all(&web_temp).unwrap();
         // 上轮进程遗留的半成品、另一活跃会话的半成品、用户自己的文件。
-        let orphan = dir.join(PART_DIR_NAME).join("orphan.txt");
+        let orphan = web_temp.join("orphan.txt");
         let other_final = dir.join("keep.txt").to_string_lossy().into_owned();
         let active = part_path(&other_final);
         let user = dir.join("user.txt");

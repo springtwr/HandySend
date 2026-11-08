@@ -107,7 +107,7 @@ pub fn extract_zip_to_dir<R: Read>(
     let mut pushback = PushbackReader::new(reader);
     match unzip_stream::parse_zip(&mut pushback, options, progress, &mut handler) {
         Ok(()) => {
-            temp_workspace::remove_temp_dir_if_empty(target_dir);
+            temp_workspace::remove_temp_dir_if_empty(target_dir, temp_workspace::TEMP_SUBDIR_MTA);
             Ok(handler.entries)
         }
         Err(error) => {
@@ -115,7 +115,7 @@ pub fn extract_zip_to_dir<R: Read>(
             for path in &handler.created {
                 temp_workspace::remove_temp_file(path);
             }
-            temp_workspace::remove_temp_dir_if_empty(target_dir);
+            temp_workspace::remove_temp_dir_if_empty(target_dir, temp_workspace::TEMP_SUBDIR_MTA);
             Err(anyhow::anyhow!(error))
         }
     }
@@ -468,7 +468,7 @@ struct FileEntryHandler<'a> {
 impl ZipEntryHandler for FileEntryHandler<'_> {
     fn handle_entry(&mut self, info: &ZipEntryInfo, data: &mut dyn Read) -> Result<(), String> {
         let path = unique_target_path(&self.dir, &info.name);
-        let temp_path = temp_workspace::temp_path_for(&path);
+        let temp_path = temp_workspace::temp_path_for(&path, temp_workspace::TEMP_SUBDIR_MTA);
         if let Some(parent) = temp_path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("创建临时目录失败 {}: {e}", parent.display()))?;
@@ -535,16 +535,15 @@ fn copy_to_file(
 
 /// 在目标目录中生成不冲突的文件路径（重名加 `(n)` 后缀）。
 fn unique_target_path(dir: &Path, name: &str) -> PathBuf {
-    let candidate = dir.join(name);
-    if !candidate.exists() {
-        return candidate;
+    if !temp_workspace::is_name_reserved(dir, name) {
+        return dir.join(name);
     }
     let (base, ext) = split_name(name);
     let mut index: u32 = 1;
     loop {
-        let candidate = dir.join(format!("{base}({index}){ext}"));
-        if !candidate.exists() {
-            return candidate;
+        let candidate_name = format!("{base}({index}){ext}");
+        if !temp_workspace::is_name_reserved(dir, &candidate_name) {
+            return dir.join(candidate_name);
         }
         index += 1;
     }
@@ -1059,6 +1058,19 @@ mod tests {
         assert!(unique_target_path(&dir, "photo.jpg").ends_with("photo(1).jpg"));
         // 隐藏文件整体视为主干
         assert!(unique_target_path(&dir, ".hidden").ends_with(".hidden"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_target_path_respects_other_protocol_temp() {
+        let dir = temp_dir("unique_reserved");
+        let temp = dir
+            .join(temp_workspace::TEMP_DIR_NAME)
+            .join(temp_workspace::TEMP_SUBDIR_WEB);
+        fs::create_dir_all(&temp).unwrap();
+        // 网页上传已在临时区预留同名文件，MTA 应选择带序号的名字
+        fs::write(temp.join("photo.jpg"), b"half").unwrap();
+        assert!(unique_target_path(&dir, "photo.jpg").ends_with("photo(1).jpg"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -17,8 +17,11 @@ import {
 import {
   baseNameOf,
   dirNameOf,
+  TEMP_SUBDIR_LOCAL_SEND,
+  TEMP_SUBDIR_WEB,
   tempDirForFinal,
-  tempPathForFinal
+  tempPathForFinal,
+  tempPathsForFinal
 } from '../../../../main/ets/model/transfer/TransferTempPaths'
 import {
   SessionDataFlow,
@@ -129,8 +132,15 @@ export default function SessionDraftStoreTest() {
     })
 
     it('temp_path_matches_final_path', 0, () => {
-      expect(tempDirForFinal('/a/b/c.txt')).assertEqual('/a/b/.handysend-temp')
-      expect(tempPathForFinal('/a/b/c.txt')).assertEqual('/a/b/.handysend-temp/c.txt')
+      expect(tempDirForFinal('/a/b/c.txt', TEMP_SUBDIR_LOCAL_SEND))
+        .assertEqual('/a/b/.handysend-temp/local-send')
+      expect(tempPathForFinal('/a/b/c.txt', TEMP_SUBDIR_LOCAL_SEND))
+        .assertEqual('/a/b/.handysend-temp/local-send/c.txt')
+      expect(tempPathForFinal('/a/b/c.txt', TEMP_SUBDIR_WEB))
+        .assertEqual('/a/b/.handysend-temp/web/c.txt')
+      let candidates = tempPathsForFinal('/a/b/c.txt')
+      expect(candidates.length).assertEqual(3)
+      expect(candidates.indexOf('/a/b/.handysend-temp/mta/c.txt') >= 0).assertTrue()
       expect(baseNameOf('/a/b/c.txt')).assertEqual('c.txt')
       expect(dirNameOf('/a/b/c.txt')).assertEqual('/a/b')
     })
