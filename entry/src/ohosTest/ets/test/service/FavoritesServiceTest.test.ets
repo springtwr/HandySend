@@ -47,7 +47,7 @@ function makeDiscovered(fingerprint: string, alias: string): DiscoveredDevice {
     ip: '192.168.1.20',
     port: 53317,
     fingerprint: fingerprint,
-    version: '1.18.1',
+    version: '2.2',
     deviceModel: 'TestModel',
     deviceType: 'phone',
     protocol: 'http',

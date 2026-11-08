@@ -90,7 +90,7 @@ function device(): DiscoveredDevice {
     ip: '192.168.1.9',
     port: 53317,
     fingerprint: 'fp',
-    version: '2.1',
+    version: '2.2',
     deviceModel: 'Model',
     deviceType: 'mobile',
     protocol: 'http',

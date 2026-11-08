@@ -69,7 +69,7 @@ export default function MtaMainFlowTest() {
         ip: '192.168.1.2',
         port: 53317,
         fingerprint: 'abcdef',
-        version: '2.0',
+        version: '2.2',
         deviceModel: 'X',
         deviceType: 'desktop',
         protocol: 'https',

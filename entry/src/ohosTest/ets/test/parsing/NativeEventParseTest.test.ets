@@ -64,7 +64,7 @@ export default function NativeEventParseTest() {
 
     it('parse_register_event', 0, () => {
       let json =
-        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","fingerprint":"abc123","download":true,"port":53317,"protocol":"http"}}}'
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"2.2","fingerprint":"abc123","download":true,"port":53317,"protocol":"http"}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -74,7 +74,7 @@ export default function NativeEventParseTest() {
       expect(e.type === 'register').assertTrue()
       expect(e.ip === '192.168.1.100').assertTrue()
       expect(e.info.alias === 'TestPC').assertTrue()
-      expect(e.info.version === '1.18.1').assertTrue()
+      expect(e.info.version === '2.2').assertTrue()
       expect(e.info.fingerprint === 'abc123').assertTrue()
       expect(e.info.download).assertTrue()
       expect(e.info.port === 53317).assertTrue()
@@ -83,7 +83,7 @@ export default function NativeEventParseTest() {
 
     it('parse_register_event_with_optional_fields', 0, () => {
       let json =
-        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","deviceModel":"Desktop","deviceType":"desktop","fingerprint":"abc123","download":true,"port":53317,"protocol":"https"}}}'
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"2.2","deviceModel":"Desktop","deviceType":"desktop","fingerprint":"abc123","download":true,"port":53317,"protocol":"https"}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -97,7 +97,7 @@ export default function NativeEventParseTest() {
 
     it('parse_register_event_missing_optional_info_fields', 0, () => {
       let json =
-        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","fingerprint":"abc123","download":false,"port":53317}}}'
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"2.2","fingerprint":"abc123","download":false,"port":53317}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -290,7 +290,7 @@ export default function NativeEventParseTest() {
 
     it('parse_device_found_event', 0, () => {
       let json =
-        '{"type":"deviceFound","payload":{"device":{"alias":"Device2","fingerprint":"fp_002","version":"1.18.1","deviceModel":"Pixel","deviceType":"mobile","download":true,"host":"192.168.1.60","port":53317,"protocol":"http","channels":[{"host":"192.168.1.60","port":53317,"protocol":"http"}]}}}'
+        '{"type":"deviceFound","payload":{"device":{"alias":"Device2","fingerprint":"fp_002","version":"2.2","deviceModel":"Pixel","deviceType":"mobile","download":true,"host":"192.168.1.60","port":53317,"protocol":"http","channels":[{"host":"192.168.1.60","port":53317,"protocol":"http"}]}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -310,7 +310,7 @@ export default function NativeEventParseTest() {
       // Rust Option::None 序列化为 JSON null（对端广播不带型号/类型时），
       // 可选字段须归一为 undefined，防止下游「!== undefined && .length」判断被 null 穿透
       let json =
-        '{"type":"deviceFound","payload":{"device":{"alias":"Device3","fingerprint":"fp_004","version":"1.18.1","deviceModel":null,"deviceType":null,"download":true,"host":"192.168.1.61","port":53317,"protocol":"http","channels":[]}}}'
+        '{"type":"deviceFound","payload":{"device":{"alias":"Device3","fingerprint":"fp_004","version":"2.2","deviceModel":null,"deviceType":null,"download":true,"host":"192.168.1.61","port":53317,"protocol":"http","channels":[]}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {
@@ -552,7 +552,7 @@ export default function NativeEventParseTest() {
 
     it('parse_register_with_null_optional_fields', 0, () => {
       let json =
-        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"1.18.1","deviceModel":null,"deviceType":null,"fingerprint":"abc123","download":false,"port":53317,"protocol":null}}}'
+        '{"type":"register","payload":{"ip":"192.168.1.100","info":{"alias":"TestPC","version":"2.2","deviceModel":null,"deviceType":null,"fingerprint":"abc123","download":false,"port":53317,"protocol":null}}}'
       let event: NativeEvent | undefined = parseNativeEvent(json)
       expect(event !== undefined).assertTrue()
       if (event === undefined) {

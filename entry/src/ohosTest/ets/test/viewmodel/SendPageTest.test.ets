@@ -79,7 +79,7 @@ function device(alias: string, ip: string): DiscoveredDevice {
     ip: ip,
     port: 53317,
     fingerprint: 'fp-' + alias,
-    version: '2.1',
+    version: '2.2',
     deviceModel: 'M',
     deviceType: 'mobile',
     protocol: 'http',
