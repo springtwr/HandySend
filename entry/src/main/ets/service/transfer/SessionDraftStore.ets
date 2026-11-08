@@ -70,6 +70,26 @@ export interface SessionDraft {
   errorCode?: string
 }
 
+/**
+ * 已完成文件继承首次记录的完成时刻，避免后续写草稿时把时间刷新。
+ * 旧草稿中该文件已记录完成时刻时沿用，否则取当前时刻。
+ */
+export function completedAtForDraft(previous: SessionDraft | undefined, fileId: string,
+  completed: boolean, now: number = Date.now()): number {
+  if (!completed) {
+    return 0;
+  }
+  if (previous !== undefined) {
+    for (let i = 0; i < previous.files.length; i++) {
+      let file: SessionDraftFile = previous.files[i];
+      if (file.fileId === fileId && file.completedAt > 0) {
+        return file.completedAt;
+      }
+    }
+  }
+  return now;
+}
+
 /** 返回草稿根目录；上下文缺失时返回空串。 */
 export function sessionDraftDir(): string {
   let context = getAppContext();

@@ -10,6 +10,7 @@ import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
   SessionDraftFile,
+  completedAtForDraft,
   loadSessionDraft,
   removeSessionDraft,
   saveSessionDraft
@@ -95,7 +96,7 @@ export function saveOutboundDraft(session: TransferSession): void {
       tempPath: '',
       stage: f.stage,
       bytesSent: f.bytesSent,
-      completedAt: completedAtFor(previous, f.fileId,
+      completedAt: completedAtForDraft(previous, f.fileId,
         f.stage === SessionFileStage.completed),
       isTextMessage: session.textMessage
     });
@@ -152,17 +153,3 @@ export function removeOutboundDraft(sessionId: string): void {
   removeSessionDraft(sessionId);
 }
 
-function completedAtFor(previous: SessionDraft | undefined, fileId: string,
-  completed: boolean): number {
-  if (!completed) {
-    return 0;
-  }
-  if (previous !== undefined) {
-    for (let i = 0; i < previous.files.length; i++) {
-      if (previous.files[i].fileId === fileId && previous.files[i].completedAt > 0) {
-        return previous.files[i].completedAt;
-      }
-    }
-  }
-  return Date.now();
-}

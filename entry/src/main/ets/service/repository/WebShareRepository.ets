@@ -91,6 +91,7 @@ import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
   SessionDraftFile,
+  completedAtForDraft,
   loadSessionDraft,
   removeSessionDraft,
   saveSessionDraft
@@ -1169,7 +1170,7 @@ function writeWebUploadDraft(session: TransferSession): void {
       tempPath: f.path.length > 0 ? tempPathForFinal(f.path, TEMP_SUBDIR_WEB) : '',
       stage: f.stage,
       bytesSent: f.bytesSent,
-      completedAt: completedAtFor(previous, f.fileId,
+      completedAt: completedAtForDraft(previous, f.fileId,
         f.stage === SessionFileStage.completed),
       isTextMessage: session.textMessage
     });
@@ -1194,22 +1195,6 @@ function writeWebUploadDraft(session: TransferSession): void {
     capabilities: session.capabilities
   };
   saveSessionDraft(draft);
-}
-
-/** 保留已完成文件首次记录的完成时刻，避免后续文件完成时把时间刷新。 */
-function completedAtFor(previous: SessionDraft | undefined, fileId: string,
-  completed: boolean): number {
-  if (!completed) {
-    return 0;
-  }
-  if (previous !== undefined) {
-    for (let i = 0; i < previous.files.length; i++) {
-      if (previous.files[i].fileId === fileId && previous.files[i].completedAt > 0) {
-        return previous.files[i].completedAt;
-      }
-    }
-  }
-  return Date.now();
 }
 
 function writeWebUploadDraftForToken(token: string): void {
