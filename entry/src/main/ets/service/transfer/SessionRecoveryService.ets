@@ -89,6 +89,8 @@ function recoverOne(draft: SessionDraft): number {
   }
 
   let receiveEntries: Array<ReceiveHistoryEntry> = [];
+  let completedFlags: Array<boolean> = [];
+  let actualSizes: Array<number> = [];
   let completedCount: number = 0;
   let completedBytes: number = 0;
   let totalBytes: number = 0;
@@ -98,22 +100,45 @@ function recoverOne(draft: SessionDraft): number {
     let completed: boolean = actualSize >= 0 && actualSize === file.totalBytes;
     // 临时区只清理未完成或遗留的临时文件，最终路径永远不自动删除。
     cleanupTempFile(file);
+    completedFlags.push(completed);
+    actualSizes.push(actualSize);
     if (completed) {
       completedCount++;
       completedBytes += actualSize;
-      receiveEntries.push(buildReceiveEntry(draft, file, actualSize));
     }
     totalBytes += file.totalBytes;
-    session.files.push(buildSessionFile(file, completed));
   }
 
-  // 全部文件已完成（强杀发生在历史写入前）按成功归档，否则按部分完成。
-  if (completedCount === draft.files.length && draft.files.length > 0) {
+  // 按会话阶段区分恢复结果：
+  // - 待确认阶段强杀：任务从未开始，归档为已取消，不能显示「部分成功」；
+  // - 已开始但零个文件完成：归档为失败；
+  // - 部分完成：部分成功；全部完成：成功。
+  let allCompleted: boolean = completedCount === draft.files.length && draft.files.length > 0;
+  let incompleteStage: SessionFileStage = SessionFileStage.failed;
+  if (allCompleted) {
     session.stage = SessionStage.succeeded;
     session.errorCode = '';
     session.errorMessage = '';
+  } else if (draft.stage === SessionStage.awaitingConfirmation) {
+    session.stage = SessionStage.cancelled;
+    session.errorCode = 'app_killed_before_start';
+    session.errorMessage = '应用异常退出，传输未开始';
+    incompleteStage = SessionFileStage.cancelled;
+  } else if (completedCount === 0) {
+    session.stage = SessionStage.failed;
+    session.errorCode = 'app_killed';
+    session.errorMessage = '应用异常退出，传输已中断';
   } else {
     session.stage = SessionStage.partiallyFailed;
+    session.errorCode = 'app_killed';
+    session.errorMessage = '应用异常退出，部分文件已完成';
+  }
+  for (let i = 0; i < draft.files.length; i++) {
+    let file: SessionDraftFile = draft.files[i];
+    session.files.push(buildSessionFile(file, completedFlags[i], incompleteStage));
+    if (completedFlags[i]) {
+      receiveEntries.push(buildReceiveEntry(draft, file, actualSizes[i]));
+    }
   }
   session.totalBytes = totalBytes;
   session.bytesSent = completedBytes;
@@ -130,7 +155,8 @@ function recoverOne(draft: SessionDraft): number {
   return completedCount;
 }
 
-function buildSessionFile(file: SessionDraftFile, completed: boolean): SessionFile {
+function buildSessionFile(file: SessionDraftFile, completed: boolean,
+  incompleteStage: SessionFileStage): SessionFile {
   let sessionFile: SessionFile = new SessionFile();
   sessionFile.fileId = file.fileId;
   sessionFile.fileName = file.fileName;
@@ -140,7 +166,7 @@ function buildSessionFile(file: SessionDraftFile, completed: boolean): SessionFi
   sessionFile.checksum = file.checksum;
   sessionFile.path = file.finalPath;
   sessionFile.bytesSent = completed ? file.totalBytes : file.bytesSent;
-  sessionFile.stage = completed ? SessionFileStage.completed : SessionFileStage.failed;
+  sessionFile.stage = completed ? SessionFileStage.completed : incompleteStage;
   return sessionFile;
 }
 

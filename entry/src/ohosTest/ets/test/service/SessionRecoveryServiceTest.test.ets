@@ -216,7 +216,7 @@ export default function SessionRecoveryServiceTest() {
       let session = findSession(id)
       expect(session !== undefined).assertTrue()
       if (session !== undefined) {
-        expect(session.outcome).assertEqual(SessionHistoryOutcome.partiallyFailed)
+        expect(session.outcome).assertEqual(SessionHistoryOutcome.failed)
       }
       expect(fs.accessSync(finalPath)).assertTrue()
       let receive = getHistory()
@@ -226,7 +226,7 @@ export default function SessionRecoveryServiceTest() {
       fs.unlinkSync(finalPath)
     })
 
-    it('recover_placeholder_draft_is_partial_without_temp_derivation', 0, () => {
+    it('recover_placeholder_draft_is_failed_without_temp_derivation', 0, () => {
       let ctx = getTestAppContext()
       expect(ctx !== undefined).assertTrue()
       if (ctx === undefined) {
@@ -242,7 +242,38 @@ export default function SessionRecoveryServiceTest() {
       let session = findSession(id)
       expect(session !== undefined).assertTrue()
       if (session !== undefined) {
-        expect(session.outcome).assertEqual(SessionHistoryOutcome.partiallyFailed)
+        expect(session.outcome).assertEqual(SessionHistoryOutcome.failed)
+      }
+      let receive = getHistory()
+      expect(receive.length).assertEqual(0)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+    })
+
+    it('recover_pending_draft_is_cancelled_not_partial', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearAll()
+      clearSessionHistory()
+      clearDrafts()
+      let id = 'recover-pending-' + Date.now().toString()
+      let draft = makeDraft(id, [
+        makeFile('f-waiting-1', '', 10),
+        makeFile('f-waiting-2', '', 20)
+      ])
+      draft.stage = SessionStage.awaitingConfirmation
+      saveSessionDraft(draft)
+      let result = recoverSessionDrafts()
+      expect(result.recovered).assertEqual(1)
+      let session = findSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.outcome).assertEqual(SessionHistoryOutcome.cancelled)
+        expect(session.errorCode).assertEqual('app_killed_before_start')
+        expect(session.files[0].stage).assertEqual(SessionFileStage.cancelled)
+        expect(session.files[1].stage).assertEqual(SessionFileStage.cancelled)
       }
       let receive = getHistory()
       expect(receive.length).assertEqual(0)

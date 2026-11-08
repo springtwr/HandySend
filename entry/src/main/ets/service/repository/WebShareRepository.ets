@@ -1216,6 +1216,17 @@ function writeWebUploadDraftForToken(token: string): void {
   }
 }
 
+/** 原生接受成功后把草稿阶段推进为 active；待确认阶段强杀才能正确归档为已取消。 */
+function markWebUploadDraftActive(token: string): void {
+  let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
+  if (draft === undefined) {
+    return;
+  }
+  draft.stage = SessionStage.active;
+  draft.updatedAt = Date.now();
+  saveSessionDraft(draft);
+}
+
 /** 草稿文件名使用统一会话标识；终态可见窗口内仍可从注册表取得。 */
 function webDraftSessionId(token: string): string {
   let session = findByProtocol(WEB_UPLOAD_KEY, token);
@@ -1397,6 +1408,8 @@ export function acceptWebUpload(token: string): void {
       declineWebUpload(token);
       return;
     }
+    // 原生接受成功后立即推进草稿阶段，缩小「已接受但草稿仍待确认」的强杀窗口。
+    markWebUploadDraftActive(token);
     markWebUploadAccepted(token);
     logger.info('网页上传已接受');
     notifyChange();
