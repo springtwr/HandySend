@@ -1266,7 +1266,8 @@ export class MtaReceiveService {
    * 接收开始时写草稿：MTA 条目名要等 ZIP 下载后才知道，这里先用声明的主文件名
    * 和总大小占位；强杀后恢复只用来保留一条「已中断」任务，不据此交付文件。
    */
-  private writeReceiveDraft(request: ReceiveRequest, stage: SessionStage): void {
+  private writeReceiveDraft(request: ReceiveRequest, stage: SessionStage,
+    targetDir: string = ''): void {
     let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, request.taskId);
     // 待确认阶段可能以任务 ID 回退保存草稿；进入活动阶段时先移除旧键，避免恢复出重复任务。
     if (stage === SessionStage.active) {
@@ -1311,6 +1312,7 @@ export class MtaReceiveService {
       transferStartedAt: unified !== undefined ? unified.transferStartedAt : 0,
       updatedAt: Date.now(),
       files: [file],
+      targetDir: targetDir.length > 0 ? targetDir : undefined,
       capabilities: unified !== undefined ? unified.capabilities : undefined
     };
     saveSessionDraft(draft);
@@ -1465,8 +1467,9 @@ export class MtaReceiveService {
     this.appendLog('下载', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
     this.state.endedWithPartialFiles = false;
     this.setStage(ReceiverStage.DOWNLOADING);
-    // 进入下载前写草稿：强杀后至少保留一条「已中断」任务记录。
-    this.writeReceiveDraft(request, SessionStage.active);
+    // 进入下载前写草稿：强杀后至少保留一条「已中断」任务记录，
+    // 并记录目标目录供恢复时清理 MTA 临时区。
+    this.writeReceiveDraft(request, SessionStage.active, this.downloadDir);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
     let storageError = await this.checkStorageReserve(request);
     if (storageError.length > 0) {

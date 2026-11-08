@@ -25,6 +25,8 @@ import {
   baseNameOf,
   dirNameOf,
   LEGACY_TEMP_DIR_NAMES,
+  TEMP_DIR_NAME,
+  TEMP_SUBDIR_MTA,
   TEMP_SUBDIRS,
   tempPathsForFinal
 } from '../../model/transfer/TransferTempPaths';
@@ -37,6 +39,7 @@ import {
 } from './SessionDraftStore';
 import { archiveSession, hasSessionHistory } from './SessionHistoryStore';
 import { addEntriesIfAbsent } from '../repository/ReceiveHistoryService';
+import { removeDirectoryIfEmpty } from '../repository/ReceiveTargets';
 import { getSession } from './TransferSessionRegistry';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionRecovery', '会话恢复');
@@ -146,6 +149,10 @@ function recoverOne(draft: SessionDraft): number {
     archiveRecoveredSession(session);
     removeSessionDraft(draft.sessionId);
     return terminalCompleted;
+  }
+
+  if (!isOutbound && draft.targetDir !== undefined && draft.targetDir.length > 0) {
+    cleanupMtaTempDir(draft.targetDir);
   }
 
   let receiveEntries: Array<ReceiveHistoryEntry> = [];
@@ -286,6 +293,33 @@ function statSize(path: string): number {
   }
 }
 
+/**
+ * 清理 MTA 目标目录下的本协议临时区。
+ * 只删除 `.handysend-temp/mta/` 的直接子文件，不触碰其他协议临时文件或最终路径。
+ */
+function cleanupMtaTempDir(targetDir: string): void {
+  let root: string = targetDir + '/' + TEMP_DIR_NAME;
+  let dir: string = root + '/' + TEMP_SUBDIR_MTA;
+  try {
+    if (!fs.accessSync(dir)) {
+      return;
+    }
+    let names: Array<string> = fs.listFileSync(dir);
+    for (let i = 0; i < names.length; i++) {
+      try {
+        fs.unlinkSync(dir + '/' + names[i]);
+      } catch (e) {
+        logger.debug('清理 MTA 临时文件失败：' + names[i] + '：' + String(e));
+      }
+    }
+  } catch (e) {
+    logger.debug('枚举 MTA 临时区失败：' + dir + '：' + String(e));
+    return;
+  }
+  removeDirectoryIfEmpty(dir);
+  removeDirectoryIfEmpty(root);
+}
+
 /** 删除未完成临时文件，并尝试移除已空的临时目录；不触碰最终路径。 */
 function cleanupTempFile(file: SessionDraftFile): void {
   // 无最终路径也无临时路径（如 MTA 下载中强杀的占位草稿）时不要推导目录，
@@ -316,22 +350,14 @@ function cleanupTempFile(file: SessionDraftFile): void {
   }
   let dirKeys: Array<string> = Object.keys(tempDirs);
   for (let i = 0; i < dirKeys.length; i++) {
-    try {
-      if (fs.accessSync(dirKeys[i])) {
-        fs.rmdirSync(dirKeys[i]);
-      }
-    } catch (_e) {
-      // 目录非空说明还有其他残留或用户文件，保留。
-    }
+    // 目录非空说明还有其他残留或用户文件，保留。
+    removeDirectoryIfEmpty(dirKeys[i]);
     // 仅当被删除的是协议子目录时，才尝试移除其父级临时区根目录；
     // 旧版草稿的显式临时路径可能直接位于根目录，不能误删其父级用户目录。
     if (TEMP_SUBDIRS.indexOf(baseNameOf(dirKeys[i])) >= 0) {
       let root: string = dirNameOf(dirKeys[i]);
       if (root.length > 0) {
-        try {
-          fs.rmdirSync(root);
-        } catch (_e) {
-        }
+        removeDirectoryIfEmpty(root);
       }
     }
   }
@@ -357,7 +383,7 @@ function cleanupLegacyTempDirs(finalPath: string): void {
         } catch (_e) {
         }
       }
-      fs.rmdirSync(dir);
+      removeDirectoryIfEmpty(dir);
     } catch (_e) {
     }
   }

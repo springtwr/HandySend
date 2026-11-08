@@ -56,7 +56,7 @@ import {
   listWebAddresses,
   pickWebAddress
 } from '../../model/WebAddress';
-import { ensureRecvTextDir, uniquePath } from './ReceiveTargets';
+import { ensureRecvTextDir, removeDirectoryIfEmpty, uniquePath } from './ReceiveTargets';
 import { consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory } from './ReceiveDirectory';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { copyText } from '../../utils/ClipboardUtil';
@@ -1522,16 +1522,10 @@ function releaseWebUploadTempPaths(paths: Array<string>): void {
   }
   let dirKeys: Array<string> = Object.keys(dirs);
   for (let i = 0; i < dirKeys.length; i++) {
-    try {
-      fs.rmdirSync(dirKeys[i]);
-    } catch (_e) {
-    }
+    removeDirectoryIfEmpty(dirKeys[i]);
     let parent: string = dirNameOf(dirKeys[i]);
     if (parent.length > 0) {
-      try {
-        fs.rmdirSync(parent);
-      } catch (_e) {
-      }
+      removeDirectoryIfEmpty(parent);
     }
   }
 }

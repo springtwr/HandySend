@@ -3,7 +3,10 @@
 // 修复逻辑为在主干与扩展名之间插入 " (N)" 编号后缀。
 import { describe, it, beforeAll, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
-import { uniquePath } from '../../../../main/ets/service/repository/ReceiveTargets'
+import {
+  removeDirectoryIfEmpty,
+  uniquePath
+} from '../../../../main/ets/service/repository/ReceiveTargets'
 import {
   TEMP_DIR_NAME,
   TEMP_SUBDIR_WEB
@@ -53,6 +56,20 @@ export default function ReceiveTargetsTest() {
       writeFile(dir, '.hidden')
       // 以点号开头的隐藏文件不视为扩展名
       expect(uniquePath(dir, '.hidden')).assertEqual('.hidden (1)')
+    })
+
+    it('removeDirectoryIfEmpty_keeps_non_empty_dir', 0, () => {
+      // OHOS rmdirSync 会递归删除目录内容，辅助函数必须先确认目录为空
+      let nonEmpty = dir + '/remove_empty_keep'
+      ensureDir(nonEmpty)
+      writeFile(nonEmpty, 'keep.txt')
+      removeDirectoryIfEmpty(nonEmpty)
+      expect(fs.accessSync(nonEmpty)).assertTrue()
+      expect(fs.accessSync(nonEmpty + '/keep.txt')).assertTrue()
+      let empty = dir + '/remove_empty_drop'
+      ensureDir(empty)
+      removeDirectoryIfEmpty(empty)
+      expect(fs.accessSync(empty)).assertFalse()
     })
 
     it('uniquePath_respects_temp_reservation', 0, () => {

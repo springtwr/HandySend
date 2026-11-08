@@ -63,6 +63,8 @@ export interface SessionDraft {
   transferStartedAt: number
   updatedAt: number
   files: Array<SessionDraftFile>
+  // 任务目标目录（MTA 占位草稿用于强杀后清理该协议临时区；其他协议可缺省）
+  targetDir?: string
   capabilities?: SessionCapabilities
   // 发送方向终态快照（可选）：强杀窗口内用于原样归档，避免把已成功任务降级。
   errorMessage?: string

@@ -457,6 +457,40 @@ export default function SessionRecoveryServiceTest() {
       resetRegistry()
     })
 
+    it('recover_mta_draft_cleans_mta_temp_only', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearAll()
+      clearSessionHistory()
+      clearDrafts()
+      let id = 'recover-mta-temp-' + Date.now().toString()
+      let targetDir = ctx.filesDir + '/' + id + '-target'
+      let mtaTemp = targetDir + '/.handysend-temp/mta'
+      let localTemp = targetDir + '/.handysend-temp/local-send'
+      fs.mkdirSync(mtaTemp, true)
+      fs.mkdirSync(localTemp, true)
+      writeText(mtaTemp + '/partial.bin', 'xx')
+      writeText(localTemp + '/keep.bin', 'keep')
+      let draft = makeDraft(id, [makeFile('mta_archive', '', 100)])
+      draft.protocolKey = 'mta-receive'
+      draft.targetDir = targetDir
+      saveSessionDraft(draft)
+
+      recoverSessionDrafts()
+
+      expect(fs.accessSync(mtaTemp + '/partial.bin')).assertFalse()
+      expect(fs.accessSync(mtaTemp)).assertFalse()
+      expect(fs.accessSync(localTemp + '/keep.bin')).assertTrue()
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+      fs.unlinkSync(localTemp + '/keep.bin')
+      fs.rmdirSync(localTemp)
+      fs.rmdirSync(targetDir + '/.handysend-temp')
+      fs.rmdirSync(targetDir)
+    })
+
     it('recovery_does_not_overwrite_existing_history', 0, () => {
       let ctx = getTestAppContext()
       expect(ctx !== undefined).assertTrue()

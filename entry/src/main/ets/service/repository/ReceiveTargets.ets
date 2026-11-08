@@ -58,6 +58,24 @@ let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Recor
 // 未完成字节只写临时区；成功提交后临时文件已改名，最终路径不在此清理。
 let recvTargetTempPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
 
+/**
+ * 删除空目录；非空目录保留。
+ * 注意：OHOS `fs.rmdirSync` 会递归删除目录及全部内容，不能直接用于“尝试移除空目录”，
+ * 否则会误删同目录其他会话/协议的临时文件。
+ */
+export function removeDirectoryIfEmpty(path: string): void {
+  try {
+    if (!fs.accessSync(path)) {
+      return;
+    }
+    if (fs.listFileSync(path).length > 0) {
+      return;
+    }
+    fs.rmdirSync(path);
+  } catch (_e) {
+  }
+}
+
 function fileExistsAtPath(path: string): boolean {
   try {
     return fs.accessSync(path);
@@ -299,11 +317,7 @@ export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<st
   }
   let dirKeys: Array<string> = Object.keys(tempDirs);
   for (let k = 0; k < dirKeys.length; k++) {
-    try {
-      fs.rmdirSync(dirKeys[k]);
-    } catch (_e) {
-      // 目录非空（仍有临时文件）或不存在——保留
-    }
+    removeDirectoryIfEmpty(dirKeys[k]);
   }
   recvTargetPaths.delete(sessionId);
   recvTargetTempPaths.delete(sessionId);
