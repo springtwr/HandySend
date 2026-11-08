@@ -508,7 +508,13 @@ export function markFileStage(sessionId: string, fileId: string,
   }
   for (let i = 0; i < session.files.length; i++) {
     if (session.files[i].fileId === fileId) {
+      let wasCompleted: boolean = session.files[i].stage === SessionFileStage.completed;
       session.files[i].stage = stage;
+      // 发送方向：完成状态持久化到草稿，强杀恢复不会把已发送文件降级。
+      if (!wasCompleted && stage === SessionFileStage.completed &&
+        session.dataFlow === SessionDataFlow.outbound) {
+        updateOutboundDraftFile(session.id, fileId, stage, session.files[i].bytesSent);
+      }
       break;
     }
   }

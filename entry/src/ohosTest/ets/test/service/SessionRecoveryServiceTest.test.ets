@@ -24,6 +24,7 @@ import {
 import {
   createSession,
   finish,
+  markFileStage,
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
@@ -408,6 +409,49 @@ export default function SessionRecoveryServiceTest() {
       if (draft !== undefined) {
         expect(draft.dataFlow).assertEqual(SessionDataFlow.outbound)
         expect(draft.files[0].finalPath).assertEqual('/tmp/source-a.txt')
+      }
+      removeSessionDraft(session.id)
+      resetRegistry()
+    })
+
+    it('markFileStage_persists_outbound_draft_completion', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearDrafts()
+      let session = createSession({
+        protocolKey: 'test-mark-stage',
+        protocolSessionId: '',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: {
+          displayName: 'peer',
+          badges: []
+        },
+        files: [{
+          fileId: 'f-stage',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 3,
+          path: '/tmp/a.txt'
+        }],
+        capabilities: {
+          canCancel: true,
+          canRetry: false,
+          needsConfirm: false,
+          hasByteProgress: true,
+          canSaveToGallery: false,
+          hasVerify: false
+        }
+      })
+      // 网页下载的完成事件可能只经 markFileStage 进入，不再经过字节进度
+      markFileStage(session.id, 'f-stage', SessionFileStage.completed)
+      let draft = loadSessionDraft(session.id)
+      expect(draft !== undefined).assertTrue()
+      if (draft !== undefined) {
+        expect(draft.files[0].stage).assertEqual(SessionFileStage.completed)
       }
       removeSessionDraft(session.id)
       resetRegistry()
