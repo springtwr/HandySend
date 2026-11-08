@@ -23,6 +23,7 @@ import {
 } from '../../../../main/ets/service/transfer/SessionDraftStore'
 import {
   createSession,
+  finish,
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
@@ -452,6 +453,54 @@ export default function SessionRecoveryServiceTest() {
       for (let i = 0; i < sessions.length; i++) {
         expect(sessions[i].sessionId === session.id).assertFalse()
       }
+      removeSessionDraft(session.id)
+      resetRegistry()
+    })
+
+    it('recovery_does_not_overwrite_existing_history', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearAll()
+      clearSessionHistory()
+      clearDrafts()
+      let session = createSession({
+        protocolKey: 'test-recovery-existing',
+        protocolSessionId: 'recovery-existing',
+        dataFlow: SessionDataFlow.inbound,
+        initiatedBy: SessionInitiator.remote,
+        peer: {
+          displayName: 'peer',
+          badges: []
+        },
+        files: [{
+          fileId: 'f1',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 10
+        }],
+        capabilities: {
+          canCancel: true,
+          canRetry: false,
+          needsConfirm: false,
+          hasByteProgress: true,
+          canSaveToGallery: false,
+          hasVerify: false
+        }
+      })
+      finish(session.id, SessionStage.failed, '存储空间不足', 'storage_full')
+      // 模拟协议漏删的残留草稿：若恢复直接归档，会把真实失败原因覆盖为 app_killed
+      saveSessionDraft(makeDraft(session.id, [makeFile('f1', '', 10)]))
+      recoverSessionDrafts()
+      let found = findSession(session.id)
+      expect(found !== undefined).assertTrue()
+      if (found !== undefined) {
+        expect(found.errorCode).assertEqual('storage_full')
+        expect(found.errorMessage).assertEqual('存储空间不足')
+      }
+      expect(loadSessionDraft(session.id) === undefined).assertTrue()
       removeSessionDraft(session.id)
       resetRegistry()
     })

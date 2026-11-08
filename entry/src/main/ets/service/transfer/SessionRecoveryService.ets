@@ -35,7 +35,7 @@ import {
   loadAllSessionDrafts,
   removeSessionDraft
 } from './SessionDraftStore';
-import { archiveSession } from './SessionHistoryStore';
+import { archiveSession, hasSessionHistory } from './SessionHistoryStore';
 import { addEntriesIfAbsent } from '../repository/ReceiveHistoryService';
 import { getSession } from './TransferSessionRegistry';
 
@@ -80,6 +80,18 @@ export function recoverSessionDrafts(): SessionRecoveryResult {
       ' 失败=' + result.failed + ' 已完成文件=' + result.files);
   }
   return result;
+}
+
+/**
+ * 仅在任务历史中不存在该会话时归档。
+ * 草稿可能因协议终态漏删而残留，此时历史中的真实结果不能被恢复结果覆盖。
+ */
+function archiveRecoveredSession(session: TransferSession): void {
+  if (hasSessionHistory(session.id)) {
+    logger.debug('任务历史已存在，跳过归档覆盖 session=' + session.id);
+    return;
+  }
+  archiveSession(session);
 }
 
 /** 恢复单个草稿，返回已完成文件数；历史写入成功后才删除草稿。 */
@@ -131,7 +143,7 @@ function recoverOne(draft: SessionDraft): number {
     if (session.finishedAt <= 0) {
       session.finishedAt = Date.now();
     }
-    archiveSession(session);
+    archiveRecoveredSession(session);
     removeSessionDraft(draft.sessionId);
     return terminalCompleted;
   }
@@ -216,7 +228,7 @@ function recoverOne(draft: SessionDraft): number {
     session.finishedAt = Date.now();
   }
 
-  archiveSession(session);
+  archiveRecoveredSession(session);
   if (receiveEntries.length > 0) {
     addEntriesIfAbsent(receiveEntries);
   }

@@ -359,6 +359,12 @@ export class MtaReceiveService {
     this.state.goIpAddress = '';
     this.state.transferPort = 0;
     this.state.groupFrequency = 0;
+    // 会话已进入终态（成功/失败/取消/停止服务）：草稿不再有恢复价值。
+    // 必须在清空 receiveRequest 之前删除，否则无法再解析草稿标识。
+    let request = this.state.receiveRequest;
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
+    }
     this.state.receiveRequest = undefined;
     this.state.requestThumbnailPath = '';
     this.state.progress = new DownloadProgress();
@@ -1627,6 +1633,11 @@ export class MtaReceiveService {
     }
     this.appendLog('下载', '用户取消下载', LogLevels.INFO);
     this.userCancelledThisDownload = true;
+    // 用户取消即终态决策：立即移除草稿，避免随后强杀时恢复出失败/部分完成任务。
+    let request = this.state.receiveRequest;
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
+    }
     this.transfer.cancelDownload();
   }
 }
