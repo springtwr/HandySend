@@ -16,10 +16,11 @@ import {
   SessionTimelineEvent,
   TransferSession,
   defaultCapabilities,
+  displayDurationMs,
+  displayFileCount,
   isPreparing,
   isTerminalStage,
-  resolveSessionActions,
-  displayDurationMs
+  resolveSessionActions
 } from '../model/transfer/TransferSession';
 import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
 import {
@@ -471,6 +472,14 @@ export class SessionDetailViewModel {
   /** 当前展示的逐文件清单（实时会话或历史条目）。 */
   detailFiles(): Array<SessionFile> {
     return this.session !== undefined ? this.files : this.historyFiles;
+  }
+
+  /** 当前展示的文件数：逐文件清单不可用时取协议声明值（与任务列表同口径）。 */
+  fileCount(): number {
+    if (this.session !== undefined) {
+      return displayFileCount(this.session);
+    }
+    return this.historyFiles.length;
   }
 
   /**

@@ -359,6 +359,8 @@ export function createSession(input: SessionCreateInput): TransferSession {
   session.capabilities = input.capabilities;
   session.stageText = input.stageText ?? '';
   session.textMessage = input.textMessage === true;
+  // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示
+  session.declaredFileCount = input.declaredFileCount !== undefined ? input.declaredFileCount : 0;
   session.startedAt = Date.now();
   // 采集本机标识（昵称 / 默认 IP / 网卡接口名），随历史持久化以支撑详情展示
   session.localAlias = getDeviceAlias();
@@ -488,6 +490,8 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
     next.push(toSessionFile(files[i]));
   }
   session.files = next;
+  // 真实清单已取代创建期占位：声明文件数不再参与展示（部分完成时以已落盘数量为准）
+  session.declaredFileCount = 0;
   recomputeTotals(session);
   saveOutboundDraft(session);
   notifyChange();

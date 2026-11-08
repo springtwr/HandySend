@@ -4,7 +4,8 @@ import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/
 import {
   SessionDataFlow,
   SessionInitiator,
-  SessionStage
+  SessionStage,
+  displayFileCount
 } from '../../../../main/ets/model/transfer/TransferSession'
 import {
   LOCAL_SEND_KEY,
@@ -785,10 +786,12 @@ export default function AdaptersTest() {
       if (found !== undefined) {
         expect(found.stage).assertEqual(SessionStage.awaitingConfirmation)
         expect(found.peer.displayName).assertEqual('MtaSender')
-        // 下载前仅占位：单条「主文件名…」，大小暂为整包声明总量
+        // 下载前仅占位：单条「主文件名…」，大小暂为整包声明总量；
+        // 展示文件数取请求声明值，不按占位条目数
         expect(found.files.length).assertEqual(1)
         expect(found.files[0].fileName).assertEqual('note.txt…')
         expect(found.files[0].totalBytes).assertEqual(300)
+        expect(displayFileCount(found)).assertEqual(2)
       }
       state.stage = ReceiverStage.DOWNLOADING
       state.progress.receivedBytes = 150
@@ -819,6 +822,8 @@ export default function AdaptersTest() {
         expect(completed.stage).assertEqual(SessionStage.succeeded)
         // 占位条目被真实逐文件清单整体替换：数量/名称/大小/路径与真实落盘一致
         expect(completed.files.length).assertEqual(2)
+        expect(completed.declaredFileCount).assertEqual(0)
+        expect(displayFileCount(completed)).assertEqual(2)
         // 文本条目显示自身真实大小，不再是整包声明总量（否则会因超预览阈值而无法预览）
         expect(completed.files[0].fileName).assertEqual('note.txt')
         expect(completed.files[0].totalBytes).assertEqual(100)

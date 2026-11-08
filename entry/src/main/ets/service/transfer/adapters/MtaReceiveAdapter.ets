@@ -277,7 +277,8 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     let totalBytes: number = request !== undefined ? request.totalSize : 0;
     let fileName: string = request !== undefined ? request.fileName : '';
     let textContent: string = request !== undefined ? request.textContent : '';
-    // 协议在下载前不提供逐文件清单：多文件时以「主文件名 + 省略号」示意，单文件保持主文件名
+    // 协议在下载前不提供逐文件清单：多文件时以「主文件名 + 省略号」示意，单文件保持主文件名；
+    // 文件总数取请求声明的 fileCount，实时展示不依赖单条占位条目数
     let fileCount: number = request !== undefined ? request.fileCount : 0;
     // 协议会话 ID 取请求携带的协议任务标识；请求缺失或未携带任务标识时回退固定常量
     let protocolSessionId: string = request !== undefined && request.taskId.length > 0 ?
@@ -300,7 +301,9 @@ export function handleMtaReceiveState(state: ReceiverState): void {
       files: descriptors,
       capabilities: capabilities(),
       stage: SessionStage.awaitingConfirmation,
-      textMessage: textContent.length > 0
+      textMessage: textContent.length > 0,
+      // 下载前只有占位条目：实时文件数用请求声明值，真实清单回填后由注册表清零
+      declaredFileCount: fileCount
     });
     activeUnifiedId = session.id;
     if (textContent.length > 0) {

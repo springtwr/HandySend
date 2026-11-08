@@ -9,7 +9,7 @@
 import { getAppContext } from '../repository/AppCore';
 import { DialogService } from '../DialogService';
 import { cancel, listActiveSessionsByProtocolKeys } from './TransferSessionRegistry';
-import { SessionDataFlow, TransferSession } from '../../model/transfer/TransferSession';
+import { SessionDataFlow, TransferSession, displayFileCount } from '../../model/transfer/TransferSession';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -29,13 +29,15 @@ function resolveResourceText(res: Resource): string {
   }
 }
 
-// 会话文件摘要：单文件显示文件名，多文件显示数量
+// 会话文件摘要：单文件显示文件名，多文件显示数量；
+// 逐文件清单不可用时按协议声明总数展示（如 MTA 接收下载前的占位条目）
 function sessionFileSummary(session: TransferSession): string {
-  if (session.files.length === 1) {
+  let fileCount: number = displayFileCount(session);
+  if (fileCount === 1 && session.files.length > 0) {
     return session.files[0].fileName;
   }
   let countText: string = resolveResourceText($r('app.string.transfer_center_file_count'));
-  return countText.replace('%d', String(session.files.length));
+  return countText.replace('%d', String(fileCount));
 }
 
 function buildSessionDetailLine(session: TransferSession): string {

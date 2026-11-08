@@ -667,7 +667,7 @@ export struct SessionDetailPage {
       Column({ space: DesignTokens.space.tiny }) {
         // 汇总行：文件数 + 总大小（左）与整体进度（右）
         Row({ space: DesignTokens.space.sm }) {
-          Text($r('app.string.send_file_count_total', this.viewModel.files.length,
+          Text($r('app.string.send_file_count_total', this.viewModel.fileCount(),
             formatSizeDetailed(this.viewModel.session?.totalBytes ?? 0)))
             .fontSize(DesignTokens.font.subtitleM)
             .fontWeight(FontWeight.Medium)

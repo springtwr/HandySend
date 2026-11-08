@@ -981,6 +981,57 @@ export default function TransferCenterTest() {
       resetRegistry()
     })
 
+    it('mtaReceiveDeclaredFileCount_liveRowBeforeBackfill', 0, () => {
+      resetSessionDomain()
+      // MTA 接收下载前只有一条占位条目，但请求已声明文件总数：实时行按声明值展示
+      let pendingInput = input('mta-receive', 'mta-declared')
+      pendingInput.dataFlow = SessionDataFlow.inbound
+      pendingInput.initiatedBy = SessionInitiator.remote
+      pendingInput.files = [{
+        fileId: 'mta-main',
+        fileName: 'a.zip…',
+        fileType: 'application/zip',
+        totalBytes: 100
+      }]
+      pendingInput.declaredFileCount = 3
+      let pending = createSession(pendingInput)
+      expect(fileCountTextId(liveSessionRow(pending)))
+        .assertEqual($r('app.string.transfer_center_file_count', 3).id)
+      // 真实清单回填后以真实条数为准（声明值清零）
+      expect(setSessionFiles(pending.id, [{
+        fileId: 'mta-0',
+        fileName: 'a.txt',
+        fileType: 'text/plain',
+        totalBytes: 40
+      },
+        {
+          fileId: 'mta-1',
+          fileName: 'b.txt',
+          fileType: 'text/plain',
+          totalBytes: 60
+        }])).assertTrue()
+      expect(fileCountTextId(liveSessionRow(pending)))
+        .assertEqual($r('app.string.transfer_center_file_count', 2).id)
+
+      // 终态未回填：回退占位清单条数，与归档历史同口径
+      resetRegistry()
+      let failedInput = input('mta-receive', 'mta-declared-failed')
+      failedInput.dataFlow = SessionDataFlow.inbound
+      failedInput.initiatedBy = SessionInitiator.remote
+      failedInput.files = [{
+        fileId: 'mta-main',
+        fileName: 'a.zip…',
+        fileType: 'application/zip',
+        totalBytes: 100
+      }]
+      failedInput.declaredFileCount = 3
+      let failed = createSession(failedInput)
+      finish(failed.id, SessionStage.failed)
+      expect(fileCountTextId(liveSessionRow(failed)))
+        .assertEqual($r('app.string.transfer_center_file_count', 1).id)
+      resetSessionDomain()
+    })
+
     it('mtaReceiveBackfill_fileCountText_matchesRealFiles_liveAndHistory', 0, () => {
       resetRegistry()
       resetSessionHistoryCache()
