@@ -271,6 +271,13 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
           fs.unlinkSync(tempPath);
         } catch (_unlinkErr) {
         }
+        // 回滚后尝试移除已空的协议子目录与临时区根目录
+        let tempDir: string = dirNameOf(tempPath);
+        removeDirectoryIfEmpty(tempDir);
+        let tempRoot: string = dirNameOf(tempDir);
+        if (tempRoot.length > 0) {
+          removeDirectoryIfEmpty(tempRoot);
+        }
       }
       logger.warn('准备接收目标失败 fileId=' + fileId + '：' + e);
     }
@@ -283,6 +290,12 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       try {
         fs.unlinkSync(perTempFile[keys[k]]);
       } catch (_e) {
+      }
+      let tempDir: string = dirNameOf(perTempFile[keys[k]]);
+      removeDirectoryIfEmpty(tempDir);
+      let tempRoot: string = dirNameOf(tempDir);
+      if (tempRoot.length > 0) {
+        removeDirectoryIfEmpty(tempRoot);
       }
     }
     return undefined;
