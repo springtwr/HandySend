@@ -39,7 +39,7 @@
 | `nativeAcceptWebSession(token)` / `nativeDeclineWebSession(token)` / `nativeExpireWebSession(token)` | 接受 / 拒绝 / 令待确认浏览器会话过期 |
 | `nativeRespondTransfer(sessionId, accept, acceptedFileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
 | `nativeSendFiles(target, senderAlias, files)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
-| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
+| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收直写 fd（respondTransfer 前逐文件；`path` 为最终路径，fd 打开在 `.handysend-temp/local-send/`；终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
 | `nativeCancelTransfer(target, sessionId)` | 向对端设备发送取消传输请求 |
 | `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
@@ -88,11 +88,13 @@
 > **注 4**：完整签名 `(goIp, port, taskId, targetDir, totalBytes, maxEntries, maxTotalBytes,
 > maxEntryBytes, cancelTokenId?, connectTimeoutMs?, stallTimeoutMs?, headerTimeoutMs?)`。
 > 接收端 Rust 主导下载：直接请求 `https://<goIp>:<port>/download?taskId=`（跳过服务端证书
-> 校验）、流式解压并直接写入 `targetDir`（防穿越/忽略目录/重名 `(n)`/还原条目时间/上限），
-> 返回落盘元数据 JSON `[{name, size, modifiedUnixMs, savedPath}]`；失败/取消删除本次已写
-> 文件。`maxTotalBytes` 为解压总量上限（由 ArkTS 按对端声明值与容差计算）、`maxEntryBytes`
-> 为单条目解压上限（0 表示不限制）；`connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs`
-> 分别覆盖连接、下载停滞与等待响应头超时（缺省用 Rust 侧默认值）。
+> 校验）、流式解压并写入 `targetDir/.handysend-temp/mta/`（防穿越/忽略目录/重名 `(n)`/
+> 还原条目时间/上限），每个条目完成后原子改名到 `targetDir`。逐条目提交经
+> `mtaEntryCommitted` 事件上报；下载结束返回 JSON `{ok, error, entries}`，失败时仍保留
+> 已提交条目作为部分交付，只清理未提交临时文件。`maxTotalBytes` 为解压总量上限（由
+> ArkTS 按对端声明值与容差计算）、`maxEntryBytes` 为单条目解压上限（0 表示不限制）；
+> `connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待
+> 响应头超时（缺省用 Rust 侧默认值）。
 
 > 完整封装清单以 `entry/src/main/ets/service/NativeBridge.ets` 为准。
 
@@ -112,6 +114,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   ├── mod.rs              # 模块声明 + pub use 重导出
   ├── event.rs            # BridgeEvent 强类型事件 + BridgeError + 事件分类常量
   ├── state.rs            # BridgeState 纯数据（无 runtime/callback）
+  ├── temp_workspace.rs   # 接收临时区路径、按协议子目录、提交与清理
   ├── engine.rs           # StateAction + apply_actions 纯函数状态变更
   ├── identity.rs         # init/安全上下文/网络信息/哈希/取消令牌/日志工具
   ├── server.rs           # 服务器生命周期 + 传输决策 + WebSend（含事件循环 task）
@@ -122,7 +125,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   │   ├── protocol.rs     # 应用层消息纯函数（构造/解析/JSON、status 判定）
   │   ├── zip_stream.rs   # 按文件清单库化流式写出 ZIP（无 Seek 流式；Deflated 统一档、ZIP64 自动启用；数据源 ArkTS fd 或路径回退）
   │   ├── unzip_stream.rs # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
-  │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
+  │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 临时区提交 + 进度/取消/未提交清理）
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
   │   └── server.rs       # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
   └── adapter/            # 上游类型隔离
@@ -183,7 +186,8 @@ MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionN
 ）、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、
 `mtaSendRejected{reason}`、`mtaSendFailed{reason}`。MTA 接收端进度事件：`mtaReceiveProgress{receivedBytes,totalBytes,percent,networkBytes,networkDone}`（接收由
 Rust 主导，进度分子为已解压字节、分母为声明总大小；`networkBytes` 为网络字节口径的速率分子，`networkDone` 表示网络数据已全部读入、
-仍在解压/落盘）。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
+仍在解压/落盘）；逐条目提交事件 `mtaEntryCommitted{taskId,name,size,modifiedUnixMs,savedPath}` 用于增量更新强杀恢复草稿。
+跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
 
 MTA 原生文本：`MtaServerConfig`/`MtaContext` 携带可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 携带可选 `cat_share_text`（序列化为
 `catShareText`，缺省不序列化）。文本内容以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与不含文本的发送完全一致。

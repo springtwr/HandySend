@@ -15,6 +15,10 @@
 | 网页上传暂存 | `WebShareRepository.webUploadStageDir()` | 有 |
 | MTA 接收预览缩略图 | `MtaReceiveService` 文件内 `mtaThumbnailDirOf()` | 无 |
 | 诊断日志 | `DiagnosticLogService` 文件内 `logDir()` | 无 |
+| 会话草稿 | `SessionDraftStore.sessionDraftDir()` | 无 |
+
+会话草稿目录位于 `filesDir/session_drafts/`，保存强杀恢复数据；它属于持久目录，
+不参与冷启动清理，恢复流程在处理完草稿后会删除对应文件。
 
 业务代码不得自行拼接 `filesDir` / `cacheDir`；新增目录必须复用上表函数。只读的容量查询
 可直接使用 `filesDir` / `cacheDir` 本身，不涉及子目录拼接。运行期读取与冷启动清理

@@ -254,8 +254,9 @@ Web 下载以“下载批次”建模：单文件一批、多文件一个 zip �
 接收类协议的文件清单在落盘完成后由适配器整体替换；LocalSend 发送的校验和准备阶段以专用准备进度字段与传输进度严格分离；
 任务历史（`SessionHistoryStore`）独立持久化，与文件级接收历史相互独立。
 强杀恢复：传输会话（接收/发送）在创建/文件完成时写应用沙箱草稿（`filesDir/session_drafts/`），
-启动时按最终文件大小补写接收任务历史与接收历史；发送方向只补任务历史并标记中断；
-恢复只读，不自动续传（详见 `architecture/session-engine.md` §5.1）。
+启动时按最终文件大小补写任务历史与接收历史；发送方向只补任务历史并标记中断；MTA 逐条目
+提交后失败按已提交文件记录部分完成；接收临时区按协议分子目录。恢复只读，不自动续传
+（详见 `architecture/session-engine.md` §5.1）。
 
 详见 [architecture/session-engine.md](architecture/session-engine.md)。
 

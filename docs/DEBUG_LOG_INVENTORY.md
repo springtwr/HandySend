@@ -199,6 +199,8 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:ShareLinkViewModel` | `[网页传输]` | ShareLinkViewModel.ets | 网页传输面板状态与开关联动 |
 | `HandySend:TransferRegistry` | `[会话注册表]` | service/transfer/TransferSessionRegistry.ets | 会话创建/状态迁移/终结/回收与聚合（统一会话事实源） |
 | `HandySend:SessionHistory` | `[任务历史]` | service/transfer/SessionHistoryStore.ets | 任务历史归档、FIFO 裁剪与 schema 迁移 |
+| `HandySend:SessionDraft` | `[会话草稿]` | service/transfer/SessionDraftStore.ets | 草稿读写、原子落盘与临时文件清理 |
+| `HandySend:SessionRecovery` | `[会话恢复]` | service/transfer/SessionRecoveryService.ets | 启动恢复、历史补写与本协议临时区清理 |
 | `HandySend:SessionAdapter` | `[协议适配]` | service/transfer/adapters/*.ets | 各协议事件翻译与能力/展示描述符 |
 | `HandySend:ProtocolDisableGuard` | `[协议开关]` | service/transfer/ProtocolDisableGuard.ets | 协议关闭确认文案解析 |
 | `HandySend:TransferCenter` | `[任务]` | viewmodel/TransferCenterViewModel.ets | 中心分组/筛选/批量操作 |
