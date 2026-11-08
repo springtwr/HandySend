@@ -98,7 +98,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { AutoConfirmMode } from '../model/Types';
 import { generateAlias, getSystemDeviceName } from '../utils/AliasGenerator';
 import { errorText } from '../utils/FormatUtil';
-import { getNativeLibraryVersion, getLocalSendProtocolVersion } from '../service/NativeBridge';
+import { getLocalSendProtocolVersion } from '../service/NativeBridge';
 import { setDebugEnabled, getLogger } from '../utils/Logger';
 import { setPersistedDebugEnabled } from '../service/log/DiagnosticLogService';
 import { LogDomains } from '../common/LogDomains';
@@ -185,7 +185,6 @@ const WEB_RECEIVE_SESSION_KEYS: Array<string> = [WEB_UPLOAD_KEY];
 export class SettingsViewModel {
   @Trace public customAlias: string = DEFAULT_CUSTOM_ALIAS
   @Trace public handySendVersion: string = ''
-  @Trace public localsendVersion: string = ''
   @Trace public protocolVersion: string = ''
   // 设置状态
   @Trace public encryptedTransfer: boolean = DEFAULT_ENCRYPTED_TRANSFER
@@ -239,7 +238,6 @@ export class SettingsViewModel {
     this.loadSettings();
 
     // 获取版本信息
-    this.localsendVersion = getNativeLibraryVersion();
     this.protocolVersion = 'v' + getLocalSendProtocolVersion();
     bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION)
       .then((bundleInfo: bundleManager.BundleInfo) => {

@@ -197,8 +197,16 @@
       "value": "If you find this app useful, consider sponsoring the developer a little token to help the project grow"
     },
     {
-      "name": "sponsor_go",
-      "value": "Go Sponsor"
+      "name": "sponsor_afdian",
+      "value": "Afdian"
+    },
+    {
+      "name": "sponsor_wechat",
+      "value": "WeChat Reward"
+    },
+    {
+      "name": "sponsor_wechat_hint",
+      "value": "Scan the QR code with WeChat to tip the developer"
     },
     {
       "name": "rate_label",
@@ -845,10 +853,6 @@
       "value": "HandySend Version"
     },
     {
-      "name": "about_localsend_version",
-      "value": "LocalSend Version"
-    },
-    {
       "name": "about_protocol_version",
       "value": "LocalSend Protocol Version"
     },
@@ -1067,6 +1071,10 @@
     {
       "name": "accept_targets_failed",
       "value": "Failed to prepare receive targets"
+    },
+    {
+      "name": "transfer_interrupted_message",
+      "value": "Transfer interrupted; unfinished files were removed"
     },
     {
       "name": "history_delete_message_count",

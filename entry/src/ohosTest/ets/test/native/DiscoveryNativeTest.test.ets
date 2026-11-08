@@ -108,7 +108,7 @@ export default function DiscoveryNativeTest() {
       let testDevice: NativeDiscoveredDevice = {
         alias: 'TestDevice',
         fingerprint: 'test_fp_discovery_001',
-        version: '2.0',
+        version: '2.2',
         deviceModel: 'TestModel',
         deviceType: 'mobile',
         download: true,
@@ -239,7 +239,7 @@ export default function DiscoveryNativeTest() {
       let device: NativeDiscoveredDevice = {
         alias: 'TestDevice',
         fingerprint: 'test_add_device_fp',
-        version: '1.18.2',
+        version: '2.2',
         deviceModel: 'TestModel',
         deviceType: 'mobile',
         download: true,
@@ -281,7 +281,7 @@ export default function DiscoveryNativeTest() {
       let device: NativeDiscoveredDevice = {
         alias: 'MultiChannelDevice',
         fingerprint: 'test_add_device_channels_fp',
-        version: '1.18.2',
+        version: '2.2',
         deviceModel: 'TestModel',
         deviceType: 'desktop',
         download: false,

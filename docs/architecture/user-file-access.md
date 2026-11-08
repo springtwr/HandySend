@@ -19,7 +19,7 @@
 更早版本没有。
 
 图库入口合并图片与视频后，暂存项按扩展名区分两者（`isImageExtension`）：图片直接显示缩略图，
-视频由 `loadVideoPreview` 懒生成缩略图，其余类型回退类型图标。
+视频由 `loadVideoPreview` 懒生成缩略图（多个视频按请求顺序串行解码），其余类型回退类型图标。
 
 上限常量为 `SendViewModel.ets` 顶部的 `MAX_PICK_SELECT_NUMBER`，两个 Picker 入口共用。
 

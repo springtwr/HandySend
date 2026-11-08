@@ -976,7 +976,7 @@ export class SendViewModel {
     this.videoPreviewRequestedUris.add(src.uri);
     let pixelMap = await generateVideoThumbnail(src.uri, 96, 96);
     if (pixelMap === undefined) {
-      // 单飞行忙时丢弃与解码失败均回退图标，并释放请求标记以便下次出现时重试
+      // 取消或解码失败均回退图标，并释放请求标记以便下次出现时重试
       this.videoPreviewRequestedUris.delete(src.uri);
       logger.warn('生成失败，回退类型图标 uri=' + src.uri);
       return;
@@ -999,15 +999,28 @@ export class SendViewModel {
       }
       return;
     }
+    // 以当前条目为基底重建：await 期间元数据补全可能已写入大小/修改时间，
+    // 沿用调用前的快照会丢失这些字段（表现为该条目大小回退为占位）。
+    let base: StagedFile = updated[currentIndex];
+    if (base.previewPixelMap !== undefined) {
+      // 等待期间已由其他请求写入缩略图：释放本次结果，避免覆盖时旧帧显存泄漏
+      try {
+        pixelMap.release();
+      } catch (_e) {
+      }
+      return;
+    }
     let copy: StagedFile = {
-      uri: src.uri,
-      fileName: src.fileName,
-      fileType: src.fileType,
-      isImage: src.isImage,
-      isManualText: src.isManualText,
-      // 透传持久化/源修改时间标记：重建条目不得丢失（发送元数据依赖）
-      persisted: src.persisted,
-      lastModified: src.lastModified,
+      uri: base.uri,
+      fileName: base.fileName,
+      fileType: base.fileType,
+      isImage: base.isImage,
+      isManualText: base.isManualText,
+      // 透传持久化/源修改时间/大小/文本预览：重建条目不得丢失（发送元数据与列表展示依赖）
+      persisted: base.persisted,
+      lastModified: base.lastModified,
+      size: base.size,
+      textPreview: base.textPreview,
       previewPixelMap: pixelMap
     };
     updated[currentIndex] = copy;

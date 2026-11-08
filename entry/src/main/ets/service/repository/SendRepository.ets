@@ -1505,18 +1505,20 @@ async function sendToDeviceWithSession(
       if (status === 401) {
         updateSendSessionStatus(sessionId, SendSessionStatus.pinRequired, errMsg);
       } else if (status === 429) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
+        updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts, errMsg);
       } else if (status === 403) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+        updateSendSessionStatus(sessionId, SendSessionStatus.declined, errMsg);
       } else if (status === 409) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.recipientBusy);
+        updateSendSessionStatus(sessionId, SendSessionStatus.recipientBusy, errMsg);
       } else {
         updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }
     } else {
       let msg = err.message !== undefined ? err.message : '';
       if (msg.indexOf('declined') >= 0 || msg.indexOf('rejected') >= 0) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+        // 原始消息为英文内部标记，终态展示统一用本地化拒收文案
+        let declinedMsg: string = sendResultErrorMessage({ kind: 'statusCode', status: 403 });
+        updateSendSessionStatus(sessionId, SendSessionStatus.declined, declinedMsg);
       } else if (err.kind === 'cancelled' || msg === 'Send cancelled') {
         // 本地取消令牌触发的中断（Rust kind cancelled）与发送入口的取消短路标记：
         // 终态展示为已取消，不与真正的发送失败混淆；文案统一用本地化取消文案，
@@ -1524,7 +1526,7 @@ async function sendToDeviceWithSession(
         let cancelMsg: string = sendResultErrorMessage({ kind: 'cancelled' });
         updateSendSessionStatus(sessionId, SendSessionStatus.cancelled, cancelMsg);
       } else if (isTimeoutOrConnectionError(err)) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.timeout);
+        updateSendSessionStatus(sessionId, SendSessionStatus.timeout, errMsg);
       } else {
         updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }

@@ -370,7 +370,7 @@ rm -rf localsend_ohrs/package/libs
 
 ### 10.1 原生库版本（localsend_ohrs）
 
-原生库版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`（镜像上游 localsend fork 基线，如 1.18.1），构建时自动同步到：
+原生库版本号唯一来源是 `localsend_ohrs/Cargo.toml` 中的 `version`（取 core 已对齐的上游版本，如 1.18.2），构建时自动同步到：
 
 | 文件 | 说明 |
 |------|------|
@@ -378,6 +378,7 @@ rm -rf localsend_ohrs/package/libs
 | `localsend_ohrs/package/oh-package.json5` | 构建时自动同步 |
 | `localsend_ohrs/package/src/main/cpp/types/liblocalsend_core/oh-package.json5` | 构建时自动同步 |
 | `entry/src/main/ets/service/NativeBridge.ets` | 构建时自动同步 |
+| `entry/src/ohosTest/ets/test/native/VersionNativeTest.test.ets` | 构建时自动同步（用例期望值） |
 
 ### 10.2 应用版本（AppScope）
 

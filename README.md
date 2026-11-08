@@ -110,7 +110,12 @@ HandySend 实现了互传联盟（MTA）协议，可与联盟成员的「分享�
 
 ## 赞助
 
-觉得好用的话可以给开发者赞助一点 token，助力项目更好发展：[爱发电](https://ifdian.net/a/springtwr)
+觉得好用的话可以给开发者赞助一点 token，助力项目更好发展：
+
+- 爱发电：<https://ifdian.net/a/springtwr>
+- 微信赞赏：扫描下方赞赏码
+
+<img src="docs/images/wechat_sponsor.png" alt="微信赞赏码" width="240">
 
 ## 协议
 

@@ -94,7 +94,7 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:NativeBridge', '桥接')
 const rustWebLogger = getLogger(LogDomains.TRANSFER, 'HandySend:RustWeb', '网页传输');
 
 // 期望的原生库版本（必须与 Cargo.toml 和 oh-package.json5 一致）
-const EXPECTED_NATIVE_VERSION = '1.18.1';
+const EXPECTED_NATIVE_VERSION = '1.18.2';
 
 /**
  * 校验原生库版本与期望版本一致。
@@ -109,7 +109,7 @@ export function verifyNativeVersion(): void {
 }
 
 /**
- * 获取原生库版本（用于展示/日志）
+ * 获取原生库版本（用于日志与版本核对）
  */
 export function getNativeLibraryVersion(): string {
   return getNativeVersion();

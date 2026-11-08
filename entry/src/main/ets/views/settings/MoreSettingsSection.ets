@@ -33,6 +33,10 @@ export struct MoreSettingsSection {
   @Local isShowAboutSheet: boolean = false
   @Local isShowSponsorSheet: boolean = false
   @Local isShowRateSheet: boolean = false
+  // 赞助弹窗内容：false 展示赞助方式列表，true 切换到微信赞赏码
+  @Local sponsorShowWechat: boolean = false
+  // 赞助子页平移距离：取弹窗内容区实际宽度，避免不同窗口形态使用固定值
+  @Local private sponsorPageWidth: number = 9999
   // 反馈邮件是否附带诊断日志（每次打开联系开发者弹窗时复位为不附带）
   @Local attachDiagnosticLogs: boolean = false
   // 当前打开的 A 类弹窗 id（接触开发者弹窗关闭时使用）
@@ -136,42 +140,128 @@ export struct MoreSettingsSection {
 
   @Builder
   sponsorSheetBuilder(): void {
-    Column() {
-      Column() {
-        Text($r('app.string.sponsor_message'))
-          .fontSize(DesignTokens.font.bodyM)
-          .fontColor($r('app.color.text_primary'))
-          .textAlign(TextAlign.Center)
-          .width('100%')
-          .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.lg })
-      }
-      .width('100%')
-      .backgroundColor($r('app.color.card_background'))
-      .borderRadius(DesignTokens.radius.lg)
-      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-      .padding({
-        left: DesignTokens.space.lg,
-        right: DesignTokens.space.lg,
-        top: DesignTokens.space.md,
-        bottom: DesignTokens.space.md
-      })
-
-      Button($r('app.string.sponsor_go'))
-        .width('100%')
-        .backgroundColor($r('app.color.accent_blue_bg'))
-        .fontColor($r('app.color.ip_blue_text'))
-        .borderRadius(DesignTokens.radius.md)
-        .margin({ top: DesignTokens.space.lg, bottom: DesignTokens.space.xl })
-        .onClick(() => {
-          let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-          context.openLink('https://ifdian.net/a/springtwr').catch((_e: Object) => {
-            // 浏览器可能不可用
-          });
-        })
-        .id('settings_sponsor_go_btn')
+    // 两页叠放并左右平移切换：半模态内容区尺寸由宿主决定，平移距离取实际宽度
+    Stack() {
+      this.sponsorOptionsContent()
+      this.wechatSponsorContent()
     }
     .width('100%')
-    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+    .height('100%')
+    .clip(true)
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      let width: number = typeof newValue.width === 'number' ? newValue.width : 0;
+      if (width > 0) {
+        this.sponsorPageWidth = width;
+      }
+    })
+  }
+
+  /** 赞助方式列表与微信赞赏码的左右平移切换。 */
+  private switchSponsorPage(showWechat: boolean): void {
+    this.getUIContext().animateTo({
+      duration: DesignTokens.animation.durationNormal,
+      curve: Curve.FastOutSlowIn
+    }, () => {
+      this.sponsorShowWechat = showWechat;
+    });
+  }
+
+  /** 赞助方式列表：爱发电外链与微信赞赏码两个入口。 */
+  @Builder
+  sponsorOptionsContent(): void {
+    Scroll() {
+      Column() {
+        Column() {
+          Text($r('app.string.sponsor_message'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .textAlign(TextAlign.Center)
+            .width('100%')
+            .margin({ top: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+        }
+        .width('100%')
+        .backgroundColor($r('app.color.card_background'))
+        .borderRadius(DesignTokens.radius.lg)
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+        .padding({
+          left: DesignTokens.space.lg,
+          right: DesignTokens.space.lg,
+          top: DesignTokens.space.md,
+          bottom: DesignTokens.space.md
+        })
+
+        Button($r('app.string.sponsor_afdian'))
+          .width('100%')
+          .backgroundColor($r('app.color.accent_blue_bg'))
+          .fontColor($r('app.color.ip_blue_text'))
+          .borderRadius(DesignTokens.radius.md)
+          .margin({ top: DesignTokens.space.lg })
+          .onClick(() => {
+            let context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            context.openLink('https://ifdian.net/a/springtwr').catch((_e: Object) => {
+              // 浏览器可能不可用
+            });
+          })
+          .id('settings_sponsor_afdian_btn')
+
+        Button($r('app.string.sponsor_wechat'))
+          .width('100%')
+          .backgroundColor($r('app.color.accent_blue_bg'))
+          .fontColor($r('app.color.ip_blue_text'))
+          .borderRadius(DesignTokens.radius.md)
+          .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xl })
+          .onClick(() => {
+            this.switchSponsorPage(true);
+          })
+          .id('settings_sponsor_wechat_btn')
+      }
+      .width('100%')
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
+    .translate({ x: this.sponsorShowWechat ? -this.sponsorPageWidth : 0 })
+  }
+
+  /** 微信赞赏码：收款码 + 扫码提示。 */
+  @Builder
+  wechatSponsorContent(): void {
+    Scroll() {
+      Column() {
+        Column() {
+          Image($r('app.media.ic_wechat_sponsor'))
+            .width(220)
+            .height(220)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(DesignTokens.radius.md)
+        }
+        .width('100%')
+        .padding(DesignTokens.space.md)
+        .backgroundColor($r('app.color.card_background'))
+        .borderRadius(DesignTokens.radius.lg)
+        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+
+        Text($r('app.string.sponsor_wechat_hint'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor($r('app.color.text_secondary'))
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .margin({ top: DesignTokens.space.md })
+      }
+      .width('100%')
+      .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .height('100%')
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
+    .translate({ x: this.sponsorShowWechat ? 0 : this.sponsorPageWidth })
   }
 
   @Builder
@@ -399,28 +489,6 @@ export struct MoreSettingsSection {
             .fontColor($r('app.color.text_secondary'))
             .layoutWeight(1)
           Text(this.viewModel.handySendVersion)
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .fontWeight(FontWeight.Medium)
-        }
-        .width('100%')
-        .padding({
-          left: DesignTokens.space.lg,
-          right: DesignTokens.space.lg,
-          top: DesignTokens.space.sm,
-          bottom: DesignTokens.space.sm
-        })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Divider().color($r('app.color.border_light'))
-
-        Row() {
-          Text($r('app.string.about_localsend_version'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_secondary'))
-            .layoutWeight(1)
-          Text(this.viewModel.localsendVersion)
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_primary'))
             .fontWeight(FontWeight.Medium)
@@ -670,10 +738,13 @@ export struct MoreSettingsSection {
         .constraintSize({ minHeight: DesignTokens.size.thumbSm })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
+          // 每次打开都从赞助方式列表开始
+          this.sponsorShowWechat = false;
           this.isShowSponsorSheet = true;
         })
         .id('settings_sponsor_entry')
         .bindSheet($$this.isShowSponsorSheet, this.sponsorSheetBuilder(), {
+          // 两种赞助方式视图共用同一弹窗高度，切换时高度保持不变
           height: SheetSize.MEDIUM,
           width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
           preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
@@ -682,7 +753,18 @@ export struct MoreSettingsSection {
             title: $r('app.string.sponsor_label'),
             subtitle: $r('app.string.sponsor_description')
           },
-          showClose: true
+          showClose: true,
+          onWillDismiss: (dismissSheetAction: DismissSheetAction) => {
+            // 微信赞赏页时系统返回先退回赞助方式列表，不关闭半模态
+            if (dismissSheetAction.reason === DismissReason.PRESS_BACK && this.sponsorShowWechat) {
+              this.switchSponsorPage(false);
+              return;
+            }
+            dismissSheetAction.dismiss();
+          },
+          onWillSpringBackWhenDismiss: (_springBackAction: SpringBackAction) => {
+            // 不调用 springBack：取消下拉回弹，使下拉直接进入关闭流程
+          }
         })
 
         // 诊断日志（带箭头的导航入口行）

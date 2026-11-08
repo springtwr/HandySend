@@ -5,10 +5,12 @@ import { describe, it, beforeAll, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import {
   removeDirectoryIfEmpty,
+  removeRecvTargetPaths,
   uniquePath
 } from '../../../../main/ets/service/repository/ReceiveTargets'
 import {
   TEMP_DIR_NAME,
+  TEMP_SUBDIR_LOCAL_SEND,
   TEMP_SUBDIR_WEB
 } from '../../../../main/ets/model/transfer/TransferTempPaths'
 import { getTestCacheDir, ensureDir } from '../helper/TestHelper'
@@ -81,6 +83,38 @@ export default function ReceiveTargetsTest() {
       // 预留文件存在时，带序号的名字也不能重复占用
       writeFile(tempDir, 'reserved (1).jpg')
       expect(uniquePath(dir, 'reserved.jpg')).assertEqual('reserved (2).jpg')
+    })
+
+    it('removeRecvTargetPaths_removes_empty_temp_root', 0, () => {
+      // 回归场景：中断清理只删协议子目录、漏删空的临时区根目录时，
+      // 任务结束后会残留 .handysend-temp；同时已完成文件不得被清理。
+      // 使用独立子目录，避免同套件其他用例在共享临时区根目录预留下的文件干扰空目录判定
+      let caseDir = dir + '/remove_targets_case'
+      let tempRoot = caseDir + '/' + TEMP_DIR_NAME
+      let tempDir = tempRoot + '/' + TEMP_SUBDIR_LOCAL_SEND
+      ensureDir(tempDir)
+      writeFile(tempDir, 'keep.bin')
+      writeFile(tempDir, 'drop.bin')
+      let perTemp: Record<string, string> = {}
+      perTemp['keep'] = tempDir + '/keep.bin'
+      perTemp['drop'] = tempDir + '/drop.bin'
+      let keep: Record<string, boolean> = {}
+      keep['keep'] = true
+
+      removeRecvTargetPaths(perTemp, keep)
+
+      // 已完成文件保留，未完成临时文件删除
+      expect(fs.accessSync(perTemp['keep'])).assertTrue()
+      expect(fs.accessSync(perTemp['drop'])).assertFalse()
+      // 子目录仍非空：子目录与临时区根目录都保留
+      expect(fs.accessSync(tempDir)).assertTrue()
+      expect(fs.accessSync(tempRoot)).assertTrue()
+
+      // 模拟已完成文件提交改名后再清理：空的子目录与根目录一并移除
+      fs.unlinkSync(perTemp['keep'])
+      removeRecvTargetPaths(perTemp)
+      expect(fs.accessSync(tempDir)).assertFalse()
+      expect(fs.accessSync(tempRoot)).assertFalse()
     })
   })
 }

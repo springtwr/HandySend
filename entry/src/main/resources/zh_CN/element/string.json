@@ -197,8 +197,16 @@
       "value": "觉得好用的话可以给开发者赞助一点 token，助力项目更好发展"
     },
     {
-      "name": "sponsor_go",
-      "value": "去赞助"
+      "name": "sponsor_afdian",
+      "value": "爱发电"
+    },
+    {
+      "name": "sponsor_wechat",
+      "value": "微信赞赏"
+    },
+    {
+      "name": "sponsor_wechat_hint",
+      "value": "打开微信扫一扫，扫码赞赏支持开发者"
     },
     {
       "name": "rate_label",
@@ -845,10 +853,6 @@
       "value": "便捷快传 版本"
     },
     {
-      "name": "about_localsend_version",
-      "value": "LocalSend 版本"
-    },
-    {
       "name": "about_protocol_version",
       "value": "LocalSend 协议版本"
     },
@@ -1067,6 +1071,10 @@
     {
       "name": "accept_targets_failed",
       "value": "准备接收文件失败"
+    },
+    {
+      "name": "transfer_interrupted_message",
+      "value": "传输中断，未完成的文件已清理"
     },
     {
       "name": "history_delete_message_count",
