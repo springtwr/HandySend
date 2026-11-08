@@ -555,8 +555,9 @@ export function updateFileProgress(sessionId: string, fileId: string,
     } else if (f.bytesSent > 0) {
       f.stage = SessionFileStage.transferring;
     }
-    if (!wasCompleted && f.stage === SessionFileStage.completed) {
-      // 发送方向：只在完成点写草稿，避免高频进度写盘。
+    if (!wasCompleted && f.stage === SessionFileStage.completed &&
+      session.dataFlow === SessionDataFlow.outbound) {
+      // 发送方向：只在完成点写草稿，避免高频进度写盘；入站会话不读草稿。
       updateOutboundDraftFile(session.id, fileId, f.stage, f.bytesSent);
     }
     break;
