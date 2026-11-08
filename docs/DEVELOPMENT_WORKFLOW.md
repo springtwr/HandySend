@@ -16,7 +16,7 @@ HandySend（主仓库，gitcode: springtwr/HandySend）
 - **submodule 机制**：主仓库只记录一个 commit hash（gitlink），`git submodule update` 按它检出。
 - **双 remote**（submodule 内）：
   - `origin` = 定制仓库（ `https://gitcode.com/springtwr/localsend-ohos.git` ）——检出与推送用
-  - `upstream` = localsend 官方（`https://gh-proxy.org/https://github.com/localsend/localsend.git` ，经 gh-proxy 代理）——仅拉取升级用，需要自己添加
+  - `upstream` = localsend 官方（`https://gh-proxy.org/https://github.com/localsend/localsend.git` ，经 gh-proxy 代理）——仅用于同步上游，需要自己添加
 
 ### 0.2 Submodule 独立性
 
@@ -167,22 +167,28 @@ tools/setup-worktree.sh -n ../HandySend-worktrees/dev    # 预演，只打印不
 - 内容一致则跳过；内容不同默认不覆盖，加 `--force` 才覆盖
 - 不使用 OpenCode / codegraph 的人可以完全不执行本脚本，对仓库没有任何影响
 
-## 5. 升级上游 localsend（按版本节奏，非自动）
+## 5. 同步上游 localsend（按版本节奏，非自动）
 
-升级主要工作量在 HandySend 桥接层迁移（浏览器面为自研服务，不依赖上游 web 接口），**不要**对定制分支使用 GitHub 网页的 Sync/Update。
+上游改动以「逐条挑拣 `packages/core` 提交」的方式合入定制分支，不对定制分支 rebase，
+也不使用 GitHub 网页的 Sync/Update：定制提交与上游提交各留各的历史，冲突只在挑拣时处理，
+core 改动影响桥接层接口或行为时在同一批提交里完成适配。Flutter 应用、Dart isolates、CLI、
+CI 与平台打包改动不进入 HandySend 构建，通常无需挑拣。
 
 ```bash
-cd localsend_ohrs/third_party/localsend
-git fetch upstream --tags                # 拉上游（含新 tag）
-git checkout -b upgrade-<版本>           # 实验分支，不直接动 main
-git rebase v1.18.2                       # 或 git rebase upstream/main
-# 解决冲突（重点：core 结构变更在 HandySend 桥接层的对应迁移）
-cargo test --target x86_64-unknown-linux-gnu --features full
-git push -u origin upgrade-<版本>
-# 全量验证（含端到端）通过后，主仓库 gitlink 切到新分支/提交（可回退）
+SUB=localsend_ohrs/third_party/localsend
+
+git -C $SUB fetch upstream --tags                                      # ① 拉上游
+git -C $SUB log --oneline --reverse localsend-synced..upstream/main -- packages/core   # ② 待评估提交
+git -C $SUB cherry-pick -x <hash>                                      # ③ 需挑拣的逐条挑入
+# ④ 验证：§7 的三组 cargo test + devecocli build + 设备端 Instrument Test
+# ⑤ 更新 docs/UPSTREAM_SYNC.md 的已挑拣/跳过表、评估游标与同步日期
+git -C $SUB branch -f localsend-synced upstream/main                   # ⑥ 移动游标
+git -C $SUB push origin localsend-synced
+# ⑦ 主仓库更新 gitlink；core 对齐的上游版本变化时改 localsend_ohrs/Cargo.toml 的 version
 ```
 
-> 推荐保留当前定制分支（main）与新版本分支并行，验证通过再切换。
+> 评估标准、已挑拣/跳过清单与复核命令见 [UPSTREAM_SYNC.md](UPSTREAM_SYNC.md)；
+> 版本号口径见 [BUILD.md](BUILD.md) §10.1。
 
 ## 6. 常见坑速查
 
@@ -204,11 +210,18 @@ git submodule status                     # 查 gitlink 一致性（无 +/-/-dirt
 git submodule sync                       # 修复 remote 与 .gitmodules 一致
 git submodule update --init # 按 gitlink 检出（不递归初始化 flutter 嵌套子模块）
 
-# 上游
-git fetch upstream --tags                # 拉上游 tags（升级用）
+# 上游（在 submodule 内）
+SUB=localsend_ohrs/third_party/localsend
+git -C $SUB fetch upstream --tags        # 拉上游 tags（同步用）
 
 # 构建 / 测试
 hvigorw assembleHap --mode module      # 全量构建
 rm -rf localsend_ohrs/package/libs       # 强制重编 Rust
-cargo test --target x86_64-unknown-linux-gnu --features full   # core 测试
+cargo test --manifest-path localsend_ohrs/Cargo.toml --target x86_64-unknown-linux-gnu \
+  --no-default-features --lib                                          # 桥接层单测
+cargo test --manifest-path localsend_ohrs/tests/Cargo.toml \
+  --target x86_64-unknown-linux-gnu                                    # 桥接层集成测试
+cargo test --manifest-path localsend_ohrs/third_party/localsend/Cargo.toml \
+  --target x86_64-unknown-linux-gnu -p localsend \
+  --features crypto,discovery,http,multicast                           # 上游 core 测试
 ```
