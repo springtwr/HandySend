@@ -83,7 +83,6 @@ import {
   setWebUploadInvokers
 } from '../transfer/adapters/WebUploadAdapter';
 import {
-  findByProtocol,
   finish,
   querySessions,
   subscribeSessions
@@ -1231,9 +1230,13 @@ function markWebUploadDraftActive(token: string): void {
   saveSessionDraft(draft);
 }
 
-/** 草稿文件名使用统一会话标识；终态可见窗口内仍可从注册表取得。 */
+/**
+ * 草稿文件名使用统一会话标识。
+ * 优先取非终态会话：同一 token 在旧会话终态可见窗口内重连时，`findByProtocol`
+ * 可能先命中旧会话，导致草稿操作落到已删除的旧草稿上。
+ */
 function webDraftSessionId(token: string): string {
-  let session = findByProtocol(WEB_UPLOAD_KEY, token);
+  let session = findWebUploadSession(token);
   return session !== undefined ? session.id : token;
 }
 
