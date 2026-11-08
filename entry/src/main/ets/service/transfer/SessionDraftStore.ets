@@ -137,6 +137,8 @@ export function saveSessionDraft(draft: SessionDraft): boolean {
       fs.closeSync(file);
     }
     fs.renameSync(tmp, path);
+    // rename 只保证目录项在内存中更新；立即强杀仍可能丢失。同步目录项后才算持久化。
+    fsyncDirectory(dir);
     logger.debug('保存会话草稿 session=' + sanitizeDraftId(draft.sessionId) +
       ' files=' + draft.files.length + ' stage=' + draft.stage);
     return true;
@@ -256,5 +258,26 @@ function removeFileIfExists(path: string): void {
     }
   } catch (e) {
     logger.debug('删除会话草稿文件失败：' + path + '：' + String(e));
+  }
+}
+
+/**
+ * 同步目录项：rename 后不 fsync 目录时，强杀可能丢失新建/改名的目录项，
+ * 出现“保存日志已打印、重启后 count=0”。文件系统不支持目录 fsync 时静默忽略。
+ */
+function fsyncDirectory(dir: string): void {
+  let directory: fs.File | undefined = undefined;
+  try {
+    directory = fs.openSync(dir, fs.OpenMode.READ_ONLY);
+    fs.fsyncSync(directory.fd);
+  } catch (_e) {
+    // 部分文件系统不支持对目录 fsync；文件内容已在 rename 前 fsync。
+  } finally {
+    if (directory !== undefined) {
+      try {
+        fs.closeSync(directory);
+      } catch (_e) {
+      }
+    }
   }
 }
