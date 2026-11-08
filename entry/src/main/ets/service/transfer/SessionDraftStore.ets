@@ -64,6 +64,9 @@ export interface SessionDraft {
   updatedAt: number
   files: Array<SessionDraftFile>
   capabilities?: SessionCapabilities
+  // 发送方向终态快照（可选）：强杀窗口内用于原样归档，避免把已成功任务降级。
+  errorMessage?: string
+  errorCode?: string
 }
 
 /** 返回草稿根目录；上下文缺失时返回空串。 */

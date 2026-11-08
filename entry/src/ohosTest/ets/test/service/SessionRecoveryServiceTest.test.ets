@@ -280,6 +280,90 @@ export default function SessionRecoveryServiceTest() {
       expect(loadSessionDraft(id) === undefined).assertTrue()
     })
 
+    it('recover_outbound_draft_writes_task_only', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearAll()
+      clearSessionHistory()
+      clearDrafts()
+      let id = 'recover-outbound-' + Date.now().toString()
+      let completed = makeFile('f-sent', '', 10)
+      completed.stage = SessionFileStage.completed
+      completed.bytesSent = 10
+      let draft = makeDraft(id, [completed, makeFile('f-pending', '', 20)])
+      draft.dataFlow = SessionDataFlow.outbound
+      saveSessionDraft(draft)
+      recoverSessionDrafts()
+      let session = findSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.outcome).assertEqual(SessionHistoryOutcome.partiallyFailed)
+        expect(session.errorCode).assertEqual('app_killed')
+        expect(session.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(session.files[1].stage).assertEqual(SessionFileStage.failed)
+      }
+      let receive = getHistory()
+      expect(receive.length).assertEqual(0)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+    })
+
+    it('recover_outbound_pending_draft_is_cancelled', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearAll()
+      clearSessionHistory()
+      clearDrafts()
+      let id = 'recover-outbound-pending-' + Date.now().toString()
+      let draft = makeDraft(id, [makeFile('f-waiting', '', 10)])
+      draft.dataFlow = SessionDataFlow.outbound
+      draft.stage = SessionStage.awaitingConfirmation
+      saveSessionDraft(draft)
+      recoverSessionDrafts()
+      let session = findSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.outcome).assertEqual(SessionHistoryOutcome.cancelled)
+        expect(session.errorCode).assertEqual('app_killed_before_start')
+        expect(session.files[0].stage).assertEqual(SessionFileStage.cancelled)
+      }
+      let receive = getHistory()
+      expect(receive.length).assertEqual(0)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+    })
+
+    it('recover_terminal_outbound_draft_keeps_outcome', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearAll()
+      clearSessionHistory()
+      clearDrafts()
+      let id = 'recover-outbound-terminal-' + Date.now().toString()
+      let file = makeFile('f-sent', '', 10)
+      file.stage = SessionFileStage.completed
+      file.bytesSent = 10
+      let draft = makeDraft(id, [file])
+      draft.dataFlow = SessionDataFlow.outbound
+      draft.stage = SessionStage.succeeded
+      saveSessionDraft(draft)
+      recoverSessionDrafts()
+      let session = findSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.outcome).assertEqual(SessionHistoryOutcome.succeeded)
+      }
+      expect(getHistory().length).assertEqual(0)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+    })
+
     it('recover_is_idempotent', 0, () => {
       let ctx = getTestAppContext()
       expect(ctx !== undefined).assertTrue()

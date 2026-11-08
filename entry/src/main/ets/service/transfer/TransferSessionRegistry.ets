@@ -48,6 +48,11 @@ import {
   removeSessionHistoryByIds
 } from './SessionHistoryStore';
 import { getAdapter } from './adapters/SessionAdapter';
+import {
+  removeOutboundDraft,
+  saveOutboundDraft,
+  updateOutboundDraftFile
+} from './OutboundDraftService';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:TransferRegistry', '会话注册表');
 
@@ -368,6 +373,7 @@ export function createSession(input: SessionCreateInput): TransferSession {
   session.stage = input.stage ?? SessionStage.active;
   recomputeTotals(session);
   sessions.set(session.id, session);
+  saveOutboundDraft(session);
   // 发送方向会话纳入无进展看门狗：活动基准自创建时刻起算，
   // 后续字节进度、阶段/文案更新与文件集追加均会刷新（见各自入口）
   touchActivity(session);
@@ -454,6 +460,7 @@ export function updateSessionPeerPreview(sessionId: string, path: string): boole
   }
   session.files = next;
   recomputeTotals(session);
+  saveOutboundDraft(session);
   // 文件集追加亦视为进展：刷新发送会话活动基准
   touchActivity(session);
   notifyChange();
@@ -482,6 +489,7 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
   }
   session.files = next;
   recomputeTotals(session);
+  saveOutboundDraft(session);
   notifyChange();
   return true;
 }
@@ -526,6 +534,7 @@ export function updateFileProgress(sessionId: string, fileId: string,
     if (totalBytes !== undefined && totalBytes > 0) {
       f.totalBytes = totalBytes;
     }
+    let wasCompleted: boolean = f.stage === SessionFileStage.completed;
     if (bytesSent > f.bytesSent) {
       f.bytesSent = bytesSent;
       // 首个字节进度即实际开始传输：耗时与平均速度自此起点计时（不把等待确认、
@@ -539,6 +548,10 @@ export function updateFileProgress(sessionId: string, fileId: string,
       f.stage = SessionFileStage.completed;
     } else if (f.bytesSent > 0) {
       f.stage = SessionFileStage.transferring;
+    }
+    if (!wasCompleted && f.stage === SessionFileStage.completed) {
+      // 发送方向：只在完成点写草稿，避免高频进度写盘。
+      updateOutboundDraftFile(session.id, fileId, f.stage, f.bytesSent);
     }
     break;
   }
@@ -773,7 +786,15 @@ export function finish(sessionId: string, outcome: SessionStage, errorMessage?: 
     logger.error(`文本消息成功会话缺少可预览路径 id=${session.id} 协议=${session.protocolKey}` +
       ` 方向=${session.dataFlow} 文件数=${session.files.length}`);
   }
+  if (session.dataFlow === SessionDataFlow.outbound) {
+    // 先落终态草稿：若强杀发生在历史落盘与草稿删除之间，恢复时可按终态原样归档。
+    saveOutboundDraft(session);
+  }
   archiveSession(session);
+  if (session.dataFlow === SessionDataFlow.outbound) {
+    // 发送方向草稿由注册表统一维护；接收方向草稿由各协议在历史写入后删除。
+    removeOutboundDraft(session.id);
+  }
   logger.info('会话终结：' + outcomeText(outcome));
   logger.debug(`会话终结 id=${sessionId} 协议=${session.protocolKey} 结果=${outcome}` +
     ` 错误码=${session.errorCode} 文件数=${session.files.length}`);
