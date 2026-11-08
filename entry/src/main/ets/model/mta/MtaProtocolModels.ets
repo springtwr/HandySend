@@ -354,6 +354,8 @@ export class ReceiverState {
   savedFiles: Array<string> = [];
   /** 本次接收已落盘的文件条目（文件名 + 大小 + 真实类型），保存完成后填充 */
   receivedFiles: Array<ReceivedFileEntry> = [];
+  /** 本次接收是否以“已提交部分条目后失败”收尾（savedFiles/receivedFiles 为已提交部分） */
+  endedWithPartialFiles: boolean = false;
   /** 待保存到相册的媒体文件（"保存到相册"开启且有图片/视频时填充） */
   pendingMediaFiles: Array<MediaFileInfo> = [];
   /** 最近一次错误原因 */
@@ -377,6 +379,7 @@ export class ReceiverState {
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();
     copy.receivedFiles = this.receivedFiles.slice();
+    copy.endedWithPartialFiles = this.endedWithPartialFiles;
     copy.pendingMediaFiles = this.pendingMediaFiles.slice();
     copy.lastError = this.lastError;
     return copy;

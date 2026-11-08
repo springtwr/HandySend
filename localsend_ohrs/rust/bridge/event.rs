@@ -189,6 +189,15 @@ pub enum BridgeEvent {
         network_bytes: u64,
         network_done: bool,
     },
+    /// MTA 接收单条目已提交到最终路径（关键事件）。
+    /// 供 ArkTS 增量更新强杀恢复草稿；失败终态另经下载返回值携带已提交条目。
+    MtaEntryCommitted {
+        task_id: String,
+        name: String,
+        size: u64,
+        modified_unix_ms: i64,
+        saved_path: String,
+    },
     /// 本次 MTA 发送完成（对端回送成功状态）。
     MtaSendCompleted { task_id: String },
     /// 本次 MTA 发送仅部分完成（对端回送成功类型 + 部分接收原因，即只收了部分文件）。
@@ -425,6 +434,10 @@ pub const EVENT_PAYLOAD_CONTRACT: &[EventContractEntry] = &[
     ("mtaSendPartial", Some(&["reason"])),
     ("mtaSendRejected", Some(&["reason"])),
     ("mtaSendFailed", Some(&["reason"])),
+    (
+        "mtaEntryCommitted",
+        Some(&["taskId", "name", "size", "modifiedUnixMs", "savedPath"]),
+    ),
     ("error", Some(&["context", "message"])),
 ];
 
@@ -828,6 +841,13 @@ mod tests {
                 percent: 10.0,
                 network_bytes: 8,
                 network_done: false,
+            },
+            BridgeEvent::MtaEntryCommitted {
+                task_id: "t".into(),
+                name: "a.txt".into(),
+                size: 10,
+                modified_unix_ms: 1_700_000_000_000,
+                saved_path: "/dl/a.txt".into(),
             },
             BridgeEvent::MtaSendCompleted {
                 task_id: "t".into(),

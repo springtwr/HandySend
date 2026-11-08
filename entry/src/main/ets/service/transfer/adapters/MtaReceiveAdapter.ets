@@ -228,6 +228,29 @@ function stageTextOf(stage: ReceiverStage): ResourceStr {
   return '';
 }
 
+/** 以已落盘清单整体替换统一会话文件（成功或部分完成路径共用）。 */
+function applyReceivedFiles(sessionId: string, state: ReceiverState): void {
+  if (state.receivedFiles.length === 0) {
+    return;
+  }
+  let descriptors: Array<SessionFileDescriptor> = [];
+  for (let i = 0; i < state.receivedFiles.length; i++) {
+    let received = state.receivedFiles[i];
+    let savedPath: string = i < state.savedFiles.length ? state.savedFiles[i] : '';
+    // 真实类型缺失（未解析）时按文件名扩展名兜底，与接收历史口径一致
+    let fileType: string = received.fileType.length > 0 ? received.fileType :
+      getMimeForFileName(received.name);
+    descriptors.push({
+      fileId: 'mta-' + i,
+      fileName: received.name,
+      fileType: fileType,
+      totalBytes: received.size,
+      path: savedPath
+    });
+  }
+  setSessionFiles(sessionId, descriptors);
+}
+
 /**
  * 消费 MTA 接收状态快照：按阶段映射为统一会话操作。
  * 由 MtaRepository 的状态回调驱动。
@@ -320,29 +343,18 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     // 下载落盘完成：以真实逐文件清单整体替换创建期的单条「主文件名」占位条目。
     // 状态快照中的 receivedFiles（名称/大小/真实类型）与 savedFiles（逐文件路径）按下标一对一，
     // 是本次落盘的完整事实源；路径随描述符一并写入，保证终结归档后历史态仍可按路径读取。
-    if (state.receivedFiles.length > 0) {
-      let descriptors: Array<SessionFileDescriptor> = [];
-      for (let i = 0; i < state.receivedFiles.length; i++) {
-        let received = state.receivedFiles[i];
-        let savedPath: string = i < state.savedFiles.length ? state.savedFiles[i] : '';
-        // 真实类型缺失（未解析）时按文件名扩展名兜底，与接收历史口径一致
-        let fileType: string = received.fileType.length > 0 ? received.fileType :
-          getMimeForFileName(received.name);
-        descriptors.push({
-          fileId: 'mta-' + i,
-          fileName: received.name,
-          fileType: fileType,
-          totalBytes: received.size,
-          path: savedPath
-        });
-      }
-      setSessionFiles(activeUnifiedId, descriptors);
-    }
+    applyReceivedFiles(activeUnifiedId, state);
     finish(activeUnifiedId, SessionStage.succeeded);
     activeUnifiedId = undefined;
   } else if (stage === ReceiverStage.FAILED) {
     cancelTextSaveTimeout();
-    finish(activeUnifiedId, SessionStage.failed, state.lastError);
+    // 部分条目已提交后失败：保留已提交文件并按部分完成收口，避免出现“文件已落盘但无历史”。
+    if (state.endedWithPartialFiles && state.receivedFiles.length > 0) {
+      applyReceivedFiles(activeUnifiedId, state);
+      finish(activeUnifiedId, SessionStage.partiallyFailed, state.lastError);
+    } else {
+      finish(activeUnifiedId, SessionStage.failed, state.lastError);
+    }
     activeUnifiedId = undefined;
   }
 }

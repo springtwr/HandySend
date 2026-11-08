@@ -29,7 +29,11 @@ import {
   offBridgeEvent,
   onBridgeEvent
 } from '../NativeBridge';
-import { NativeEvent, NativeMtaReceiveProgressEvent } from '../../model/NativeTypes';
+import {
+  NativeEvent,
+  NativeMtaEntryCommittedEvent,
+  NativeMtaReceiveProgressEvent
+} from '../../model/NativeTypes';
 import { getMimeForFileName } from '../../utils/MimeUtils';
 import { ProgressReportThrottle, resolveMaxActualBytes } from '../../utils/MtaProgressUtil';
 import { getLogger } from '../../utils/Logger';
@@ -40,6 +44,10 @@ const logger = getLogger(LogDomains.MTA, 'HandySend:MtaTransfer', '互传传输'
 
 /** 下载并保存结果（由 Rust 返回的落盘元数据构造） */
 export class DownloadResult {
+  /** 是否成功（失败时仍可能携带已提交条目） */
+  success: boolean = true;
+  /** 失败原因（成功时为空串） */
+  errorMessage: string = '';
   /** 已保存文件的完整路径 */
   savedFiles: Array<string> = [];
   /** 逐文件条目（文件名 + 解压后大小），与 savedFiles 一一对应 */
@@ -79,6 +87,10 @@ export class MtaTransferClient {
   private progressSubscribed: boolean = false;
   /** 最近一次接收进度事件的网络读入字节累计（完成态收敛用） */
   private lastNetworkBytes: number = 0;
+  /** 本次下载中 Rust 已提交到最终路径的条目（失败时用于部分完成历史） */
+  private committedEntries: Array<ReceivedEntryMeta> = [];
+  /** 单条目提交回调（供服务增量更新强杀恢复草稿） */
+  private onCommitted: ((entry: ReceivedFileEntry, savedPath: string) => void) | undefined = undefined;
   /** 接收进度事件处理器（保持引用以便退订） */
   private receiveProgressHandler: (event: NativeEvent) => void = (event: NativeEvent): void => {
     if (event.type !== 'mtaReceiveProgress') {
@@ -88,6 +100,26 @@ export class MtaTransferClient {
     this.lastNetworkBytes = progressEvent.networkBytes;
     this.reportProgress(progressEvent.receivedBytes, progressEvent.totalBytes, false,
       progressEvent.networkBytes, progressEvent.networkDone);
+  };
+  /** 单条目提交事件处理器（保持引用以便退订） */
+  private entryCommittedHandler: (event: NativeEvent) => void = (event: NativeEvent): void => {
+    if (event.type !== 'mtaEntryCommitted') {
+      return;
+    }
+    let entryEvent = event as NativeMtaEntryCommittedEvent;
+    let meta = new ReceivedEntryMeta();
+    meta.name = entryEvent.name;
+    meta.size = entryEvent.size;
+    meta.modifiedUnixMs = entryEvent.modifiedUnixMs;
+    meta.savedPath = entryEvent.savedPath;
+    this.committedEntries.push(meta);
+    if (this.onCommitted !== undefined) {
+      let entry = new ReceivedFileEntry();
+      entry.name = meta.name;
+      entry.size = meta.size;
+      entry.fileType = getMimeForFileName(meta.name);
+      this.onCommitted(entry, meta.savedPath);
+    }
   };
 
   /** 注入事件回调 */
@@ -279,25 +311,28 @@ export class MtaTransferClient {
    * 运行中订阅 `mtaReceiveProgress` 上报进度，完成后以返回元数据构造结果。
    */
   async receiveToTarget(goIp: string, port: number, taskId: string,
-    targetDir: string, declaredTotal: number): Promise<DownloadResult> {
+    targetDir: string, declaredTotal: number,
+    onCommitted?: (entry: ReceivedFileEntry, savedPath: string) => void): Promise<DownloadResult> {
     this.activeTaskId = taskId;
     this.progressThrottle.reset();
     this.lastNetworkBytes = 0;
+    this.committedEntries = [];
+    this.onCommitted = onCommitted;
     this.subscribeProgress();
     try {
       // 解压总量上限按对端声明值动态计算（声明值 + 容差，并以总上限封顶）；
       // 单条目上限固定，防止单条 zip bomb
       let maxTotalBytes = resolveMaxActualBytes(declaredTotal);
-      let metasJson = await nativeMtaReceiveDownload(goIp, port, taskId, targetDir, declaredTotal,
+      let resultJson = await nativeMtaReceiveDownload(goIp, port, taskId, targetDir, declaredTotal,
         MtaConstants.MAX_UNZIP_ENTRY_COUNT, maxTotalBytes, MtaConstants.MAX_UNZIP_ENTRY_BYTES,
         undefined, MtaConstants.DOWNLOAD_CONNECT_TIMEOUT_MS, MtaConstants.DOWNLOAD_STALL_TIMEOUT_MS,
         MtaConstants.DOWNLOAD_HEADER_TIMEOUT_MS);
-      // 完成态无条件 100%（分母为声明总大小）；网络字节沿用最后一次事件值，
-      // 「网络已收完」在此必然成立（下载+解压已整体结束）
-      this.reportProgress(declaredTotal, declaredTotal, true, this.lastNetworkBytes, true);
-      return this.buildResult(metasJson);
+      return this.buildOutcome(resultJson, declaredTotal);
     } catch (e) {
-      throw new Error(String(e));
+      let failure = this.buildResultFromMetas(this.committedEntries);
+      failure.success = false;
+      failure.errorMessage = String(e);
+      return failure;
     } finally {
       this.unsubscribeProgress();
       this.activeTaskId = '';
@@ -310,6 +345,7 @@ export class MtaTransferClient {
       return;
     }
     onBridgeEvent('mtaReceiveProgress', this.receiveProgressHandler);
+    onBridgeEvent('mtaEntryCommitted', this.entryCommittedHandler);
     this.progressSubscribed = true;
   }
 
@@ -319,6 +355,7 @@ export class MtaTransferClient {
       return;
     }
     offBridgeEvent('mtaReceiveProgress', this.receiveProgressHandler);
+    offBridgeEvent('mtaEntryCommitted', this.entryCommittedHandler);
     this.progressSubscribed = false;
   }
 
@@ -346,10 +383,36 @@ export class MtaTransferClient {
     this.handlers.onProgress(progress);
   }
 
-  /** 由 Rust 返回的落盘元数据构造结果（文件名/大小/类型在 ArkTS 按文件名解析） */
-  private buildResult(metasJson: string): DownloadResult {
+  /** 解析 Rust 的结构化下载结果（成功/失败均携带已提交条目）。 */
+  private buildOutcome(resultJson: string, declaredTotal: number): DownloadResult {
     let result = new DownloadResult();
-    let metas: Array<ReceivedEntryMeta> = this.parseReceivedMetas(metasJson);
+    try {
+      let payload = JSON.parse(resultJson) as Record<string, Object>;
+      let entries = payload['entries'];
+      let metas: Array<ReceivedEntryMeta> = this.parseReceivedMetas(
+        JSON.stringify(entries !== undefined && entries !== null ? entries : []));
+      result = this.buildResultFromMetas(metas);
+      result.success = payload['ok'] === true;
+      if (!result.success) {
+        let error = payload['error'];
+        result.errorMessage = typeof error === 'string' && error.length > 0 ?
+          error : '下载/保存失败';
+        return result;
+      }
+    } catch (e) {
+      result.success = false;
+      result.errorMessage = '解析接收结果失败: ' + String(e);
+      return result;
+    }
+    // 完成态无条件 100%（分母为声明总大小）；网络字节沿用最后一次事件值，
+    // 「网络已收完」在此必然成立（下载+解压已整体结束）
+    this.reportProgress(declaredTotal, declaredTotal, true, this.lastNetworkBytes, true);
+    return result;
+  }
+
+  /** 由落盘条目构造结果（文件名/大小/类型在 ArkTS 按文件名解析）。 */
+  private buildResultFromMetas(metas: Array<ReceivedEntryMeta>): DownloadResult {
+    let result = new DownloadResult();
     for (let i = 0; i < metas.length; i++) {
       let meta = metas[i];
       result.savedFiles.push(meta.savedPath);

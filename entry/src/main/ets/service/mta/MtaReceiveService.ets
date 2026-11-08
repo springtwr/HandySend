@@ -22,6 +22,7 @@ import {
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
+  ReceivedFileEntry,
   WsHandshakeResult,
   buildMtaReceiveIdentityToken,
   buildWsHandshakeSummary,
@@ -368,6 +369,7 @@ export class MtaReceiveService {
     this.state.receiveRequest = undefined;
     this.state.requestThumbnailPath = '';
     this.state.progress = new DownloadProgress();
+    this.state.endedWithPartialFiles = false;
     this.state.pendingMediaFiles = [];
     this.state.lastError = '';
     this.notifyState();
@@ -1386,6 +1388,62 @@ export class MtaReceiveService {
     saveSessionDraft(draft);
   }
 
+  /**
+   * 单条目提交后增量更新草稿：强杀恢复可据此识别已交付文件，
+   * 失败终态也能按草稿记录部分完成（若历史尚未写入）。
+   */
+  private updatePartialReceiveDraft(request: ReceiveRequest, entry: ReceivedFileEntry,
+    savedPath: string, index: number): void {
+    let draft: SessionDraft | undefined =
+      loadSessionDraft(this.receiveDraftSessionId(request.taskId));
+    if (draft === undefined) {
+      return;
+    }
+    let timestamp: number = Date.now();
+    let file: SessionDraftFile = {
+      fileId: 'mta_saved_' + index,
+      fileName: entry.name,
+      fileType: entry.fileType,
+      totalBytes: entry.size,
+      occurrence: 1,
+      checksum: '',
+      finalPath: savedPath,
+      tempPath: '',
+      stage: SessionFileStage.completed,
+      bytesSent: entry.size,
+      completedAt: timestamp + index,
+      isTextMessage: false
+    };
+    if (draft.files.length === 1 && draft.files[0].fileId === 'mta_archive') {
+      draft.files = [file];
+    } else {
+      draft.files.push(file);
+    }
+    draft.updatedAt = timestamp;
+    saveSessionDraft(draft);
+  }
+
+  /** 下载失败收口：已提交条目按部分完成写历史，其余按失败复位。 */
+  private async handleDownloadFailure(request: ReceiveRequest, result: DownloadResult): Promise<void> {
+    if (result.savedFiles.length > 0) {
+      this.state.savedFiles = result.savedFiles;
+      this.state.receivedFiles = result.files;
+      this.state.endedWithPartialFiles = true;
+      try {
+        this.recordReceiveHistory(request, result);
+      } catch (e) {
+        this.appendLog('下载', '补记部分完成历史失败：' + String(e), LogLevels.WARN);
+      }
+    }
+    if (this.userCancelledThisDownload) {
+      await this.sendUserCancelStatus(request.taskId);
+    }
+    let reason: string = result.errorMessage.length > 0 ? result.errorMessage : '下载/保存失败';
+    this.appendLog('下载', '下载/保存失败：' + reason, LogLevels.ERROR);
+    this.setError(reason);
+    this.failAndReset(reason);
+  }
+
   private removeReceiveDraft(request: ReceiveRequest): void {
     removeSessionDraft(this.receiveDraftSessionId(request.taskId));
     removeSessionDraft(request.taskId);
@@ -1405,6 +1463,7 @@ export class MtaReceiveService {
       DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
     }
     this.appendLog('下载', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
+    this.state.endedWithPartialFiles = false;
     this.setStage(ReceiverStage.DOWNLOADING);
     // 进入下载前写草稿：强杀后至少保留一条「已中断」任务记录。
     this.writeReceiveDraft(request, SessionStage.active);
@@ -1427,8 +1486,17 @@ export class MtaReceiveService {
     this.earlyStatusPromise = null;
     this.userCancelledThisDownload = false;
     try {
+      let committedIndex = 0;
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
-        this.downloadDir, request.totalSize);
+        this.downloadDir, request.totalSize,
+        (entry: ReceivedFileEntry, savedPath: string): void => {
+          this.updatePartialReceiveDraft(request, entry, savedPath, committedIndex);
+          committedIndex++;
+        });
+      if (!result.success) {
+        await this.handleDownloadFailure(request, result);
+        return;
+      }
       this.appendLog('下载', '下载、解压与落盘完成', LogLevels.DEBUG);
       this.state.savedFiles = result.savedFiles;
       // 透传逐文件展示元数据（文件名 + 大小 + 真实类型），供页面完成后渲染文件列表

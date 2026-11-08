@@ -669,6 +669,45 @@ export default function AdaptersTest() {
       clearSessionHistory()
     })
 
+    it('mtaReceive_partialFailureKeepsCommittedFiles', 0, () => {
+      resetRegistry()
+      clearSessionHistory()
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.senderName = 'MtaPartial'
+      request.fileName = 'a.txt'
+      request.fileCount = 2
+      request.totalSize = 300
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      state.stage = ReceiverStage.DOWNLOADING
+      handleMtaReceiveState(state)
+
+      // Rust 逐条目提交了首个文件后失败：保留已提交文件，任务按部分完成收口
+      let first = new ReceivedFileEntry()
+      first.name = 'a.txt'
+      first.size = 100
+      first.fileType = 'text/plain'
+      state.receivedFiles = [first]
+      state.savedFiles = ['/storage/Download/com.example/a.txt']
+      state.endedWithPartialFiles = true
+      state.lastError = '下载中断'
+      state.stage = ReceiverStage.FAILED
+      handleMtaReceiveState(state)
+
+      let found = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found !== undefined) {
+        expect(found.stage).assertEqual(SessionStage.partiallyFailed)
+        expect(found.files.length).assertEqual(1)
+        expect(found.files[0].fileName).assertEqual('a.txt')
+        expect(found.files[0].path).assertEqual('/storage/Download/com.example/a.txt')
+      }
+      resetRegistry()
+      clearSessionHistory()
+    })
+
     it('resend_sameMtaPeer_replacesTerminalEntry', 0, () => {
       resetRegistry()
       // 互传发送：同一设备先后两次，第二次创建前按昵称取代上一条已终态条目

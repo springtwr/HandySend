@@ -9,6 +9,7 @@
 //! 网络语义等价重建：连接超时、响应码非 200 判定、下载停滞看门狗（基于数据到达
 //! 时间）、取消令牌、失败清理与可读日志。ArkTS 仅负责协议交互与业务接线。
 
+use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -60,6 +61,28 @@ pub struct ReceivedEntry {
     pub saved_path: String,
 }
 
+/// 解析失败时携带已提交条目，供上层记录部分完成结果。
+#[derive(Debug)]
+struct PartialExtractError {
+    reason: String,
+    entries: Vec<ReceivedEntry>,
+}
+
+impl fmt::Display for PartialExtractError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for PartialExtractError {}
+
+/// 接收下载的结果：`error` 为空表示成功；失败时 `entries` 仍保留已提交条目。
+#[derive(Debug)]
+pub struct ReceiveDownloadOutcome {
+    pub entries: Vec<ReceivedEntry>,
+    pub error: Option<String>,
+}
+
 /// 接收下载的网络超时参数。
 #[derive(Debug, Clone, Copy)]
 pub struct ReceiveTimeouts {
@@ -94,6 +117,18 @@ pub fn extract_zip_to_dir<R: Read>(
     progress: &AtomicU64,
     written: &AtomicU64,
 ) -> anyhow::Result<Vec<ReceivedEntry>> {
+    extract_zip_to_dir_with(reader, target_dir, options, progress, written, &mut |_| {})
+}
+
+/// 与 [`extract_zip_to_dir`] 相同，并在每个条目提交到最终路径后调用回调。
+pub fn extract_zip_to_dir_with<R: Read, F: FnMut(&ReceivedEntry)>(
+    reader: R,
+    target_dir: &Path,
+    options: &ZipParseOptions,
+    progress: &AtomicU64,
+    written: &AtomicU64,
+    on_committed: &mut F,
+) -> anyhow::Result<Vec<ReceivedEntry>> {
     fs::create_dir_all(target_dir)
         .map_err(|e| anyhow::anyhow!("创建目标目录失败 {}: {e}", target_dir.display()))?;
 
@@ -103,6 +138,7 @@ pub fn extract_zip_to_dir<R: Read>(
         entries: Vec::new(),
         buffer: vec![0u8; WRITE_BUFFER_SIZE],
         written,
+        on_committed,
     };
     let mut pushback = PushbackReader::new(reader);
     match unzip_stream::parse_zip(&mut pushback, options, progress, &mut handler) {
@@ -116,7 +152,10 @@ pub fn extract_zip_to_dir<R: Read>(
                 temp_workspace::remove_temp_file(path);
             }
             temp_workspace::remove_temp_dir_if_empty(target_dir, temp_workspace::TEMP_SUBDIR_MTA);
-            Err(anyhow::anyhow!(error))
+            Err(anyhow::Error::new(PartialExtractError {
+                reason: error,
+                entries: handler.entries.clone(),
+            }))
         }
     }
 }
@@ -183,16 +222,40 @@ pub async fn receive_download(
     let written = Arc::new(AtomicU64::new(0));
     let written_writer = written.clone();
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(BODY_CHANNEL_CAPACITY);
+    // 逐条目提交事件：阻塞的解析线程只做无阻塞入队，异步转发任务负责按序送达 ArkTS。
+    let (entry_tx, mut entry_rx) = tokio::sync::mpsc::unbounded_channel::<ReceivedEntry>();
+    let event_tx_entries = event_tx.clone();
+    let task_id_entries = task_id.to_string();
+    let entry_forward_task = tokio::spawn(async move {
+        while let Some(entry) = entry_rx.recv().await {
+            send_event(
+                &event_tx_entries,
+                BridgeEvent::MtaEntryCommitted {
+                    task_id: task_id_entries.clone(),
+                    name: entry.name,
+                    size: entry.size,
+                    modified_unix_ms: entry.modified_unix_ms,
+                    saved_path: entry.saved_path,
+                },
+            )
+            .await;
+        }
+    });
     let parse_dir = target.clone();
+    let entry_tx_parse = entry_tx.clone();
     // 解析/写盘为阻塞操作，走 spawn_blocking；输入数据经通道按到达顺序喂入
     let parse_task = tokio::task::spawn_blocking(move || {
         let reader = ChannelReader::new(rx);
-        extract_zip_to_dir(
+        let mut on_committed = move |entry: &ReceivedEntry| {
+            let _ = entry_tx_parse.send(entry.clone());
+        };
+        extract_zip_to_dir_with(
             reader,
             &parse_dir,
             &options,
             &progress_writer,
             &written_writer,
+            &mut on_committed,
         )
     });
 
@@ -279,11 +342,13 @@ pub async fn receive_download(
     if let Some(tail) = merger.flush() {
         let _ = tx.send(tail).await;
     }
-    // 关闭输入通道（EOF）让解析任务收尾；失败路径下解析任务依据自身记录回滚已写文件
+    // 关闭输入通道（EOF）让解析任务收尾；失败路径下解析任务清理未提交临时文件
     drop(tx);
-    let parsed = parse_task
-        .await
-        .map_err(|e| anyhow::anyhow!("解压任务异常: {e}"))?;
+    let parsed = parse_task.await;
+    // 等待逐条目事件全部写入事件通道后再返回，保证终态前事件已按序提交
+    drop(entry_tx);
+    let _ = entry_forward_task.await;
+    let parsed = parsed.map_err(|e| anyhow::anyhow!("解压任务异常: {e}"))?;
 
     // 接收结束汇总（debug 级；成功与失败均输出，便于定位瓶颈）
     let final_uncompressed = progress.load(Ordering::Relaxed);
@@ -322,7 +387,61 @@ pub async fn receive_download(
         }
         Err(error) => {
             let reason = failure.unwrap_or_else(|| "接收解压失败".to_string());
-            Err(anyhow::anyhow!("{reason}（解析任务: {error:#}）"))
+            // 解析错误携带已提交条目；连接/响应阶段错误没有条目。
+            let entries = error
+                .downcast_ref::<PartialExtractError>()
+                .map(|partial| partial.entries.clone())
+                .unwrap_or_default();
+            Err(anyhow::Error::new(PartialExtractError {
+                reason: format!("{reason}（解析任务: {error:#}）"),
+                entries,
+            }))
+        }
+    }
+}
+
+/// 下载并返回“条目 + 错误”的结构化结果（NAPI 用）。
+///
+/// 失败时仍返回已提交条目，供 ArkTS 记录部分完成历史；连接/响应等早期失败
+/// 返回空条目。
+#[allow(clippy::too_many_arguments)]
+pub async fn receive_download_result(
+    state: &Mutex<BridgeState>,
+    go_ip: &str,
+    port: u16,
+    task_id: &str,
+    target_dir: &str,
+    total_bytes: u64,
+    options: ZipParseOptions,
+    cancel: CancellationToken,
+    timeouts: ReceiveTimeouts,
+) -> ReceiveDownloadOutcome {
+    match receive_download(
+        state,
+        go_ip,
+        port,
+        task_id,
+        target_dir,
+        total_bytes,
+        options,
+        cancel,
+        timeouts,
+    )
+    .await
+    {
+        Ok(entries) => ReceiveDownloadOutcome {
+            entries,
+            error: None,
+        },
+        Err(error) => {
+            let entries = error
+                .downcast_ref::<PartialExtractError>()
+                .map(|partial| partial.entries.clone())
+                .unwrap_or_default();
+            ReceiveDownloadOutcome {
+                entries,
+                error: Some(format!("{error:#}")),
+            }
         }
     }
 }
@@ -452,7 +571,7 @@ fn sniff_image_extension(bytes: &[u8]) -> &'static str {
 }
 
 /// 逐条目写入目标目录下的临时区，提交后原子改名；记录未提交临时文件供失败回滚。
-struct FileEntryHandler<'a> {
+struct FileEntryHandler<'a, F: FnMut(&ReceivedEntry)> {
     /// 目标目录
     dir: PathBuf,
     /// 本次未提交的临时文件（失败/取消时删除；已提交条目保留）
@@ -463,9 +582,11 @@ struct FileEntryHandler<'a> {
     buffer: Vec<u8>,
     /// 累计实际写盘字节（供接收速率诊断）
     written: &'a AtomicU64,
+    /// 单条目提交成功后的回调（用于逐条目事件）
+    on_committed: &'a mut F,
 }
 
-impl ZipEntryHandler for FileEntryHandler<'_> {
+impl<F: FnMut(&ReceivedEntry)> ZipEntryHandler for FileEntryHandler<'_, F> {
     fn handle_entry(&mut self, info: &ZipEntryInfo, data: &mut dyn Read) -> Result<(), String> {
         let path = unique_target_path(&self.dir, &info.name);
         let temp_path = temp_workspace::temp_path_for(&path, temp_workspace::TEMP_SUBDIR_MTA);
@@ -496,12 +617,14 @@ impl ZipEntryHandler for FileEntryHandler<'_> {
         }
         self.created.retain(|created| created != &temp_path);
 
-        self.entries.push(ReceivedEntry {
+        let entry = ReceivedEntry {
             name: info.name.clone(),
             size: written,
             modified_unix_ms: info.modified_unix_ms,
             saved_path: path.to_string_lossy().to_string(),
-        });
+        };
+        (self.on_committed)(&entry);
+        self.entries.push(entry);
         Ok(())
     }
 }
@@ -933,6 +1056,45 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(!out.join("a.txt").exists(), "取消后应回滚已写入文件");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_failure_reports_committed_entries() {
+        let dir = temp_dir("partial_committed");
+        let out = dir.join("out");
+        let big = vec![7u8; 64 * 1024];
+        let zip_bytes = stored_zip_multi(&[("a.txt", b"hello"), ("big.bin", &big)]);
+        let marker = b"1/big.bin";
+        let marker_pos = zip_bytes
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("ZIP 中应存在第二条目名称")
+            + marker.len();
+        // 截断在第二个条目数据中途：首条已提交，第二条解析失败
+        let truncated = &zip_bytes[..(marker_pos + 10).min(zip_bytes.len())];
+        let progress = AtomicU64::new(0);
+        let written = AtomicU64::new(0);
+        let mut committed: Vec<ReceivedEntry> = Vec::new();
+
+        let result = extract_zip_to_dir_with(
+            io::Cursor::new(truncated),
+            &out,
+            &options(10, 64 * 1024 * 1024),
+            &progress,
+            &written,
+            &mut |entry: &ReceivedEntry| committed.push(entry.clone()),
+        );
+
+        assert!(result.is_err(), "截断 ZIP 应解析失败");
+        assert_eq!(committed.len(), 1, "失败前应已提交首条");
+        assert_eq!(committed[0].name, "a.txt");
+        assert!(out.join("a.txt").exists(), "已提交条目应保留");
+        let error = result.unwrap_err();
+        let partial = error
+            .downcast_ref::<PartialExtractError>()
+            .expect("解析错误应携带已提交条目");
+        assert_eq!(partial.entries.len(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
 
