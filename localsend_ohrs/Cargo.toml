@@ -1,6 +1,6 @@
 [package]
 name = "localsend_core"
-version = "1.18.1"
+version = "1.18.2"
 edition = "2021"
 description = "LocalSend Rust core NAPI bridge for HarmonyOS"
 

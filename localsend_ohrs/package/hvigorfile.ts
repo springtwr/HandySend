@@ -66,6 +66,7 @@ function getCargoVersion(localsendOhrsDir: string): string {
  *   - oh-package.json5 (HAR)
  *   - oh-package.json5 (types)
  *   - NativeBridge.ets (EXPECTED_NATIVE_VERSION)
+ *   - VersionNativeTest.test.ets (EXPECTED_NATIVE_VERSION)
  */
 function syncVersionFromCargo(localsendOhrsDir: string, packageDir: string, projectRoot: string): void {
   const version = getCargoVersion(localsendOhrsDir);
@@ -106,6 +107,22 @@ function syncVersionFromCargo(localsendOhrsDir: string, packageDir: string, proj
     }
   }
   
+  // 4. 同步测试用例的期望版本（与 NativeBridge 同源，消除手工维护的漂移）
+  const versionTestPath = path.join(
+    projectRoot, 'entry', 'src', 'ohosTest', 'ets', 'test', 'native', 'VersionNativeTest.test.ets'
+  );
+  if (fs.existsSync(versionTestPath)) {
+    let content = fs.readFileSync(versionTestPath, 'utf-8');
+    const updated = content.replace(
+      /EXPECTED_NATIVE_VERSION\s*:\s*string\s*=\s*'[^']+'/,
+      `EXPECTED_NATIVE_VERSION: string = '${version}'`
+    );
+    if (content !== updated) {
+      fs.writeFileSync(versionTestPath, updated, 'utf-8');
+      console.log(`[VersionSync] VersionNativeTest.test.ets → ${version}`);
+    }
+  }
+
   console.log(`[VersionSync] All versions synced to ${version} (source: Cargo.toml)`);
 }
 
