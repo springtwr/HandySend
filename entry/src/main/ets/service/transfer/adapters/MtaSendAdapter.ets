@@ -322,7 +322,7 @@ export function decideMtaSendInstanceEnd(instanceGeneration: number,
 // ── 发送请求 → 发送服务入参 ──
 
 /** 按请求的显示元数据构建会话文件描述符集（文本发送为单一文本条目）。 */
-function buildDescriptors(request: MtaSendRequest | undefined): Array<SessionFileDescriptor> {
+export function buildMtaSendDescriptors(request: MtaSendRequest | undefined): Array<SessionFileDescriptor> {
   let files: Array<SessionFileDescriptor> = [];
   if (request === undefined) {
     return files;
@@ -341,7 +341,9 @@ function buildDescriptors(request: MtaSendRequest | undefined): Array<SessionFil
   for (let i = 0; i < request.fileDescriptors.length; i++) {
     let descriptor = request.fileDescriptors[i];
     files.push({
-      fileId: descriptor.fileId,
+      // 发送请求的文件元数据通常不携带标识：缺失时按序号补全为会话内唯一标识。
+      // 标识重复会让逐文件进度全部命中首个文件，并把其大小改写成后续文件的大小。
+      fileId: descriptor.fileId.length > 0 ? descriptor.fileId : `mta-send-file-${i}`,
       fileName: descriptor.fileName,
       fileType: descriptor.fileType,
       totalBytes: descriptor.size,
@@ -413,7 +415,7 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       request !== undefined ? request.deviceType : '',
       request !== undefined ? request.deviceModel : '',
       request !== undefined ? request.badgeText : '',
-      buildDescriptors(request),
+      buildMtaSendDescriptors(request),
       request !== undefined ? request.brandId : -1,
       request !== undefined ? request.bleAddress : '',
       request !== undefined ? request.senderIdHex : '',
@@ -527,7 +529,7 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   savePreparedOutboundDraft(pendingSendDraftId, MTA_SEND_KEY,
     buildPeer(params.targetAlias, params.deviceType, params.deviceModel, params.badgeText,
       params.brandId, params.bleAddress, params.senderIdHex),
-    buildDescriptors(params), capabilities(), params.isTextSend);
+    buildMtaSendDescriptors(params), capabilities(), params.isTextSend);
   activeUnifiedId = undefined;
   sessionClosed = false;
   // 发起中标志：覆盖「点击→注册表会话创建」的短空窗，供发送页「设备忙」判定

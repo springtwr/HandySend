@@ -25,10 +25,12 @@ import {
   MtaSendEventDecision,
   MtaSendTerminal,
   beginMtaSendSession,
+  buildMtaSendDescriptors,
   decideMtaSendEvent,
   finishMtaSendSession,
   updateMtaSendProgress
 } from '../../../../main/ets/service/transfer/adapters/MtaSendAdapter'
+import { MtaSendRequest } from '../../../../main/ets/model/mta/MtaMainModels'
 import { MtaSenderStage } from '../../../../main/ets/model/mta/MtaSendModels'
 import { decidePeerGroupAbandon } from '../../../../main/ets/service/mta/MtaSendService'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
@@ -485,6 +487,52 @@ export default function AdaptersTest() {
       if (s2 !== undefined) {
         expect(s2.files[0].bytesSent).assertEqual(100)
         expect(s2.files[1].bytesSent).assertEqual(150)
+      }
+      resetRegistry()
+    })
+
+    it('mtaSend_emptyFileIdsKeepPerFileSizes', 0, () => {
+      resetRegistry()
+      // 发送页构造的 MTA 请求不携带文件标识：适配器须按序号补全唯一标识，
+      // 否则逐文件进度会全部命中首个文件，并把其大小改写成后续文件的大小
+      let request: MtaSendRequest = {
+        targetAlias: 'MtaPeer',
+        deviceType: 'mobile',
+        deviceModel: 'Model',
+        badgeText: 'Brand',
+        bleAddress: 'AA:BB:CC:DD:EE:FF',
+        senderIdHex: '1a2b',
+        brandId: -1,
+        is5Ghz: false,
+        rssi: 0,
+        fileUris: ['u0', 'u1'],
+        fileDescriptors: [{
+          fileId: '',
+          fileName: 'zero.bin',
+          size: 60000000,
+          fileType: 'application/octet-stream'
+        },
+          {
+            fileId: '',
+            fileName: 'a.mp3',
+            size: 365200,
+            fileType: 'audio/mpeg'
+          }],
+        isTextSend: false,
+        textContent: ''
+      }
+      let descriptors = buildMtaSendDescriptors(request)
+      expect(descriptors.length).assertEqual(2)
+      expect(descriptors[0].fileId.length > 0).assertTrue()
+      expect(descriptors[0].fileId === descriptors[1].fileId).assertFalse()
+      let id = beginMtaSendSession('task-size', 'MtaPeer', 'mobile', 'Model', 'Brand', descriptors)
+      updateMtaSendProgress(id, 1234, 60365200, '发送中')
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.files[0].totalBytes).assertEqual(60000000)
+        expect(session.files[1].totalBytes).assertEqual(365200)
+        expect(session.totalBytes).assertEqual(60365200)
       }
       resetRegistry()
     })
