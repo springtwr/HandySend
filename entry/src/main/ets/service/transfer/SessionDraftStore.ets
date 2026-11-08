@@ -27,7 +27,6 @@ export const SESSION_DRAFT_SCHEMA_VERSION: number = 1;
 export const SESSION_DRAFT_DIR_NAME: string = 'session_drafts';
 const DRAFT_SUFFIX: string = '.json';
 const DRAFT_TMP_SUFFIX: string = '.json.tmp';
-const DRAFT_STALE_MS: number = 7 * 24 * 60 * 60 * 1000;
 
 /** 草稿中的单个文件。 */
 export interface SessionDraftFile {
@@ -239,17 +238,6 @@ export function cleanupSessionDraftTmp(): void {
     }
   } catch (e) {
     logger.debug('清理会话草稿临时文件失败：' + String(e));
-  }
-}
-
-/** 删除超过保留期的草稿；用于避免无法恢复的旧文件长期占用空间。 */
-export function cleanupStaleSessionDrafts(now: number): void {
-  let drafts: Array<SessionDraft> = loadAllSessionDrafts();
-  for (let i = 0; i < drafts.length; i++) {
-    let draft: SessionDraft = drafts[i];
-    if (draft.updatedAt > 0 && now - draft.updatedAt > DRAFT_STALE_MS) {
-      removeSessionDraft(draft.sessionId);
-    }
   }
 }
 
