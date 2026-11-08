@@ -1,0 +1,212 @@
+/**
+ * SessionRecoveryService.ets — 强杀后的会话恢复
+ *
+ * 启动时读取会话草稿，按文件系统实际状态补写任务历史与接收历史：
+ * - 最终路径存在且大小匹配：视为已完成，补写接收历史；
+ * - 最终路径不存在或大小不符：视为未完成，清理临时区但不删除最终路径；
+ * - 草稿会话以部分完成/成功写入任务历史，保证任务列表不丢失。
+ *
+ * 恢复只读，不启动网络传输、不重建文件、不提供手动重发。
+ */
+
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { getLogger } from '../../utils/Logger';
+import { LogDomains } from '../../common/LogDomains';
+import {
+  SessionFile,
+  SessionFileStage,
+  SessionStage,
+  TransferSession
+} from '../../model/transfer/TransferSession';
+import { ReceiveHistoryEntry } from '../../model/Types';
+import { baseNameOf, dirNameOf, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
+import {
+  SessionDraft,
+  SessionDraftFile,
+  cleanupSessionDraftTmp,
+  loadAllSessionDrafts,
+  removeSessionDraft
+} from './SessionDraftStore';
+import { archiveSession } from './SessionHistoryStore';
+import { addEntriesIfAbsent } from '../repository/ReceiveHistoryService';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionRecovery', '会话恢复');
+
+export interface SessionRecoveryResult {
+  drafts: number
+  recovered: number
+  failed: number
+  files: number
+}
+
+/** 启动恢复入口：同步读取与校验，由调用方放到异步任务中执行。 */
+export function recoverSessionDrafts(): SessionRecoveryResult {
+  cleanupSessionDraftTmp();
+  let drafts: Array<SessionDraft> = loadAllSessionDrafts();
+  let result: SessionRecoveryResult = {
+    drafts: drafts.length,
+    recovered: 0,
+    failed: 0,
+    files: 0
+  };
+  for (let i = 0; i < drafts.length; i++) {
+    let draft: SessionDraft = drafts[i];
+    try {
+      let completedFiles: number = recoverOne(draft);
+      result.recovered++;
+      result.files += completedFiles;
+    } catch (e) {
+      result.failed++;
+      logger.warn('恢复会话失败 session=' + draft.sessionId + '：' + String(e));
+    }
+  }
+  if (result.drafts > 0) {
+    logger.info('启动恢复完成 草稿=' + result.drafts + ' 成功=' + result.recovered +
+      ' 失败=' + result.failed + ' 已完成文件=' + result.files);
+  }
+  return result;
+}
+
+/** 恢复单个草稿，返回已完成文件数；历史写入成功后才删除草稿。 */
+function recoverOne(draft: SessionDraft): number {
+  let session: TransferSession = new TransferSession();
+  session.id = draft.sessionId;
+  session.protocolKey = draft.protocolKey;
+  session.protocolSessionId = draft.protocolSessionId;
+  session.dataFlow = draft.dataFlow;
+  session.initiatedBy = draft.initiatedBy;
+  session.textMessage = draft.textMessage;
+  session.peer = draft.peer;
+  session.localAlias = draft.localAlias;
+  session.localIp = draft.localIp;
+  session.localInterfaceName = draft.localInterfaceName;
+  session.startedAt = draft.startedAt;
+  session.transferStartedAt = draft.transferStartedAt;
+  session.errorCode = 'app_killed';
+  session.errorMessage = '应用异常退出，传输已中断';
+  if (draft.capabilities !== undefined) {
+    session.capabilities = draft.capabilities;
+  }
+
+  let receiveEntries: Array<ReceiveHistoryEntry> = [];
+  let completedCount: number = 0;
+  let completedBytes: number = 0;
+  let totalBytes: number = 0;
+  for (let i = 0; i < draft.files.length; i++) {
+    let file: SessionDraftFile = draft.files[i];
+    let actualSize: number = statSize(file.finalPath);
+    let completed: boolean = actualSize >= 0 && actualSize === file.totalBytes;
+    // 临时区只清理未完成或遗留的临时文件，最终路径永远不自动删除。
+    cleanupTempFile(file);
+    if (completed) {
+      completedCount++;
+      completedBytes += actualSize;
+      receiveEntries.push(buildReceiveEntry(draft, file, actualSize));
+    }
+    totalBytes += file.totalBytes;
+    session.files.push(buildSessionFile(file, completed));
+  }
+
+  // 全部文件已完成（强杀发生在历史写入前）按成功归档，否则按部分完成。
+  if (completedCount === draft.files.length && draft.files.length > 0) {
+    session.stage = SessionStage.succeeded;
+    session.errorCode = '';
+    session.errorMessage = '';
+  } else {
+    session.stage = SessionStage.partiallyFailed;
+  }
+  session.totalBytes = totalBytes;
+  session.bytesSent = completedBytes;
+  session.finishedAt = draft.updatedAt > 0 ? draft.updatedAt : draft.startedAt;
+  if (session.finishedAt <= 0) {
+    session.finishedAt = Date.now();
+  }
+
+  archiveSession(session);
+  if (receiveEntries.length > 0) {
+    addEntriesIfAbsent(receiveEntries);
+  }
+  removeSessionDraft(draft.sessionId);
+  return completedCount;
+}
+
+function buildSessionFile(file: SessionDraftFile, completed: boolean): SessionFile {
+  let sessionFile: SessionFile = new SessionFile();
+  sessionFile.fileId = file.fileId;
+  sessionFile.fileName = file.fileName;
+  sessionFile.fileType = file.fileType;
+  sessionFile.totalBytes = file.totalBytes;
+  sessionFile.occurrence = file.occurrence;
+  sessionFile.checksum = file.checksum;
+  sessionFile.path = file.finalPath;
+  sessionFile.bytesSent = completed ? file.totalBytes : file.bytesSent;
+  sessionFile.stage = completed ? SessionFileStage.completed : SessionFileStage.failed;
+  return sessionFile;
+}
+
+function buildReceiveEntry(draft: SessionDraft, file: SessionDraftFile,
+  actualSize: number): ReceiveHistoryEntry {
+  let fileName: string = baseNameOf(file.finalPath);
+  if (fileName.length === 0) {
+    fileName = file.fileName;
+  }
+  let entry: ReceiveHistoryEntry = {
+    id: draft.sessionId + '_' + file.fileId,
+    fileName: fileName,
+    fileType: file.fileType,
+    path: file.finalPath,
+    savedToGallery: false,
+    isMessage: file.isTextMessage,
+    fileSize: actualSize,
+    senderAlias: draft.peer.displayName,
+    timestamp: file.completedAt > 0 ? file.completedAt : draft.updatedAt
+  };
+  return entry;
+}
+
+/** 返回文件大小；不存在或不可读返回 -1。 */
+function statSize(path: string): number {
+  if (path.length === 0) {
+    return -1;
+  }
+  try {
+    if (!fs.accessSync(path)) {
+      return -1;
+    }
+    return fs.statSync(path).size;
+  } catch (e) {
+    return -1;
+  }
+}
+
+/** 删除未完成临时文件，并尝试移除已空的临时目录；不触碰最终路径。 */
+function cleanupTempFile(file: SessionDraftFile): void {
+  // 无最终路径也无临时路径（如 MTA 下载中强杀的占位草稿）时不要推导目录，
+  // 避免把相对路径 `.handysend-upload-part` 当成真实临时区。
+  if (file.finalPath.length === 0 && file.tempPath.length === 0) {
+    return;
+  }
+  let tempPath: string = file.tempPath.length > 0 ? file.tempPath :
+    tempPathForFinal(file.finalPath);
+  if (tempPath.length === 0) {
+    return;
+  }
+  try {
+    if (fs.accessSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+  } catch (e) {
+    logger.debug('清理临时文件失败：' + tempPath + '：' + String(e));
+  }
+  let tempDir: string = dirNameOf(tempPath);
+  if (tempDir.length === 0) {
+    return;
+  }
+  try {
+    if (fs.accessSync(tempDir)) {
+      fs.rmdirSync(tempDir);
+    }
+  } catch (_e) {
+    // 目录非空说明还有其他残留或用户文件，保留。
+  }
+}

@@ -253,6 +253,8 @@ Web 下载以“下载批次”建模：单文件一批、多文件一个 zip �
 取消/确认/拒绝/重试动作按适配器能力声明分发；终态判定权归适配器，注册表负责终态之后的可见窗口、归档与回收；
 接收类协议的文件清单在落盘完成后由适配器整体替换；LocalSend 发送的校验和准备阶段以专用准备进度字段与传输进度严格分离；
 任务历史（`SessionHistoryStore`）独立持久化，与文件级接收历史相互独立。
+强杀恢复：接收会话在创建/文件完成时写应用沙箱草稿（`filesDir/session_drafts/`），启动时按最终文件
+大小补写任务历史与接收历史；恢复只读，不自动续传（详见 `architecture/session-engine.md` §5.1）。
 
 详见 [architecture/session-engine.md](architecture/session-engine.md)。
 

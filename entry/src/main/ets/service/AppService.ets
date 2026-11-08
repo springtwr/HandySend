@@ -96,6 +96,8 @@ import { MTA_RECEIVE_KEY } from './transfer/adapters/MtaReceiveAdapter';
 import { WEB_DOWNLOAD_KEY } from './transfer/adapters/WebDownloadAdapter';
 import { initializeAdapters } from './transfer/adapters/SessionAdapter';
 import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
+import { notifyChange } from './repository/AppCore';
+import { recoverSessionDrafts } from './transfer/SessionRecoveryService';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
@@ -523,6 +525,17 @@ export function initAppService(context: common.UIAbilityContext): void {
     // 后台关注通知按注册表待确认会话与网页访问状态发布/撤回
     initBackgroundAttentionNotifier();
     logger.debug('会话引擎已初始化');
+    // 异步恢复上次强杀遗留的会话草稿，避免阻塞首屏；恢复完成后再刷新任务/历史列表。
+    setTimeout(() => {
+      try {
+        let recovered = recoverSessionDrafts();
+        if (recovered.recovered > 0) {
+          notifyChange();
+        }
+      } catch (e) {
+        logger.warn('会话草稿恢复失败：' + String(e));
+      }
+    }, 0);
   } catch (e) {
     logger.error('初始化会话引擎失败：' + JSON.stringify(e));
   }

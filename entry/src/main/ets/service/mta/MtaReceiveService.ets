@@ -57,6 +57,22 @@ import { LogLevels } from '../../common/LogLevels';
 import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
+import {
+  SessionDataFlow,
+  SessionFileStage,
+  SessionInitiator,
+  SessionPeer,
+  SessionStage
+} from '../../model/transfer/TransferSession';
+import { findByProtocol } from '../transfer/TransferSessionRegistry';
+import {
+  SESSION_DRAFT_SCHEMA_VERSION,
+  SessionDraft,
+  SessionDraftFile,
+  loadSessionDraft,
+  removeSessionDraft,
+  saveSessionDraft
+} from '../transfer/SessionDraftStore';
 import { isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntries } from '../repository/ReceiveHistoryService';
 import { ensureRecvTextDir, uniquePath } from '../repository/ReceiveTargets';
@@ -66,6 +82,10 @@ import {
 import { DialogService } from '../DialogService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
+
+// MTA 接收适配器的协议键（与 MtaReceiveAdapter 的 MTA_RECEIVE_KEY 保持一致；
+// 本地常量避免服务与适配器互相导入）。
+const MTA_RECEIVE_PROTOCOL_KEY: string = 'mta-receive';
 
 // MTA 接收预览缩略图缓存目录名（应用缓存根下的专用子目录）
 const MTA_THUMB_DIR_NAME: string = 'mta_thumb';
@@ -1146,6 +1166,7 @@ export class MtaReceiveService {
       return;
     }
     let textPath: string = '';
+    this.writeReceiveDraft(request);
     try {
       textPath = this.saveTextToDisk(request, textDir);
     } catch (e) {
@@ -1154,6 +1175,7 @@ export class MtaReceiveService {
       this.failAndReset('文本落盘失败');
       return;
     }
+    this.completeTextDraft(request, textPath);
     this.appendLog('服务',
       '用户已接受文本消息，已落盘并完成接收', LogLevels.INFO);
     this.appendLog('下载', `文本已落盘：路径=${textPath} 任务=${request.taskId}`, LogLevels.DEBUG);
@@ -1168,6 +1190,7 @@ export class MtaReceiveService {
     }
     // 以文本消息条目写接收历史（记真实路径，不写正文；遵循历史开关）
     this.recordTextHistory(request, textPath);
+    this.removeReceiveDraft(request);
     try {
       await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
       this.appendLog('WS', '已回送成功状态，本次文本接收完成', LogLevels.DEBUG);
@@ -1220,6 +1243,139 @@ export class MtaReceiveService {
       });
   }
 
+  /** 草稿使用统一会话标识；注册表缺失时回退任务 ID。 */
+  private receiveDraftSessionId(taskId: string): string {
+    let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, taskId);
+    return unified !== undefined ? unified.id : taskId;
+  }
+
+  /**
+   * 接收开始时写草稿：MTA 条目名要等 ZIP 下载后才知道，这里先用声明的主文件名
+   * 和总大小占位；强杀后恢复只用来保留一条「已中断」任务，不据此交付文件。
+   */
+  private writeReceiveDraft(request: ReceiveRequest): void {
+    let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, request.taskId);
+    let isText: boolean = request.textContent.length > 0;
+    let fileName: string = request.fileName.length > 0 ? request.fileName :
+      (isText ? MTA_SHARED_TEXT_FILE_NAME : 'mta-receive');
+    let totalBytes: number = isText ? utf8ByteLength(request.textContent) : request.totalSize;
+    let peer: SessionPeer = unified !== undefined ? unified.peer : {
+      displayName: request.senderName,
+      badges: []
+    };
+    let file: SessionDraftFile = {
+      fileId: 'mta_archive',
+      fileName: fileName,
+      fileType: isText ? 'text/plain' : '',
+      totalBytes: totalBytes,
+      occurrence: 1,
+      checksum: '',
+      finalPath: '',
+      tempPath: '',
+      stage: SessionFileStage.waiting,
+      bytesSent: 0,
+      completedAt: 0,
+      isTextMessage: isText
+    };
+    let draft: SessionDraft = {
+      schemaVersion: SESSION_DRAFT_SCHEMA_VERSION,
+      sessionId: this.receiveDraftSessionId(request.taskId),
+      protocolKey: MTA_RECEIVE_PROTOCOL_KEY,
+      protocolSessionId: request.taskId,
+      dataFlow: SessionDataFlow.inbound,
+      initiatedBy: SessionInitiator.remote,
+      stage: SessionStage.active,
+      textMessage: isText,
+      peer: peer,
+      localAlias: unified !== undefined ? unified.localAlias : '',
+      localIp: unified !== undefined ? unified.localIp : '',
+      localInterfaceName: unified !== undefined ? unified.localInterfaceName : '',
+      startedAt: unified !== undefined && unified.startedAt > 0 ? unified.startedAt : Date.now(),
+      transferStartedAt: unified !== undefined ? unified.transferStartedAt : 0,
+      updatedAt: Date.now(),
+      files: [file],
+      capabilities: unified !== undefined ? unified.capabilities : undefined
+    };
+    saveSessionDraft(draft);
+  }
+
+  /** 下载成功后把实际落盘条目写回草稿，随后写历史并删除草稿。 */
+  private completeReceiveDraft(request: ReceiveRequest, result: DownloadResult): void {
+    let draft: SessionDraft | undefined =
+      loadSessionDraft(this.receiveDraftSessionId(request.taskId));
+    if (draft === undefined) {
+      return;
+    }
+    let timestamp: number = Date.now();
+    let files: Array<SessionDraftFile> = [];
+    for (let i = 0; i < result.savedFiles.length; i++) {
+      let path: string = result.savedFiles[i];
+      if (path.length === 0) {
+        continue;
+      }
+      let fileName: string = this.baseNameOf(path);
+      let fileType: string = i < result.files.length ? result.files[i].fileType : '';
+      if (fileType.length === 0) {
+        fileType = getMimeForFileName(fileName);
+      }
+      let size: number = this.fileSizeOf(path);
+      files.push({
+        fileId: 'saved_' + i,
+        fileName: fileName,
+        fileType: fileType,
+        totalBytes: size,
+        occurrence: 1,
+        checksum: '',
+        finalPath: path,
+        tempPath: '',
+        stage: SessionFileStage.completed,
+        bytesSent: size,
+        completedAt: timestamp + i,
+        isTextMessage: false
+      });
+    }
+    if (files.length > 0) {
+      draft.files = files;
+    }
+    draft.stage = SessionStage.succeeded;
+    draft.updatedAt = timestamp;
+    saveSessionDraft(draft);
+  }
+
+  /** 文本落盘后把唯一文本条目写回草稿。 */
+  private completeTextDraft(request: ReceiveRequest, path: string): void {
+    let draft: SessionDraft | undefined =
+      loadSessionDraft(this.receiveDraftSessionId(request.taskId));
+    if (draft === undefined) {
+      return;
+    }
+    let size: number = this.fileSizeOf(path);
+    let fileName: string = this.baseNameOf(path);
+    let file: SessionDraftFile = {
+      fileId: 'text_0',
+      fileName: fileName.length > 0 ? fileName : MTA_SHARED_TEXT_FILE_NAME,
+      fileType: 'text/plain',
+      totalBytes: size,
+      occurrence: 1,
+      checksum: '',
+      finalPath: path,
+      tempPath: '',
+      stage: SessionFileStage.completed,
+      bytesSent: size,
+      completedAt: Date.now(),
+      isTextMessage: true
+    };
+    draft.files = [file];
+    draft.stage = SessionStage.succeeded;
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+  }
+
+  private removeReceiveDraft(request: ReceiveRequest): void {
+    removeSessionDraft(this.receiveDraftSessionId(request.taskId));
+    removeSessionDraft(request.taskId);
+  }
+
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
     // 统一从 ReceiveDirectory 取目录：用户在设置页切换目录后，本次接收即使用最新目录
     this.downloadDir = await ensureReceiveDirectory();
@@ -1235,6 +1391,8 @@ export class MtaReceiveService {
     }
     this.appendLog('下载', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
     this.setStage(ReceiverStage.DOWNLOADING);
+    // 进入下载前写草稿：强杀后至少保留一条「已中断」任务记录。
+    this.writeReceiveDraft(request);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
     let storageError = await this.checkStorageReserve(request);
     if (storageError.length > 0) {
@@ -1266,7 +1424,9 @@ export class MtaReceiveService {
           `${result.restoredTimeCount} 个文件带有效 ZIP 条目时间，已用于还原修改时间`, LogLevels.DEBUG);
       }
       // 落盘完成后按设置写入接收历史（文本消息以单一 text/plain 条目记录）
+      this.completeReceiveDraft(request, result);
       this.recordReceiveHistory(request, result);
+      this.removeReceiveDraft(request);
       // 按「保存到相册」设置收集媒体文件（仅图片/视频），供页面完成后的保存弹窗消费
       this.state.pendingMediaFiles = this.collectMediaFiles(result);
       if (this.state.pendingMediaFiles.length > 0) {

@@ -5,6 +5,7 @@ import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, ReceiveHistoryEntry } from '../../model/Types';
 import {
+  SessionFile,
   SessionFileDescriptor,
   SessionFileStage,
   SessionStage,
@@ -82,10 +83,20 @@ import {
   setWebUploadInvokers
 } from '../transfer/adapters/WebUploadAdapter';
 import {
+  findByProtocol,
   finish,
   querySessions,
   subscribeSessions
 } from '../transfer/TransferSessionRegistry';
+import {
+  SESSION_DRAFT_SCHEMA_VERSION,
+  SessionDraft,
+  SessionDraftFile,
+  loadSessionDraft,
+  removeSessionDraft,
+  saveSessionDraft
+} from '../transfer/SessionDraftStore';
+import { tempPathForFinal } from '../../model/transfer/TransferTempPaths';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页传输');
 
@@ -1133,6 +1144,112 @@ export function hasActiveWebDownloads(): boolean {
 
 // ── Web 上传事件（由 handleNativeEvent 路由；token 即浏览器会话标识） ──
 
+/**
+ * 将网页上传会话快照写入草稿。
+ *
+ * 草稿只记录会话与文件完成状态，不记录字节进度；强杀后由
+ * SessionRecoveryService 按文件系统状态补写历史并清理临时区。
+ */
+function writeWebUploadDraft(session: TransferSession): void {
+  let previous: SessionDraft | undefined = loadSessionDraft(session.protocolSessionId);
+  let files: Array<SessionDraftFile> = [];
+  for (let i = 0; i < session.files.length; i++) {
+    let f: SessionFile = session.files[i];
+    files.push({
+      fileId: f.fileId,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      totalBytes: f.totalBytes,
+      occurrence: f.occurrence,
+      checksum: f.checksum,
+      finalPath: f.path,
+      tempPath: f.path.length > 0 ? tempPathForFinal(f.path) : '',
+      stage: f.stage,
+      bytesSent: f.bytesSent,
+      completedAt: completedAtFor(previous, f.fileId,
+        f.stage === SessionFileStage.completed),
+      isTextMessage: session.textMessage
+    });
+  }
+  let draft: SessionDraft = {
+    schemaVersion: SESSION_DRAFT_SCHEMA_VERSION,
+    sessionId: session.id,
+    protocolKey: session.protocolKey,
+    protocolSessionId: session.protocolSessionId,
+    dataFlow: session.dataFlow,
+    initiatedBy: session.initiatedBy,
+    stage: session.stage,
+    textMessage: session.textMessage,
+    peer: session.peer,
+    localAlias: session.localAlias,
+    localIp: session.localIp,
+    localInterfaceName: session.localInterfaceName,
+    startedAt: session.startedAt,
+    transferStartedAt: session.transferStartedAt,
+    updatedAt: Date.now(),
+    files: files,
+    capabilities: session.capabilities
+  };
+  saveSessionDraft(draft);
+}
+
+/** 保留已完成文件首次记录的完成时刻，避免后续文件完成时把时间刷新。 */
+function completedAtFor(previous: SessionDraft | undefined, fileId: string,
+  completed: boolean): number {
+  if (!completed) {
+    return 0;
+  }
+  if (previous !== undefined) {
+    for (let i = 0; i < previous.files.length; i++) {
+      if (previous.files[i].fileId === fileId && previous.files[i].completedAt > 0) {
+        return previous.files[i].completedAt;
+      }
+    }
+  }
+  return Date.now();
+}
+
+function writeWebUploadDraftForToken(token: string): void {
+  let session = findWebUploadSession(token);
+  if (session !== undefined) {
+    writeWebUploadDraft(session);
+  }
+}
+
+/** 草稿文件名使用统一会话标识；终态可见窗口内仍可从注册表取得。 */
+function webDraftSessionId(token: string): string {
+  let session = findByProtocol(WEB_UPLOAD_KEY, token);
+  return session !== undefined ? session.id : token;
+}
+
+/** 文件落盘完成后更新草稿中的最终路径与完成状态。 */
+function updateWebUploadDraftDone(token: string, fileId: string, path: string): void {
+  let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
+  if (draft === undefined) {
+    return;
+  }
+  let changed: boolean = false;
+  for (let i = 0; i < draft.files.length; i++) {
+    let file: SessionDraftFile = draft.files[i];
+    if (file.fileId !== fileId) {
+      continue;
+    }
+    if (path.length > 0) {
+      file.finalPath = path;
+      file.tempPath = tempPathForFinal(path);
+    }
+    file.stage = SessionFileStage.completed;
+    file.bytesSent = file.totalBytes;
+    file.completedAt = Date.now();
+    changed = true;
+    break;
+  }
+  if (changed) {
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+  }
+}
+
 /** 上传待确认请求到达：登记入站会话（文件清单来自浏览器声明）。 */
 export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): void {
   ensureUploadArchiveSubscribed();
@@ -1167,6 +1284,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
     let isNewSession: boolean = findWebUploadSession(token) === undefined;
     logger.info('网页上传按本次挂载授权自动接受');
     beginWebUploadBurst(token, false, descriptors, ip, previewText);
+    writeWebUploadDraftForToken(token);
     // 与 LocalSend 自动接收口径一致：免确认收到文本消息时立即复制到剪贴板。
     // 只在首次登记时复制，浏览器重试 prepare 不会重复覆盖剪贴板。
     if (isNewSession && previewText.length > 0) {
@@ -1180,6 +1298,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
   } else {
     logger.debug('网页上传进入待确认 token=' + redactSessionToken(token));
     beginWebUploadBurst(token, true, descriptors, ip, previewText);
+    writeWebUploadDraftForToken(token);
   }
   notifyChange();
 }
@@ -1203,6 +1322,7 @@ export function handleWebUploadDoneTyped(event: NativeWebUploadDoneEvent): void 
     return;
   }
   handleWebUploadDone(token, fileId, event.path);
+  updateWebUploadDraftDone(token, fileId, event.path);
   logger.debug('网页上传文件完成 token=' + redactSessionToken(token) + ' file=' + fileId);
   notifyChange();
 }
@@ -1418,6 +1538,23 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     logger.warn('上传目标部分未生效 applied=' + applied);
     return false;
   }
+  // 最终路径确定后同步到草稿，强杀恢复据此判断文件是否已完成。
+  let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
+  if (draft !== undefined) {
+    for (let i = 0; i < targets.length; i++) {
+      let target = targets[i];
+      for (let j = 0; j < draft.files.length; j++) {
+        if (draft.files[j].fileId !== target.fileId) {
+          continue;
+        }
+        draft.files[j].finalPath = target.path;
+        draft.files[j].tempPath = tempPathForFinal(target.path);
+        break;
+      }
+    }
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+  }
   return true;
 }
 
@@ -1460,6 +1597,8 @@ function archiveFinishedUploads(): void {
       continue;
     }
     if (session.stage !== SessionStage.succeeded) {
+      // 失败/取消/拒绝的终态由注册表归档任务历史，草稿不再需要，直接清理。
+      removeSessionDraft(session.id);
       continue;
     }
     if (archivedUploadSessions[session.id] === true) {
@@ -1467,6 +1606,7 @@ function archiveFinishedUploads(): void {
     }
     archivedUploadSessions[session.id] = true;
     archiveUploadHistory(session);
+    removeSessionDraft(session.id);
   }
 }
 

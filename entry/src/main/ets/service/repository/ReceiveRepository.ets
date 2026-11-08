@@ -50,15 +50,32 @@ import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { getLogger } from '../../utils/Logger';
 import { copyText } from '../../utils/ClipboardUtil';
 import { LogDomains } from '../../common/LogDomains';
-import { SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
+import {
+  SessionDataFlow,
+  SessionFileDescriptor,
+  SessionFileStage,
+  SessionInitiator,
+  SessionPeer,
+  SessionStage
+} from '../../model/transfer/TransferSession';
 import {
   ensureReceiveSession,
   finishLocalReceiveSession,
   markReceiveActive,
   setLocalReceiveInvokers,
   updateReceiveProgress,
-  updateReceiveSessionFilePath
+  updateReceiveSessionFilePath,
+  LOCAL_RECEIVE_KEY
 } from '../transfer/adapters/LocalSendReceiveAdapter';
+import { findByProtocol } from '../transfer/TransferSessionRegistry';
+import {
+  SESSION_DRAFT_SCHEMA_VERSION,
+  SessionDraft,
+  SessionDraftFile,
+  loadSessionDraft,
+  removeSessionDraft,
+  saveSessionDraft
+} from '../transfer/SessionDraftStore';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveRepository', '接收');
 
@@ -90,6 +107,114 @@ let receiveSessionAutoAccepted: Record<string, boolean> = {}; // sessionId -> �
 let receiveSessionSenderAlias: Record<string, string> = {}; // sessionId -> 用于历史记录的发送方别名
 // 已补记「部分完成」接收历史的会话：取消/失败存在多条事件路径，避免历史重复写入
 let sessionPartialHistoryRecorded: Record<string, boolean> = {};
+
+// ── 强杀恢复草稿（LocalSend 接收） ──
+
+/** 草稿使用统一会话标识；注册表缺失时回退协议会话标识。 */
+function localDraftSessionId(sessionId: string): string {
+  let unified = findByProtocol(LOCAL_RECEIVE_KEY, sessionId);
+  return unified !== undefined ? unified.id : sessionId;
+}
+
+/** 单文件文本消息判定（与接收历史口径一致）。 */
+function isLocalTextMessage(entries: Array<ReceivedFileEntry> | undefined): boolean {
+  return entries !== undefined && entries.length === 1 &&
+    entries[0].fileType === 'text/plain' && entries[0].preview !== undefined &&
+    entries[0].preview.length > 0;
+}
+
+/**
+ * 接受后写草稿：记录文件最终路径与未完成状态。
+ * 本期 LocalSend 仍直接写最终路径，未完成文件不自动清理；草稿只用于恢复已完成部分。
+ */
+function writeLocalSendDraft(sessionId: string): void {
+  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
+  if (entries === undefined || entries.length === 0) {
+    return;
+  }
+  let unified = findByProtocol(LOCAL_RECEIVE_KEY, sessionId);
+  let alias: string = receiveSessionSenderAlias[sessionId];
+  if (alias === undefined) {
+    alias = '';
+  }
+  let peer: SessionPeer = unified !== undefined ? unified.peer : {
+    displayName: alias,
+    badges: []
+  };
+  let files: Array<SessionDraftFile> = [];
+  for (let i = 0; i < entries.length; i++) {
+    let entry: ReceivedFileEntry = entries[i];
+    let key: string = sessionId + ':' + entry.fileId;
+    let totalBytes: number = sessionFileSizes[key] !== undefined ? sessionFileSizes[key] : 0;
+    let completed: boolean = completedFileIds[key] === true;
+    files.push({
+      fileId: entry.fileId,
+      fileName: entry.fileName,
+      fileType: entry.fileType,
+      totalBytes: totalBytes,
+      occurrence: 1,
+      checksum: '',
+      finalPath: entry.filePath,
+      tempPath: '',
+      stage: completed ? SessionFileStage.completed : SessionFileStage.waiting,
+      bytesSent: completed ? totalBytes : 0,
+      completedAt: completed ? Date.now() : 0,
+      isTextMessage: isLocalTextMessage(entries)
+    });
+  }
+  let draft: SessionDraft = {
+    schemaVersion: SESSION_DRAFT_SCHEMA_VERSION,
+    sessionId: localDraftSessionId(sessionId),
+    protocolKey: LOCAL_RECEIVE_KEY,
+    protocolSessionId: sessionId,
+    dataFlow: SessionDataFlow.inbound,
+    initiatedBy: SessionInitiator.remote,
+    stage: SessionStage.active,
+    textMessage: isLocalTextMessage(entries),
+    peer: peer,
+    localAlias: unified !== undefined ? unified.localAlias : '',
+    localIp: unified !== undefined ? unified.localIp : '',
+    localInterfaceName: unified !== undefined ? unified.localInterfaceName : '',
+    startedAt: unified !== undefined && unified.startedAt > 0 ? unified.startedAt : Date.now(),
+    transferStartedAt: unified !== undefined ? unified.transferStartedAt : 0,
+    updatedAt: Date.now(),
+    files: files,
+    capabilities: unified !== undefined ? unified.capabilities : undefined
+  };
+  saveSessionDraft(draft);
+}
+
+/** 单文件完成：更新草稿中的路径与完成状态。 */
+function updateLocalSendDraftDone(sessionId: string, fileId: string, path: string): void {
+  let draft: SessionDraft | undefined = loadSessionDraft(localDraftSessionId(sessionId));
+  if (draft === undefined) {
+    draft = loadSessionDraft(sessionId);
+  }
+  if (draft === undefined) {
+    return;
+  }
+  for (let i = 0; i < draft.files.length; i++) {
+    let file: SessionDraftFile = draft.files[i];
+    if (file.fileId !== fileId) {
+      continue;
+    }
+    if (path.length > 0) {
+      file.finalPath = path;
+    }
+    file.stage = SessionFileStage.completed;
+    file.bytesSent = file.totalBytes;
+    file.completedAt = Date.now();
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+    return;
+  }
+}
+
+/** 会话终结后删除草稿。 */
+function removeLocalSendDraft(sessionId: string): void {
+  removeSessionDraft(localDraftSessionId(sessionId));
+  removeSessionDraft(sessionId);
+}
 
 // ── 一次性传输事件 ──
 let pendingRecvCompleted: string = '';
@@ -710,6 +835,7 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
         }
       }
     }
+    updateLocalSendDraftDone(sessionId, fileId, filePath);
 
     // 检查会话是否已完成（所有文件传输完毕）
     // 已取消/已失败的会话不再判定为完成——发送方取消时
@@ -784,6 +910,8 @@ function finishReceiveSession(sessionId: string): void {
       recordReceiveHistory(sessionId, sessionEntries, senderAlias, pathMap);
     }
   }
+  // 会话正常终结：草稿已无恢复价值，删除。
+  removeLocalSendDraft(sessionId);
   // 前置守卫已排除取消/失败态且函数全程同步，不存在中途状态翻转窗口，
   // 直接置完成信号即可
   pendingRecvCompleted = sessionId;
@@ -1005,6 +1133,8 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     // 会话逐文件路径：供详情页按路径读取文本内容（须在会话终结前写入）
     updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
   }
+  // 先写草稿再向对端确认：强杀窗口内已登记目标路径，启动恢复可判断已完成部分。
+  writeLocalSendDraft(sessionId);
   try {
     nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');
@@ -1013,6 +1143,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     logger.error('接受响应失败：' + e);
     nativeDiscardRecvFileFds(sessionId);
     removeRecvTargetFiles(sessionId);
+    removeLocalSendDraft(sessionId);
     return acceptPrepareFailedMessage();
   }
   // 接收已放行：再校验一次目录，纯文本接收不落普通目录，但也要让用户感知保存目录失效。
@@ -1227,6 +1358,8 @@ function cleanupSessionReceiveFiles(sessionId: string): void {
     }
   }
   removeRecvTargetFiles(sessionId, plan.keepFileIds);
+  // 取消/失败终态：任务历史已归档，草稿不再需要；未完成文件由 removeRecvTargetFiles 清理。
+  removeLocalSendDraft(sessionId);
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   if (entries === undefined) {
     return;
