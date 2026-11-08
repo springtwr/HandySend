@@ -130,6 +130,8 @@ export function saveSessionDraft(draft: SessionDraft): boolean {
       fs.OpenMode.TRUNC);
     try {
       fs.writeSync(file.fd, json);
+      // 立即落盘：强杀可能发生在保存调用后的极短窗口内，不能依赖后续 flush。
+      fs.fsyncSync(file.fd);
     } finally {
       fs.closeSync(file);
     }

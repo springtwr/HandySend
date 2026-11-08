@@ -15,12 +15,64 @@ import {
   saveSessionDraft
 } from './SessionDraftStore';
 import {
+  SessionCapabilities,
   SessionDataFlow,
   SessionFile,
+  SessionFileDescriptor,
   SessionFileStage,
+  SessionInitiator,
+  SessionPeer,
   SessionStage,
   TransferSession
 } from '../../model/transfer/TransferSession';
+
+/**
+ * 协议握手前的占位草稿：任务刚发起、统一会话尚未创建时使用。
+ * 强杀后恢复为已取消，避免任务整条丢失；统一会话创建后由注册表草稿替换。
+ */
+export function savePreparedOutboundDraft(draftId: string, protocolKey: string,
+  peer: SessionPeer, files: Array<SessionFileDescriptor>, capabilities: SessionCapabilities,
+  textMessage: boolean): void {
+  let draftFiles: Array<SessionDraftFile> = [];
+  for (let i = 0; i < files.length; i++) {
+    let f: SessionFileDescriptor = files[i];
+    draftFiles.push({
+      fileId: f.fileId,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      totalBytes: f.totalBytes,
+      occurrence: f.occurrence !== undefined ? f.occurrence : 1,
+      checksum: f.checksum !== undefined ? f.checksum : '',
+      finalPath: f.path !== undefined ? f.path : '',
+      tempPath: '',
+      stage: SessionFileStage.waiting,
+      bytesSent: 0,
+      completedAt: 0,
+      isTextMessage: textMessage
+    });
+  }
+  let now: number = Date.now();
+  let draft: SessionDraft = {
+    schemaVersion: SESSION_DRAFT_SCHEMA_VERSION,
+    sessionId: draftId,
+    protocolKey: protocolKey,
+    protocolSessionId: '',
+    dataFlow: SessionDataFlow.outbound,
+    initiatedBy: SessionInitiator.local,
+    stage: SessionStage.awaitingConfirmation,
+    textMessage: textMessage,
+    peer: peer,
+    localAlias: '',
+    localIp: '',
+    localInterfaceName: '',
+    startedAt: now,
+    transferStartedAt: 0,
+    updatedAt: now,
+    files: draftFiles,
+    capabilities: capabilities
+  };
+  saveSessionDraft(draft);
+}
 
 /** 创建会话时写出站草稿；非发送方向为空操作。 */
 export function saveOutboundDraft(session: TransferSession): void {
