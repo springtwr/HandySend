@@ -50,10 +50,6 @@ function isRecvTextEntry(entry: ReceivedFileEntry): boolean {
     entry.preview !== undefined && entry.preview.length > 0;
 }
 
-// 会话已预注册的直写目标文件路径：sessionId → (fileId → 最终路径)。
-// 用于会话取消/失败时清理不完整的文件（自定义接收目录、默认下载目录与接收文本目录均在此登记）；
-// 成功会话的文件即交付物、不清除。
-let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
 // 与最终路径对应的临时路径：sessionId → (fileId → 临时路径)。
 // 未完成字节只写临时区；成功提交后临时文件已改名，最终路径不在此清理。
 let recvTargetTempPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
@@ -300,7 +296,6 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
     }
     return undefined;
   }
-  recvTargetPaths.set(sessionId, perFile);
   recvTargetTempPaths.set(sessionId, perTempFile);
   return perFile;
 }
@@ -312,7 +307,6 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
 export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<string, boolean>): void {
   let perTempFile: Record<string, string> | undefined = recvTargetTempPaths.get(sessionId);
   if (perTempFile === undefined) {
-    recvTargetPaths.delete(sessionId);
     return;
   }
   let keys: Array<string> = Object.keys(perTempFile);
@@ -332,12 +326,10 @@ export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<st
   for (let k = 0; k < dirKeys.length; k++) {
     removeDirectoryIfEmpty(dirKeys[k]);
   }
-  recvTargetPaths.delete(sessionId);
   recvTargetTempPaths.delete(sessionId);
 }
 
 // 仅清空某会话的登记表（成功会话收尾调用：目标文件即交付物不删除，只回收登记表内存）。
 export function clearRecvTargets(sessionId: string): void {
-  recvTargetPaths.delete(sessionId);
   recvTargetTempPaths.delete(sessionId);
 }
