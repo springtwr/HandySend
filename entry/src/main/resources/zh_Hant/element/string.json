@@ -197,8 +197,16 @@
       "value": "覺得好用的話可以給開發者贊助一點 token，助力專案更好發展"
     },
     {
-      "name": "sponsor_go",
-      "value": "去贊助"
+      "name": "sponsor_afdian",
+      "value": "愛發電"
+    },
+    {
+      "name": "sponsor_wechat",
+      "value": "微信讚賞"
+    },
+    {
+      "name": "sponsor_wechat_hint",
+      "value": "打開微信掃一掃，掃碼讚賞支持開發者"
     },
     {
       "name": "rate_label",

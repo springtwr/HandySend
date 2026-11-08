@@ -197,8 +197,16 @@
       "value": "If you find this app useful, consider sponsoring the developer a little token to help the project grow"
     },
     {
-      "name": "sponsor_go",
-      "value": "Go Sponsor"
+      "name": "sponsor_afdian",
+      "value": "Afdian"
+    },
+    {
+      "name": "sponsor_wechat",
+      "value": "WeChat Reward"
+    },
+    {
+      "name": "sponsor_wechat_hint",
+      "value": "Scan the QR code with WeChat to tip the developer"
     },
     {
       "name": "rate_label",
