@@ -12,7 +12,8 @@ import {
   removeSessionDraft,
   sanitizeDraftId,
   saveSessionDraft,
-  sessionDraftDir
+  sessionDraftDir,
+  sessionDraftPath
 } from '../../../../main/ets/service/transfer/SessionDraftStore'
 import {
   baseNameOf,
@@ -143,6 +144,30 @@ export default function SessionDraftStoreTest() {
       expect(candidates.indexOf('/a/b/.handysend-temp/mta/c.txt') >= 0).assertTrue()
       expect(baseNameOf('/a/b/c.txt')).assertEqual('c.txt')
       expect(dirNameOf('/a/b/c.txt')).assertEqual('/a/b')
+    })
+
+    it('load_removes_invalid_draft', 0, () => {
+      let id = 'draft-invalid-' + Date.now().toString()
+      let path = sessionDraftPath(id)
+      expect(path.length > 0).assertTrue()
+      let file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY |
+        fs.OpenMode.TRUNC)
+      fs.writeSync(file.fd, '{"schemaVersion":1,"sessionId":"x","files":[]}')
+      fs.closeSync(file)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+      expect(fs.accessSync(path)).assertFalse()
+    })
+
+    it('load_removes_malformed_json_draft', 0, () => {
+      let id = 'draft-malformed-' + Date.now().toString()
+      let path = sessionDraftPath(id)
+      expect(path.length > 0).assertTrue()
+      let file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY |
+        fs.OpenMode.TRUNC)
+      fs.writeSync(file.fd, '{not-json')
+      fs.closeSync(file)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+      expect(fs.accessSync(path)).assertFalse()
     })
 
     it('loadAll_returns_saved_drafts', 0, () => {

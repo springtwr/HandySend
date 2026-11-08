@@ -192,19 +192,85 @@ function loadDraftFile(path: string): SessionDraft | undefined {
     let text: string = fs.readTextSync(path);
     let draft: SessionDraft = JSON.parse(text) as SessionDraft;
     if (draft.schemaVersion !== SESSION_DRAFT_SCHEMA_VERSION) {
+      // 版本不匹配可能是升级/降级后的旧草稿，保留文件交由后续版本处理。
       logger.debug('忽略版本不匹配的会话草稿：' + path);
       return undefined;
     }
-    if (typeof draft.sessionId !== 'string' || draft.sessionId.length === 0 ||
-      !Array.isArray(draft.files)) {
-      logger.warn('会话草稿字段不完整：' + path);
+    if (!isValidSessionDraft(draft)) {
+      logger.warn('会话草稿字段不完整，已清理：' + path);
+      removeFileIfExists(path);
       return undefined;
     }
     return draft;
   } catch (e) {
-    logger.warn('读取会话草稿失败：' + path + '：' + String(e));
+    logger.warn('读取会话草稿失败，已清理：' + path + '：' + String(e));
+    removeFileIfExists(path);
     return undefined;
   }
+}
+
+/** 校验草稿必填字段，避免损坏草稿在下游恢复时反复抛异常且永不清理。 */
+function isValidSessionDraft(draft: SessionDraft): boolean {
+  if (typeof draft.sessionId !== 'string' || draft.sessionId.length === 0 ||
+    typeof draft.protocolKey !== 'string' || typeof draft.protocolSessionId !== 'string' ||
+    typeof draft.textMessage !== 'boolean' ||
+    typeof draft.startedAt !== 'number' || typeof draft.transferStartedAt !== 'number' ||
+    typeof draft.updatedAt !== 'number' ||
+    typeof draft.localAlias !== 'string' || typeof draft.localIp !== 'string' ||
+    typeof draft.localInterfaceName !== 'string' || !Array.isArray(draft.files)) {
+    return false;
+  }
+  if (!isValidDataFlow(draft.dataFlow) || !isValidInitiator(draft.initiatedBy) ||
+    !isValidStage(draft.stage)) {
+    return false;
+  }
+  if (draft.peer === undefined || draft.peer === null ||
+    typeof draft.peer.displayName !== 'string' || !Array.isArray(draft.peer.badges)) {
+    return false;
+  }
+  if (draft.targetDir !== undefined && typeof draft.targetDir !== 'string') {
+    return false;
+  }
+  if (draft.errorMessage !== undefined && typeof draft.errorMessage !== 'string') {
+    return false;
+  }
+  if (draft.errorCode !== undefined && typeof draft.errorCode !== 'string') {
+    return false;
+  }
+  for (let i = 0; i < draft.files.length; i++) {
+    let file: SessionDraftFile = draft.files[i];
+    if (file === undefined || file === null ||
+      typeof file.fileId !== 'string' || typeof file.fileName !== 'string' ||
+      typeof file.fileType !== 'string' || typeof file.checksum !== 'string' ||
+      typeof file.finalPath !== 'string' || typeof file.tempPath !== 'string' ||
+      typeof file.totalBytes !== 'number' || typeof file.occurrence !== 'number' ||
+      typeof file.bytesSent !== 'number' || typeof file.completedAt !== 'number' ||
+      typeof file.isTextMessage !== 'boolean' || !isValidFileStage(file.stage)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isValidDataFlow(value: SessionDataFlow): boolean {
+  return value === SessionDataFlow.inbound || value === SessionDataFlow.outbound;
+}
+
+function isValidInitiator(value: SessionInitiator): boolean {
+  return value === SessionInitiator.local || value === SessionInitiator.remote;
+}
+
+function isValidStage(value: SessionStage): boolean {
+  return value === SessionStage.awaitingConfirmation || value === SessionStage.active ||
+    value === SessionStage.succeeded || value === SessionStage.partiallyFailed ||
+    value === SessionStage.failed || value === SessionStage.cancelled ||
+    value === SessionStage.declined;
+}
+
+function isValidFileStage(value: SessionFileStage): boolean {
+  return value === SessionFileStage.waiting || value === SessionFileStage.transferring ||
+    value === SessionFileStage.completed || value === SessionFileStage.failed ||
+    value === SessionFileStage.cancelled;
 }
 
 /** 读取目录中全部有效草稿。 */
