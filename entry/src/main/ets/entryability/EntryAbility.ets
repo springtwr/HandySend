@@ -42,6 +42,7 @@ import { NAVIGATION_PARAM_KEY, NAVIGATION_SESSION_PARAM_KEY, NAV_TARGET_SESSION_
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
+import { setAppContext } from '../service/repository/AppCore';
 import { loadFromPreferences, syncSystemLanguageIfFollowing } from '../service/repository/SettingsRepository';
 import { isMtaReceivingActive } from '../service/repository/MtaRepository';
 import {
@@ -191,6 +192,8 @@ export default class EntryAbility extends UIAbility {
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
     initAllPreferences(this.context);
+    // 先发布应用上下文：接收历史初始化与后续会话草稿写入都依赖 filesDir。
+    setAppContext(this.context);
 
     // 初始化 FavoritesService 和 ReceiveHistoryService
     initFavorites(this.context);

@@ -82,6 +82,7 @@ export function sessionDraftDir(): string {
 function ensureSessionDraftDir(): string {
   let dir: string = sessionDraftDir();
   if (dir.length === 0) {
+    logger.warn('会话草稿目录不可用：应用上下文缺失');
     return '';
   }
   try {
@@ -136,6 +137,8 @@ export function saveSessionDraft(draft: SessionDraft): boolean {
       fs.closeSync(file);
     }
     fs.renameSync(tmp, path);
+    logger.debug('保存会话草稿 session=' + sanitizeDraftId(draft.sessionId) +
+      ' files=' + draft.files.length + ' stage=' + draft.stage);
     return true;
   } catch (e) {
     logger.warn('保存会话草稿失败 session=' + sanitizeDraftId(draft.sessionId) + '：' + String(e));
@@ -203,6 +206,7 @@ export function loadAllSessionDrafts(): Array<SessionDraft> {
   } catch (e) {
     logger.warn('枚举会话草稿失败：' + String(e));
   }
+  logger.debug('读取会话草稿 count=' + drafts.length);
   return drafts;
 }
 

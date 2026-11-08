@@ -112,18 +112,19 @@ let netConnection: connection.NetConnection | null = null;
  * 每次 Ability 初始化都尝试恢复会话草稿。
  * 强杀/划掉 Ability 不一定会结束进程：进程存活时 Ability 重建会走 initAppService 早退分支，
  * 只在首次初始化时恢复会漏掉这类“任务刚发起就退出”的场景。恢复服务会跳过仍活跃的会话。
+ * 同步执行，保证任务列表首次构建前历史已补写；草稿数量很少，IO 可接受。
  */
-function scheduleSessionDraftRecovery(): void {
-  setTimeout(() => {
-    try {
-      let recovered = recoverSessionDrafts();
-      if (recovered.recovered > 0) {
-        notifyChange();
-      }
-    } catch (e) {
-      logger.warn('会话草稿恢复失败：' + String(e));
+function recoverSessionDraftsOnInit(): void {
+  try {
+    let recovered = recoverSessionDrafts();
+    logger.debug('会话草稿恢复：草稿=' + recovered.drafts + ' 成功=' + recovered.recovered +
+      ' 失败=' + recovered.failed);
+    if (recovered.recovered > 0) {
+      notifyChange();
     }
-  }, 0);
+  } catch (e) {
+    logger.warn('会话草稿恢复失败：' + String(e));
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -441,7 +442,7 @@ export function initAppService(context: common.UIAbilityContext): void {
     setAppContext(context);
     logger.debug('应用服务初始化已跳过：已初始化');
     // 进程可能仍存活而 Ability 已重建：再次尝试恢复上次退出时留下的草稿。
-    scheduleSessionDraftRecovery();
+    recoverSessionDraftsOnInit();
     return;
   }
   appServiceInitialized = true;
@@ -545,8 +546,8 @@ export function initAppService(context: common.UIAbilityContext): void {
     // 后台关注通知按注册表待确认会话与网页访问状态发布/撤回
     initBackgroundAttentionNotifier();
     logger.debug('会话引擎已初始化');
-    // 异步恢复上次强杀/退出遗留的会话草稿，避免阻塞首屏；恢复完成后再刷新任务/历史列表。
-    scheduleSessionDraftRecovery();
+    // 同步恢复上次强杀/退出遗留的会话草稿，保证任务列表首次构建前历史已补写。
+    recoverSessionDraftsOnInit();
   } catch (e) {
     logger.error('初始化会话引擎失败：' + JSON.stringify(e));
   }
