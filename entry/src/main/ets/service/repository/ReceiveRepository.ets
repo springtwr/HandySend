@@ -128,7 +128,7 @@ function isLocalTextMessage(entries: Array<ReceivedFileEntry> | undefined): bool
  * 接受后写草稿：记录文件最终路径与未完成状态。
  * 本期 LocalSend 仍直接写最终路径，未完成文件不自动清理；草稿只用于恢复已完成部分。
  */
-function writeLocalSendDraft(sessionId: string): void {
+function writeLocalSendDraft(sessionId: string, stage: SessionStage): void {
   let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
   if (entries === undefined || entries.length === 0) {
     return;
@@ -170,7 +170,7 @@ function writeLocalSendDraft(sessionId: string): void {
     protocolSessionId: sessionId,
     dataFlow: SessionDataFlow.inbound,
     initiatedBy: SessionInitiator.remote,
-    stage: SessionStage.active,
+    stage: stage,
     textMessage: isLocalTextMessage(entries),
     peer: peer,
     localAlias: unified !== undefined ? unified.localAlias : '',
@@ -409,6 +409,7 @@ function ingestIncomingRequest(
     }
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, false, messageText);
+    writeLocalSendDraft(sessionId, SessionStage.active);
     acceptAction(sessionId, allFileIds);
     pendingRequests.push(request);
   } else {
@@ -426,6 +427,8 @@ function ingestIncomingRequest(
     // 后台关注通知由 BackgroundAttentionNotifier 订阅注册表统一发布
     ensureReceiveSession(sessionId, senderAlias, senderIp, senderFingerprint, senderDeviceType,
       senderDeviceModel, descriptors, true, messageText);
+    // 待确认阶段也写草稿：强杀后恢复为已取消，避免任务整条丢失。
+    writeLocalSendDraft(sessionId, SessionStage.awaitingConfirmation);
   }
   return true;
 }
@@ -1136,7 +1139,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
   }
   // 先写草稿再向对端确认：强杀窗口内已登记目标路径，启动恢复可判断已完成部分。
-  writeLocalSendDraft(sessionId);
+  writeLocalSendDraft(sessionId, SessionStage.active);
   try {
     nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');
@@ -1199,6 +1202,7 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     // 拒绝后的资源清理：释放预创建直写目标（通常未创建）与半成品文件
     removeRecvTargetFiles(sessionId);
     nativeDiscardRecvFileFds(sessionId);
+    removeLocalSendDraft(sessionId);
     // 拒绝即终态：同步移除免打扰条目（终态延迟清理仅用于接受链路的可见期保留）
     let keptDnd: Array<string> = [];
     for (let d = 0; d < requestDoNotDisturb.length; d++) {

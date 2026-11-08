@@ -433,6 +433,8 @@ export class MtaReceiveService {
     }
     this.setStage(ReceiverStage.REQUEST_RECEIVED);
     this.notifyState();
+    // 待确认请求也写草稿：强杀后恢复为已取消，避免任务整条丢失。
+    this.writeReceiveDraft(request, SessionStage.awaitingConfirmation);
     this.appendLog('WS', `收到接收请求：来自 ${request.senderName}，共 ${request.fileCount} 个文件`, LogLevels.INFO);
     this.appendLog('WS', `接收请求 发送方=${request.senderName} 文件=${request.fileName}` +
       ` 文件数=${request.fileCount} 总字节=${request.totalSize} 任务=${request.taskId}`, LogLevels.DEBUG);
@@ -505,6 +507,9 @@ export class MtaReceiveService {
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
     } catch (e) {
       this.appendLog('WS', '回送拒绝状态失败：' + String(e), LogLevels.ERROR);
+    }
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
     }
     await this.resetToWaiting();
   }
@@ -1166,7 +1171,7 @@ export class MtaReceiveService {
       return;
     }
     let textPath: string = '';
-    this.writeReceiveDraft(request);
+    this.writeReceiveDraft(request, SessionStage.active);
     try {
       textPath = this.saveTextToDisk(request, textDir);
     } catch (e) {
@@ -1253,8 +1258,12 @@ export class MtaReceiveService {
    * 接收开始时写草稿：MTA 条目名要等 ZIP 下载后才知道，这里先用声明的主文件名
    * 和总大小占位；强杀后恢复只用来保留一条「已中断」任务，不据此交付文件。
    */
-  private writeReceiveDraft(request: ReceiveRequest): void {
+  private writeReceiveDraft(request: ReceiveRequest, stage: SessionStage): void {
     let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, request.taskId);
+    // 待确认阶段可能以任务 ID 回退保存草稿；进入活动阶段时先移除旧键，避免恢复出重复任务。
+    if (stage === SessionStage.active) {
+      removeSessionDraft(request.taskId);
+    }
     let isText: boolean = request.textContent.length > 0;
     let fileName: string = request.fileName.length > 0 ? request.fileName :
       (isText ? MTA_SHARED_TEXT_FILE_NAME : 'mta-receive');
@@ -1284,7 +1293,7 @@ export class MtaReceiveService {
       protocolSessionId: request.taskId,
       dataFlow: SessionDataFlow.inbound,
       initiatedBy: SessionInitiator.remote,
-      stage: SessionStage.active,
+      stage: stage,
       textMessage: isText,
       peer: peer,
       localAlias: unified !== undefined ? unified.localAlias : '',
@@ -1392,7 +1401,7 @@ export class MtaReceiveService {
     this.appendLog('下载', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
     this.setStage(ReceiverStage.DOWNLOADING);
     // 进入下载前写草稿：强杀后至少保留一条「已中断」任务记录。
-    this.writeReceiveDraft(request);
+    this.writeReceiveDraft(request, SessionStage.active);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
     let storageError = await this.checkStorageReserve(request);
     if (storageError.length > 0) {
@@ -1603,6 +1612,9 @@ export class MtaReceiveService {
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
     } catch (e) {
       this.appendLog('WS', '回送拒绝状态异常：' + String(e), LogLevels.ERROR);
+    }
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
     }
     await this.resetToWaiting();
   }

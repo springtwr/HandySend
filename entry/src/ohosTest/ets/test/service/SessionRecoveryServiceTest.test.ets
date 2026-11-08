@@ -17,9 +17,14 @@ import {
   SessionDraft,
   SessionDraftFile,
   loadSessionDraft,
+  removeSessionDraft,
   saveSessionDraft,
   sessionDraftDir
 } from '../../../../main/ets/service/transfer/SessionDraftStore'
+import {
+  createSession,
+  resetRegistry
+} from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SessionDataFlow,
   SessionFileStage,
@@ -290,7 +295,7 @@ export default function SessionRecoveryServiceTest() {
       clearSessionHistory()
       clearDrafts()
       let id = 'recover-outbound-' + Date.now().toString()
-      let completed = makeFile('f-sent', '', 10)
+      let completed = makeFile('f-sent', '/tmp/sent-source.txt', 10)
       completed.stage = SessionFileStage.completed
       completed.bytesSent = 10
       let draft = makeDraft(id, [completed, makeFile('f-pending', '', 20)])
@@ -303,6 +308,7 @@ export default function SessionRecoveryServiceTest() {
         expect(session.outcome).assertEqual(SessionHistoryOutcome.partiallyFailed)
         expect(session.errorCode).assertEqual('app_killed')
         expect(session.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(session.files[0].path).assertEqual('/tmp/sent-source.txt')
         expect(session.files[1].stage).assertEqual(SessionFileStage.failed)
       }
       let receive = getHistory()
@@ -362,6 +368,48 @@ export default function SessionRecoveryServiceTest() {
       }
       expect(getHistory().length).assertEqual(0)
       expect(loadSessionDraft(id) === undefined).assertTrue()
+    })
+
+    it('outbound_session_creation_writes_pending_draft', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearDrafts()
+      let session = createSession({
+        protocolKey: 'test-send',
+        protocolSessionId: '',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: {
+          displayName: 'peer',
+          badges: []
+        },
+        files: [{
+          fileId: 'f-send-1',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 3,
+          path: '/tmp/source-a.txt'
+        }],
+        capabilities: {
+          canCancel: true,
+          canRetry: false,
+          needsConfirm: false,
+          hasByteProgress: true,
+          canSaveToGallery: false,
+          hasVerify: false
+        }
+      })
+      let draft = loadSessionDraft(session.id)
+      expect(draft !== undefined).assertTrue()
+      if (draft !== undefined) {
+        expect(draft.dataFlow).assertEqual(SessionDataFlow.outbound)
+        expect(draft.files[0].finalPath).assertEqual('/tmp/source-a.txt')
+      }
+      removeSessionDraft(session.id)
+      resetRegistry()
     })
 
     it('recover_is_idempotent', 0, () => {

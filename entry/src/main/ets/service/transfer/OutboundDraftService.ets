@@ -38,8 +38,8 @@ export function saveOutboundDraft(session: TransferSession): void {
       totalBytes: f.totalBytes,
       occurrence: f.occurrence,
       checksum: f.checksum,
-      // 发送方向没有接收落盘路径；恢复只按文件阶段归档任务。
-      finalPath: '',
+      // 发送方向没有接收落盘路径；保存发送源路径，供历史详情预览/复制/打开使用。
+      finalPath: f.path,
       tempPath: '',
       stage: f.stage,
       bytesSent: f.bytesSent,
