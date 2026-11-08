@@ -129,7 +129,7 @@ function isLocalTextMessage(entries: Array<ReceivedFileEntry> | undefined): bool
 
 /**
  * 接受后写草稿：记录文件最终路径、临时路径与未完成状态。
- * LocalSend 在 `.handysend-temp/local-send/` 写临时文件，完成后由 Rust 提交到最终路径；
+ * LocalSend 在 `.handysend-temp/localsend/` 写临时文件，完成后由 Rust 提交到最终路径；
  * 草稿用于强杀恢复时识别已完成文件。
  */
 function writeLocalSendDraft(sessionId: string, stage: SessionStage): void {

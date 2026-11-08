@@ -98,6 +98,7 @@ import { initializeAdapters } from './transfer/adapters/SessionAdapter';
 import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
 import { notifyChange } from './repository/AppCore';
 import { recoverSessionDrafts } from './transfer/SessionRecoveryService';
+import { sweepReceiveTempWorkspacesOnInit } from './transfer/TempWorkspaceSweep';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
@@ -116,6 +117,11 @@ let netConnection: connection.NetConnection | null = null;
  */
 function recoverSessionDraftsOnInit(): void {
   try {
+    // 先清扫接收临时区：同步部分在首次 await 前完成，覆盖草稿涉及的目录与
+    // 旧版遗留目录；接收目录解析完成后补扫无草稿可推导的残留。
+    sweepReceiveTempWorkspacesOnInit().catch((e: Error) => {
+      logger.warn('清扫接收临时区失败：' + e.message);
+    });
     let recovered = recoverSessionDrafts();
     logger.debug('会话草稿恢复：草稿=' + recovered.drafts + ' 成功=' + recovered.recovered +
       ' 失败=' + recovered.failed);

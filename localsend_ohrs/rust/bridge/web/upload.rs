@@ -209,6 +209,8 @@ impl UploadStore {
             // 不触碰 LocalSend/MTA 正在写入的临时文件。
             temp_workspace::cleanup_namespace(&dir, temp_workspace::TEMP_SUBDIR_WEB, &active);
             temp_workspace::cleanup_legacy(&dir, &active);
+            // 旧版协议子目录（如 local-send）新版本不再写入，升级后一并清掉。
+            temp_workspace::cleanup_legacy_subdirs(&dir);
         }
         applied
     }
@@ -539,6 +541,13 @@ mod tests {
         let mta_file = mta_temp.join("new.txt");
         std::fs::write(&local_file, b"inflight").unwrap();
         std::fs::write(&mta_file, b"inflight").unwrap();
+        // 升级前旧协议子目录（local-send）中的残留，新版本不再写入。
+        let legacy_dir = dir
+            .join(temp_workspace::TEMP_DIR_NAME)
+            .join(temp_workspace::LEGACY_TEMP_SUBDIRS[0]);
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let legacy_file = legacy_dir.join("old.txt");
+        std::fs::write(&legacy_file, b"old").unwrap();
 
         let mut store = UploadStore::default();
         let (mut current, _rx) = pending_session("up-cross-protocol");
@@ -554,6 +563,7 @@ mod tests {
         assert!(!orphan.exists(), "网页协议自身的遗留半成品应被清理");
         assert!(local_file.exists(), "LocalSend 正在写入的临时文件不能删");
         assert!(mta_file.exists(), "MTA 正在写入的临时文件不能删");
+        assert!(!legacy_file.exists(), "旧版协议子目录的残留应被清理");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

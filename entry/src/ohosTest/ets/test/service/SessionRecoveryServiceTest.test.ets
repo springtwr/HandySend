@@ -170,7 +170,7 @@ export default function SessionRecoveryServiceTest() {
       let donePath = ctx.filesDir + '/' + id + '-done.txt'
       let missingPath = ctx.filesDir + '/' + id + '-missing.txt'
       writeText(donePath, 'abc')
-      let tempDir = ctx.filesDir + '/.handysend-temp/local-send'
+      let tempDir = ctx.filesDir + '/.handysend-temp/localsend'
       if (!fs.accessSync(tempDir)) {
         fs.mkdirSync(tempDir, true)
       }
@@ -501,7 +501,7 @@ export default function SessionRecoveryServiceTest() {
       resetRegistry()
     })
 
-    it('recover_mta_draft_cleans_mta_temp_only', 0, () => {
+    it('recover_sweeps_all_protocol_temp_dirs', 0, () => {
       let ctx = getTestAppContext()
       expect(ctx !== undefined).assertTrue()
       if (ctx === undefined) {
@@ -513,11 +513,15 @@ export default function SessionRecoveryServiceTest() {
       let id = 'recover-mta-temp-' + Date.now().toString()
       let targetDir = ctx.filesDir + '/' + id + '-target'
       let mtaTemp = targetDir + '/.handysend-temp/mta'
-      let localTemp = targetDir + '/.handysend-temp/local-send'
+      let localTemp = targetDir + '/.handysend-temp/localsend'
+      let legacyTemp = targetDir + '/.handysend-temp/local-send'
       fs.mkdirSync(mtaTemp, true)
       fs.mkdirSync(localTemp, true)
+      fs.mkdirSync(legacyTemp, true)
       writeText(mtaTemp + '/partial.bin', 'xx')
-      writeText(localTemp + '/keep.bin', 'keep')
+      writeText(localTemp + '/stale.bin', 'stale')
+      writeText(legacyTemp + '/old.bin', 'old')
+      writeText(targetDir + '/user.txt', 'mine')
       let draft = makeDraft(id, [makeFile('mta_archive', '', 100)])
       draft.protocolKey = 'mta-receive'
       draft.targetDir = targetDir
@@ -526,13 +530,69 @@ export default function SessionRecoveryServiceTest() {
       recoverSessionDrafts()
 
       expect(fs.accessSync(mtaTemp + '/partial.bin')).assertFalse()
-      expect(fs.accessSync(mtaTemp)).assertFalse()
-      expect(fs.accessSync(localTemp + '/keep.bin')).assertTrue()
+      expect(fs.accessSync(localTemp + '/stale.bin')).assertFalse()
+      expect(fs.accessSync(legacyTemp + '/old.bin')).assertFalse()
+      expect(fs.accessSync(targetDir + '/.handysend-temp')).assertFalse()
+      expect(fs.accessSync(targetDir + '/user.txt')).assertTrue()
       expect(loadSessionDraft(id) === undefined).assertTrue()
-      fs.unlinkSync(localTemp + '/keep.bin')
-      fs.rmdirSync(localTemp)
+      fs.unlinkSync(targetDir + '/user.txt')
+      fs.rmdirSync(targetDir)
+    })
+
+    it('recovery_keeps_active_session_temp', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearDrafts()
+      clearSessionHistory()
+      let id = 'recover-active-temp-' + Date.now().toString()
+      let targetDir = ctx.filesDir + '/' + id + '-target'
+      let tempDir = targetDir + '/.handysend-temp/localsend'
+      fs.mkdirSync(tempDir, true)
+      let tempPath = tempDir + '/active.bin'
+      writeText(tempPath, 'inflight')
+      let session = createSession({
+        protocolKey: 'test-recv-active',
+        protocolSessionId: '',
+        dataFlow: SessionDataFlow.inbound,
+        initiatedBy: SessionInitiator.remote,
+        peer: {
+          displayName: 'peer',
+          badges: []
+        },
+        files: [{
+          fileId: 'f-active',
+          fileName: 'active.bin',
+          fileType: '',
+          totalBytes: 8,
+          path: targetDir + '/active.bin'
+        }],
+        capabilities: {
+          canCancel: true,
+          canRetry: false,
+          needsConfirm: false,
+          hasByteProgress: true,
+          canSaveToGallery: false,
+          hasVerify: false
+        }
+      })
+      let draft = makeDraft(session.id,
+        [makeFile('f-active', targetDir + '/active.bin', 8, tempPath)])
+      saveSessionDraft(draft)
+
+      recoverSessionDrafts()
+
+      // 活跃会话正在写入的临时文件不能被清扫，草稿也保留。
+      expect(fs.accessSync(tempPath)).assertTrue()
+      expect(loadSessionDraft(session.id) !== undefined).assertTrue()
+      removeSessionDraft(session.id)
+      fs.unlinkSync(tempPath)
+      fs.rmdirSync(tempDir)
       fs.rmdirSync(targetDir + '/.handysend-temp')
       fs.rmdirSync(targetDir)
+      resetRegistry()
     })
 
     it('recovery_does_not_overwrite_existing_history', 0, () => {

@@ -86,6 +86,7 @@ import ChecksumBatchTest from './service/ChecksumBatchTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import SessionDraftStoreTest from './service/SessionDraftStoreTest.test'
 import SessionRecoveryServiceTest from './service/SessionRecoveryServiceTest.test'
+import TempWorkspaceSweepTest from './service/TempWorkspaceSweepTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
 import GallerySaveNameTest from './service/GallerySaveNameTest.test'
@@ -190,6 +191,7 @@ export default function testsuite() {
   SessionHistoryStoreTest()
   SessionDraftStoreTest()
   SessionRecoveryServiceTest()
+  TempWorkspaceSweepTest()
   RegistriesTest()
   AdaptersTest()
   GallerySaveNameTest()

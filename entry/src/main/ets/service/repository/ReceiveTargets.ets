@@ -8,6 +8,7 @@ import { ensureReceiveDirectory } from './ReceiveDirectory';
 import {
   dirNameOf,
   LEGACY_TEMP_DIR_NAMES,
+  LEGACY_TEMP_SUBDIRS,
   TEMP_DIR_NAME,
   TEMP_SUBDIR_LOCAL_SEND,
   TEMP_SUBDIRS,
@@ -89,6 +90,13 @@ function fileExistsAtPath(path: string): boolean {
 function tempNameReserved(dir: string, fileName: string): boolean {
   for (let i = 0; i < TEMP_SUBDIRS.length; i++) {
     let candidate: string = dir + '/' + TEMP_DIR_NAME + '/' + TEMP_SUBDIRS[i] + '/' + fileName;
+    if (fileExistsAtPath(candidate)) {
+      return true;
+    }
+  }
+  // 旧版协议子目录中的残留同样视为占用，避免覆盖尚未清理的半成品
+  for (let i = 0; i < LEGACY_TEMP_SUBDIRS.length; i++) {
+    let candidate: string = dir + '/' + TEMP_DIR_NAME + '/' + LEGACY_TEMP_SUBDIRS[i] + '/' + fileName;
     if (fileExistsAtPath(candidate)) {
       return true;
     }
@@ -332,4 +340,23 @@ export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<st
 // 仅清空某会话的登记表（成功会话收尾调用：目标文件即交付物不删除，只回收登记表内存）。
 export function clearRecvTargets(sessionId: string): void {
   recvTargetTempPaths.delete(sessionId);
+}
+
+/**
+ * 当前进程内已登记的接收临时文件路径（全部会话）。
+ * 供启动清扫构造保留集：进程存活、仅 Ability 重建时，这些文件仍在写入，
+ * 不能被当作遗留半成品删除。
+ */
+export function getRegisteredRecvTempPaths(): Array<string> {
+  let result: Array<string> = [];
+  recvTargetTempPaths.forEach((perFile: Record<string, string>) => {
+    let fileIds: Array<string> = Object.keys(perFile);
+    for (let i = 0; i < fileIds.length; i++) {
+      let path: string = perFile[fileIds[i]];
+      if (path.length > 0) {
+        result.push(path);
+      }
+    }
+  });
+  return result;
 }

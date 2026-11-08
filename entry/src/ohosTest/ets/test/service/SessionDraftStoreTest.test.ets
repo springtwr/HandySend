@@ -134,9 +134,9 @@ export default function SessionDraftStoreTest() {
 
     it('temp_path_matches_final_path', 0, () => {
       expect(tempDirForFinal('/a/b/c.txt', TEMP_SUBDIR_LOCAL_SEND))
-        .assertEqual('/a/b/.handysend-temp/local-send')
+        .assertEqual('/a/b/.handysend-temp/localsend')
       expect(tempPathForFinal('/a/b/c.txt', TEMP_SUBDIR_LOCAL_SEND))
-        .assertEqual('/a/b/.handysend-temp/local-send/c.txt')
+        .assertEqual('/a/b/.handysend-temp/localsend/c.txt')
       expect(tempPathForFinal('/a/b/c.txt', TEMP_SUBDIR_WEB))
         .assertEqual('/a/b/.handysend-temp/web/c.txt')
       let candidates = tempPathsForFinal('/a/b/c.txt')

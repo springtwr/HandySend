@@ -4,17 +4,21 @@
  * 与 Rust 侧 `bridge/temp_workspace.rs` 的 `.handysend-temp/` 规则保持一致：
  * 未完成文件写在最终文件同父目录的应用独占隐藏目录中，完成后 rename 到最终路径。
  * 临时区按协议分子目录，避免不同协议的同名文件互相截断；临时文件存在即表示
- * 该最终文件名已被占用。旧名 `.handysend-upload-part` 作为 legacy 目录清理。
+ * 该最终文件名已被占用。旧名 `.handysend-upload-part` 与旧协议子目录名
+ * `local-send` 作为 legacy 目录清理。
  */
 
 export const TEMP_DIR_NAME: string = '.handysend-temp';
 
 /** 各接收协议的临时子目录名。 */
-export const TEMP_SUBDIR_LOCAL_SEND: string = 'local-send';
+export const TEMP_SUBDIR_LOCAL_SEND: string = 'localsend';
 export const TEMP_SUBDIR_MTA: string = 'mta';
 export const TEMP_SUBDIR_WEB: string = 'web';
 export const TEMP_SUBDIRS: Array<string> =
   [TEMP_SUBDIR_LOCAL_SEND, TEMP_SUBDIR_MTA, TEMP_SUBDIR_WEB];
+
+/** 旧版本协议子目录名：只用于清理升级前遗留的临时文件。 */
+export const LEGACY_TEMP_SUBDIRS: Array<string> = ['local-send'];
 
 export const LEGACY_TEMP_DIR_NAMES: Array<string> = ['.handysend-upload-part'];
 
@@ -47,6 +51,11 @@ export function tempDirForFinal(finalPath: string, subdir: string): string {
 /** 最终路径在指定协议子目录下的临时文件路径。 */
 export function tempPathForFinal(finalPath: string, subdir: string): string {
   return tempDirForFinal(finalPath, subdir) + '/' + baseNameOf(finalPath);
+}
+
+/** 目录名是否为当前或旧版本的协议临时子目录。 */
+export function isProtocolTempSubdir(name: string): boolean {
+  return TEMP_SUBDIRS.indexOf(name) >= 0 || LEGACY_TEMP_SUBDIRS.indexOf(name) >= 0;
 }
 
 /** 最终路径在所有协议临时子目录下的候选临时路径（用于恢复时兜底清理）。 */

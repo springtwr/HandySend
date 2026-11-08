@@ -12,10 +12,13 @@ use std::path::{Path, PathBuf};
 pub const TEMP_DIR_NAME: &str = ".handysend-temp";
 
 /// 各接收协议的临时子目录名。
-pub const TEMP_SUBDIR_LOCAL_SEND: &str = "local-send";
+pub const TEMP_SUBDIR_LOCAL_SEND: &str = "localsend";
 pub const TEMP_SUBDIR_MTA: &str = "mta";
 pub const TEMP_SUBDIR_WEB: &str = "web";
 pub const TEMP_SUBDIRS: &[&str] = &[TEMP_SUBDIR_LOCAL_SEND, TEMP_SUBDIR_MTA, TEMP_SUBDIR_WEB];
+
+/// 旧版本协议子目录名，仅用于清理升级前遗留的临时文件。
+pub const LEGACY_TEMP_SUBDIRS: &[&str] = &["local-send"];
 
 /// 旧版本临时区目录名，仅用于清理残留。
 pub const LEGACY_TEMP_DIR_NAMES: &[&str] = &[".handysend-upload-part"];
@@ -58,6 +61,11 @@ pub fn is_name_reserved(dir: &Path, name: &str) -> bool {
         return true;
     }
     for subdir in TEMP_SUBDIRS {
+        if dir.join(TEMP_DIR_NAME).join(subdir).join(name).exists() {
+            return true;
+        }
+    }
+    for subdir in LEGACY_TEMP_SUBDIRS {
         if dir.join(TEMP_DIR_NAME).join(subdir).join(name).exists() {
             return true;
         }
@@ -116,6 +124,15 @@ pub fn cleanup_legacy(target_dir: &Path, active: &HashSet<PathBuf>) {
     }
 }
 
+/// 清理旧版本协议子目录中的全部遗留文件（新版本不再写入这些目录）。
+pub fn cleanup_legacy_subdirs(target_dir: &Path) {
+    let root = target_dir.join(TEMP_DIR_NAME);
+    for subdir in LEGACY_TEMP_SUBDIRS {
+        cleanup_dir(&root.join(subdir), &HashSet::new());
+    }
+    let _ = std::fs::remove_dir(&root);
+}
+
 /// 目标目录下指定协议的临时子目录为空时删除（并尝试移除空根目录）。
 pub fn remove_temp_dir_if_empty(target_dir: &Path, subdir: &str) {
     let root = target_dir.join(TEMP_DIR_NAME);
@@ -126,7 +143,7 @@ pub fn remove_temp_dir_if_empty(target_dir: &Path, subdir: &str) {
 fn is_protocol_subdir(dir: &Path) -> bool {
     dir.file_name()
         .and_then(|name| name.to_str())
-        .map(|name| TEMP_SUBDIRS.contains(&name))
+        .map(|name| TEMP_SUBDIRS.contains(&name) || LEGACY_TEMP_SUBDIRS.contains(&name))
         .unwrap_or(false)
 }
 
@@ -213,6 +230,30 @@ mod tests {
         cleanup_legacy(&root, &HashSet::new());
 
         assert!(!legacy.exists(), "旧临时目录应被清理");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn local_send_subdir_uses_protocol_name() {
+        assert_eq!(TEMP_SUBDIR_LOCAL_SEND, "localsend");
+        assert_eq!(LEGACY_TEMP_SUBDIRS, &["local-send"]);
+    }
+
+    #[test]
+    fn cleanup_legacy_subdir_removes_old_protocol_dir() {
+        let root = temp_root("legacy-subdir");
+        let _ = std::fs::remove_dir_all(&root);
+        let legacy = root.join(TEMP_DIR_NAME).join(LEGACY_TEMP_SUBDIRS[0]);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("orphan.txt"), b"old").unwrap();
+        let current = root.join(TEMP_DIR_NAME).join(TEMP_SUBDIR_LOCAL_SEND);
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(current.join("keep.txt"), b"new").unwrap();
+
+        cleanup_legacy_subdirs(&root);
+
+        assert!(!legacy.exists(), "旧协议子目录应被清理");
+        assert!(current.join("keep.txt").exists(), "当前协议子目录不能删");
         let _ = std::fs::remove_dir_all(&root);
     }
 
