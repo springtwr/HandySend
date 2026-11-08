@@ -1,13 +1,13 @@
 //! MTA 接收端 Rust 主导下载。
 //!
 //! Rust 直接发起 HTTPS 下载（`reqwest` + 跳过服务端证书校验）、边收边流式解压
-//! （复用 [`crate::bridge::mta::unzip_stream`]），把 ZIP 条目**直接写入目标目录**：
-//! 仅取文件名防路径穿越、忽略目录条目、重名加 `(n)`、还原条目修改时间、强制
-//! 条目数与解压总字节上限；并按"已解压字节 ÷ 声明总大小"经桥接事件上报进度。
+//! （复用 [`crate::bridge::mta::unzip_stream`]），把 ZIP 条目写入目标目录下的
+//! 应用独占临时区后原子改名：仅取文件名防路径穿越、忽略目录条目、重名加 `(n)`、
+//! 还原条目修改时间、强制条目数与解压总字节上限；失败只清理未提交临时文件，
+//! 已提交条目保留。
 //!
 //! 网络语义等价重建：连接超时、响应码非 200 判定、下载停滞看门狗（基于数据到达
-//! 时间）、取消令牌、失败清理（删除本次已写入的目标文件）与可读日志。
-//! ArkTS 仅负责协议交互与业务接线。
+//! 时间）、取消令牌、失败清理与可读日志。ArkTS 仅负责协议交互与业务接线。
 
 use std::fs::{self, File};
 use std::io::{self, Read};
@@ -25,6 +25,7 @@ use crate::bridge::mta::unzip_stream::{
     self, PushbackReader, ZipEntryHandler, ZipEntryInfo, ZipParseOptions,
 };
 use crate::bridge::state::BridgeState;
+use crate::bridge::temp_workspace;
 use crate::bridge::throttle::ProgressThrottle;
 
 /// 下载响应体分块通道容量（块）；满时暂停读取响应体形成背压
@@ -80,10 +81,11 @@ impl Default for ReceiveTimeouts {
     }
 }
 
-/// 从已就绪的 ZIP 读取器把条目直接写入目标目录，返回落盘元数据。
+/// 从已就绪的 ZIP 读取器把条目写入目标目录下的应用临时区，提交后原子改名，
+/// 返回落盘元数据。
 ///
-/// 失败（含取消、超限、损坏）时删除本次已写入的目标文件，避免残留半成品。
-/// 与网络层解耦，便于对解析/落盘/回滚做单元测试。
+/// 失败（含取消、超限、损坏）时只删除未提交临时文件；已完成条目保留为部分
+/// 交付物，不删除最终路径。与网络层解耦，便于对解析/落盘/回滚做单元测试。
 /// `progress` 累计解压产出字节，`written` 累计实际写盘字节（均供接收诊断）。
 pub fn extract_zip_to_dir<R: Read>(
     reader: R,
@@ -104,11 +106,16 @@ pub fn extract_zip_to_dir<R: Read>(
     };
     let mut pushback = PushbackReader::new(reader);
     match unzip_stream::parse_zip(&mut pushback, options, progress, &mut handler) {
-        Ok(()) => Ok(handler.entries),
+        Ok(()) => {
+            temp_workspace::remove_temp_dir_if_empty(target_dir);
+            Ok(handler.entries)
+        }
         Err(error) => {
+            // 只清理未提交的临时文件；已 commit 的条目保留为部分交付物。
             for path in &handler.created {
-                let _ = fs::remove_file(path);
+                temp_workspace::remove_temp_file(path);
             }
+            temp_workspace::remove_temp_dir_if_empty(target_dir);
             Err(anyhow::anyhow!(error))
         }
     }
@@ -444,11 +451,11 @@ fn sniff_image_extension(bytes: &[u8]) -> &'static str {
     "bin"
 }
 
-/// 逐条目写入目标目录，并记录本次已产出文件供失败回滚。
+/// 逐条目写入目标目录下的临时区，提交后原子改名；记录未提交临时文件供失败回滚。
 struct FileEntryHandler<'a> {
     /// 目标目录
     dir: PathBuf,
-    /// 本次已创建的文件（失败/取消时删除）
+    /// 本次未提交的临时文件（失败/取消时删除；已提交条目保留）
     created: Vec<PathBuf>,
     /// 已落盘条目元数据
     entries: Vec<ReceivedEntry>,
@@ -461,21 +468,33 @@ struct FileEntryHandler<'a> {
 impl ZipEntryHandler for FileEntryHandler<'_> {
     fn handle_entry(&mut self, info: &ZipEntryInfo, data: &mut dyn Read) -> Result<(), String> {
         let path = unique_target_path(&self.dir, &info.name);
-        let mut file =
-            File::create(&path).map_err(|e| format!("创建目标文件失败 {}: {e}", path.display()))?;
-        self.created.push(path.clone());
+        let temp_path = temp_workspace::temp_path_for(&path);
+        if let Some(parent) = temp_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("创建临时目录失败 {}: {e}", parent.display()))?;
+        }
+        let mut file = File::create(&temp_path)
+            .map_err(|e| format!("创建目标文件失败 {}: {e}", temp_path.display()))?;
+        self.created.push(temp_path.clone());
         let written = copy_to_file(data, &mut file, &mut self.buffer, self.written)
-            .map_err(|e| format!("写入目标文件失败 {}: {e}", path.display()))?;
+            .map_err(|e| format!("写入目标文件失败 {}: {e}", temp_path.display()))?;
         use std::io::Write as _;
         file.flush()
-            .map_err(|e| format!("写入目标文件失败 {}: {e}", path.display()))?;
+            .map_err(|e| format!("写入目标文件失败 {}: {e}", temp_path.display()))?;
         drop(file);
 
         if info.modified_unix_ms > 0 {
-            if let Err(e) = set_modified_time(&path, info.modified_unix_ms) {
-                log::warn!("MTA 还原文件修改时间失败 {}: {e}", path.display());
+            if let Err(e) = set_modified_time(&temp_path, info.modified_unix_ms) {
+                log::warn!("MTA 还原文件修改时间失败 {}: {e}", temp_path.display());
             }
         }
+
+        if let Err(e) = temp_workspace::commit(&temp_path, &path) {
+            let _ = fs::remove_file(&temp_path);
+            self.created.retain(|created| created != &temp_path);
+            return Err(format!("提交目标文件失败 {}: {e}", path.display()));
+        }
+        self.created.retain(|created| created != &temp_path);
 
         self.entries.push(ReceivedEntry {
             name: info.name.clone(),
@@ -839,6 +858,10 @@ mod tests {
         assert_eq!(entries[0].modified_unix_ms, 1_600_000_000_000);
         assert_eq!(fs::read(out.join("a.txt")).unwrap(), b"hello mta");
         assert_eq!(progress.load(Ordering::Relaxed), 9);
+        assert!(
+            !out.join(temp_workspace::TEMP_DIR_NAME).exists(),
+            "成功结束后临时区应删除"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

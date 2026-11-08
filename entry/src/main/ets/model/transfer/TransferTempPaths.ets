@@ -1,12 +1,12 @@
 /**
  * TransferTempPaths.ets — 接收落盘临时区的路径规则
  *
- * 与 Rust 侧 `bridge/web/upload.rs` 的 `.handysend-upload-part/` 规则保持一致：
+ * 与 Rust 侧 `bridge/temp_workspace.rs` 的 `.handysend-temp/` 规则保持一致：
  * 未完成文件写在最终文件同父目录的应用独占隐藏子目录中，完成后 rename 到最终路径。
- * 三条链路统一后目录名会改为 `.handysend-temp`，旧名作为 legacy 清理。
+ * 旧名 `.handysend-upload-part` 作为 legacy 目录做 best-effort 清理。
  */
 
-export const TEMP_DIR_NAME: string = '.handysend-upload-part';
+export const TEMP_DIR_NAME: string = '.handysend-temp';
 
 export const LEGACY_TEMP_DIR_NAMES: Array<string> = ['.handysend-upload-part'];
 

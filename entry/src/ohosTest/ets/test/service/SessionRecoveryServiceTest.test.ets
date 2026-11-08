@@ -163,7 +163,7 @@ export default function SessionRecoveryServiceTest() {
       let donePath = ctx.filesDir + '/' + id + '-done.txt'
       let missingPath = ctx.filesDir + '/' + id + '-missing.txt'
       writeText(donePath, 'abc')
-      let tempDir = ctx.filesDir + '/.handysend-upload-part'
+      let tempDir = ctx.filesDir + '/.handysend-temp'
       if (!fs.accessSync(tempDir)) {
         fs.mkdirSync(tempDir, true)
       }

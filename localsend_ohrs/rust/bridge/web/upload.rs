@@ -6,10 +6,11 @@
 //! Download 与接收历史。接受即全量（不再逐文件挑）。
 //!
 //! 未完成的字节写在目标目录下的应用保留子目录
-//! `.handysend-upload-part/`，完成后同目录原子改名。会话终结时
+//! `.handysend-temp/`，完成后同目录原子改名。会话终结时
 //! 删除未完成文件并移除已空的子目录；子目录是本应用独占的临时区，
 //! 进程被强制终止时遗留的半成品在下次接受上传时清理，不会触碰
-//! 目标目录里的用户文件。
+//! 目标目录里的用户文件。旧名 `.handysend-upload-part/` 作为 legacy
+//! 目录 best-effort 清理。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -17,26 +18,21 @@ use std::time::Instant;
 
 use tokio::sync::oneshot;
 
+use crate::bridge::temp_workspace;
 use crate::bridge::web::session::{SessionEndReason, SessionTimeouts};
 
-/// 目标目录内的应用保留临时子目录名（只能由本应用创建与清理）。
-pub(crate) const PART_DIR_NAME: &str = ".handysend-upload-part";
+/// 目标目录内的应用保留临时子目录名（测试断言用；实现见 temp_workspace）。
+#[cfg(test)]
+pub(crate) const PART_DIR_NAME: &str = temp_workspace::TEMP_DIR_NAME;
 
 /// 未完成上传的临时目录（与最终文件同父目录，保证改名是同一文件系统内的原子操作）。
 pub(crate) fn part_dir(final_path: &str) -> PathBuf {
-    Path::new(final_path)
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .join(PART_DIR_NAME)
+    temp_workspace::temp_dir(final_path)
 }
 
 /// 未完成上传的临时文件路径（文件名与最终文件同名，父目录为应用保留子目录）。
 pub(crate) fn part_path(final_path: &str) -> PathBuf {
-    let name = Path::new(final_path)
-        .file_name()
-        .map(|name| name.to_os_string())
-        .unwrap_or_default();
-    part_dir(final_path).join(name)
+    temp_workspace::temp_path(final_path)
 }
 
 /// 上传会话状态：待确认（持有决策发送端）/ 已接受。
@@ -179,7 +175,7 @@ impl UploadStore {
     ///
     /// 接受新一批上传前顺带清理目标目录内应用保留临时区的遗留文件：
     /// 进程被强制终止时这些半成品不会走到过期/拒绝路径，只能在此兜底；
-    /// 清理范围仅限 `.handysend-upload-part/` 内且不属于任何活跃会话的文件，
+    /// 清理范围仅限 `.handysend-temp/` 内且不属于任何活跃会话的文件，
     /// 不会删除最终交付文件或用户自己的文件。
     pub fn set_targets(&mut self, token: &str, targets: &[(String, String)]) -> usize {
         let Some(session) = self.sessions.get_mut(token) else {
@@ -208,11 +204,14 @@ impl UploadStore {
         let mut dirs: HashSet<PathBuf> = HashSet::new();
         for (_, path) in targets {
             if !path.is_empty() {
-                dirs.insert(part_dir(path));
+                if let Some(parent) = Path::new(path).parent() {
+                    dirs.insert(parent.to_path_buf());
+                }
             }
         }
         for dir in dirs {
-            cleanup_parts(&dir, &active);
+            // 同时清理当前临时区与旧版本 legacy 目录。
+            temp_workspace::cleanup_stale(&dir, &active);
         }
         applied
     }
@@ -288,25 +287,7 @@ pub(crate) fn cleanup_session_parts(session: &UploadSession) {
 /// 用于上传失败分支：文件条目可能随后被移出会话，届时无法再从清单
 /// 反推临时目录，因此在这里顺手清理。
 pub(crate) fn remove_part_file_and_dir(path: &Path) {
-    let _ = std::fs::remove_file(path);
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::remove_dir(dir);
-    }
-}
-
-/// 清理应用保留临时目录中的遗留文件（只处理直接子文件，目录非空时保留）。
-fn cleanup_parts(dir: &Path, active: &HashSet<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && !active.contains(&path) {
-            let _ = std::fs::remove_file(&path);
-        }
-    }
-    // 临时区已空时顺手移除目录；非空（仍有活跃上传）时删除失败并保留。
-    let _ = std::fs::remove_dir(dir);
+    temp_workspace::remove_temp_file(path);
 }
 
 #[cfg(test)]

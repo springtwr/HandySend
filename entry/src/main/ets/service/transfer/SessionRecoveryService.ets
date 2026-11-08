@@ -19,7 +19,7 @@ import {
   TransferSession
 } from '../../model/transfer/TransferSession';
 import { ReceiveHistoryEntry } from '../../model/Types';
-import { baseNameOf, dirNameOf, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
+import { baseNameOf, dirNameOf, LEGACY_TEMP_DIR_NAMES, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
 import {
   SessionDraft,
   SessionDraftFile,
@@ -182,7 +182,7 @@ function statSize(path: string): number {
 /** 删除未完成临时文件，并尝试移除已空的临时目录；不触碰最终路径。 */
 function cleanupTempFile(file: SessionDraftFile): void {
   // 无最终路径也无临时路径（如 MTA 下载中强杀的占位草稿）时不要推导目录，
-  // 避免把相对路径 `.handysend-upload-part` 当成真实临时区。
+  // 避免把相对路径 `.handysend-temp` 当成真实临时区。
   if (file.finalPath.length === 0 && file.tempPath.length === 0) {
     return;
   }
@@ -208,5 +208,31 @@ function cleanupTempFile(file: SessionDraftFile): void {
     }
   } catch (_e) {
     // 目录非空说明还有其他残留或用户文件，保留。
+  }
+  cleanupLegacyTempDirs(file.finalPath);
+}
+
+/** 清理最终目录下的旧版本临时区；启动时无活跃传输，可安全删除其中所有文件。 */
+function cleanupLegacyTempDirs(finalPath: string): void {
+  let parent: string = dirNameOf(finalPath);
+  if (parent.length === 0) {
+    return;
+  }
+  for (let i = 0; i < LEGACY_TEMP_DIR_NAMES.length; i++) {
+    let dir: string = parent + '/' + LEGACY_TEMP_DIR_NAMES[i];
+    try {
+      if (!fs.accessSync(dir)) {
+        continue;
+      }
+      let names: Array<string> = fs.listFileSync(dir);
+      for (let k = 0; k < names.length; k++) {
+        try {
+          fs.unlinkSync(dir + '/' + names[k]);
+        } catch (_e) {
+        }
+      }
+      fs.rmdirSync(dir);
+    } catch (_e) {
+    }
   }
 }

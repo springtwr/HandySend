@@ -129,8 +129,8 @@ export default function SessionDraftStoreTest() {
     })
 
     it('temp_path_matches_final_path', 0, () => {
-      expect(tempDirForFinal('/a/b/c.txt')).assertEqual('/a/b/.handysend-upload-part')
-      expect(tempPathForFinal('/a/b/c.txt')).assertEqual('/a/b/.handysend-upload-part/c.txt')
+      expect(tempDirForFinal('/a/b/c.txt')).assertEqual('/a/b/.handysend-temp')
+      expect(tempPathForFinal('/a/b/c.txt')).assertEqual('/a/b/.handysend-temp/c.txt')
       expect(baseNameOf('/a/b/c.txt')).assertEqual('c.txt')
       expect(dirNameOf('/a/b/c.txt')).assertEqual('/a/b')
     })
