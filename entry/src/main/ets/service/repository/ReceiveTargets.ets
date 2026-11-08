@@ -309,6 +309,17 @@ export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<st
   if (perTempFile === undefined) {
     return;
   }
+  removeRecvTargetPaths(perTempFile, keepFileIds);
+  recvTargetTempPaths.delete(sessionId);
+}
+
+/**
+ * 按临时路径登记表删除未完成文件，并尝试移除空的协议子目录与临时区根目录。
+ * 只操作临时区，不触碰最终路径；keepFileIds 中的文件已完成提交，保留登记路径。
+ * 单独导出以便设备端用例直接覆盖清理策略（登记表由 prepareRecvTargets 维护）。
+ */
+export function removeRecvTargetPaths(perTempFile: Record<string, string>,
+  keepFileIds?: Record<string, boolean>): void {
   let keys: Array<string> = Object.keys(perTempFile);
   let tempDirs: Record<string, boolean> = {};
   for (let k = 0; k < keys.length; k++) {
@@ -331,7 +342,6 @@ export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<st
       removeDirectoryIfEmpty(tempRoot);
     }
   }
-  recvTargetTempPaths.delete(sessionId);
 }
 
 // 仅清空某会话的登记表（成功会话收尾调用：目标文件即交付物不删除，只回收登记表内存）。
