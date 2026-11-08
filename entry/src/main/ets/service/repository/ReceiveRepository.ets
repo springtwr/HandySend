@@ -1127,7 +1127,12 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     return storageError;
   }
   let targetPaths: Record<string, string> | undefined =
-    await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId]);
+    await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId],
+      (): void => {
+        // 路径已确定、临时文件尚未创建：先把最终/临时路径落进草稿，
+        // 强杀后启动恢复仍能据此清理临时区。
+        writeLocalSendDraft(sessionId, SessionStage.active);
+      });
   if (targetPaths === undefined) {
     logger.warn('准备接收目标失败，拒绝会话');
     try {
@@ -1143,8 +1148,7 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     // 会话逐文件路径：供详情页按路径读取文本内容（须在会话终结前写入）
     updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
   }
-  // 先写草稿再向对端确认：强杀窗口内已登记目标路径，启动恢复可判断已完成部分。
-  writeLocalSendDraft(sessionId, SessionStage.active);
+  // 草稿已在创建临时文件前写入（含最终/临时路径），此处直接向对端确认。
   try {
     nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');

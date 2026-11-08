@@ -266,7 +266,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
   文本条目进接收文本目录（首次使用时创建）；仅单条文本消息记为文本消息）；
   服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
 - 未完成字节写在目标目录下的应用保留子目录 `.handysend-temp/web/`（与最终文件同父目录，完成后原子改名；
-  临时区按协议分子目录，其他协议的同名临时文件不会被本协议清理）；会话终结（完成/拒绝/取消/超时/停止服务）时删除未完成文件并移除已空的临时目录；
+  临时区按协议分子目录，其他协议的同名临时文件不会被本协议清理）；最终/临时路径确定后先写入会话草稿，
+  再创建占位文件，强杀窗口内恢复仍可按草稿清理；会话终结（完成/拒绝/取消/超时/停止服务）时删除未完成文件并移除已空的临时目录；
   进程被强制终止时留下的半成品由下次接受上传时清理，旧名 `.handysend-upload-part` 与旧协议子目录
   `local-send` 作为 legacy 目录清理，
   不会触碰用户文件或已交付文件。
@@ -297,7 +298,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
   `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
   DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→
-  `uniquePath` 消歧计算最终路径 → 在 `.handysend-temp/localsend/` 下创建临时文件并 `openSync` 写 fd →
+  `uniquePath` 消歧计算最终路径 → 先把最终/临时路径写入会话草稿 → 在 `.handysend-temp/localsend/`
+  下创建临时文件并 `openSync` 写 fd →
   `registerRecvFileFd` 预注册（携带最终路径）→ 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd
   构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱），写入完成后由结果任务 `rename` 到最终路径；
   会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。

@@ -199,14 +199,31 @@ function needsTextDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>)
   return false;
 }
 
+// 同一批内同名文件（来自不同目录）各自落盘：在 uniquePath 的基础上再避开本批
+// 已占用的路径，避免两遍式准备中临时文件尚未创建时选中同一最终路径。
+function uniqueBatchPath(dir: string, fileName: string,
+  reserved: Record<string, boolean>): string {
+  let candidate: string = uniquePath(dir, fileName);
+  let serial: number = 1;
+  while (reserved[dir + '/' + candidate] === true) {
+    let dot: number = fileName.lastIndexOf('.');
+    let stem: string = dot > 0 ? fileName.substring(0, dot) : fileName;
+    let ext: string = dot > 0 ? fileName.substring(dot) : '';
+    candidate = uniquePath(dir, stem + ' (' + serial + ')' + ext);
+    serial++;
+  }
+  return candidate;
+}
+
 // 预注册某会话待接收文件的直写目标：净化/去重文件名 → 计算最终路径 →
-// 在临时区创建文件并 open 写 fd → registerRecvFileFd；同时把最终路径回写到
-// 传入的条目（filePath/fileName，供历史/相册/文本使用）并返回 fileId → 最终路径映射。
+// 先把路径写回条目并由调用方落草稿 → 在临时区创建文件并 open 写 fd →
+// registerRecvFileFd；返回 fileId → 最终路径映射。
 // 文本消息条目落应用私有接收文本目录（filesDir/text_recv/），普通文件落用户设置的接收目录
 // （默认 Download/<包名>/），重名规则一致（自动加序号、不覆盖）。
 // 任一文件准备失败 → 回滚已建临时文件并关闭已注册 fd，返回 undefined（调用方拒绝会话）。
 export async function prepareRecvTargets(sessionId: string, fileIds: Array<string>,
-  entries: Array<ReceivedFileEntry> | undefined): Promise<Record<string, string> | undefined> {
+  entries: Array<ReceivedFileEntry> | undefined,
+  beforeCreate?: () => void): Promise<Record<string, string> | undefined> {
   if (entries === undefined || entries.length === 0 || fileIds.length === 0) {
     return undefined;
   }
@@ -222,42 +239,61 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
   if (needText && textDir.length === 0) {
     return undefined;
   }
+  interface RecvTargetPlan {
+    fileId: string
+    destPath: string
+    tempPath: string
+  }
+  let plans: Array<RecvTargetPlan> = [];
   let perFile: Record<string, string> = {};
-  let perTempFile: Record<string, string> = {};
-  let allOk: boolean = true;
+  let reserved: Record<string, boolean> = {};
+  // 第一遍：只计算路径，不创建临时文件；先把路径写回条目，
+  // 使调用方能在任何字节写入前把最终/临时路径落进草稿。
   for (let i = 0; i < fileIds.length; i++) {
     let fileId: string = fileIds[i];
     let entryIdx: number = findEntryIndex(entries, fileId);
     if (entryIdx < 0) {
-      allOk = false;
-      continue;
+      return undefined;
     }
     let entry: ReceivedFileEntry = entries[entryIdx];
     // 文本消息条目落接收文本目录（沙箱），其余落接收目录
     let dirPath: string = isRecvTextEntry(entry) ? textDir : downloadDir;
-    let destPath: string = '';
-    let tempPath: string = '';
+    let name: string = nativeSanitizeFileName(entry.fileName);
+    if (name.length === 0) {
+      name = 'file_' + Date.now();
+    }
+    let uniqueName: string = uniqueBatchPath(dirPath, name, reserved);
+    reserved[dirPath + '/' + uniqueName] = true;
+    let destPath: string = dirPath + '/' + uniqueName;
+    plans.push({
+      fileId: fileId,
+      destPath: destPath,
+      tempPath: tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
+    });
+    // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
+    entry.filePath = destPath;
+    entry.fileName = uniqueName;
+    perFile[fileId] = destPath;
+  }
+  // 路径确定、临时文件尚未创建：调用方在此落草稿，强杀后仍可按草稿清理。
+  if (beforeCreate !== undefined) {
+    beforeCreate();
+  }
+  // 第二遍：创建临时文件并注册直写 fd。
+  let perTempFile: Record<string, string> = {};
+  let allOk: boolean = true;
+  for (let i = 0; i < plans.length; i++) {
+    let plan: RecvTargetPlan = plans[i];
     let opened: fs.File | undefined = undefined;
     try {
-      let name: string = nativeSanitizeFileName(entry.fileName);
-      if (name.length === 0) {
-        name = 'file_' + Date.now();
-      }
-      let uniqueName: string = uniquePath(dirPath, name);
-      destPath = dirPath + '/' + uniqueName;
-      tempPath = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND);
-      let tempDir: string = dirNameOf(tempPath);
+      let tempDir: string = dirNameOf(plan.tempPath);
       if (tempDir.length > 0 && !fs.accessSync(tempDir)) {
         fs.mkdirSync(tempDir, true);
       }
-      opened = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
+      opened = fs.openSync(plan.tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
         fs.OpenMode.TRUNC);
-      nativeRegisterRecvFileFd(sessionId, fileId, opened.fd, destPath);
-      perFile[fileId] = destPath;
-      perTempFile[fileId] = tempPath;
-      // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
-      entry.filePath = destPath;
-      entry.fileName = uniqueName;
+      nativeRegisterRecvFileFd(sessionId, plan.fileId, opened.fd, plan.destPath);
+      perTempFile[plan.fileId] = plan.tempPath;
       // 注册成功后文件句柄所有权移交原生侧，本层不再关闭
       opened = undefined;
     } catch (e) {
@@ -270,23 +306,22 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
         }
         opened = undefined;
       }
-      if (tempPath.length > 0) {
-        try {
-          fs.unlinkSync(tempPath);
-        } catch (_unlinkErr) {
-        }
-        // 回滚后尝试移除已空的协议子目录与临时区根目录
-        let tempDir: string = dirNameOf(tempPath);
-        removeDirectoryIfEmpty(tempDir);
-        let tempRoot: string = dirNameOf(tempDir);
-        if (tempRoot.length > 0) {
-          removeDirectoryIfEmpty(tempRoot);
-        }
+      try {
+        fs.unlinkSync(plan.tempPath);
+      } catch (_unlinkErr) {
       }
-      logger.warn('准备接收目标失败 fileId=' + fileId + '：' + e);
+      // 回滚后尝试移除已空的协议子目录与临时区根目录
+      let tempDir: string = dirNameOf(plan.tempPath);
+      removeDirectoryIfEmpty(tempDir);
+      let tempRoot: string = dirNameOf(tempDir);
+      if (tempRoot.length > 0) {
+        removeDirectoryIfEmpty(tempRoot);
+      }
+      logger.warn('准备接收目标失败 fileId=' + plan.fileId + '：' + e);
+      break;
     }
   }
-  if (!allOk || Object.keys(perFile).length !== fileIds.length) {
+  if (!allOk) {
     // 回滚：关闭已注册 fd + 删除已创建的临时半成品（最终路径尚未出现，不碰交付物）
     nativeDiscardRecvFileFds(sessionId);
     let keys: Array<string> = Object.keys(perTempFile);

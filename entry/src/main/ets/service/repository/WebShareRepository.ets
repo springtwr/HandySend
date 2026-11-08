@@ -1471,8 +1471,7 @@ setWebUploadInvokers(
  * 创建网页上传的临时占位文件：临时文件存在即代表对应最终文件名已被占用，
  * 其他协议的同名接收会据此选择带序号的文件名，避免提交前互相截断。
  */
-function reserveWebUploadTempPath(finalPath: string): string | undefined {
-  let tempPath: string = tempPathForFinal(finalPath, TEMP_SUBDIR_WEB);
+function createWebUploadTempPlaceholder(tempPath: string): boolean {
   let tempDir: string = dirNameOf(tempPath);
   let file: fs.File | undefined = undefined;
   try {
@@ -1481,10 +1480,10 @@ function reserveWebUploadTempPath(finalPath: string): string | undefined {
     }
     file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY |
       fs.OpenMode.TRUNC);
-    return tempPath;
+    return true;
   } catch (e) {
     logger.warn('创建网页上传临时占位失败：' + tempPath + '：' + String(e));
-    return undefined;
+    return false;
   } finally {
     if (file !== undefined) {
       try {
@@ -1562,7 +1561,7 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     path: string
   }
   let targets: Array<UploadTargetJson> = [];
-  let tempPlaceholders: Array<string> = [];
+  let tempPaths: Array<string> = [];
   // 同一批内同名文件（来自不同目录）也要各自落盘，不能共用同一目标路径
   let reserved: Record<string, boolean> = {};
   for (let i = 0; i < session.files.length; i++) {
@@ -1570,7 +1569,6 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     let dir: string = isTextMessage ? textDir : downloadDir;
     if (dir.length === 0) {
       logger.warn('上传落盘目录缺失 token=' + redactSessionToken(token));
-      releaseWebUploadTempPaths(tempPlaceholders);
       return false;
     }
     let fileName: string = uniquePath(dir, f.fileName);
@@ -1584,28 +1582,11 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     }
     reserved[dir + '/' + fileName] = true;
     let finalPath: string = dir + '/' + fileName;
-    let tempPath: string | undefined = reserveWebUploadTempPath(finalPath);
-    if (tempPath === undefined) {
-      releaseWebUploadTempPaths(tempPlaceholders);
-      return false;
-    }
-    tempPlaceholders.push(tempPath);
     targets.push({ fileId: f.fileId, path: finalPath });
+    tempPaths.push(tempPathForFinal(finalPath, TEMP_SUBDIR_WEB));
   }
-  let applied: number = 0;
-  try {
-    applied = nativeSetWebUploadTargets(token, JSON.stringify(targets));
-  } catch (e) {
-    logger.error('下发上传目标失败 token=' + redactSessionToken(token) + '：' + e);
-    releaseWebUploadTempPaths(tempPlaceholders);
-    return false;
-  }
-  if (applied !== targets.length) {
-    logger.warn('上传目标部分未生效 applied=' + applied);
-    releaseWebUploadTempPaths(tempPlaceholders);
-    return false;
-  }
-  // 最终路径确定后同步到草稿，强杀恢复据此判断文件是否已完成。
+  // 最终/临时路径确定后先同步到草稿，再创建占位文件：
+  // 强杀发生在占位创建与下发目标之间时，恢复仍能按草稿路径清理。
   let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
   if (draft !== undefined) {
     for (let i = 0; i < targets.length; i++) {
@@ -1621,6 +1602,27 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     }
     draft.updatedAt = Date.now();
     saveSessionDraft(draft);
+  }
+  let tempPlaceholders: Array<string> = [];
+  for (let i = 0; i < tempPaths.length; i++) {
+    if (!createWebUploadTempPlaceholder(tempPaths[i])) {
+      releaseWebUploadTempPaths(tempPlaceholders);
+      return false;
+    }
+    tempPlaceholders.push(tempPaths[i]);
+  }
+  let applied: number = 0;
+  try {
+    applied = nativeSetWebUploadTargets(token, JSON.stringify(targets));
+  } catch (e) {
+    logger.error('下发上传目标失败 token=' + redactSessionToken(token) + '：' + e);
+    releaseWebUploadTempPaths(tempPlaceholders);
+    return false;
+  }
+  if (applied !== targets.length) {
+    logger.warn('上传目标部分未生效 applied=' + applied);
+    releaseWebUploadTempPaths(tempPlaceholders);
+    return false;
   }
   return true;
 }

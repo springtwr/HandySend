@@ -113,24 +113,29 @@ let netConnection: connection.NetConnection | null = null;
  * 每次 Ability 初始化都尝试恢复会话草稿。
  * 强杀/划掉 Ability 不一定会结束进程：进程存活时 Ability 重建会走 initAppService 早退分支，
  * 只在首次初始化时恢复会漏掉这类“任务刚发起就退出”的场景。恢复服务会跳过仍活跃的会话。
- * 同步执行，保证任务列表首次构建前历史已补写；草稿数量很少，IO 可接受。
+ * 先等待接收目录授权激活再清扫与恢复：自定义目录在进程重启后需要重新激活持久授权，
+ * 否则按路径访问临时区会失败而被静默跳过。恢复本身同步执行，草稿数量很少，IO 可接受。
  */
 function recoverSessionDraftsOnInit(): void {
-  try {
-    // 先清扫接收临时区：同步部分在首次 await 前完成，覆盖草稿涉及的目录与
-    // 旧版遗留目录；接收目录解析完成后补扫无草稿可推导的残留。
-    sweepReceiveTempWorkspacesOnInit().catch((e: Error) => {
-      logger.warn('清扫接收临时区失败：' + e.message);
-    });
-    let recovered = recoverSessionDrafts();
-    logger.debug('会话草稿恢复：草稿=' + recovered.drafts + ' 成功=' + recovered.recovered +
-      ' 失败=' + recovered.failed);
-    if (recovered.recovered > 0) {
-      notifyChange();
+  activateConfiguredReceiveDirectory().catch((e: Error) => {
+    logger.warn('激活接收目录授权失败：' + e.message);
+  }).then((): void => {
+    try {
+      // 先清扫接收临时区：同步部分在首次 await 前完成，覆盖草稿涉及的目录与
+      // 旧版遗留目录；接收目录解析完成后补扫无草稿可推导的残留。
+      sweepReceiveTempWorkspacesOnInit().catch((e: Error) => {
+        logger.warn('清扫接收临时区失败：' + e.message);
+      });
+      let recovered = recoverSessionDrafts();
+      logger.debug('会话草稿恢复：草稿=' + recovered.drafts + ' 成功=' + recovered.recovered +
+        ' 失败=' + recovered.failed);
+      if (recovered.recovered > 0) {
+        notifyChange();
+      }
+    } catch (e) {
+      logger.warn('会话草稿恢复失败：' + String(e));
     }
-  } catch (e) {
-    logger.warn('会话草稿恢复失败：' + String(e));
-  }
+  });
 }
 
 // ════════════════════════════════════════════════════════════
