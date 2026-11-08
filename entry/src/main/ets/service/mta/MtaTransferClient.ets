@@ -3,7 +3,8 @@
  *
  * 负责与发送方建立 WebSocket 连接、完成版本协商、接收 sendRequest 并回 ack，
  * 以及驱动接收下载：下载、解压与落盘全部由 Rust 完成（`nativeMtaReceiveDownload`），
- * 本类仅调用入口、订阅 `mtaReceiveProgress` 事件并消费返回的落盘元数据。
+ * 本类仅调用入口、订阅 `mtaReceiveProgress` / `mtaEntryCommitted` 事件并消费
+ * 返回的落盘元数据与已提交条目。
  * WS 使用 skipServerCertVerification 跳过自签名证书校验；消息格式 `type:id:name?json`。
  */
 
@@ -457,7 +458,7 @@ export class MtaTransferClient {
     return metas;
   }
 
-  /** 取消当前下载：经 Rust 取消令牌中断；Rust 负责回滚本次已写入的文件 */
+  /** 取消当前下载：经 Rust 取消令牌中断；Rust 清理未提交临时文件，已提交条目保留 */
   cancelDownload(): void {
     let taskId = this.activeTaskId;
     if (taskId.length === 0) {

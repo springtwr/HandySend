@@ -51,7 +51,7 @@ export interface SessionRecoveryResult {
   files: number
 }
 
-/** 启动恢复入口：同步读取与校验，由调用方放到异步任务中执行。 */
+/** 启动恢复入口：同步读取、校验并补写历史，调用方需在可接受同步 IO 的时机执行。 */
 export function recoverSessionDrafts(): SessionRecoveryResult {
   cleanupSessionDraftTmp();
   let drafts: Array<SessionDraft> = loadAllSessionDrafts();

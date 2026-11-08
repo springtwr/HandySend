@@ -108,7 +108,7 @@ impl Default for ReceiveTimeouts {
 /// 返回落盘元数据。
 ///
 /// 失败（含取消、超限、损坏）时只删除未提交临时文件；已完成条目保留为部分
-/// 交付物，不删除最终路径。与网络层解耦，便于对解析/落盘/回滚做单元测试。
+/// 交付物，不删除最终路径。与网络层解耦，便于对解析/落盘/清理做单元测试。
 /// `progress` 累计解压产出字节，`written` 累计实际写盘字节（均供接收诊断）。
 pub fn extract_zip_to_dir<R: Read>(
     reader: R,
@@ -570,7 +570,7 @@ fn sniff_image_extension(bytes: &[u8]) -> &'static str {
     "bin"
 }
 
-/// 逐条目写入目标目录下的临时区，提交后原子改名；记录未提交临时文件供失败回滚。
+/// 逐条目写入目标目录下的临时区，提交后原子改名；记录未提交临时文件供失败清理。
 struct FileEntryHandler<'a, F: FnMut(&ReceivedEntry)> {
     /// 目标目录
     dir: PathBuf,
@@ -1018,7 +1018,7 @@ mod tests {
     fn extract_rolls_back_on_corrupt_zip() {
         let dir = temp_dir("rollback");
         let out = dir.join("out");
-        // 首条完整写出后立即截断：解析出错并回滚已写文件
+        // 首条完整写出后立即截断：解析出错并清理未提交临时文件
         let mut zip_bytes = stored_zip("a.txt", b"hello mta");
         // 本地头 30 字节 + 名称 "1/a.txt" 7 字节，保留部分条目数据后截断
         zip_bytes.truncate(30 + "1/a.txt".len() + 3);
@@ -1033,7 +1033,7 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("a.txt").exists(), "失败后应回滚已写入文件");
+        assert!(!out.join("a.txt").exists(), "未提交文件应被清理");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1055,7 +1055,7 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("a.txt").exists(), "取消后应回滚已写入文件");
+        assert!(!out.join("a.txt").exists(), "未提交文件应被清理");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1159,7 +1159,7 @@ mod tests {
             ("big.jpg", big.as_slice()),
             ("next.bin", b"next".as_slice()),
         ]);
-        // 截断到首条目数据中途：解析失败应回滚已写入的大文件
+        // 截断到首条目数据中途：解析失败应清理未提交的大文件
         zip_bytes.truncate(30 + "1/big.jpg".len() + WRITE_BUFFER_SIZE / 2);
         let progress = AtomicU64::new(0);
         let written = AtomicU64::new(0);
@@ -1172,7 +1172,7 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("big.jpg").exists(), "失败后应回滚已写入的大文件");
+        assert!(!out.join("big.jpg").exists(), "未提交文件应被清理");
         let _ = fs::remove_dir_all(&dir);
     }
 

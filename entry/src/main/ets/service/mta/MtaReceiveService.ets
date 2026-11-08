@@ -1552,7 +1552,7 @@ export class MtaReceiveService {
       // 断开 P2P、关闭 WS 并自动重启广播，支持连续接收
       await this.completeAndRestart();
     } catch (e) {
-      // Rust 侧已在失败/取消时回滚本次已写入的目标文件，此处仅复位会话
+      // Rust 只清理未提交临时文件，已提交条目通过逐条目事件与结构化结果保留
       this.appendLog('下载', '下载/保存失败：' + String(e), LogLevels.ERROR);
       this.setError('下载/保存失败: ' + String(e));
       // 用户主动取消时回送 user refuse：让发送端得到明确结果，而非仅凭连接关闭推断
