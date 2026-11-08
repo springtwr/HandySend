@@ -1703,6 +1703,12 @@ async fn test_upload_flow_to_disk() {
     assert!(!state.uploads.lock().unwrap().contains(&token));
     assert!(landed.exists(), "完成回执不应删除已落盘文件");
     assert_eq!(std::fs::read(&landed).unwrap(), content);
+    let part_dir = state
+        .upload_dir
+        .lock()
+        .unwrap()
+        .join(".handysend-upload-part");
+    assert!(!part_dir.exists(), "会话终结后空临时目录应被删除");
     handle.abort();
 }
 
@@ -1874,6 +1880,12 @@ async fn test_upload_size_enforcement() {
     )
     .await;
     assert_eq!(status, 413);
+    let part_dir = state
+        .upload_dir
+        .lock()
+        .unwrap()
+        .join(".handysend-upload-part");
+    assert!(!part_dir.exists(), "超量失败后空临时目录应被删除");
     // 短包。
     let token = prepare_upload_accepted(
         addr,
@@ -1889,6 +1901,7 @@ async fn test_upload_size_enforcement() {
     )
     .await;
     assert_eq!(status, 400);
+    assert!(!part_dir.exists(), "短包失败后空临时目录应被删除");
     handle.abort();
 }
 

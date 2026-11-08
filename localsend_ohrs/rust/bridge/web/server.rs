@@ -45,7 +45,10 @@ use crate::bridge::web::session::{
     FileSource, OfferedFile, RetainedFile, SessionEndReason, SessionStore, SharedFile,
     SharedFileTable, TokenSession,
 };
-use crate::bridge::web::upload::{part_path, UploadFile, UploadSession, UploadState, UploadStore};
+use crate::bridge::web::upload::{
+    cleanup_session_parts, part_path, remove_part_file_and_dir, UploadFile, UploadSession,
+    UploadState, UploadStore,
+};
 use crate::bridge::web::zip_plan;
 
 /// 响应体类型（统一装箱，便于在同一路由返回空体与流式体）。
@@ -753,16 +756,16 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     diff == 0
 }
 
-/// 删除上传会话未完成的临时文件（终结/拒绝/过期路径统一调用）。
+/// 删除上传会话未完成的临时文件，并移除已空的临时目录。
+///
+/// 文件完成回执、取消、超时、页面关闭、停止服务、换批等终结路径统一
+/// 调用；`UploadStore::expire` 直接调用同一清理函数。
 ///
 /// 只删应用保留临时区里的半成品：已完成条目已被改名为最终交付文件，
-/// 会话终结不能删除用户已经收到的内容。
+/// 会话终结不能删除用户已经收到的内容。目录非空说明同目录还有其他
+/// 活跃上传，删除失败时保留。
 pub(crate) fn remove_tmp_files(session: &UploadSession) {
-    for file in session.files.values() {
-        if !file.done {
-            let _ = std::fs::remove_file(part_path(&file.path));
-        }
-    }
+    cleanup_session_parts(session);
 }
 
 /// 在已绑定的监听器上提供 HTTP/1 服务，直到任务被 abort。
@@ -2777,7 +2780,7 @@ async fn receive_upload(
     let action = {
         let mut uploads = lock(&state.uploads);
         let Some(session) = uploads.sessions.get_mut(&token_owned) else {
-            let _ = std::fs::remove_file(&tmp_path);
+            remove_part_file_and_dir(&tmp_path);
             log::debug!(
                 "上传收尾时会话已结束 token={} file={}",
                 redact_token(&token_owned),
@@ -2786,7 +2789,7 @@ async fn receive_upload(
             return text_response(StatusCode::FORBIDDEN, "无效 token");
         };
         let Some(entry) = session.files.get_mut(&file_id_owned) else {
-            let _ = std::fs::remove_file(&tmp_path);
+            remove_part_file_and_dir(&tmp_path);
             log::debug!(
                 "上传收尾时文件条目已移除 token={} file={}",
                 redact_token(&token_owned),
@@ -2799,7 +2802,7 @@ async fn receive_upload(
         match outcome {
             UploadOutcome::Complete { received } => {
                 if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
-                    let _ = std::fs::remove_file(&tmp_path);
+                    remove_part_file_and_dir(&tmp_path);
                     session.files.remove(&file_id_owned);
                     log::error!(
                         "上传文件落盘失败 token={} file={} path={}: {e}",
@@ -2815,17 +2818,17 @@ async fn receive_upload(
                 }
             }
             UploadOutcome::Overflow => {
-                let _ = std::fs::remove_file(&tmp_path);
+                remove_part_file_and_dir(&tmp_path);
                 session.files.remove(&file_id_owned);
                 UploadFinish::Overflow
             }
             UploadOutcome::Short { received } => {
                 entry.received = received;
-                let _ = std::fs::remove_file(&tmp_path);
+                remove_part_file_and_dir(&tmp_path);
                 UploadFinish::Short { received }
             }
             UploadOutcome::BodyError => {
-                let _ = std::fs::remove_file(&tmp_path);
+                remove_part_file_and_dir(&tmp_path);
                 UploadFinish::Gone("请求体读取失败")
             }
         }
@@ -2902,7 +2905,7 @@ async fn stream_upload_body(
     let mut received: u64 = 0;
     let mut throttle = ProgressThrottle::new();
     loop {
-        // 应用侧结束任务会移除上传会话：立即停止写入并清理 `.part`。
+        // 应用侧结束任务会移除上传会话：立即停止写入并清理临时文件。
         if !state.upload_session_active(token) {
             log::debug!(
                 "上传会话已结束，停止写入 token={} file={}",

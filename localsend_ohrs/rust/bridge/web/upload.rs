@@ -6,9 +6,10 @@
 //! Download 与接收历史。接受即全量（不再逐文件挑）。
 //!
 //! 未完成的字节写在目标目录下的应用保留子目录
-//! `.handysend-upload-part/`，完成后同目录原子改名。子目录是
-//! 本应用独占的临时区，下次接受上传时可安全清理上次进程被杀
-//! 遗留的半成品，不会触碰目标目录里的用户文件。
+//! `.handysend-upload-part/`，完成后同目录原子改名。会话终结时
+//! 删除未完成文件并移除已空的子目录；子目录是本应用独占的临时区，
+//! 进程被强制终止时遗留的半成品在下次接受上传时清理，不会触碰
+//! 目标目录里的用户文件。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -65,7 +66,7 @@ pub struct UploadFile {
     /// 已接收字节。
     pub received: u64,
     /// 最终落盘路径（确认前由 ArkTS 指定；缺省为上传目录）。
-    /// 完成前写同名 `.part` 临时文件，完成后改名（同目录原子操作）。
+    /// 完成前写保留子目录中的同名临时文件，完成后改名（同目录原子操作）。
     pub path: String,
     /// 是否已完成。
     pub done: bool,
@@ -154,18 +155,15 @@ impl UploadStore {
         Some(session)
     }
 
-    /// 过期：移除会话、清理未完成的临时文件并丢弃决策发送端（等待方收 408）。
+    /// 过期：移除会话、清理未完成的临时文件并移除空临时目录，
+    /// 丢弃决策发送端（等待方收 408）。
     pub fn expire(&mut self, token: &str) -> bool {
         let Some(session) = self.sessions.remove(token) else {
             return false;
         };
         // 只清理未完成的临时文件：已完成条目已改名为最终交付文件，
         // 不能因为会话过期把用户已收到的文件删掉。
-        for file in session.files.values() {
-            if !file.done {
-                let _ = std::fs::remove_file(part_path(&file.path));
-            }
-        }
+        cleanup_session_parts(&session);
         true
     }
 
@@ -262,6 +260,37 @@ impl UploadStore {
             }
         }
         ended
+    }
+}
+
+/// 清理会话未完成的临时文件，并尝试移除已空的临时目录。
+///
+/// 已完成条目已改名为最终交付文件，不能删除；目录非空说明同目录
+/// 还有其他活跃上传，删除失败时保留，由最后一个结束的会话清理。
+pub(crate) fn cleanup_session_parts(session: &UploadSession) {
+    let mut dirs: HashSet<PathBuf> = HashSet::new();
+    for file in session.files.values() {
+        if file.path.is_empty() {
+            continue;
+        }
+        if !file.done {
+            let _ = std::fs::remove_file(part_path(&file.path));
+        }
+        dirs.insert(part_dir(&file.path));
+    }
+    for dir in dirs {
+        let _ = std::fs::remove_dir(&dir);
+    }
+}
+
+/// 删除未完成的临时文件，并尝试移除已空的临时目录。
+///
+/// 用于上传失败分支：文件条目可能随后被移出会话，届时无法再从清单
+/// 反推临时目录，因此在这里顺手清理。
+pub(crate) fn remove_part_file_and_dir(path: &Path) {
+    let _ = std::fs::remove_file(path);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::remove_dir(dir);
     }
 }
 
@@ -396,6 +425,80 @@ mod tests {
             part_dir("/dl/dir/a.txt"),
             PathBuf::from("/dl/dir").join(PART_DIR_NAME)
         );
+    }
+
+    #[test]
+    fn test_cleanup_session_parts_removes_empty_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "handysend-part-cleanup-empty-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let final_path = root.join("a.txt").to_string_lossy().into_owned();
+        let part = part_path(&final_path);
+        std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+        std::fs::write(&part, b"half").unwrap();
+
+        let (mut session, _rx) = pending_session("up-clean-empty");
+        session
+            .files
+            .insert("f1".to_string(), upload_file("f1", &final_path));
+        cleanup_session_parts(&session);
+
+        assert!(!part.exists(), "未完成临时文件应被删除");
+        assert!(!part_dir(&final_path).exists(), "空临时目录应被删除");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_session_parts_keeps_non_empty_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "handysend-part-cleanup-nonempty-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let final_path = root.join("a.txt").to_string_lossy().into_owned();
+        let dir = part_dir(&final_path);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mine = part_path(&final_path);
+        let other = dir.join("other.txt");
+        std::fs::write(&mine, b"half").unwrap();
+        std::fs::write(&other, b"inflight").unwrap();
+
+        let (mut session, _rx) = pending_session("up-clean-nonempty");
+        session
+            .files
+            .insert("f1".to_string(), upload_file("f1", &final_path));
+        cleanup_session_parts(&session);
+
+        assert!(!mine.exists(), "本会话的临时文件应被删除");
+        assert!(other.exists(), "其他活跃上传的临时文件不能删");
+        assert!(dir.exists(), "目录非空时应保留");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_session_parts_keeps_delivered_file() {
+        let root = std::env::temp_dir().join(format!(
+            "handysend-part-cleanup-done-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let final_path = root.join("a.txt").to_string_lossy().into_owned();
+        std::fs::write(&final_path, b"done").unwrap();
+
+        let (mut session, _rx) = pending_session("up-clean-done");
+        let mut file = upload_file("f1", &final_path);
+        file.done = true;
+        session.files.insert("f1".to_string(), file);
+        cleanup_session_parts(&session);
+
+        assert!(
+            std::path::Path::new(&final_path).exists(),
+            "已交付文件不能删"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
