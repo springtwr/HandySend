@@ -2079,6 +2079,222 @@
     {
       "name": "log_file_unavailable",
       "value": "File logging unavailable; showing temporary memory logs"
+    },
+    {
+      "name": "portal_title",
+      "value": "Remote transfer"
+    },
+    {
+      "name": "portal_add",
+      "value": "Add site"
+    },
+    {
+      "name": "portal_add_title",
+      "value": "Add site"
+    },
+    {
+      "name": "portal_edit_title",
+      "value": "Edit site"
+    },
+    {
+      "name": "portal_edit",
+      "value": "Edit"
+    },
+    {
+      "name": "portal_name_label",
+      "value": "Name"
+    },
+    {
+      "name": "portal_name_placeholder",
+      "value": "e.g. UpFile"
+    },
+    {
+      "name": "portal_url_label",
+      "value": "Address"
+    },
+    {
+      "name": "portal_url_placeholder",
+      "value": "https://example.com"
+    },
+    {
+      "name": "portal_need_login",
+      "value": "Requires sign-in"
+    },
+    {
+      "name": "portal_large_file",
+      "value": "Supports large files"
+    },
+    {
+      "name": "portal_restore_default",
+      "value": "Restore defaults"
+    },
+    {
+      "name": "portal_restore_title",
+      "value": "Restore default sites?"
+    },
+    {
+      "name": "portal_restore_message",
+      "value": "Deleted preset sites will come back. Your added sites stay."
+    },
+    {
+      "name": "portal_restore_success",
+      "value": "Default sites restored"
+    },
+    {
+      "name": "portal_restore_failed",
+      "value": "Could not restore defaults. Check your network."
+    },
+    {
+      "name": "portal_delete_title",
+      "value": "Delete site?"
+    },
+    {
+      "name": "portal_delete_message",
+      "value": "Delete \"%s\"?"
+    },
+    {
+      "name": "portal_delete_confirm",
+      "value": "Delete"
+    },
+    {
+      "name": "portal_cancel",
+      "value": "Cancel"
+    },
+    {
+      "name": "portal_save",
+      "value": "Save"
+    },
+    {
+      "name": "portal_saved",
+      "value": "Site added"
+    },
+    {
+      "name": "portal_removed",
+      "value": "Site deleted"
+    },
+    {
+      "name": "portal_badge_no_login",
+      "value": "No sign-in"
+    },
+    {
+      "name": "portal_badge_login",
+      "value": "Sign-in"
+    },
+    {
+      "name": "portal_badge_p2p",
+      "value": "P2P"
+    },
+    {
+      "name": "portal_badge_large_file",
+      "value": "Large files"
+    },
+    {
+      "name": "portal_badge_temporary",
+      "value": "Temporary"
+    },
+    {
+      "name": "portal_invalid_url",
+      "value": "Address must start with http:// or https://"
+    },
+    {
+      "name": "portal_name_required",
+      "value": "Enter a name"
+    },
+    {
+      "name": "portal_limit_reached",
+      "value": "You can add up to 30 sites"
+    },
+    {
+      "name": "portal_duplicate_url",
+      "value": "This address is already added"
+    },
+    {
+      "name": "portal_site_missing",
+      "value": "The site no longer exists. Refresh the list."
+    },
+    {
+      "name": "portal_open_failed",
+      "value": "Could not open the site"
+    },
+    {
+      "name": "portal_help",
+      "value": "Help"
+    },
+    {
+      "name": "portal_help_1",
+      "value": "Remote transfer services are provided by the third-party sites in the list. Tapping a card opens the corresponding site in your system browser. Site content, account, and file security are the responsibility of the third party; the app is not responsible for availability, security, or data storage."
+    },
+    {
+      "name": "portal_help_2",
+      "value": "How each site works may differ. Follow the instructions provided on the site."
+    },
+    {
+      "name": "portal_help_3",
+      "value": "Long-press a card to edit or delete a site; tap the plus card at the end of the list to add one."
+    },
+    {
+      "name": "portal_help_4",
+      "value": "Tap the restore button in the top-right corner to restore the built-in recommended sites."
+    },
+    {
+      "name": "portal_help_5",
+      "value": "Badges"
+    },
+    {
+      "name": "portal_help_5_1",
+      "value": "No sign-in / Sign-in: whether the site requires an account"
+    },
+    {
+      "name": "portal_help_5_2",
+      "value": "Large files: the site supports large file transfers"
+    },
+    {
+      "name": "portal_help_5_3",
+      "value": "Temporary: files transferred on the site are deleted automatically when they expire"
+    },
+    {
+      "name": "portal_help_5_4",
+      "value": "P2P: direct peer-to-peer transfer. Both sides must be online at the same time, and files go directly to the receiver without passing through any server."
+    },
+    {
+      "name": "portal_risk_title",
+      "value": "Third-party site risk notice"
+    },
+    {
+      "name": "portal_risk_intro",
+      "value": "Remote file transfer services are provided by the third-party sites built into the app. Tapping a site opens it in your system browser. Before continuing, please confirm you understand:"
+    },
+    {
+      "name": "portal_risk_1",
+      "value": "Site content, account, and file security are the responsibility of the third-party site. The app is not responsible for site availability, security, or data storage."
+    },
+    {
+      "name": "portal_risk_2",
+      "value": "Transferred files may be stored or forwarded by the third-party site. Do not transfer sensitive information."
+    },
+    {
+      "name": "portal_risk_3",
+      "value": "Sites may change, become unavailable, or adjust their rules. Follow the instructions on the site."
+    },
+    {
+      "name": "portal_risk_decline",
+      "value": "Decline"
+    },
+    {
+      "name": "portal_risk_accept",
+      "value": "Agree and continue"
+    },
+    {
+      "name": "portal_open_confirm_title",
+      "value": "Open in browser?"
+    },
+    {
+      "name": "portal_open_confirm_message",
+      "value": "Open \"%s\" in your system browser?\n%s"
+    },
+    {
+      "name": "portal_open_confirm_action",
+      "value": "Open"
     }
   ]
 }

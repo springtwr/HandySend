@@ -36,6 +36,7 @@ import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 import HistorySegmentsTest from './model/HistorySegmentsTest.test'
 import WebAddressTest from './model/WebAddressTest.test'
+import PortalSiteTest from './model/PortalSiteTest.test'
 import WebSettingsTest from './model/WebSettingsTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
@@ -137,6 +138,7 @@ export default function testsuite() {
   SendProgressTest()
   DragDropParserTest()
   WebAddressTest()
+  PortalSiteTest()
   WebSettingsTest()
 
   // ── utils/ 迁移测试套件 ──
