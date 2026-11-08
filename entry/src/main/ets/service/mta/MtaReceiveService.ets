@@ -1269,10 +1269,6 @@ export class MtaReceiveService {
   private writeReceiveDraft(request: ReceiveRequest, stage: SessionStage,
     targetDir: string = ''): void {
     let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, request.taskId);
-    // 待确认阶段可能以任务 ID 回退保存草稿；进入活动阶段时先移除旧键，避免恢复出重复任务。
-    if (stage === SessionStage.active) {
-      removeSessionDraft(request.taskId);
-    }
     let isText: boolean = request.textContent.length > 0;
     let fileName: string = request.fileName.length > 0 ? request.fileName :
       (isText ? MTA_SHARED_TEXT_FILE_NAME : 'mta-receive');
@@ -1315,7 +1311,11 @@ export class MtaReceiveService {
       targetDir: targetDir.length > 0 ? targetDir : undefined,
       capabilities: unified !== undefined ? unified.capabilities : undefined
     };
-    saveSessionDraft(draft);
+    // 先写新草稿，成功后再移除旧键：保存失败时仍保留待确认阶段的恢复锚点。
+    if (saveSessionDraft(draft) && stage === SessionStage.active &&
+      draft.sessionId !== request.taskId) {
+      removeSessionDraft(request.taskId);
+    }
   }
 
   /** 下载成功后把实际落盘条目写回草稿，随后写历史并删除草稿。 */
