@@ -518,6 +518,46 @@ mod tests {
     }
 
     #[test]
+    fn test_set_targets_keeps_other_protocol_temp() {
+        let dir = std::env::temp_dir().join(format!(
+            "handysend-part-cross-protocol-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let final_path = dir.join("new.txt").to_string_lossy().into_owned();
+        let web_temp = part_dir(&final_path);
+        std::fs::create_dir_all(&web_temp).unwrap();
+        let orphan = web_temp.join("orphan.txt");
+        std::fs::write(&orphan, b"stale").unwrap();
+        // LocalSend/MTA 正在写入的临时文件，网页清理不能触碰。
+        let local_temp =
+            temp_workspace::temp_dir(&final_path, temp_workspace::TEMP_SUBDIR_LOCAL_SEND);
+        let mta_temp = temp_workspace::temp_dir(&final_path, temp_workspace::TEMP_SUBDIR_MTA);
+        std::fs::create_dir_all(&local_temp).unwrap();
+        std::fs::create_dir_all(&mta_temp).unwrap();
+        let local_file = local_temp.join("new.txt");
+        let mta_file = mta_temp.join("new.txt");
+        std::fs::write(&local_file, b"inflight").unwrap();
+        std::fs::write(&mta_file, b"inflight").unwrap();
+
+        let mut store = UploadStore::default();
+        let (mut current, _rx) = pending_session("up-cross-protocol");
+        current
+            .files
+            .insert("f1".to_string(), upload_file("f1", &final_path));
+        store.insert_pending(current);
+
+        assert_eq!(
+            store.set_targets("up-cross-protocol", &[("f1".to_string(), final_path)]),
+            1
+        );
+        assert!(!orphan.exists(), "网页协议自身的遗留半成品应被清理");
+        assert!(local_file.exists(), "LocalSend 正在写入的临时文件不能删");
+        assert!(mta_file.exists(), "MTA 正在写入的临时文件不能删");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn test_sweep_pending_upload_timeout() {
         let mut store = UploadStore {
             timeouts: SessionTimeouts {
