@@ -1155,7 +1155,7 @@ export function hasActiveWebDownloads(): boolean {
  * SessionRecoveryService 按文件系统状态补写历史并清理临时区。
  */
 function writeWebUploadDraft(session: TransferSession): void {
-  let previous: SessionDraft | undefined = loadSessionDraft(session.protocolSessionId);
+  let previous: SessionDraft | undefined = loadSessionDraft(session.id);
   let files: Array<SessionDraftFile> = [];
   for (let i = 0; i < session.files.length; i++) {
     let f: SessionFile = session.files[i];
