@@ -152,4 +152,3 @@ export function updateOutboundDraftFile(sessionId: string, fileId: string,
 export function removeOutboundDraft(sessionId: string): void {
   removeSessionDraft(sessionId);
 }
-
