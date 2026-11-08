@@ -416,28 +416,6 @@ export struct MoreSettingsSection {
         Divider().color($r('app.color.border_light'))
 
         Row() {
-          Text($r('app.string.about_localsend_version'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_secondary'))
-            .layoutWeight(1)
-          Text(this.viewModel.localsendVersion)
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.text_primary'))
-            .fontWeight(FontWeight.Medium)
-        }
-        .width('100%')
-        .padding({
-          left: DesignTokens.space.lg,
-          right: DesignTokens.space.lg,
-          top: DesignTokens.space.sm,
-          bottom: DesignTokens.space.sm
-        })
-        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
-        .alignItems(VerticalAlign.Center)
-
-        Divider().color($r('app.color.border_light'))
-
-        Row() {
           Text($r('app.string.about_protocol_version'))
             .fontSize(DesignTokens.font.bodyM)
             .fontColor($r('app.color.text_secondary'))
