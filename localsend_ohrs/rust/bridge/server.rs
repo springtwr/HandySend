@@ -275,7 +275,8 @@ pub async fn start_server(
 /// 处理 FileUpload：取回存储的 target_tx，应答直写目标（预注册 fd 优先），跟踪进度。
 ///
 /// 目标选择规则（无沙箱回退）：
-/// - ArkTS 已在 respondTransfer 前经 register_recv_file_fd 预注册该文件 → `Fd` 直写最终位置；
+/// - ArkTS 已在 respondTransfer 前经 register_recv_file_fd 预注册该文件 → `Fd` 直写临时区，
+///   写入成功后由结果任务 `rename` 到最终位置；
 /// - 未预注册（异常时序/目标准备失败被拒绝的会话残留）→ 丢弃 target_tx 使上传失败，不落沙箱。
 async fn handle_file_upload(
     state: &Mutex<BridgeState>,
@@ -303,28 +304,36 @@ async fn handle_file_upload(
     let (progress_tx, mut progress_rx) = mpsc::channel::<u64>(16);
     let (result_tx, result_rx) = oneshot::channel();
 
-    // ohos/android 生产路径：只消费预注册 fd 直写目标，无沙箱回退；
+    // ohos/android 生产路径：只消费预注册 fd 直写临时目标，无沙箱回退；
     // 其他宿主（如桌面测试构建）不存在 Fd 变体，保留原沙箱 Path 行为以便编译与单测。
     #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
-    let target = {
+    let (target, final_path, temp_path) = {
         // 消费预注册的直写目标（若存在）；未注册则丢弃 target_tx 让本次上传失败
         let registered = lock(state)
             .recv_target_fds
             .remove(&(session_id.to_string(), file_id.to_string()));
         match registered {
             Some(recv_fd) => {
+                let final_path = recv_fd.path.clone();
+                let temp_path =
+                    crate::bridge::temp_workspace::temp_path_for(std::path::Path::new(&final_path));
                 log::debug!(
-                    "接收：fd 直接保存 session={} file={} path={}",
+                    "接收：fd 直接保存 session={} file={} path={} temp={}",
                     session_id,
                     file_id,
-                    recv_fd.path
+                    final_path,
+                    temp_path.display()
                 );
-                // fd 所有权随 from_raw_fd 移交，写入完成后关闭
-                localsend::http::server::common::save::FileUploadTarget::Fd {
-                    fd: recv_fd.fd,
-                    result_tx,
-                    progress_tx: Some(progress_tx),
-                }
+                // fd 所有权随 from_raw_fd 移交，写入完成后关闭；提交 rename 由结果任务完成
+                (
+                    localsend::http::server::common::save::FileUploadTarget::Fd {
+                        fd: recv_fd.fd,
+                        result_tx,
+                        progress_tx: Some(progress_tx),
+                    },
+                    final_path,
+                    temp_path.to_string_lossy().into_owned(),
+                )
             }
             None => {
                 log::warn!(
@@ -338,17 +347,21 @@ async fn handle_file_upload(
         }
     };
     #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
-    let target = {
+    let (target, final_path, temp_path) = {
         // 非 ohos/android 宿主：fallback 到沙箱路径写入（仅测试/桌面构建使用）；
         // 文件名先消毒，避免路径穿越写出到保存目录之外
         let safe_name = crate::bridge::identity::sanitize_file_name(file_name.to_string());
         let save_path = format!("{}{}", save_dir, safe_name);
         log::debug!("接收：save_path={}", save_path);
-        localsend::http::server::common::save::FileUploadTarget::Path {
-            path: std::path::PathBuf::from(&save_path),
-            result_tx,
-            progress_tx: Some(progress_tx),
-        }
+        (
+            localsend::http::server::common::save::FileUploadTarget::Path {
+                path: std::path::PathBuf::from(&save_path),
+                result_tx,
+                progress_tx: Some(progress_tx),
+            },
+            save_path,
+            String::new(),
+        )
     };
     #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
     if let Err(localsend::http::server::common::save::FileUploadTarget::Fd { fd, .. }) =
@@ -413,23 +426,46 @@ async fn handle_file_upload(
         );
     });
 
-    // 结果跟踪：写入成功才上报 100%
+    // 结果跟踪：临时文件提交成功后上报 100%
     let event_tx_result = event_tx.clone();
     tokio::spawn(async move {
         match result_rx.await {
             Ok(Ok(())) => {
-                send_event(
-                    &event_tx_result,
-                    BridgeEvent::UploadProgress {
-                        session_id: sid.clone(),
-                        file_id: fid.clone(),
-                        direction: "recv".to_string(),
-                        progress: 1.0,
-                        speed: 0.0,
-                    },
-                )
-                .await;
-                log::debug!("接收进度：文件保存成功 session={} file={}", sid, fid);
+                let mut committed: bool = true;
+                if !temp_path.is_empty() {
+                    if let Err(e) = std::fs::rename(&temp_path, &final_path) {
+                        committed = false;
+                        log::error!(
+                            "接收：提交临时文件失败 session={} file={} temp={} final={}: {e}",
+                            sid,
+                            fid,
+                            temp_path,
+                            final_path
+                        );
+                    } else if let Some(dir) = std::path::Path::new(&temp_path).parent() {
+                        let _ = std::fs::remove_dir(dir);
+                        log::debug!(
+                            "接收：临时文件已提交 session={} file={} final={}",
+                            sid,
+                            fid,
+                            final_path
+                        );
+                    }
+                }
+                if committed {
+                    send_event(
+                        &event_tx_result,
+                        BridgeEvent::UploadProgress {
+                            session_id: sid.clone(),
+                            file_id: fid.clone(),
+                            direction: "recv".to_string(),
+                            progress: 1.0,
+                            speed: 0.0,
+                        },
+                    )
+                    .await;
+                    log::debug!("接收进度：文件保存成功 session={} file={}", sid, fid);
+                }
             }
             Ok(Err(err)) => {
                 log::error!(

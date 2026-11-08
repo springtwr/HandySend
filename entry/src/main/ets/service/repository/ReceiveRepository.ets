@@ -67,6 +67,7 @@ import {
   updateReceiveSessionFilePath,
   LOCAL_RECEIVE_KEY
 } from '../transfer/adapters/LocalSendReceiveAdapter';
+import { dirNameOf, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
 import { findByProtocol } from '../transfer/TransferSessionRegistry';
 import {
   SESSION_DRAFT_SCHEMA_VERSION,
@@ -155,7 +156,7 @@ function writeLocalSendDraft(sessionId: string): void {
       occurrence: 1,
       checksum: '',
       finalPath: entry.filePath,
-      tempPath: '',
+      tempPath: entry.filePath.length > 0 ? tempPathForFinal(entry.filePath) : '',
       stage: completed ? SessionFileStage.completed : SessionFileStage.waiting,
       bytesSent: completed ? totalBytes : 0,
       completedAt: completed ? Date.now() : 0,
@@ -200,6 +201,7 @@ function updateLocalSendDraftDone(sessionId: string, fileId: string, path: strin
     }
     if (path.length > 0) {
       file.finalPath = path;
+      file.tempPath = tempPathForFinal(path);
     }
     file.stage = SessionFileStage.completed;
     file.bytesSent = file.totalBytes;
@@ -1341,9 +1343,9 @@ function recordPartialReceiveHistory(sessionId: string,
 }
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。
-// fd-direct 模式下首要是删除本次预创建的不完整目标文件（recvTargetPaths 登记，
-// 含接收目录普通文件与接收文本目录文本文件）；同时兜底清理旧路径回退目录中的残留，best-effort 删除。
-// 已完成文件是会话的部分交付物：保留并补记接收历史，只有未完成文件按半成品删除。
+// fd-direct 模式下预创建的是临时区文件（recvTargetTempPaths 登记）；
+// 已完成文件已提交到最终路径，属于部分交付物，保留并补记接收历史；
+// 只有未完成临时文件按半成品删除。
 function cleanupSessionReceiveFiles(sessionId: string): void {
   let plan: InterruptedReceiveCleanupPlan =
     planInterruptedReceiveCleanup(sessionId, sessionFileMap[sessionId], completedFileIds);
@@ -1360,22 +1362,6 @@ function cleanupSessionReceiveFiles(sessionId: string): void {
   removeRecvTargetFiles(sessionId, plan.keepFileIds);
   // 取消/失败终态：任务历史已归档，草稿不再需要；未完成文件由 removeRecvTargetFiles 清理。
   removeLocalSendDraft(sessionId);
-  let entries: Array<ReceivedFileEntry> | undefined = sessionFileMap[sessionId];
-  if (entries === undefined) {
-    return;
-  }
-  let saveDir: string = getReceiveCacheDir();
-  for (let i = 0; i < entries.length; i++) {
-    if (plan.keepFileIds[entries[i].fileId] === true) {
-      continue;
-    }
-    let candidate: string = entries[i].filePath.length > 0 ? entries[i].filePath : saveDir + entries[i].fileName;
-    try {
-      fs.unlinkSync(candidate);
-    } catch (_e) {
-      // 文件可能已被清理或不存在——忽略
-    }
-  }
 }
 
 // 注册 LocalSend 接收确认/拒绝/清理入口：任务的待确认操作经适配器回调本仓库

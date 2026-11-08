@@ -1,10 +1,11 @@
-// 接收直写目标（fd-direct）管理：接收文件在确认接收时预创建并注册 fd，
-// Rust 网络流直接写入最终位置。
+// 接收直写目标（fd-direct）管理：接收文件在确认接收时于目标目录的临时区
+// 预创建并注册 fd，Rust 网络流写入临时文件，完成后原子改名到最终位置。
 // 本模块持有会话目标路径登记表；接收目录统一由 ReceiveDirectory 提供，
 // 会话状态（sessionFileMap/sessionFilePaths 等）仍归 ReceiveRepository 所有。
 
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { ensureReceiveDirectory } from './ReceiveDirectory';
+import { dirNameOf, tempPathForFinal } from '../../model/transfer/TransferTempPaths';
 import {
   nativeSanitizeFileName, nativeRegisterRecvFileFd, nativeDiscardRecvFileFds
 } from '../NativeBridge';
@@ -46,6 +47,9 @@ function isRecvTextEntry(entry: ReceivedFileEntry): boolean {
 // 用于会话取消/失败时清理不完整的文件（自定义接收目录、默认下载目录与接收文本目录均在此登记）；
 // 成功会话的文件即交付物、不清除。
 let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
+// 与最终路径对应的临时路径：sessionId → (fileId → 临时路径)。
+// 未完成字节只写临时区；成功提交后临时文件已改名，最终路径不在此清理。
+let recvTargetTempPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
 
 function fileExistsAtPath(path: string): boolean {
   try {
@@ -144,12 +148,12 @@ function needsTextDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>)
   return false;
 }
 
-// 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
-// registerRecvFileFd；同时把最终路径回写到传入的条目（filePath/fileName，
-// 供历史/相册/文本使用）并返回 fileId → 最终路径映射。
+// 预注册某会话待接收文件的直写目标：净化/去重文件名 → 计算最终路径 →
+// 在临时区创建文件并 open 写 fd → registerRecvFileFd；同时把最终路径回写到
+// 传入的条目（filePath/fileName，供历史/相册/文本使用）并返回 fileId → 最终路径映射。
 // 文本消息条目落应用私有接收文本目录（filesDir/text_recv/），普通文件落用户设置的接收目录
 // （默认 Download/<包名>/），重名规则一致（自动加序号、不覆盖）。
-// 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 undefined（调用方拒绝会话）。
+// 任一文件准备失败 → 回滚已建临时文件并关闭已注册 fd，返回 undefined（调用方拒绝会话）。
 export async function prepareRecvTargets(sessionId: string, fileIds: Array<string>,
   entries: Array<ReceivedFileEntry> | undefined): Promise<Record<string, string> | undefined> {
   if (entries === undefined || entries.length === 0 || fileIds.length === 0) {
@@ -168,6 +172,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
     return undefined;
   }
   let perFile: Record<string, string> = {};
+  let perTempFile: Record<string, string> = {};
   let allOk: boolean = true;
   for (let i = 0; i < fileIds.length; i++) {
     let fileId: string = fileIds[i];
@@ -180,6 +185,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
     // 文本消息条目落接收文本目录（沙箱），其余落接收目录
     let dirPath: string = isRecvTextEntry(entry) ? textDir : downloadDir;
     let destPath: string = '';
+    let tempPath: string = '';
     let opened: fs.File | undefined = undefined;
     try {
       let name: string = nativeSanitizeFileName(entry.fileName);
@@ -188,9 +194,16 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       }
       let uniqueName: string = uniquePath(dirPath, name);
       destPath = dirPath + '/' + uniqueName;
-      opened = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
+      tempPath = tempPathForFinal(destPath);
+      let tempDir: string = dirNameOf(tempPath);
+      if (tempDir.length > 0 && !fs.accessSync(tempDir)) {
+        fs.mkdirSync(tempDir, true);
+      }
+      opened = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
+        fs.OpenMode.TRUNC);
       nativeRegisterRecvFileFd(sessionId, fileId, opened.fd, destPath);
       perFile[fileId] = destPath;
+      perTempFile[fileId] = tempPath;
       // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
       entry.filePath = destPath;
       entry.fileName = uniqueName;
@@ -198,7 +211,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       opened = undefined;
     } catch (e) {
       allOk = false;
-      // 注册失败时已打开的文件句柄仍归本层所有，需主动关闭并删除半成品文件
+      // 注册失败时已打开的文件句柄仍归本层所有，需主动关闭并删除临时半成品
       if (opened !== undefined) {
         try {
           fs.closeSync(opened);
@@ -206,9 +219,9 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
         }
         opened = undefined;
       }
-      if (destPath.length > 0) {
+      if (tempPath.length > 0) {
         try {
-          fs.unlinkSync(destPath);
+          fs.unlinkSync(tempPath);
         } catch (_unlinkErr) {
         }
       }
@@ -216,44 +229,59 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
     }
   }
   if (!allOk || Object.keys(perFile).length !== fileIds.length) {
-    // 回滚：关闭已注册 fd + 删除已创建的（半）文件
+    // 回滚：关闭已注册 fd + 删除已创建的临时半成品（最终路径尚未出现，不碰交付物）
     nativeDiscardRecvFileFds(sessionId);
-    let keys: Array<string> = Object.keys(perFile);
+    let keys: Array<string> = Object.keys(perTempFile);
     for (let k = 0; k < keys.length; k++) {
       try {
-        fs.unlinkSync(perFile[keys[k]]);
+        fs.unlinkSync(perTempFile[keys[k]]);
       } catch (_e) {
       }
     }
     return undefined;
   }
   recvTargetPaths.set(sessionId, perFile);
+  recvTargetTempPaths.set(sessionId, perTempFile);
   return perFile;
 }
 
-// 删除某会话预创建的目标文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
-// 列于 keepFileIds 的文件已完成写入、属于会话的部分交付物：保留并从清理范围排除；
-// 未提供时删除全部登记文件（拒绝/超时等尚未产生完成文件的路径）。
+// 删除某会话预创建的临时文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
+// 列于 keepFileIds 的文件已完成写入并改名到最终路径，临时文件已不存在；
+// 未提供时删除全部登记临时文件（拒绝/超时等尚未产生完成文件的路径）。
+// 只操作临时区，避免把最终路径上的部分交付物误删。
 export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<string, boolean>): void {
-  let perFile: Record<string, string> | undefined = recvTargetPaths.get(sessionId);
-  if (perFile === undefined) {
+  let perTempFile: Record<string, string> | undefined = recvTargetTempPaths.get(sessionId);
+  if (perTempFile === undefined) {
+    recvTargetPaths.delete(sessionId);
     return;
   }
-  let keys: Array<string> = Object.keys(perFile);
+  let keys: Array<string> = Object.keys(perTempFile);
+  let tempDirs: Record<string, boolean> = {};
   for (let k = 0; k < keys.length; k++) {
+    tempDirs[dirNameOf(perTempFile[keys[k]])] = true;
     if (keepFileIds !== undefined && keepFileIds[keys[k]] === true) {
       continue;
     }
     try {
-      fs.unlinkSync(perFile[keys[k]]);
+      fs.unlinkSync(perTempFile[keys[k]]);
     } catch (_e) {
-      // 文件可能已被清理或不存在——忽略
+      // 文件可能已被提交改名或不存在——忽略
+    }
+  }
+  let dirKeys: Array<string> = Object.keys(tempDirs);
+  for (let k = 0; k < dirKeys.length; k++) {
+    try {
+      fs.rmdirSync(dirKeys[k]);
+    } catch (_e) {
+      // 目录非空（仍有临时文件）或不存在——保留
     }
   }
   recvTargetPaths.delete(sessionId);
+  recvTargetTempPaths.delete(sessionId);
 }
 
 // 仅清空某会话的登记表（成功会话收尾调用：目标文件即交付物不删除，只回收登记表内存）。
 export function clearRecvTargets(sessionId: string): void {
   recvTargetPaths.delete(sessionId);
+  recvTargetTempPaths.delete(sessionId);
 }

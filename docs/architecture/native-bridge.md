@@ -292,9 +292,12 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
   `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
   DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→
-  `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
-  `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由
-  `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 只删除预创建的未完成目标文件，已完成文件保留并补记接收历史
+  `uniquePath` 消歧计算最终路径 → 在 `.handysend-temp/` 下创建临时文件并 `openSync` 写 fd →
+  `registerRecvFileFd` 预注册（携带最终路径）→ 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd
+  构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱），写入完成后由结果任务 `rename` 到最终路径；
+  会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。
+  `finishReceiveSession` 直接用登记路径写历史；取消/失败时 ArkTS 只删除临时区未完成文件，
+  已提交文件保留并补记接收历史
 - **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件落接收目录、
   文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
