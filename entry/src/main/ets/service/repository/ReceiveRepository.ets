@@ -68,7 +68,6 @@ import {
   LOCAL_RECEIVE_KEY
 } from '../transfer/adapters/LocalSendReceiveAdapter';
 import {
-  dirNameOf,
   TEMP_SUBDIR_LOCAL_SEND,
   tempPathForFinal
 } from '../../model/transfer/TransferTempPaths';
