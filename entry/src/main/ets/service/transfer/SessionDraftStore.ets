@@ -270,8 +270,9 @@ function fsyncDirectory(dir: string): void {
   try {
     directory = fs.openSync(dir, fs.OpenMode.READ_ONLY);
     fs.fsyncSync(directory.fd);
-  } catch (_e) {
-    // 部分文件系统不支持对目录 fsync；文件内容已在 rename 前 fsync。
+  } catch (e) {
+    // 部分文件系统不支持对目录 fsync；记录诊断，文件内容已在 rename 前 fsync。
+    logger.debug('目录 fsync 跳过：' + String(e));
   } finally {
     if (directory !== undefined) {
       try {
