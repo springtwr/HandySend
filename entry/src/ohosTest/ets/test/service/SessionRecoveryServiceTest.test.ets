@@ -412,6 +412,50 @@ export default function SessionRecoveryServiceTest() {
       resetRegistry()
     })
 
+    it('recovery_skips_active_session_draft', 0, () => {
+      let ctx = getTestAppContext()
+      expect(ctx !== undefined).assertTrue()
+      if (ctx === undefined) {
+        return
+      }
+      clearDrafts()
+      clearSessionHistory()
+      let session = createSession({
+        protocolKey: 'test-send-active',
+        protocolSessionId: '',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: {
+          displayName: 'peer',
+          badges: []
+        },
+        files: [{
+          fileId: 'f-active',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 3,
+          path: '/tmp/active-a.txt'
+        }],
+        capabilities: {
+          canCancel: true,
+          canRetry: false,
+          needsConfirm: false,
+          hasByteProgress: true,
+          canSaveToGallery: false,
+          hasVerify: false
+        }
+      })
+      recoverSessionDrafts()
+      // 活跃会话不能被恢复成历史失败任务，草稿保留给后续终端或下次冷启动处理。
+      expect(loadSessionDraft(session.id) !== undefined).assertTrue()
+      let sessions = getSessionHistory()
+      for (let i = 0; i < sessions.length; i++) {
+        expect(sessions[i].sessionId === session.id).assertFalse()
+      }
+      removeSessionDraft(session.id)
+      resetRegistry()
+    })
+
     it('recover_is_idempotent', 0, () => {
       let ctx = getTestAppContext()
       expect(ctx !== undefined).assertTrue()

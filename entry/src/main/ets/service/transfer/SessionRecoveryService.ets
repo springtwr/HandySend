@@ -31,6 +31,7 @@ import {
 } from './SessionDraftStore';
 import { archiveSession } from './SessionHistoryStore';
 import { addEntriesIfAbsent } from '../repository/ReceiveHistoryService';
+import { getSession } from './TransferSessionRegistry';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionRecovery', '会话恢复');
 
@@ -53,6 +54,12 @@ export function recoverSessionDrafts(): SessionRecoveryResult {
   };
   for (let i = 0; i < drafts.length; i++) {
     let draft: SessionDraft = drafts[i];
+    // 进程存活、仅 Ability 重建时，注册表里的会话仍然活跃：不能把它误归档为失败。
+    let active = getSession(draft.sessionId);
+    if (active !== undefined && !isTerminalStage(active.stage)) {
+      logger.debug('跳过活跃会话草稿 session=' + draft.sessionId);
+      continue;
+    }
     try {
       let completedFiles: number = recoverOne(draft);
       result.recovered++;
