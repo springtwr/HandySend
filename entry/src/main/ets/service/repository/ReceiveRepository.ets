@@ -613,7 +613,8 @@ function scheduleSessionEndFinishedCheck(sessionId: string): void {
     if (receiveSessionStates[sessionId] === 'sending' || receiveSessionStates[sessionId] === 'failed') {
       receiveSessionStates[sessionId] = 'failed';
       removeProgressForSession(sessionId);
-      finishLocalReceiveSession(sessionId, SessionStage.failed, undefined, 'transfer_interrupted');
+      finishLocalReceiveSession(sessionId, SessionStage.failed, transferInterruptedMessage(),
+        'transfer_interrupted');
       // 清理该会话在沙箱目录中的半成品文件
       cleanupSessionReceiveFiles(sessionId);
       logger.info('传输中断（异常结束）');
@@ -1088,6 +1089,20 @@ function storageInsufficientMessage(freeBytes: number, requiredBytes: number): s
   }
   return template.replace('%s', formatSizeDetailed(freeBytes))
     .replace('%s', formatSizeDetailed(requiredBytes));
+}
+
+// 传输中断提示文案（本地化；资源读取失败时回退中文文案）
+function transferInterruptedMessage(): string {
+  let fallback: string = '传输中断，未完成的文件已清理';
+  try {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      return appContext.resourceManager.getStringSync(
+        $r('app.string.transfer_interrupted_message').id);
+    }
+  } catch (_e) {
+  }
+  return fallback;
 }
 
 // 目标准备失败提示文案（本地化；资源读取失败时回退中文文案）

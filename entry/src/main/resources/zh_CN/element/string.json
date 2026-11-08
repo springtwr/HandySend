@@ -1065,6 +1065,10 @@
       "value": "准备接收文件失败"
     },
     {
+      "name": "transfer_interrupted_message",
+      "value": "传输中断，未完成的文件已清理"
+    },
+    {
       "name": "history_delete_message_count",
       "value": "将删除 %d 条记录"
     },

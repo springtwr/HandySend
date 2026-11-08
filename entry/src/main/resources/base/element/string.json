@@ -1065,6 +1065,10 @@
       "value": "Failed to prepare receive targets"
     },
     {
+      "name": "transfer_interrupted_message",
+      "value": "Transfer interrupted; unfinished files were removed"
+    },
+    {
       "name": "history_delete_message_count",
       "value": "Will delete %d records"
     },

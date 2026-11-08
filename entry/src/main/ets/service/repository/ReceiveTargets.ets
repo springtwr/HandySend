@@ -325,6 +325,11 @@ export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<st
   let dirKeys: Array<string> = Object.keys(tempDirs);
   for (let k = 0; k < dirKeys.length; k++) {
     removeDirectoryIfEmpty(dirKeys[k]);
+    // 协议子目录清空后尝试移除空的临时区根目录，避免任务结束后残留 .handysend-temp
+    let tempRoot: string = dirNameOf(dirKeys[k]);
+    if (tempRoot.length > 0) {
+      removeDirectoryIfEmpty(tempRoot);
+    }
   }
   recvTargetTempPaths.delete(sessionId);
 }
