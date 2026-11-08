@@ -49,6 +49,8 @@ export struct FileEntryThumb {
   @Local loadFailed: boolean = false
   // 预加载定时器（组件销毁时清理）
   private preloadTimer: number = -1
+  // 组件已销毁标记：在途解码晚于销毁返回时直接释放结果，避免显存泄漏
+  private disposed: boolean = false
 
   /**
    * 定位变化（如接收侧在会话终结前才回填文件路径）：丢弃旧结果并重新按需加载，
@@ -82,6 +84,7 @@ export struct FileEntryThumb {
 
   /** 组件卸载时释放缩略图显存。 */
   aboutToDisappear(): void {
+    this.disposed = true;
     if (this.preloadTimer >= 0) {
       clearTimeout(this.preloadTimer);
       this.preloadTimer = -1;
@@ -158,6 +161,14 @@ export struct FileEntryThumb {
         desiredSize: { width: targetWidth, height: targetHeight }
       };
       let pixelMap: image.PixelMap = await source.createPixelMap(options);
+      if (this.disposed) {
+        // 组件已销毁：结果无处展示，直接释放避免显存泄漏
+        try {
+          pixelMap.release();
+        } catch (_e) {
+        }
+        return;
+      }
       this.loadFailed = false;
       this.replacePreviewPixelMap(pixelMap);
     } catch (e) {
@@ -203,9 +214,17 @@ export struct FileEntryThumb {
     let side: number = Math.round(this.thumbSize * 2);
     generateVideoThumbnail(this.path, side, side).then((pixelMap: image.PixelMap | undefined): void => {
       if (pixelMap === undefined) {
-        // 忙时丢弃/取消/失败不锁存，下次出现时重试
+        // 取消/失败不锁存，下次出现时重试
         this.requested = false;
         this.loadFailed = true;
+        return;
+      }
+      if (this.disposed) {
+        // 组件已销毁：结果无处展示，直接释放避免显存泄漏
+        try {
+          pixelMap.release();
+        } catch (_e) {
+        }
         return;
       }
       this.loadFailed = false;
