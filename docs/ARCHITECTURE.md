@@ -47,6 +47,7 @@ HandySend/
 │   │       │   ├── PermissionService.ets          # 运行时权限查询、申请与设置页引导（通知/蓝牙）
 │   │       │   ├── DialogService.ets
 │   │       │   ├── GallerySaveService.ets
+│   │       │   ├── CacheCleanupService.ets        # 清除缓存（cacheDir 临时产物 + 旧版本残留）
 │   │       │   ├── transfer/        # ★ 统一会话引擎（注册表 + 任务历史 + 三类注册表 + 协议适配器）
 │   │       │   └── repository/      # 按业务域拆分的 Repository（协议 I/O + 原生调用；详见 architecture/repositories.md）
 │   │       ├── viewmodel/           # @ObservedV2 视图模型（含 TransferCenterViewModel / SessionDetailViewModel）
@@ -165,7 +166,7 @@ Ability 重建不会重置 DEBUG 状态。
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, service/repository/FavoritesService, SettingsViewModel |
 | MTA | 0x0006 | service/mta/*、MtaRepository |
 
-> GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission。
+> GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission、CacheCleanupService。
 >
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository, ReceiveRepository,
 > ReceiveTargets, ReceiveDirectory, SendViewModel, SendContent, WebShareRepository,
@@ -719,7 +720,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 | `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）<br>+ 允许接收开关（总开关关闭时置灰不可用）+ 显示互传提醒开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） | 互传联盟（MTA） |
 | `WebSettingsSection` | 网页传输总开关 + 允许上传<br>高级设置折叠（加密、端口、网络接口）<br>与面板启停同步（访问码在面板展示） | 网页传输 |
 | `AppearanceSettingsSection` | 主题/语言半屏弹窗 + 滚动隐藏页签 | 外观 |
-| `MoreSettingsSection` | 关于/评价/反馈/赞助半屏弹窗 + 诊断日志入口 + 恢复默认 | 更多 |
+| `MoreSettingsSection` | 关于/评价/反馈/赞助半屏弹窗 + 缓存（右侧显示当前大小）+ 诊断日志入口 + 恢复默认 | 更多 |
 
 > **注 4**：接收 PIN 为输入弹窗；「高级设置折叠」含加密传输/创建校验和/端口/组播组/
 > 发现超时/网络接口与安全信息（证书）半屏弹窗。

@@ -18,9 +18,13 @@ import { saveMediaToGallery } from '../../service/GallerySaveService';
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
+import {
+  CacheClearResult, clearAppCache, getAppCacheSize, hasActiveTransferSessions
+} from '../../service/CacheCleanupService';
+import { formatSizeDetailed } from '../../utils/FormatUtil';
 import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
-// 更多设置分组（关于/反馈/评价/赞助/诊断日志/恢复默认）。
+// 更多设置分组（关于/反馈/评价/赞助/缓存/诊断日志/恢复默认）。
 // 关于/反馈/评价/赞助半屏弹窗直接绑定在本组件，各自独立。
 
 // 反馈收件邮箱：邮箱路径统一写入收件人，避免用户手填出错
@@ -43,6 +47,8 @@ export struct MoreSettingsSection {
   @Local attachDiagnosticLogs: boolean = false
   // 赞赏码保存进行中：阻止连续点击生成重复图库条目，并避免缓存文件被并发清理
   @Local private savingSponsorCode: boolean = false
+  // 当前缓存大小展示值：进入更多设置、点击入口与清理完成后刷新
+  @Local private cacheSizeText: string = '0 B'
   // 当前打开的 A 类弹窗 id（接触开发者弹窗关闭时使用）
   private activeDialogId: number = -1
   // 新传输直达详情前的弹层收起：本组件只处理自己打开的四个半模态与弹窗
@@ -56,6 +62,7 @@ export struct MoreSettingsSection {
 
   aboutToAppear(): void {
     subscribeOverlayClose(this.overlayCloseCallback);
+    this.refreshCacheSize();
   }
 
   aboutToDisappear(): void {
@@ -345,6 +352,64 @@ export struct MoreSettingsSection {
         }
       }
     }
+  }
+
+  /**
+   * 缓存清理入口：赞赏码保存或传输进行中时给出提示；确认后由缓存清理服务执行，
+   * 只清理临时文件。
+   */
+  private requestClearCache(): void {
+    let cacheBytes: number = getAppCacheSize();
+    this.cacheSizeText = formatSizeDetailed(cacheBytes);
+    if (cacheBytes === 0) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.clear_cache_empty'),
+        duration: 2000
+      });
+      return;
+    }
+    if (this.savingSponsorCode || hasActiveTransferSessions()) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.clear_cache_busy'),
+        duration: 2000
+      });
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: $r('app.string.clear_cache_title'),
+      message: $r('app.string.clear_cache_confirm'),
+      primaryButton: {
+        value: $r('app.string.dialog_cancel'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: $r('app.string.dialog_confirm'),
+        action: () => {
+          let result: CacheClearResult = clearAppCache();
+          let message: ResourceStr = $r('app.string.clear_cache_failed');
+          if (result.status === 'cleared') {
+            let remainingBytes: number = getAppCacheSize();
+            this.cacheSizeText = formatSizeDetailed(remainingBytes);
+            if (result.bytes === 0) {
+              message = remainingBytes === 0 ? $r('app.string.clear_cache_empty') :
+                $r('app.string.clear_cache_failed');
+            } else {
+              message = getStringSync(this.getUIContext(), $r('app.string.clear_cache_success'))
+                .replace('%s', formatSizeDetailed(result.bytes));
+            }
+          } else if (result.status === 'busy') {
+            message = $r('app.string.clear_cache_busy');
+          }
+          this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
+        }
+      }
+    });
+  }
+
+  /** 刷新缓存大小展示值。 */
+  private refreshCacheSize(): void {
+    this.cacheSizeText = formatSizeDetailed(getAppCacheSize());
   }
 
   @Builder
@@ -850,6 +915,32 @@ export struct MoreSettingsSection {
             // 不调用 springBack：取消下拉回弹，使下拉直接进入关闭流程
           }
         })
+
+        // 缓存（右侧展示当前缓存大小；只清理临时文件）
+        Row() {
+          Text($r('app.string.cache_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Row({ space: DesignTokens.space.xxs }) {
+            Text(this.cacheSizeText)
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_tertiary'))
+
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.subtitleL)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.requestClearCache();
+        })
+        .id('settings_clear_cache_entry')
 
         // 诊断日志（带箭头的导航入口行）
         Row() {

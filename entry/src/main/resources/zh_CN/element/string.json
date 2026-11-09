@@ -105,6 +105,34 @@
       "value": "确定要将所有设置恢复为默认值吗？此操作不可撤销"
     },
     {
+      "name": "cache_label",
+      "value": "缓存"
+    },
+    {
+      "name": "clear_cache_title",
+      "value": "清除缓存"
+    },
+    {
+      "name": "clear_cache_confirm",
+      "value": "将清除以下缓存文件：发送缩略图、接收临时/回退文件、MTA 预览缩略图、网页上传暂存文件、诊断日志导出临时文件，以及旧版本发送临时残留"
+    },
+    {
+      "name": "clear_cache_success",
+      "value": "已清除 %s 缓存"
+    },
+    {
+      "name": "clear_cache_empty",
+      "value": "没有需要清理的缓存"
+    },
+    {
+      "name": "clear_cache_busy",
+      "value": "有传输或保存操作正在进行，请稍后再试"
+    },
+    {
+      "name": "clear_cache_failed",
+      "value": "清除缓存失败，请稍后重试"
+    },
+    {
       "name": "dialog_confirm",
       "value": "确定"
     },

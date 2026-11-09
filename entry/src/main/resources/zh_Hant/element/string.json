@@ -105,6 +105,34 @@
       "value": "確定要將所有設定恢復為預設值嗎？此操作不可撤銷"
     },
     {
+      "name": "cache_label",
+      "value": "快取"
+    },
+    {
+      "name": "clear_cache_title",
+      "value": "清除快取"
+    },
+    {
+      "name": "clear_cache_confirm",
+      "value": "將清除下列快取檔案：傳送縮圖、接收暫存/回退檔案、MTA 預覽縮圖、網頁上傳暫存檔案、診斷日誌匯出暫存檔案，以及舊版本傳送暫存殘留"
+    },
+    {
+      "name": "clear_cache_success",
+      "value": "已清除 %s 快取"
+    },
+    {
+      "name": "clear_cache_empty",
+      "value": "沒有需要清理的快取"
+    },
+    {
+      "name": "clear_cache_busy",
+      "value": "有傳輸或儲存操作正在進行，請稍後再試"
+    },
+    {
+      "name": "clear_cache_failed",
+      "value": "清除快取失敗，請稍後再試"
+    },
+    {
       "name": "dialog_confirm",
       "value": "確定"
     },

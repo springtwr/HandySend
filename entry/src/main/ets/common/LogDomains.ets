@@ -6,7 +6,7 @@
  */
 
 export class LogDomains {
-  /** 通用/应用生命周期：EntryAbility、EntryBackupAbility、AppService、DialogService、ReceiveHistoryService */
+  /** 通用/应用生命周期：EntryAbility、EntryBackupAbility、AppService、CacheCleanupService、DialogService、ReceiveHistoryService */
   static readonly GENERAL: number = 0x0000;
   /** 设备发现、注册、扫描：DiscoveryRepository、DeviceRepository、MainTabViewModel */
   static readonly DISCOVERY: number = 0x0001;
