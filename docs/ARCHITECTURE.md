@@ -219,6 +219,9 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 媒体库旧版标题校验拒绝标题中的点号等字符，而网页发送的 Android 截图文件名常带 `com.xxx.yyy`。此类文件改走
 「按扩展名创建资产 + 引用原文件」：标题中的非法字符替换为下划线，文件本身不复制、不改名。
 
+设置页微信赞赏码的 SaveButton 同样复用 `saveMediaToGallery`：点击授权后先把内置图片写入 cacheDir
+再写库，结束后清理缓存副本。
+
 ### 4.7 BackgroundTransferService — 后台传输服务
 
 `entry/src/main/ets/service/BackgroundTransferService.ets`

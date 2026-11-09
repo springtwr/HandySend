@@ -1,6 +1,6 @@
 import { common, wantConstant, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { AdvancedDialogV2Button, ConfirmDialogV2, promptAction, uiObserver } from '@kit.ArkUI';
 import {
   DesignTokens
@@ -13,6 +13,8 @@ import { getStringSync } from '../../utils/ResourceUtil';
 import { getDeviceType } from '../../service/repository/DeviceRepository';
 import { buildDiagnosticLogAttachment } from '../../service/log/DiagnosticLogService';
 import { LogAttachmentResult } from '../../model/LogFileTypes';
+import { GallerySaveResult, MediaFileInfo } from '../../model/Types';
+import { saveMediaToGallery } from '../../service/GallerySaveService';
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
@@ -39,6 +41,8 @@ export struct MoreSettingsSection {
   @Local private sponsorPageWidth: number = 9999
   // 反馈邮件是否附带诊断日志（每次打开联系开发者弹窗时复位为不附带）
   @Local attachDiagnosticLogs: boolean = false
+  // 赞赏码保存进行中：阻止连续点击生成重复图库条目，并避免缓存文件被并发清理
+  @Local private savingSponsorCode: boolean = false
   // 当前打开的 A 类弹窗 id（接触开发者弹窗关闭时使用）
   private activeDialogId: number = -1
   // 新传输直达详情前的弹层收起：本组件只处理自己打开的四个半模态与弹窗
@@ -227,7 +231,7 @@ export struct MoreSettingsSection {
     .translate({ x: this.sponsorShowWechat ? -this.sponsorPageWidth : 0 })
   }
 
-  /** 微信赞赏码：收款码 + 扫码提示。 */
+  /** 微信赞赏码：收款码 + 扫码提示 + 保存到图库入口。 */
   @Builder
   wechatSponsorContent(): void {
     Scroll() {
@@ -251,6 +255,30 @@ export struct MoreSettingsSection {
           .textAlign(TextAlign.Center)
           .width('100%')
           .margin({ top: DesignTokens.space.md })
+
+        // SaveButton 安全控件：点击即授权，授权后复用 saveMediaToGallery 写入图库
+        // 安全控件不支持 margin，用容器包裹拉开与上方提示的间距
+        Column() {
+          SaveButton({
+            icon: SaveIconStyle.FULL_FILLED,
+            text: SaveDescription.SAVE_TO_GALLERY,
+            buttonType: ButtonType.ROUNDED_RECTANGLE
+          })
+            .width('100%')
+            .height(DesignTokens.size.thumbSm)
+            // 与设备详情「验证设备」按钮保持一致的蓝底白字风格（字号同样用默认值）
+            .fontColor($r('app.color.text_on_color'))
+            .iconColor($r('app.color.text_on_color'))
+            .backgroundColor($r('app.color.accent_blue'))
+            .borderRadius(DesignTokens.radius.md)
+            .enabled(!this.savingSponsorCode)
+            .onClick((_event: ClickEvent, result: SaveButtonOnClickResult) => {
+              this.saveWechatSponsorCode(result);
+            })
+            .id('settings_sponsor_wechat_save_btn')
+        }
+        .width('100%')
+        .margin({ top: DesignTokens.space.lg })
       }
       .width('100%')
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -262,6 +290,59 @@ export struct MoreSettingsSection {
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
     .translate({ x: this.sponsorShowWechat ? 0 : this.sponsorPageWidth })
+  }
+
+  /**
+   * 保存微信赞赏码到图库：SaveButton 已完成临时授权，这里把内置图片写入缓存并复用
+   * saveMediaToGallery 写库，结束后清理缓存副本。
+   */
+  private async saveWechatSponsorCode(result: SaveButtonOnClickResult): Promise<void> {
+    if (this.savingSponsorCode) {
+      return;
+    }
+    let ui = this.getUIContext();
+    if (result !== SaveButtonOnClickResult.SUCCESS) {
+      ui.getPromptAction().showToast({ message: $r('app.string.gallery_save_failed'), duration: 1500 });
+      return;
+    }
+    this.savingSponsorCode = true;
+    let path: string = '';
+    try {
+      let context = ui.getHostContext() as common.UIAbilityContext;
+      path = context.cacheDir + '/wechat_sponsor.png';
+      let bytes: Uint8Array = context.resourceManager.getMediaContentSync($r('app.media.ic_wechat_sponsor').id);
+      let file: fs.File = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+      try {
+        // 复制为独立缓冲区再写，避免资源字节是更大缓冲区的视图时写入多余内容
+        let content: Uint8Array = bytes.slice();
+        fs.writeSync(file.fd, content.buffer);
+      } finally {
+        fs.closeSync(file);
+      }
+      let mediaFile: MediaFileInfo = {
+        filePath: path,
+        fileName: 'wechat_sponsor.png',
+        fileType: 'image/png',
+        isImage: true
+      };
+      let saveResult: GallerySaveResult = await saveMediaToGallery(context, [mediaFile]);
+      ui.getPromptAction().showToast({
+        message: saveResult.successCount > 0 ? $r('app.string.gallery_save_success') :
+          $r('app.string.gallery_save_failed'),
+        duration: 1500
+      });
+    } catch (_e) {
+      ui.getPromptAction().showToast({ message: $r('app.string.gallery_save_failed'), duration: 1500 });
+    } finally {
+      this.savingSponsorCode = false;
+      if (path.length > 0) {
+        try {
+          fs.unlinkSync(path);
+        } catch (_e) {
+          // 缓存文件可能未创建，忽略清理失败
+        }
+      }
+    }
   }
 
   @Builder
