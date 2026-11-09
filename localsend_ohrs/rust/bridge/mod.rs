@@ -28,6 +28,7 @@ pub mod identity;
 pub mod mta;
 pub mod server;
 pub mod state;
+pub mod temp_workspace;
 pub mod throttle;
 pub mod web;
 

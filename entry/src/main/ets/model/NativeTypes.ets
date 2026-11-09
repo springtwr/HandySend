@@ -421,6 +421,15 @@ export interface NativeMtaReceiveProgressEvent {
   networkDone: boolean
 }
 
+export interface NativeMtaEntryCommittedEvent {
+  type: 'mtaEntryCommitted'
+  taskId: string
+  name: string
+  size: number
+  modifiedUnixMs: number
+  savedPath: string
+}
+
 // ── 所有桥接层事件的联合 ──
 
 export type NativeEvent =
@@ -457,6 +466,7 @@ export type NativeEvent =
   NativeMtaSendRejectedEvent |
   NativeMtaSendFailedEvent |
   NativeMtaReceiveProgressEvent |
+  NativeMtaEntryCommittedEvent |
   NativeErrorEvent;
 
 /**
@@ -499,6 +509,7 @@ const REQUIRED_EVENT_FIELDS: Record<string, Array<string>> = {
   'mtaSendRejected': ['reason'],
   'mtaSendFailed': ['reason'],
   'mtaReceiveProgress': ['receivedBytes', 'totalBytes', 'percent', 'networkBytes', 'networkDone'],
+  'mtaEntryCommitted': ['taskId', 'name', 'size', 'modifiedUnixMs', 'savedPath'],
   'error': ['context', 'message']
 };
 
@@ -689,6 +700,15 @@ export function parseNativeEvent(json: string): NativeEvent | undefined {
         networkBytes: payload['networkBytes'] as number,
         networkDone: payload['networkDone'] as boolean
       } as NativeMtaReceiveProgressEvent;
+    case 'mtaEntryCommitted':
+      return {
+        type: 'mtaEntryCommitted',
+        taskId: payload['taskId'] as string,
+        name: payload['name'] as string,
+        size: payload['size'] as number,
+        modifiedUnixMs: payload['modifiedUnixMs'] as number,
+        savedPath: payload['savedPath'] as string
+      } as NativeMtaEntryCommittedEvent;
     case 'error':
       return {
         type: 'error',

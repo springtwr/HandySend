@@ -15,10 +15,10 @@
 import {
   SessionActionAvailability,
   SessionDataFlow,
-  SessionFile,
   SessionHistoryOutcome,
   SessionStage,
   TransferSession,
+  displayFileCount,
   isPreparing,
   isTerminalStage,
   resolveSessionActions
@@ -223,8 +223,8 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
   if (isText && descriptor !== undefined && descriptor.textPreview !== undefined) {
     preview = descriptor.textPreview;
   }
-  // 文件数量文案：文本消息用「文本」标签；普通文本类文件仍按文件数量展示（与历史行同口径）
-  let liveFiles: Array<SessionFile> = session.files;
+  // 文件数量文案：文本消息用「文本」标签；普通文本类文件仍按文件数量展示（与历史行同口径）。
+  // 逐文件清单不可用时取协议声明值（如 MTA 接收下载前只有占位条目），不按占位条目数展示
   let isTextMessage: boolean = session.textMessage || isText;
   return {
     key: session.id,
@@ -234,7 +234,7 @@ export function liveSessionRow(session: TransferSession): SessionRowModel {
     directionLabel: directionLabelFor(session.dataFlow),
     dataFlow: session.dataFlow,
     sourceLabel: sourceLabelForSession(session.protocolKey, session.peer.deviceType ?? ''),
-    fileCountText: fileCountTextOf(liveFiles.length, isTextMessage),
+    fileCountText: fileCountTextOf(displayFileCount(session), isTextMessage),
     timestamp: ts,
     session: session,
     isTextSession: isText,

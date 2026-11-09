@@ -37,6 +37,11 @@ import {
   getTestCacheDir,
   sleep
 } from '../helper/TestHelper'
+import {
+  TEMP_DIR_NAME,
+  TEMP_SUBDIR_LOCAL_SEND,
+  tempPathForFinal
+} from '../../../../main/ets/model/transfer/TransferTempPaths'
 
 // 接收保存目录：惰性获取（context 在 TestAbility.onCreate 注入，模块加载时
 // 不可用；服务器保存文件需目录预先存在）。
@@ -64,8 +69,8 @@ function dumpRustLogs(): string {
 }
 
 // 预注册接收目标 fd 并接受会话：fd-direct 接收路径要求 respondTransfer 前
-// 为每个文件创建目标文件并注册 fd（对齐生产流程 ReceiveRepository.prepareRecvTargets），
-// 否则服务器无落盘目标，上传以 500 失败
+// 在临时区创建文件并注册最终路径（对齐生产流程 ReceiveRepository.prepareRecvTargets），
+// Rust 写入完成后负责 rename 到最终路径；否则服务器无落盘目标，上传以 500 失败。
 function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
   if (e.type !== 'prepareUpload') {
     return
@@ -74,7 +79,11 @@ function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
   let ids: Array<string> = []
   for (let i = 0; i < pe.files.length; i++) {
     let destPath: string = recvDir + pe.files[i].fileName
-    let file = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE)
+    let tempPath: string = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
+    let tempDir: string = tempPath.substring(0, tempPath.lastIndexOf('/'))
+    ensureDir(tempDir)
+    let file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
+      fs.OpenMode.TRUNC)
     nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, file.fd, destPath)
     ids.push(pe.files[i].fileId)
   }
@@ -146,6 +155,8 @@ async function sendLoopbackAndVerify(
   if (saved) {
     expect(readFileContent(recvPath) === content).assertTrue()
   }
+  // Rust 提交后应移除空的本地协议临时区
+  expect(fs.accessSync(recvDir + TEMP_DIR_NAME)).assertFalse()
   // 会话以 finished 结束（异步推送，轮询最多 5s）
   let endDeadline: number = Date.now() + 5000
   while (!endFlag && Date.now() < endDeadline) {
@@ -258,6 +269,8 @@ export default function LoopbackTransferTest() {
         let content: string = readFileContent(recvPath)
         expect(content === SEND_CONTENT).assertTrue()
       }
+      // Rust 提交后应移除空的本地协议临时区
+      expect(fs.accessSync(getRecvDir() + TEMP_DIR_NAME)).assertFalse()
       // 接收侧收到过 prepareUpload 决策事件
       expect(prepareHandled).assertTrue()
       // 等待 sessionEnd(finished) 事件（异步推送，轮询最多 5s）

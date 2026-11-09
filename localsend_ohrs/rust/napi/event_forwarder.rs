@@ -59,7 +59,8 @@ pub fn register_event_callback(tsfn: ThreadsafeFunction<String>) {
                     }
                 }
                 None => {
-                    log::warn!("事件回调未注册，丢弃事件：{}", event_to_json(&event));
+                    // 只记录事件类型：完整事件含 token、文件路径等，不能进入日志
+                    log::warn!("事件回调未注册，丢弃事件 type={}", event_type_name(&event));
                 }
             }
         }
@@ -70,4 +71,17 @@ pub fn register_event_callback(tsfn: ThreadsafeFunction<String>) {
 /// 将 BridgeEvent 序列化为 JSON 字符串（供调试/测试）。
 pub fn event_to_json(event: &BridgeEvent) -> String {
     serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// 取事件类型名（serde tag `type`），用于日志；不输出事件载荷。
+fn event_type_name(event: &BridgeEvent) -> String {
+    serde_json::to_value(event)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("type")
+                .and_then(|tag| tag.as_str())
+                .map(|tag| tag.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
 }

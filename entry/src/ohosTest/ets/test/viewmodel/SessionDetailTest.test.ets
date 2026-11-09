@@ -189,6 +189,36 @@ export default function SessionDetailTest() {
       resetRegistry()
     })
 
+    it('fileCount_usesDeclaredCountUntilRealListBackfilled', 0, () => {
+      registerAdapter(testAdapter)
+      resetRegistry()
+      let createInput = input()
+      createInput.declaredFileCount = 3
+      let s = createSession(createInput)
+      let vm = new SessionDetailViewModel()
+      vm.load(s.id)
+      // 占位清单只有 1 条，但协议声明 3 个文件：详情按声明值展示
+      expect(vm.detailFiles().length).assertEqual(1)
+      expect(vm.fileCount()).assertEqual(3)
+      // 真实清单回填后以真实条数为准
+      expect(setSessionFiles(s.id, [{
+        fileId: 'f1',
+        fileName: 'a',
+        fileType: 'text/plain',
+        totalBytes: 40
+      },
+        {
+          fileId: 'f2',
+          fileName: 'b',
+          fileType: 'text/plain',
+          totalBytes: 60
+        }])).assertTrue()
+      vm.refresh()
+      expect(vm.fileCount()).assertEqual(2)
+      vm.unload()
+      resetRegistry()
+    })
+
     it('confirm_movesToActive_andTimelineGrows', 0, () => {
       registerAdapter(testAdapter)
       resetRegistry()

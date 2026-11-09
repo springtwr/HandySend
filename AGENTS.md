@@ -55,7 +55,9 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 
 ### 文件约定
 
-- 所有新增的 md 文件放在 `docs/` 目录中
+- 需要长期保存、供后续查阅的知识文档（架构、规范、指南、验证结论等）放在 `docs/` 目录中
+- 临时文档（一次性调研、排查记录、草稿、评审意见，以及某次任务的实施方案、任务清单等）放在 `temp/docs/`
+  目录中（`temp/` 不入版本控制）
 - 文档中一行文本的显示宽度禁止超过 100 个全角字符（等价于 200 个半角字符；全角按 2 计、半角按 1 计）
 - 更新文档时忠实展示更新时项目的情况，除非类似更新记录这种特定文档或有明确要求，否则不要在文档中添加“新增了……”、“替代原有的……”之类的增量式内容
 
@@ -87,9 +89,16 @@ HandySend（便捷快传）— 基于 LocalSend 协议的 HarmonyOS 局域网文
 ## 构建与验证
 
 - 非必要不直接调用 hvigorw/hdc/ohpm 等底层工具（本条仅约束智能体，人类按 `docs/BUILD.md` 执行；仪器测试除外，见下条）
-- ArkTS 侧单元测试统一为设备端测试（Instrument Test，命令见 `docs/testing/instrument-test-guide.md`）：
-  Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry`；
+- ArkTS 侧单元测试统一为设备端测试（Instrument Test，流程见 `docs/testing/instrument-test-guide.md`）：
+  Linux 上连接真机/模拟器后运行 `hvigorw onDeviceTest -p module=entry -p coverage=false`；
+  控制台不打印用例输出，结果见 `entry/.test/default/intermediates/ohosTest/coverage_data/`；
   无可用设备时以 `devecocli check arkts` 静态检查 + 构建验证，Rust 侧用 `cargo test`
+- `hvigorw onDeviceTest` 的覆盖率报错（`getjsCoverageData failed`、`getInitCoverageData failed`）是 hvigor
+  `@ohos/coverage` 插件缺陷，与 Linux/DevEco Studio 平台支持无关，不要从系统环境方向排查；
+  加 `-p coverage=false` 关闭覆盖率采集与报告生成即可跑完全量用例；覆盖率报告可能缺失或为空。已知原因：
+  - `spawnSync` 未放宽 Node 默认 1 MiB `maxBuffer`，`aa test` 的覆盖率 JSON 超限时 stdout 被截断
+  - `init_coverage.json` 跨增量构建只追加不重置（实测累积到 162 MB）；
+    主模块与 ohosTest 并发编译时，插件对整文件加/去外层花括号存在竞争，可能写入错位 `}`
 - `devecocli check arkts` 有以下已知误报，可忽略，以 `devecocli build` 结果为准：
   - `Cannot find module 'entry/BuildProfile'`：该模块由 hvigor 构建阶段生成，静态检查时尚未产出
   - `@Entry` 根节点为 `HdsNavigation` 等 `@kit.UIDesignKit` 组件时报非容器：

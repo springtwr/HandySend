@@ -365,7 +365,7 @@ export async function sendToDevice(
   // 只输出一行汇总：逐文件日志在数百个文件时会单独占满日志缓冲，淹没真正有用的记录
   logger.debug('发送清单 文件数=' + files.length + ' 总字节=' + totalBytes + ' 已带校验和=' + hashedCount,
     sendCtx);
-  logger.debug(actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
+  logger.debug('发送地址：' + actualProtocol + '://' + device.ip + ':' + device.port, sendCtx);
   // 接收方开启 PIN 保护时，prepare-upload 会返回 401（PIN required）。
   // 这里弹出输入框让用户输入 PIN 后带 pin 重试；用户取消则按 401 错误结束。
   const MAX_PIN_ATTEMPTS = 5;
@@ -774,14 +774,23 @@ async function buildSendFileItem(uri: string, index: number,
   return item;
 }
 
+// 带 context 的纯路径函数：冷启动（AppCore 尚未保存 context）与运行期共用同一口径。
+function sendThumbnailDirOf(context: common.Context): string {
+  return context.cacheDir + '/send/';
+}
+
+// 旧版本遗留的发送临时目录（已不再写入，仅冷启动清理）。
+function legacySendDirOf(context: common.Context): string {
+  return context.filesDir + '/send/';
+}
+
 // 带 context 的清理变体：供冷启动（EntryAbility.onCreate）清扫
-// {cacheDir}/send/（手动文本暂存临时目录）使用——此时 AppCore 尚未保存
+// {cacheDir}/send/（发送缩略图缓存）与旧版本遗留的 {filesDir}/send/
+// （手动文本暂存，已不再写入，全量删除安全）使用——此时 AppCore 尚未保存
 // 应用 context，无法在仓库层自行取 context。
-// 清理 {cacheDir}/send/，并顺带清空旧版本遗留的 {filesDir}/send/
-// （已不再写入，全量删除安全）。
 export function cleanupSendDirWithContext(context: common.UIAbilityContext): void {
-  clearDirContents(context.cacheDir + '/send/');
-  clearDirContents(context.filesDir + '/send/');
+  clearDirContents(sendThumbnailDirOf(context));
+  clearDirContents(legacySendDirOf(context));
 }
 
 // 「发送文本」目录：发送产物（sharedText_*.txt）与手动暂存文本的统一落盘目录，
@@ -804,7 +813,7 @@ export function sendThumbnailDir(): string {
   if (appContext === undefined) {
     return '';
   }
-  return appContext.cacheDir + '/send/';
+  return sendThumbnailDirOf(appContext);
 }
 
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。
@@ -1496,18 +1505,20 @@ async function sendToDeviceWithSession(
       if (status === 401) {
         updateSendSessionStatus(sessionId, SendSessionStatus.pinRequired, errMsg);
       } else if (status === 429) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts);
+        updateSendSessionStatus(sessionId, SendSessionStatus.tooManyAttempts, errMsg);
       } else if (status === 403) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+        updateSendSessionStatus(sessionId, SendSessionStatus.declined, errMsg);
       } else if (status === 409) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.recipientBusy);
+        updateSendSessionStatus(sessionId, SendSessionStatus.recipientBusy, errMsg);
       } else {
         updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }
     } else {
       let msg = err.message !== undefined ? err.message : '';
       if (msg.indexOf('declined') >= 0 || msg.indexOf('rejected') >= 0) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.declined);
+        // 原始消息为英文内部标记，终态展示统一用本地化拒收文案
+        let declinedMsg: string = sendResultErrorMessage({ kind: 'statusCode', status: 403 });
+        updateSendSessionStatus(sessionId, SendSessionStatus.declined, declinedMsg);
       } else if (err.kind === 'cancelled' || msg === 'Send cancelled') {
         // 本地取消令牌触发的中断（Rust kind cancelled）与发送入口的取消短路标记：
         // 终态展示为已取消，不与真正的发送失败混淆；文案统一用本地化取消文案，
@@ -1515,7 +1526,7 @@ async function sendToDeviceWithSession(
         let cancelMsg: string = sendResultErrorMessage({ kind: 'cancelled' });
         updateSendSessionStatus(sessionId, SendSessionStatus.cancelled, cancelMsg);
       } else if (isTimeoutOrConnectionError(err)) {
-        updateSendSessionStatus(sessionId, SendSessionStatus.timeout);
+        updateSendSessionStatus(sessionId, SendSessionStatus.timeout, errMsg);
       } else {
         updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, errMsg);
       }

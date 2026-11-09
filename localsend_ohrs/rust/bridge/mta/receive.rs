@@ -1,14 +1,15 @@
 //! MTA 接收端 Rust 主导下载。
 //!
 //! Rust 直接发起 HTTPS 下载（`reqwest` + 跳过服务端证书校验）、边收边流式解压
-//! （复用 [`crate::bridge::mta::unzip_stream`]），把 ZIP 条目**直接写入目标目录**：
-//! 仅取文件名防路径穿越、忽略目录条目、重名加 `(n)`、还原条目修改时间、强制
-//! 条目数与解压总字节上限；并按"已解压字节 ÷ 声明总大小"经桥接事件上报进度。
+//! （复用 [`crate::bridge::mta::unzip_stream`]），把 ZIP 条目写入目标目录下的
+//! 应用独占临时区后原子改名：仅取文件名防路径穿越、忽略目录条目、重名加 `(n)`、
+//! 还原条目修改时间、强制条目数与解压总字节上限；失败只清理未提交临时文件，
+//! 已提交条目保留。
 //!
 //! 网络语义等价重建：连接超时、响应码非 200 判定、下载停滞看门狗（基于数据到达
-//! 时间）、取消令牌、失败清理（删除本次已写入的目标文件）与可读日志。
-//! ArkTS 仅负责协议交互与业务接线。
+//! 时间）、取消令牌、失败清理与可读日志。ArkTS 仅负责协议交互与业务接线。
 
+use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -25,6 +26,7 @@ use crate::bridge::mta::unzip_stream::{
     self, PushbackReader, ZipEntryHandler, ZipEntryInfo, ZipParseOptions,
 };
 use crate::bridge::state::BridgeState;
+use crate::bridge::temp_workspace;
 use crate::bridge::throttle::ProgressThrottle;
 
 /// 下载响应体分块通道容量（块）；满时暂停读取响应体形成背压
@@ -59,6 +61,28 @@ pub struct ReceivedEntry {
     pub saved_path: String,
 }
 
+/// 解析失败时携带已提交条目，供上层记录部分完成结果。
+#[derive(Debug)]
+struct PartialExtractError {
+    reason: String,
+    entries: Vec<ReceivedEntry>,
+}
+
+impl fmt::Display for PartialExtractError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for PartialExtractError {}
+
+/// 接收下载的结果：`error` 为空表示成功；失败时 `entries` 仍保留已提交条目。
+#[derive(Debug)]
+pub struct ReceiveDownloadOutcome {
+    pub entries: Vec<ReceivedEntry>,
+    pub error: Option<String>,
+}
+
 /// 接收下载的网络超时参数。
 #[derive(Debug, Clone, Copy)]
 pub struct ReceiveTimeouts {
@@ -80,10 +104,11 @@ impl Default for ReceiveTimeouts {
     }
 }
 
-/// 从已就绪的 ZIP 读取器把条目直接写入目标目录，返回落盘元数据。
+/// 从已就绪的 ZIP 读取器把条目写入目标目录下的应用临时区，提交后原子改名，
+/// 返回落盘元数据。
 ///
-/// 失败（含取消、超限、损坏）时删除本次已写入的目标文件，避免残留半成品。
-/// 与网络层解耦，便于对解析/落盘/回滚做单元测试。
+/// 失败（含取消、超限、损坏）时只删除未提交临时文件；已完成条目保留为部分
+/// 交付物，不删除最终路径。与网络层解耦，便于对解析/落盘/清理做单元测试。
 /// `progress` 累计解压产出字节，`written` 累计实际写盘字节（均供接收诊断）。
 pub fn extract_zip_to_dir<R: Read>(
     reader: R,
@@ -91,6 +116,18 @@ pub fn extract_zip_to_dir<R: Read>(
     options: &ZipParseOptions,
     progress: &AtomicU64,
     written: &AtomicU64,
+) -> anyhow::Result<Vec<ReceivedEntry>> {
+    extract_zip_to_dir_with(reader, target_dir, options, progress, written, &mut |_| {})
+}
+
+/// 与 [`extract_zip_to_dir`] 相同，并在每个条目提交到最终路径后调用回调。
+pub fn extract_zip_to_dir_with<R: Read, F: FnMut(&ReceivedEntry)>(
+    reader: R,
+    target_dir: &Path,
+    options: &ZipParseOptions,
+    progress: &AtomicU64,
+    written: &AtomicU64,
+    on_committed: &mut F,
 ) -> anyhow::Result<Vec<ReceivedEntry>> {
     fs::create_dir_all(target_dir)
         .map_err(|e| anyhow::anyhow!("创建目标目录失败 {}: {e}", target_dir.display()))?;
@@ -101,15 +138,24 @@ pub fn extract_zip_to_dir<R: Read>(
         entries: Vec::new(),
         buffer: vec![0u8; WRITE_BUFFER_SIZE],
         written,
+        on_committed,
     };
     let mut pushback = PushbackReader::new(reader);
     match unzip_stream::parse_zip(&mut pushback, options, progress, &mut handler) {
-        Ok(()) => Ok(handler.entries),
+        Ok(()) => {
+            temp_workspace::remove_temp_dir_if_empty(target_dir, temp_workspace::TEMP_SUBDIR_MTA);
+            Ok(handler.entries)
+        }
         Err(error) => {
+            // 只清理未提交的临时文件；已 commit 的条目保留为部分交付物。
             for path in &handler.created {
-                let _ = fs::remove_file(path);
+                temp_workspace::remove_temp_file(path);
             }
-            Err(anyhow::anyhow!(error))
+            temp_workspace::remove_temp_dir_if_empty(target_dir, temp_workspace::TEMP_SUBDIR_MTA);
+            Err(anyhow::Error::new(PartialExtractError {
+                reason: error,
+                entries: handler.entries.clone(),
+            }))
         }
     }
 }
@@ -176,16 +222,40 @@ pub async fn receive_download(
     let written = Arc::new(AtomicU64::new(0));
     let written_writer = written.clone();
     let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(BODY_CHANNEL_CAPACITY);
+    // 逐条目提交事件：阻塞的解析线程只做无阻塞入队，异步转发任务负责按序送达 ArkTS。
+    let (entry_tx, mut entry_rx) = tokio::sync::mpsc::unbounded_channel::<ReceivedEntry>();
+    let event_tx_entries = event_tx.clone();
+    let task_id_entries = task_id.to_string();
+    let entry_forward_task = tokio::spawn(async move {
+        while let Some(entry) = entry_rx.recv().await {
+            send_event(
+                &event_tx_entries,
+                BridgeEvent::MtaEntryCommitted {
+                    task_id: task_id_entries.clone(),
+                    name: entry.name,
+                    size: entry.size,
+                    modified_unix_ms: entry.modified_unix_ms,
+                    saved_path: entry.saved_path,
+                },
+            )
+            .await;
+        }
+    });
     let parse_dir = target.clone();
+    let entry_tx_parse = entry_tx.clone();
     // 解析/写盘为阻塞操作，走 spawn_blocking；输入数据经通道按到达顺序喂入
     let parse_task = tokio::task::spawn_blocking(move || {
         let reader = ChannelReader::new(rx);
-        extract_zip_to_dir(
+        let mut on_committed = move |entry: &ReceivedEntry| {
+            let _ = entry_tx_parse.send(entry.clone());
+        };
+        extract_zip_to_dir_with(
             reader,
             &parse_dir,
             &options,
             &progress_writer,
             &written_writer,
+            &mut on_committed,
         )
     });
 
@@ -272,11 +342,13 @@ pub async fn receive_download(
     if let Some(tail) = merger.flush() {
         let _ = tx.send(tail).await;
     }
-    // 关闭输入通道（EOF）让解析任务收尾；失败路径下解析任务依据自身记录回滚已写文件
+    // 关闭输入通道（EOF）让解析任务收尾；失败路径下解析任务清理未提交临时文件
     drop(tx);
-    let parsed = parse_task
-        .await
-        .map_err(|e| anyhow::anyhow!("解压任务异常: {e}"))?;
+    let parsed = parse_task.await;
+    // 等待逐条目事件全部写入事件通道后再返回，保证终态前事件已按序提交
+    drop(entry_tx);
+    let _ = entry_forward_task.await;
+    let parsed = parsed.map_err(|e| anyhow::anyhow!("解压任务异常: {e}"))?;
 
     // 接收结束汇总（debug 级；成功与失败均输出，便于定位瓶颈）
     let final_uncompressed = progress.load(Ordering::Relaxed);
@@ -315,7 +387,61 @@ pub async fn receive_download(
         }
         Err(error) => {
             let reason = failure.unwrap_or_else(|| "接收解压失败".to_string());
-            Err(anyhow::anyhow!("{reason}（解析任务: {error:#}）"))
+            // 解析错误携带已提交条目；连接/响应阶段错误没有条目。
+            let entries = error
+                .downcast_ref::<PartialExtractError>()
+                .map(|partial| partial.entries.clone())
+                .unwrap_or_default();
+            Err(anyhow::Error::new(PartialExtractError {
+                reason: format!("{reason}（解析任务: {error:#}）"),
+                entries,
+            }))
+        }
+    }
+}
+
+/// 下载并返回“条目 + 错误”的结构化结果（NAPI 用）。
+///
+/// 失败时仍返回已提交条目，供 ArkTS 记录部分完成历史；连接/响应等早期失败
+/// 返回空条目。
+#[allow(clippy::too_many_arguments)]
+pub async fn receive_download_result(
+    state: &Mutex<BridgeState>,
+    go_ip: &str,
+    port: u16,
+    task_id: &str,
+    target_dir: &str,
+    total_bytes: u64,
+    options: ZipParseOptions,
+    cancel: CancellationToken,
+    timeouts: ReceiveTimeouts,
+) -> ReceiveDownloadOutcome {
+    match receive_download(
+        state,
+        go_ip,
+        port,
+        task_id,
+        target_dir,
+        total_bytes,
+        options,
+        cancel,
+        timeouts,
+    )
+    .await
+    {
+        Ok(entries) => ReceiveDownloadOutcome {
+            entries,
+            error: None,
+        },
+        Err(error) => {
+            let entries = error
+                .downcast_ref::<PartialExtractError>()
+                .map(|partial| partial.entries.clone())
+                .unwrap_or_default();
+            ReceiveDownloadOutcome {
+                entries,
+                error: Some(format!("{error:#}")),
+            }
         }
     }
 }
@@ -444,11 +570,11 @@ fn sniff_image_extension(bytes: &[u8]) -> &'static str {
     "bin"
 }
 
-/// 逐条目写入目标目录，并记录本次已产出文件供失败回滚。
-struct FileEntryHandler<'a> {
+/// 逐条目写入目标目录下的临时区，提交后原子改名；记录未提交临时文件供失败清理。
+struct FileEntryHandler<'a, F: FnMut(&ReceivedEntry)> {
     /// 目标目录
     dir: PathBuf,
-    /// 本次已创建的文件（失败/取消时删除）
+    /// 本次未提交的临时文件（失败/取消时删除；已提交条目保留）
     created: Vec<PathBuf>,
     /// 已落盘条目元数据
     entries: Vec<ReceivedEntry>,
@@ -456,33 +582,49 @@ struct FileEntryHandler<'a> {
     buffer: Vec<u8>,
     /// 累计实际写盘字节（供接收速率诊断）
     written: &'a AtomicU64,
+    /// 单条目提交成功后的回调（用于逐条目事件）
+    on_committed: &'a mut F,
 }
 
-impl ZipEntryHandler for FileEntryHandler<'_> {
+impl<F: FnMut(&ReceivedEntry)> ZipEntryHandler for FileEntryHandler<'_, F> {
     fn handle_entry(&mut self, info: &ZipEntryInfo, data: &mut dyn Read) -> Result<(), String> {
         let path = unique_target_path(&self.dir, &info.name);
-        let mut file =
-            File::create(&path).map_err(|e| format!("创建目标文件失败 {}: {e}", path.display()))?;
-        self.created.push(path.clone());
+        let temp_path = temp_workspace::temp_path_for(&path, temp_workspace::TEMP_SUBDIR_MTA);
+        if let Some(parent) = temp_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("创建临时目录失败 {}: {e}", parent.display()))?;
+        }
+        let mut file = File::create(&temp_path)
+            .map_err(|e| format!("创建目标文件失败 {}: {e}", temp_path.display()))?;
+        self.created.push(temp_path.clone());
         let written = copy_to_file(data, &mut file, &mut self.buffer, self.written)
-            .map_err(|e| format!("写入目标文件失败 {}: {e}", path.display()))?;
+            .map_err(|e| format!("写入目标文件失败 {}: {e}", temp_path.display()))?;
         use std::io::Write as _;
         file.flush()
-            .map_err(|e| format!("写入目标文件失败 {}: {e}", path.display()))?;
+            .map_err(|e| format!("写入目标文件失败 {}: {e}", temp_path.display()))?;
         drop(file);
 
         if info.modified_unix_ms > 0 {
-            if let Err(e) = set_modified_time(&path, info.modified_unix_ms) {
-                log::warn!("MTA 还原文件修改时间失败 {}: {e}", path.display());
+            if let Err(e) = set_modified_time(&temp_path, info.modified_unix_ms) {
+                log::warn!("MTA 还原文件修改时间失败 {}: {e}", temp_path.display());
             }
         }
 
-        self.entries.push(ReceivedEntry {
+        if let Err(e) = temp_workspace::commit(&temp_path, &path) {
+            let _ = fs::remove_file(&temp_path);
+            self.created.retain(|created| created != &temp_path);
+            return Err(format!("提交目标文件失败 {}: {e}", path.display()));
+        }
+        self.created.retain(|created| created != &temp_path);
+
+        let entry = ReceivedEntry {
             name: info.name.clone(),
             size: written,
             modified_unix_ms: info.modified_unix_ms,
             saved_path: path.to_string_lossy().to_string(),
-        });
+        };
+        (self.on_committed)(&entry);
+        self.entries.push(entry);
         Ok(())
     }
 }
@@ -516,16 +658,15 @@ fn copy_to_file(
 
 /// 在目标目录中生成不冲突的文件路径（重名加 `(n)` 后缀）。
 fn unique_target_path(dir: &Path, name: &str) -> PathBuf {
-    let candidate = dir.join(name);
-    if !candidate.exists() {
-        return candidate;
+    if !temp_workspace::is_name_reserved(dir, name) {
+        return dir.join(name);
     }
     let (base, ext) = split_name(name);
     let mut index: u32 = 1;
     loop {
-        let candidate = dir.join(format!("{base}({index}){ext}"));
-        if !candidate.exists() {
-            return candidate;
+        let candidate_name = format!("{base}({index}){ext}");
+        if !temp_workspace::is_name_reserved(dir, &candidate_name) {
+            return dir.join(candidate_name);
         }
         index += 1;
     }
@@ -839,6 +980,10 @@ mod tests {
         assert_eq!(entries[0].modified_unix_ms, 1_600_000_000_000);
         assert_eq!(fs::read(out.join("a.txt")).unwrap(), b"hello mta");
         assert_eq!(progress.load(Ordering::Relaxed), 9);
+        assert!(
+            !out.join(temp_workspace::TEMP_DIR_NAME).exists(),
+            "成功结束后临时区应删除"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -873,7 +1018,7 @@ mod tests {
     fn extract_rolls_back_on_corrupt_zip() {
         let dir = temp_dir("rollback");
         let out = dir.join("out");
-        // 首条完整写出后立即截断：解析出错并回滚已写文件
+        // 首条完整写出后立即截断：解析出错并清理未提交临时文件
         let mut zip_bytes = stored_zip("a.txt", b"hello mta");
         // 本地头 30 字节 + 名称 "1/a.txt" 7 字节，保留部分条目数据后截断
         zip_bytes.truncate(30 + "1/a.txt".len() + 3);
@@ -888,7 +1033,7 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("a.txt").exists(), "失败后应回滚已写入文件");
+        assert!(!out.join("a.txt").exists(), "未提交文件应被清理");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -910,7 +1055,46 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("a.txt").exists(), "取消后应回滚已写入文件");
+        assert!(!out.join("a.txt").exists(), "未提交文件应被清理");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_failure_reports_committed_entries() {
+        let dir = temp_dir("partial_committed");
+        let out = dir.join("out");
+        let big = vec![7u8; 64 * 1024];
+        let zip_bytes = stored_zip_multi(&[("a.txt", b"hello"), ("big.bin", &big)]);
+        let marker = b"1/big.bin";
+        let marker_pos = zip_bytes
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("ZIP 中应存在第二条目名称")
+            + marker.len();
+        // 截断在第二个条目数据中途：首条已提交，第二条解析失败
+        let truncated = &zip_bytes[..(marker_pos + 10).min(zip_bytes.len())];
+        let progress = AtomicU64::new(0);
+        let written = AtomicU64::new(0);
+        let mut committed: Vec<ReceivedEntry> = Vec::new();
+
+        let result = extract_zip_to_dir_with(
+            io::Cursor::new(truncated),
+            &out,
+            &options(10, 64 * 1024 * 1024),
+            &progress,
+            &written,
+            &mut |entry: &ReceivedEntry| committed.push(entry.clone()),
+        );
+
+        assert!(result.is_err(), "截断 ZIP 应解析失败");
+        assert_eq!(committed.len(), 1, "失败前应已提交首条");
+        assert_eq!(committed[0].name, "a.txt");
+        assert!(out.join("a.txt").exists(), "已提交条目应保留");
+        let error = result.unwrap_err();
+        let partial = error
+            .downcast_ref::<PartialExtractError>()
+            .expect("解析错误应携带已提交条目");
+        assert_eq!(partial.entries.len(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -975,7 +1159,7 @@ mod tests {
             ("big.jpg", big.as_slice()),
             ("next.bin", b"next".as_slice()),
         ]);
-        // 截断到首条目数据中途：解析失败应回滚已写入的大文件
+        // 截断到首条目数据中途：解析失败应清理未提交的大文件
         zip_bytes.truncate(30 + "1/big.jpg".len() + WRITE_BUFFER_SIZE / 2);
         let progress = AtomicU64::new(0);
         let written = AtomicU64::new(0);
@@ -988,7 +1172,7 @@ mod tests {
             &written,
         );
         assert!(result.is_err());
-        assert!(!out.join("big.jpg").exists(), "失败后应回滚已写入的大文件");
+        assert!(!out.join("big.jpg").exists(), "未提交文件应被清理");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1036,6 +1220,19 @@ mod tests {
         assert!(unique_target_path(&dir, "photo.jpg").ends_with("photo(1).jpg"));
         // 隐藏文件整体视为主干
         assert!(unique_target_path(&dir, ".hidden").ends_with(".hidden"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unique_target_path_respects_other_protocol_temp() {
+        let dir = temp_dir("unique_reserved");
+        let temp = dir
+            .join(temp_workspace::TEMP_DIR_NAME)
+            .join(temp_workspace::TEMP_SUBDIR_WEB);
+        fs::create_dir_all(&temp).unwrap();
+        // 网页上传已在临时区预留同名文件，MTA 应选择带序号的名字
+        fs::write(temp.join("photo.jpg"), b"half").unwrap();
+        assert!(unique_target_path(&dir, "photo.jpg").ends_with("photo(1).jpg"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -123,6 +123,49 @@ export function addEntries(entries: Array<ReceiveHistoryEntry>): void {
   logger.debug('已添加 ' + entries.length + ' 条记录');
 }
 
+/**
+ * 追加不存在的记录（按 id 或已落盘路径去重）。
+ *
+ * 用于强杀恢复补写：恢复可能因再次强杀而重复执行，任务历史按 sessionId 幂等，
+ * 接收历史必须在这里避免重复；旧版 `sessionId_index` 条目与新 `sessionId_fileId`
+ * 条目通过路径判重。
+ * @returns 实际追加条数
+ */
+export function addEntriesIfAbsent(entries: Array<ReceiveHistoryEntry>): number {
+  if (entries.length === 0) {
+    return 0;
+  }
+  let added: number = 0;
+  for (let i = 0; i < entries.length; i++) {
+    let candidate: ReceiveHistoryEntry = entries[i];
+    if (hasHistoryEntry(candidate)) {
+      continue;
+    }
+    history.push(candidate);
+    added++;
+  }
+  if (added > 0) {
+    trimToCapacity();
+    saveHistory();
+    logger.debug('恢复补写接收历史 ' + added + ' 条');
+  }
+  return added;
+}
+
+function hasHistoryEntry(candidate: ReceiveHistoryEntry): boolean {
+  for (let i = 0; i < history.length; i++) {
+    let existing: ReceiveHistoryEntry = history[i];
+    if (existing.id === candidate.id) {
+      return true;
+    }
+    // 旧版按文件序号生成 id；同一最终路径视为同一条记录，避免恢复重复。
+    if (candidate.path.length > 0 && existing.path === candidate.path) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function removeEntry(id: string, deleteFile?: boolean): void {
   // 需要同时删除磁盘文件时，先找到目标条目并删除其文件
   if (deleteFile === true) {
@@ -220,7 +263,7 @@ export function updateGallerySavedStatus(sessionId: string, saved: boolean): voi
   }
   if (updated) {
     saveHistory();
-    logger.debug('sessionId=' + sessionId + ' saved=' + saved);
+    logger.debug('接收历史相册状态更新 会话=' + sessionId + ' saved=' + saved);
   }
 }
 
@@ -233,7 +276,7 @@ export function updateGallerySavedStatusById(id: string, saved: boolean): void {
     }
     history[i] = copyEntryWithGalleryStatus(history[i], saved);
     saveHistory();
-    logger.debug('id=' + id + ' saved=' + saved);
+    logger.debug('接收历史相册状态更新 条目=' + id + ' saved=' + saved);
     return;
   }
 }
@@ -264,7 +307,7 @@ export function updateGallerySavedStatusByPath(path: string, saved: boolean): vo
   }
   if (updated) {
     saveHistory();
-    logger.debug('path=' + path + ' saved=' + saved);
+    logger.debug('接收历史相册状态更新 路径=' + path + ' saved=' + saved);
   }
 }
 

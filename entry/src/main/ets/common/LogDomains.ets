@@ -1,7 +1,7 @@
 /**
  * LogDomains.ets — 业务域常量定义
  *
- * 用于 hilog 的 domain 参数，支持 `hdc hilog -t <domain>` 按业务域过滤日志。
+ * 用于 hilog 的 domain 参数，支持 `hdc shell hilog -D <domain>` 按业务域过滤日志。
  * 每个域对应一组相关的业务模块。
  */
 
@@ -18,6 +18,6 @@ export class LogDomains {
   static readonly SERVER: number = 0x0004;
   /** 设置、偏好、收藏：SettingsRepository、PreferencesUtil、FavoritesService、SettingsViewModel */
   static readonly SETTINGS: number = 0x0005;
-  /** MTA（互传联盟）协议全链路：service/mta、MtaRepository、Mta*ViewModel */
+  /** MTA（互传联盟）协议全链路：service/mta、MtaRepository */
   static readonly MTA: number = 0x0006;
 }

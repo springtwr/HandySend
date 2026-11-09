@@ -89,7 +89,7 @@ pub fn init_with_persisted_identity(
     persist_dir: &str,
 ) -> Result<(), BridgeError> {
     log::debug!(
-        "init_with_persisted_identity: alias={} persist_dir={}",
+        "初始化持久化身份：alias={} persist_dir={}",
         alias,
         persist_dir
     );
@@ -116,7 +116,7 @@ pub fn init_with_persisted_identity(
             },
             None => None,
         };
-        log::debug!("loaded_persisted={}", loaded.is_some());
+        log::debug!("加载持久化身份={}", loaded.is_some());
 
         let cert = match loaded {
             Some((key_pem, cert_pem)) => {
@@ -510,7 +510,7 @@ fn format_log_entry(level: log::Level, target: &str, msg: &str) -> String {
 /// 第三方 TLS / HTTP 客户端的日志 target 前缀。
 /// 这类依赖在 debug 级别输出每次连接的建立细节（rustls 单次握手十余行、
 /// reqwest 子网扫描时每个地址一行），对本应用问题定位无价值且会淹没业务日志，
-/// 故屏蔽其 debug/trace；warn/error 保留，握手失败与请求错误仍可见。
+/// 故屏蔽其 debug/trace；info 及以上保留，握手失败与请求错误仍可见。
 const NOISY_LOG_TARGETS: [&str; 3] = ["rustls", "tokio_rustls", "reqwest"];
 
 /// 日志是否应记录（按 target 过滤）：命中噪声 target 且级别低于 info 时丢弃。

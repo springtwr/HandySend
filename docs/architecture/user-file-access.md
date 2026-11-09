@@ -19,7 +19,7 @@
 更早版本没有。
 
 图库入口合并图片与视频后，暂存项按扩展名区分两者（`isImageExtension`）：图片直接显示缩略图，
-视频由 `loadVideoPreview` 懒生成缩略图，其余类型回退类型图标。
+视频由 `loadVideoPreview` 懒生成缩略图（多个视频按请求顺序串行解码），其余类型回退类型图标。
 
 上限常量为 `SendViewModel.ets` 顶部的 `MAX_PICK_SELECT_NUMBER`，两个 Picker 入口共用。
 
@@ -46,6 +46,30 @@ Picker 返回的 URI（`file://media/...`、`file://docs/...`）只带临时授�
 判定，不支持时静默降级。
 
 未持久化过的历史条目（旧版本产生）无法激活，读取时按不可用降级并提示「文件暂不可用」。
+
+### 2.1 接收目录的选择与授权
+
+接收侧普通文件的保存目录由 `service/repository/ReceiveDirectory.ets` 唯一提供，LocalSend、网页上传与
+MTA 三条接收链路共用，禁止各自解析路径。
+
+- **默认目录**：`DocumentViewPicker.save` 的 DOWNLOAD 模式取 `Download/<包名>/`，
+  返回的 URI 自带持久化授权；Picker 不可用时回退直接构造同一路径的文档类 URI。
+- **自定义目录**：设置页「文件保存目录」经 `DocumentViewPicker.select` 的 `FOLDER`
+  模式选择，随后调用 `persistWritableUri` 持久化 `READ_MODE | WRITE_MODE` 授权；
+  接收前经 `ensureWritableUriAccess` 激活。URI 存入设置项 `receiveDirectoryUri`，
+  空串表示默认目录。
+- **设备限制**：`FOLDER` 选择在手机/平板需 API 26+（2in1 13+），设置项按产品要求
+  统一以 API 26 为界置灰；低版本设备只能使用默认目录。
+- **重启后激活**：应用启动时 `activateConfiguredReceiveDirectory` 激活当前自定义目录的持久授权；
+  接收历史/详情页按路径读取文件时，`FileLocationUtil` 在无权限时会尝试激活文件所在目录 URI。
+- **路径展示**：相对路径中的特殊目录段按当前语言映射为文件管理器显示名
+  （`Huawei Share` → 华为分享，`HO_DATA_EXT_MISC` → 兼容应用数据）；
+  官方未提供内部名到显示名的查询接口，映射表由应用维护。
+- **失效回退**：自定义目录被删除、移动或授权被撤销时，`ensureReceiveDirectory`
+  回退默认目录、清除该设置并记录日志，设置页经变更通知同步刷新为默认目录；
+  目录缓存按设置值比较，且命中时仍校验目录可访问，失效后下一次接收自动重新解析。
+  LocalSend 接收（含纯文本放行后）、网页上传普通文件、MTA 文件接收或设置页
+  会消费一次性回退提示，用 Toast 告知用户保存位置已改为默认目录。
 
 ## 3. 暂存句柄与复用
 

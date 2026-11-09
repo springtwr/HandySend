@@ -849,8 +849,16 @@ function channelFor(kind: LogFileKind): LogChannel {
   return kind === LogFileKind.DETAIL ? detailChannel : eventsChannel;
 }
 
+/** 诊断日志目录（不带尾斜杠）；应用上下文未就绪时返回空串 */
+function logDir(): string {
+  return appContext !== undefined ? appContext.filesDir + '/' + LOG_DIR_NAME : '';
+}
+
 function logPath(kind: LogFileKind, previous: boolean): string {
-  let directory: string = appContext !== undefined ? appContext.filesDir + '/' + LOG_DIR_NAME : '';
+  let directory: string = logDir();
+  if (directory.length === 0) {
+    return '';
+  }
   if (kind === LogFileKind.DETAIL) {
     return directory + '/' + (previous ? DETAIL_PREVIOUS : DETAIL_CURRENT);
   }
@@ -858,7 +866,7 @@ function logPath(kind: LogFileKind, previous: boolean): string {
 }
 
 function ensureLogDir(): void {
-  let directory: string = appContext !== undefined ? appContext.filesDir + '/' + LOG_DIR_NAME : '';
+  let directory: string = logDir();
   if (directory.length === 0) {
     return;
   }

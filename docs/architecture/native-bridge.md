@@ -39,7 +39,7 @@
 | `nativeAcceptWebSession(token)` / `nativeDeclineWebSession(token)` / `nativeExpireWebSession(token)` | 接受 / 拒绝 / 令待确认浏览器会话过期 |
 | `nativeRespondTransfer(sessionId, accept, acceptedFileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
 | `nativeSendFiles(target, senderAlias, files)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
-| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收文件的直写目标 fd（fd-direct：respondTransfer 前逐文件调用，写入完成/会话终态由 Rust 关闭） |
+| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收直写 fd（respondTransfer 前逐文件；`path` 为最终路径，fd 打开在 `.handysend-temp/localsend/`；终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
 | `nativeCancelTransfer(target, sessionId)` | 向对端设备发送取消传输请求 |
 | `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
@@ -88,11 +88,13 @@
 > **注 4**：完整签名 `(goIp, port, taskId, targetDir, totalBytes, maxEntries, maxTotalBytes,
 > maxEntryBytes, cancelTokenId?, connectTimeoutMs?, stallTimeoutMs?, headerTimeoutMs?)`。
 > 接收端 Rust 主导下载：直接请求 `https://<goIp>:<port>/download?taskId=`（跳过服务端证书
-> 校验）、流式解压并直接写入 `targetDir`（防穿越/忽略目录/重名 `(n)`/还原条目时间/上限），
-> 返回落盘元数据 JSON `[{name, size, modifiedUnixMs, savedPath}]`；失败/取消删除本次已写
-> 文件。`maxTotalBytes` 为解压总量上限（由 ArkTS 按对端声明值与容差计算）、`maxEntryBytes`
-> 为单条目解压上限（0 表示不限制）；`connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs`
-> 分别覆盖连接、下载停滞与等待响应头超时（缺省用 Rust 侧默认值）。
+> 校验）、流式解压并写入 `targetDir/.handysend-temp/mta/`（防穿越/忽略目录/重名 `(n)`/
+> 还原条目时间/上限），每个条目完成后原子改名到 `targetDir`。逐条目提交经
+> `mtaEntryCommitted` 事件上报；下载结束返回 JSON `{ok, error, entries}`，失败时仍保留
+> 已提交条目作为部分交付，只清理未提交临时文件。`maxTotalBytes` 为解压总量上限（由
+> ArkTS 按对端声明值与容差计算）、`maxEntryBytes` 为单条目解压上限（0 表示不限制）；
+> `connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待
+> 响应头超时（缺省用 Rust 侧默认值）。
 
 > 完整封装清单以 `entry/src/main/ets/service/NativeBridge.ets` 为准。
 
@@ -112,6 +114,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   ├── mod.rs              # 模块声明 + pub use 重导出
   ├── event.rs            # BridgeEvent 强类型事件 + BridgeError + 事件分类常量
   ├── state.rs            # BridgeState 纯数据（无 runtime/callback）
+  ├── temp_workspace.rs   # 接收临时区路径、按协议子目录、提交与清理
   ├── engine.rs           # StateAction + apply_actions 纯函数状态变更
   ├── identity.rs         # init/安全上下文/网络信息/哈希/取消令牌/日志工具
   ├── server.rs           # 服务器生命周期 + 传输决策 + WebSend（含事件循环 task）
@@ -122,7 +125,7 @@ bridge/                  # 桥接层（纯逻辑，不依赖 runtime/NAPI，可�
   │   ├── protocol.rs     # 应用层消息纯函数（构造/解析/JSON、status 判定）
   │   ├── zip_stream.rs   # 按文件清单库化流式写出 ZIP（无 Seek 流式；Deflated 统一档、ZIP64 自动启用；数据源 ArkTS fd 或路径回退）
   │   ├── unzip_stream.rs # 自有 ZIP 流式解析/解压核心（Stored/Deflated/带与不带签名数据描述符/ZIP64 扩展字段）+ 条目数/解压总量/单条目字节上限等安全约束
-  │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录 + 进度/取消/回滚）
+  │   ├── receive.rs      # 接收端 Rust 主导下载（reqwest + 流式解压 + 临时区提交 + 进度/取消/未提交清理）
   │   ├── ws.rs           # WS 连接上的 MTA 状态机
   │   └── server.rs       # hyper + tokio-rustls TLS 服务器（/websocket 升级、/download 流式 ZIP）
   └── adapter/            # 上游类型隔离
@@ -183,7 +186,8 @@ MTA 发送端事件：`mtaServerStarted{port}`、`mtaWsConnected`、`mtaVersionN
 ）、`mtaDownloadStarted{taskId}`、`mtaSendProgress{sentBytes,totalBytes,percent,networkBytes}`、`mtaSendCompleted{taskId}`、`mtaSendPartial{reason}`、
 `mtaSendRejected{reason}`、`mtaSendFailed{reason}`。MTA 接收端进度事件：`mtaReceiveProgress{receivedBytes,totalBytes,percent,networkBytes,networkDone}`（接收由
 Rust 主导，进度分子为已解压字节、分母为声明总大小；`networkBytes` 为网络字节口径的速率分子，`networkDone` 表示网络数据已全部读入、
-仍在解压/落盘）。跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
+仍在解压/落盘）；逐条目提交事件 `mtaEntryCommitted{taskId,name,size,modifiedUnixMs,savedPath}` 用于增量更新强杀恢复草稿。
+跨层字段契约由 `bridge/event.rs::test_all_event_variants_payload_contract` 与 `tests/src/integration/napi_guard.rs` 双端钉死。
 
 MTA 原生文本：`MtaServerConfig`/`MtaContext` 携带可选 `text_content`（JSON `textContent`）；`sendRequest` payload 的 `SendRequestPayload` 携带可选 `cat_share_text`（序列化为
 `catShareText`，缺省不序列化）。文本内容以 ZIP 单条目 `1/sharedText.txt` 随包发送，接收端解析 `catShareText` 后按文本消息处理，字段缺省时行为与不含文本的发送完全一致。
@@ -255,13 +259,21 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 - 每客户端独立上传槽（不占用 v2 全局单槽）；默认需确认，接受即全量；面板可开启“上传免确认”，
   与暂存文件列表解耦，应用重启或手动停止网页服务后重置
-- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进 `Download/<包名>/` 去重，
+- 建会话立即回 202 并下发 token，页面轮询 `/web/upload-status` 等待应用确认；页面按标签页 client
+  且同一批文件复用响应丢失的会话，换批或新标签页（含复制标签页）各自建会话；状态查询兼作页面心跳，取消离开宽限
+- ArkTS 确认前经 `set_web_upload_targets` 预置最终落盘路径（普通文件进用户设置的接收目录，默认
+  `Download/<包名>/`，重名自动加后缀；
   文本条目进接收文本目录（首次使用时创建）；仅单条文本消息记为文本消息）；
   服务端按声明大小流式落盘（超量 413），完成改名并经 `WebUploadProgress`/`WebUploadDone` 上报
-- 未完成字节写在目标目录下的应用保留子目录 `.handysend-upload-part/`（与最终文件同父目录，完成后原子改名）；
-  该子目录是本应用独占的临时区，接受新一批上传时清理其中不属于活跃会话的遗留半成品——
-  进程被强制终止时也只有这里会留下文件，清理不会触碰目标目录里的用户文件或已交付文件。
-  `/web/leave` 仅上传使用：15s 宽限给刷新/bfcache 留时间，真正关闭后清理；下载不使用该接口。
+- 未完成字节写在目标目录下的应用保留子目录 `.handysend-temp/web/`（与最终文件同父目录，完成后原子改名；
+  临时区按协议分子目录，其他协议的同名临时文件不会被本协议清理）；最终/临时路径确定后先写入会话草稿，
+  再创建占位文件，强杀窗口内恢复仍可按草稿清理；会话终结（完成/拒绝/取消/超时/停止服务）时删除未完成文件并移除已空的临时目录；
+  进程被强制终止时留下的半成品由下次接受上传时清理，旧名 `.handysend-upload-part` 与旧协议子目录
+  `local-send` 作为 legacy 目录清理，
+  不会触碰用户文件或已交付文件。
+  页面关闭/刷新时标记离开，服务端 15s 宽限后结束会话；刷新后的页面按 caps 的 shareId 核对分享归属，
+  同一分享才按 token 恢复上传状态：待确认期间保持发送入口禁用，应用已接受但刷新后无法续传时
+  结束会话并提示重新发送；分享已更换则丢弃旧 token。
 - 终结/过期只清理未完成的临时文件，不删除已改名为最终交付物的文件
 - 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
   文件与文本混合时文本按普通文本文件处理
@@ -283,11 +295,18 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 
 - **发送**：`prepareSendFiles` 不拷贝文件，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前优先 `dup` 暂存句柄，句柄失效时按路径打开，并携带 `fd`。
   fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
-- **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经 `ensureReceiveDir` 获取 Download/`<包名>/`（`DocumentViewPicker.save`
-  DOWNLOAD 模式，URI 具持久化授权）→ `uniquePath` 消歧创建目标文件 → `openSync` 写 fd → `registerRecvFileFd` 预注册 → 再发送 accept。Rust
-  `handle_file_upload` 只消费预注册 fd 构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱）；会话终态（SessionEnd/Aborted/Cancel/本地取消）由
-  `close_unconsumed_recv_fds` 关闭未消费 fd。无导出步骤：`finishReceiveSession` 直接用登记路径写历史，取消/失败时 ArkTS 只删除预创建的未完成目标文件，已完成文件保留并补记接收历史
-- **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件 `Download/<包名>/`、文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
+- **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
+  `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
+  DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→
+  `uniquePath` 消歧计算最终路径 → 先把最终/临时路径写入会话草稿 → 在 `.handysend-temp/localsend/`
+  下创建临时文件并 `openSync` 写 fd →
+  `registerRecvFileFd` 预注册（携带最终路径）→ 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd
+  构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱），写入完成后由结果任务 `rename` 到最终路径；
+  会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。
+  `finishReceiveSession` 直接用登记路径写历史；取消/失败时 ArkTS 只删除临时区未完成文件，
+  已提交文件保留并补记接收历史
+- **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件落接收目录、
+  文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算
 
 ### 网页资产（自研单页）
@@ -297,17 +316,24 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 按 `/caps` 条件渲染下载/发送页签；下载走浏览器下载管理器（大文件无内存压力），
   文本类文件无预览字段时用 Range 取前 128KB 内联预览
   - 预览允许读取建会话后新增的当前文件表条目；真实下载仍按会话快照隔离
-- 下载/上传 token 分键存于 `sessionStorage`；下载刷新时直接 prepare 复用或重建会话，不发送心跳；
+- 下载 token 存于 `sessionStorage`，刷新时直接 prepare 复用或重建会话，不发送心跳；
+  上传 token 与所属 shareId 存于 `sessionStorage`，刷新后先核对 caps 的 shareId；
+  建会话立即回 202（token/shareId），页面轮询 `/web/upload-status` 等待确认；
+  同标签页按持久化 client 且同一批文件复用响应丢失的会话，换批或新标签页（含复制标签页）各自建会话；
+  同一分享才按 token 恢复：待确认期间保持发送入口禁用，
+  已接受但刷新后无法续传时结束会话并提示重新发送；
   上传顺序直传（XHR 看进度），
   文件与文本合并为一次上传：仅文本时 `message.txt` 携带 `preview`（文本消息），
   混合内容时文本作为 `message.txt` 随文件发送（文本文件）
+- 建会话立即返回 202，页面轮询 `/web/upload-status` 等待确认：待确认时提示「等待对方确认」，
+  接受后开始逐文件上传，拒绝/超时（状态查询 404）提示失败；每次发送开始先清掉上一次遗留的提示
 - 页头可切换主题（跟随系统/浅色/深色）与语言（简体/繁体/英文），偏好存于浏览器 `localStorage`
 - 下载页支持多选 + zip 批次：单文件直接下载，多文件由服务端统一 zip；浏览器用精确 `Content-Length` 显示进度；
   点击整行或复选框均可勾选，Shift 连选按展示顺序处理整段，Ctrl/Cmd+A 全选、Esc 取消全选
   （输入控件与预览正文内保留原生快捷键）；文件名可拖选或长按复制，触屏仅从复选框起手才能滑选多行；
   窄屏与触屏下文件名换行完整展示；
   文件列表经 SSE `/web/events` 感知变化后静默重拉完整文件表，实时更新并短暂提示「文件列表已更新」
-- 访问码页（服务端按 Cookie 注入 `data-auth`，裸地址进入时展示）、错误码映射（401/403/404/410/413；上传另有 408/409）、
+- 访问码页（服务端按 Cookie 注入 `data-auth`，裸地址进入时展示）、错误码映射（401/403/404/410/413；上传另有 202/409）、
   上传全部完成后 `sendBeacon` 上报完成回执
 
 ## Discovery — 设备发现

@@ -94,7 +94,7 @@ export function removeFavorite(fingerprint: string): void {
   favorites = updated;
   saveFavorites();
   notifyChange();
-  logger.debug('已移除 fp=' + fingerprint.substring(0, 10));
+  logger.debug('已移除 fp=' + fingerprint);
 }
 
 
@@ -120,7 +120,7 @@ export function renameFavorite(fingerprint: string, alias: string): void {
       favorites[i].customAlias = true;
       saveFavorites();
       notifyChange();
-      logger.debug('已重命名 fp=' + fingerprint.substring(0, 10));
+      logger.debug('已重命名 fp=' + fingerprint);
       return;
     }
   }
@@ -139,7 +139,7 @@ export function restoreDefaultAlias(fingerprint: string): void {
       favorites[i].customAlias = false;
       saveFavorites();
       notifyChange();
-      logger.debug('已恢复默认别名 fp=' + fingerprint.substring(0, 10));
+      logger.debug('已恢复默认别名 fp=' + fingerprint);
       return;
     }
   }

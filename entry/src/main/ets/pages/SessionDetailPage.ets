@@ -31,6 +31,7 @@ import { SessionFileList } from '../views/transfer/SessionFileList';
 import { SessionActions } from '../views/transfer/SessionActions';
 import { SessionMetaSection } from '../views/transfer/SessionMetaSection';
 import { SessionTimeline } from '../views/transfer/SessionTimeline';
+import { SingleValueDialogContent } from '../components/SingleValueDialogContent';
 import { buildGallerySaveDialog, GallerySaveDialogParams } from '../views/SaveToGalleryDialog';
 import { GallerySaveResult, MediaFileInfo, VerifyPageParams } from '../model/Types';
 import { SessionFile } from '../model/transfer/TransferSession';
@@ -53,6 +54,8 @@ import {
 import { needsOverLimitHint } from '../utils/FilePreviewPolicy';
 import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../utils/OverlayCloseBus';
+import { markSessionDetailOpen, markSessionDetailClosed } from '../utils/SessionDetailStack';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionDetail', '会话详情');
 
@@ -77,16 +80,38 @@ export struct SessionDetailPage {
   // 预览弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local filePreviewContentWidth: number = 0
   private filePreviewDialogId: number = -1
+  // 校验和弹窗：打开时写入的值与弹窗 ID（与页内其它弹窗同层管理）
+  @Local checksumDialogValue: string = ''
+  private checksumDialogId: number = -1
   // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
   private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
+  // 本页是否已登记到会话详情栈（避免重复 aboutToAppear 造成重复记录）
+  private detailMarkedOpen: boolean = false
+  // 新传输直达详情前的弹层收起：关闭本页自己打开的文件预览/校验和/相册保存弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.closeFilePreviewDialog();
+    this.closeChecksumDialog();
+    this.closeGallerySaveDialog();
+  }
 
   aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
     this.context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     let params: SessionDetailParams = this.pageParam as SessionDetailParams;
+    if (!this.detailMarkedOpen) {
+      markSessionDetailOpen(params.sessionId);
+      this.detailMarkedOpen = true;
+    }
     this.viewModel.load(params.sessionId);
   }
 
   aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+    let params: SessionDetailParams = this.pageParam as SessionDetailParams;
+    if (this.detailMarkedOpen) {
+      markSessionDetailClosed(params.sessionId);
+      this.detailMarkedOpen = false;
+    }
     this.viewModel.unload();
   }
 
@@ -280,6 +305,64 @@ export struct SessionDetailPage {
     this.filePreviewUnavailable = false;
     this.filePreviewTruncated = false;
     this.filePreviewContentWidth = 0;
+  }
+
+  /** 文件条目菜单「校验和」：弹出完整值弹窗（内容区与单行值行同源）。 */
+  private openChecksumDialog(file: SessionFile): void {
+    if (file.checksum.length === 0) {
+      return;
+    }
+    this.checksumDialogValue = file.checksum;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.checksumDialog();
+      },
+      onDidDisappear: () => {
+        this.checksumDialogId = -1;
+        this.checksumDialogValue = '';
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.checksumDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeChecksumDialog(): void {
+    if (this.checksumDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.checksumDialogId);
+      this.checksumDialogId = -1;
+    }
+    this.checksumDialogValue = '';
+  }
+
+  @Builder
+  checksumDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.session_detail_checksum_label'),
+      contentBuilder: () => {
+        this.checksumDialogContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.close'),
+          action: () => {
+            this.closeChecksumDialog();
+          }
+        })
+      ]
+    })
+      .constraintSize({ maxWidth: 480 })
+  }
+
+  /** 弹窗内容区：组件实例必须在 @Builder 上下文中创建（不能在普通回调里直接调用）。 */
+  @Builder
+  checksumDialogContent() {
+    SingleValueDialogContent({ value: this.checksumDialogValue })
   }
 
   @Builder
@@ -584,7 +667,7 @@ export struct SessionDetailPage {
       Column({ space: DesignTokens.space.tiny }) {
         // 汇总行：文件数 + 总大小（左）与整体进度（右）
         Row({ space: DesignTokens.space.sm }) {
-          Text($r('app.string.send_file_count_total', this.viewModel.files.length,
+          Text($r('app.string.send_file_count_total', this.viewModel.fileCount(),
             formatSizeDetailed(this.viewModel.session?.totalBytes ?? 0)))
             .fontSize(DesignTokens.font.subtitleM)
             .fontWeight(FontWeight.Medium)
@@ -788,6 +871,9 @@ export struct SessionDetailPage {
                     },
                     onSaveToGallery: (file: SessionFile) => {
                       this.handleSaveToGallery(file);
+                    },
+                    onShowChecksum: (file: SessionFile) => {
+                      this.openChecksumDialog(file);
                     }
                   })
                 }

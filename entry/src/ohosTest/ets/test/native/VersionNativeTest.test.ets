@@ -7,8 +7,8 @@ import {
   verifyNativeVersion
 } from '../../../../main/ets/service/NativeBridge'
 
-// 期望的原生库版本（与 NativeBridge.ets 中 EXPECTED_NATIVE_VERSION 一致）
-const EXPECTED_NATIVE_VERSION: string = '1.18.1'
+// 期望的原生库版本（构建时由 hvigor 从 Cargo.toml 自动同步）
+const EXPECTED_NATIVE_VERSION: string = '1.18.2'
 
 export default function VersionNativeTest() {
   describe('VersionNativeTest', () => {

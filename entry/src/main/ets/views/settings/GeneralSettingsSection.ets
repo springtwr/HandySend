@@ -2,8 +2,10 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { SettingsViewModel } from '../../viewmodel/SettingsViewModel';
 import { getSystemDeviceName } from '../../utils/AliasGenerator';
 import { CustomContentDialogV2, AdvancedDialogV2Button, promptAction } from '@kit.ArkUI';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
-// 通用（接收与发送）分区：设备名称 / 允许后台接收 / 保存到相册 / 自动清空选中文件 / 通知与「设备发现和连接」权限。
+// 通用（接收与发送）分区：设备名称 / 文件保存目录 / 允许后台接收 / 保存到相册 / 自动清空选中文件 /
+// 通知与「设备发现和连接」权限。
 // 本分区是设置页首张卡片，不渲染分组标题，卡片内容直接作为内容区首元素。
 @ComponentV2
 export struct GeneralSettingsSection {
@@ -16,6 +18,18 @@ export struct GeneralSettingsSection {
   }
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // 新传输直达详情前的弹层收起：本组件只处理设备名称输入弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.closeActiveDialog();
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
 
   private getDefaultAlias(): string {
     return getSystemDeviceName();
@@ -25,6 +39,40 @@ export struct GeneralSettingsSection {
     this.openInputDialog($r('app.string.input_alias_title'), this.viewModel.customAlias, (value: string) => {
       this.viewModel.setAlias(value);
     });
+  }
+
+  // 当前保存目录的展示值：自定义目录显示目录名，默认目录显示应用名（资源绑定，随语言刷新）
+  private getReceiveDirectoryValue(): ResourceStr {
+    if (this.viewModel.receiveDirectoryUri.length > 0) {
+      return this.viewModel.getReceiveDirectoryDisplayName();
+    }
+    return $r('app.string.app_name');
+  }
+
+  // 保存目录说明：低版本提示不支持；自定义目录显示用户可见路径；默认显示带应用名的说明
+  // 注意：receive_directory_desc 三语言资源内嵌应用名，应用改名时需同步
+  private getReceiveDirectoryDesc(): ResourceStr {
+    if (!this.viewModel.receiveDirectorySupported) {
+      return $r('app.string.receive_directory_unsupported');
+    }
+    if (this.viewModel.receiveDirectoryUri.length > 0) {
+      return this.viewModel.getReceiveDirectoryUserPath();
+    }
+    return $r('app.string.receive_directory_desc');
+  }
+
+  // 选择接收目录：用户取消不提示，失败时给出 Toast 反馈
+  private async selectReceiveDirectory(): Promise<void> {
+    if (!this.viewModel.receiveDirectorySupported) {
+      return;
+    }
+    let status: string = await this.viewModel.chooseReceiveDirectory();
+    if (status === 'failed') {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.receive_directory_pick_failed'),
+        duration: 2000
+      });
+    }
   }
 
   // ── DialogV2 弹窗：通用输入（B 类 CustomContentDialogV2） ──
@@ -165,6 +213,64 @@ export struct GeneralSettingsSection {
         this.showAliasDialog();
       })
       .id('settings_alias_entry')
+
+      // 文件保存目录：默认 Download/<包名>（界面显示应用名）；自定义目录需要 API 26+
+      Row() {
+        Text($r('app.string.receive_directory_label'))
+          .fontSize(DesignTokens.font.bodyM)
+          .fontColor(this.viewModel.receiveDirectorySupported ? $r('app.color.text_primary') :
+            $r('app.color.text_tertiary'))
+          .layoutWeight(1)
+
+        Row({ space: DesignTokens.space.xxs }) {
+          Text(this.getReceiveDirectoryValue())
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_tertiary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .textAlign(TextAlign.End)
+            .constraintSize({ maxWidth: '62%' })
+
+          SymbolGlyph($r('sys.symbol.chevron_forward'))
+            .fontSize(DesignTokens.font.subtitleL)
+            .fontColor([this.viewModel.receiveDirectorySupported ? $r('app.color.text_secondary') :
+              $r('app.color.text_tertiary')])
+        }
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.End)
+      }
+      .width('100%')
+      .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+      .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+      .alignItems(VerticalAlign.Center)
+      .enabled(this.viewModel.receiveDirectorySupported)
+      .onClick(() => {
+        this.selectReceiveDirectory();
+      })
+      .id('settings_receive_directory_entry')
+
+      Row() {
+        Text(this.getReceiveDirectoryDesc())
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .layoutWeight(1)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        if (this.viewModel.receiveDirectorySupported && this.viewModel.receiveDirectoryUri.length > 0) {
+          Text($r('app.string.receive_directory_reset'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.accent_blue'))
+            .margin({ left: DesignTokens.space.sm })
+            .onClick(() => {
+              this.viewModel.resetReceiveDirectory();
+            })
+            .id('settings_receive_directory_reset')
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .margin({ bottom: DesignTokens.space.tiny })
 
       // 允许后台接收：仅控制无传输时的 5 分钟空闲保活，传输中始终保活；
       // 通知权限未开启时置灰（后台长时任务无法建立）

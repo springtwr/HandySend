@@ -25,6 +25,14 @@
       }
     },
     {
+      "name": "PortalPage",
+      "pageSourceFile": "src/main/ets/pages/PortalPage.ets",
+      "buildFunction": "PortalPageBuilder",
+      "data": {
+        "description": "在线服务站点导航页"
+      }
+    },
+    {
       "name": "TroubleshootPage",
       "pageSourceFile": "src/main/ets/pages/TroubleshootPage.ets",
       "buildFunction": "TroubleshootPageBuilder",

@@ -24,6 +24,9 @@ export const KEY_SAVE_TO_GALLERY: string = 'saveToGallery';
 
 export const KEY_DESTINATION: string = 'destination';
 
+// 接收文件保存目录 URI：空串表示默认 Download/<包名>/
+export const KEY_RECEIVE_DIRECTORY_URI: string = 'receiveDirectoryUri';
+
 export const KEY_THEME: string = 'theme';
 
 export const KEY_LOCALE: string = 'locale';
@@ -80,6 +83,16 @@ export const KEY_PROTOCOL_HINT_SIGNATURE: string = 'protocolHintSignature';
 export const KEY_BACKGROUND_RECEIVE: string = 'backgroundReceiveEnabled';
 
 export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
+
+// ── 在线服务站点 ──
+// 用户添加的站点（不含预设）。
+export const KEY_PORTAL_USER_SITES: string = 'portalUserSites';
+// 预设的本地覆盖：用户编辑过的预设副本。
+export const KEY_PORTAL_PRESET_OVERRIDES: string = 'portalPresetOverrides';
+// 用户删除过的预设标识，逗号分隔；日常不复活，仅「恢复默认」清空。
+export const KEY_PORTAL_DISMISSED: string = 'portalDismissedPresets';
+// 是否已确认首次进入远程传输页的风险声明。
+export const KEY_PORTAL_RISK_ACCEPTED: string = 'portalRiskAccepted';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PreferencesUtil', '偏好');
 

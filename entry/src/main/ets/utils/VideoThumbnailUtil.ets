@@ -6,10 +6,10 @@ import { LogDomains } from '../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:VideoThumbnail', '缩略图');
 
-// 解码单飞行控制：同进程同一时刻只允许一次解码（AVImageGenerator 开销大，
-// 列表滚动触发的并发懒加载经此合并为串行，忙时调用方直接回退类型图标）。
+// 解码串行化：AVImageGenerator 开销大，同进程同一时刻只允许一次解码；
+// 并发懒加载请求在此排队依次执行（不丢弃），保证列表内多个视频都能拿到缩略图。
 // 取消标记：暂存列表增删导致已发起的解码过期时，调用方置位后本模块丢弃过期结果。
-let decoding: boolean = false;
+let decodeQueueTail: Promise<void> = Promise.resolve();
 let decodingSource: string = '';
 let cancelRequested: boolean = false;
 
@@ -21,16 +21,30 @@ export function cancelVideoThumbnail(source?: string): void {
 }
 
 // 通过 AVImageGenerator 从视频文件/URI 生成指定尺寸的缩略图 PixelMap。
-// 供历史记录页与发送页文件选择列表复用；
-// 文件不可用/解码失败/已有解码在途/被取消时返回 undefined（调用方回退类型图标）。
+// 供历史记录页与发送页文件选择列表复用；并发调用按到达顺序串行执行，
+// 文件不可用/解码失败/被取消时返回 undefined（调用方回退类型图标）。
 // 文件大小通过已打开的文件描述符获取（fd 方式兼容性最广，
 // 不依赖系统版本对"按 URI stat"的支持）。
 export async function generateVideoThumbnail(source: string, width: number,
   height: number): Promise<image.PixelMap | undefined> {
-  if (decoding) {
-    return undefined;
+  // 排队等待前一个请求结束：无论其成败队列都会推进，单个文件失败不会卡住后续条目
+  let previous: Promise<void> = decodeQueueTail;
+  let finish: () => void = () => {
+  };
+  decodeQueueTail = new Promise<void>((resolve: () => void): void => {
+    finish = resolve;
+  });
+  try {
+    await previous;
+    return await decodeVideoFrame(source, width, height);
+  } finally {
+    finish();
   }
-  decoding = true;
+}
+
+// 实际解码一帧（同一时刻最多一个在途调用）
+async function decodeVideoFrame(source: string, width: number,
+  height: number): Promise<image.PixelMap | undefined> {
   decodingSource = source;
   cancelRequested = false;
   try {
@@ -75,7 +89,6 @@ export async function generateVideoThumbnail(source: string, width: number,
     logger.warn('缩略图生成失败：' + e + ', src=' + source);
     return undefined;
   } finally {
-    decoding = false;
     decodingSource = '';
   }
 }

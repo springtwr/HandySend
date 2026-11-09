@@ -2,16 +2,15 @@
  * SingleLineValueRow.ets — 单行缩略值行（跨页公用组件）
  *
  * 单行展示「标签 + 值」，宽度不足时按中间省略；点击弹出完整值弹窗
- * （弹窗文本可自由选择复制、单行居中多行左对齐、超高可滚动）；长按复制完整值并提示成功 / 失败。
- * 值为空时不渲染整行、也不触发任何交互。
- * 会话详情页文件清单（校验和）与传输详情区块（协议会话 ID / 统一会话标识）共用本组件，
- * 避免各处重复实现弹窗与复制口径（DialogV2 需绑定组件实例，故弹窗随值行一起抽取）。
+ * （内容区由 SingleValueDialogContent 承载，文本可自由选择复制、单行居中多行左对齐、超高可滚动）；
+ * 长按复制完整值并提示成功 / 失败。值为空时不渲染整行、也不触发任何交互。
+ * 会话详情页传输详情区块（协议会话 ID / 统一会话标识）等跨页信息行共用本组件。
  */
 
 import { AdvancedDialogV2Button, CustomContentDialogV2, promptAction } from '@kit.ArkUI';
 import { DesignTokens } from '../common/DesignTokens';
 import { copyText } from '../utils/ClipboardUtil';
-import { resolveSingleLineTextAlign } from '../utils/TextAlignUtil';
+import { SingleValueDialogContent } from './SingleValueDialogContent';
 
 @ComponentV2
 export struct SingleLineValueRow {
@@ -23,8 +22,6 @@ export struct SingleLineValueRow {
   @Param valueAlignEnd: boolean = true
   /** 行内字号（默认 bodyS 同详情页辅助信息；需要与主信息行同号时由调用方覆盖） */
   @Param rowFontSize: number = DesignTokens.font.bodyS
-  // 弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行 / 多行对齐）
-  @Local dialogContentWidth: number = 0
   private dialogId: number = -1
 
   /** 行内值对齐方式。 */
@@ -55,7 +52,6 @@ export struct SingleLineValueRow {
       this.getUIContext().getPromptAction().closeCustomDialog(this.dialogId);
       this.dialogId = -1;
     }
-    this.dialogContentWidth = 0;
   }
 
   /** 点击值区域：弹出完整值弹窗（弹窗文本可长按自由选择复制）。 */
@@ -68,7 +64,6 @@ export struct SingleLineValueRow {
         this.valueDialog();
       },
       onDidDisappear: () => {
-        this.dialogContentWidth = 0;
         this.dialogId = -1;
       }
     };
@@ -82,7 +77,7 @@ export struct SingleLineValueRow {
       });
   }
 
-  /** 完整值弹窗（自定义内容区，文本可长按自由选择复制）。 */
+  /** 完整值弹窗（内容区由公共组件承载，文本可长按自由选择复制）。 */
   @Builder
   valueDialog() {
     CustomContentDialogV2({
@@ -102,28 +97,10 @@ export struct SingleLineValueRow {
       .constraintSize({ maxWidth: 480 })
   }
 
-  /** 完整值弹窗内容区：长按可选中的完整值文本（单行居中、多行左对齐、超高可滚动）。 */
+  /** 弹窗内容区：组件实例必须在 @Builder 上下文中创建（不能在普通回调里直接调用）。 */
   @Builder
   valueDialogContent() {
-    Scroll() {
-      Text(this.value)
-        .width('100%')
-        .fontSize(DesignTokens.font.bodyM)
-        .fontColor($r('app.color.text_primary'))
-        .textAlign(resolveSingleLineTextAlign(this.getUIContext(), this.value,
-          DesignTokens.font.bodyM, this.dialogContentWidth))
-        .wordBreak(WordBreak.BREAK_ALL)
-        .copyOption(CopyOptions.LocalDevice)
-        .onAreaChange((_oldValue: Area, newValue: Area) => {
-          // 记录内容区可用宽度（vp），供单行 / 多行对齐判定
-          if (typeof newValue.width === 'number') {
-            this.dialogContentWidth = newValue.width;
-          }
-        })
-    }
-    .width('100%')
-    .constraintSize({ maxHeight: 320 })
-    .scrollBar(BarState.Auto)
+    SingleValueDialogContent({ value: this.value })
   }
 
   build() {

@@ -63,10 +63,13 @@ HandySend/
 │   │   ├── hvigorfile.ts             # BuildRustNapi + RustTest 任务（版本同步 + 增量构建 + index.d.ts 一致性守卫 + Rust 测试）
 │   │   ├── Index.ets                  # HAR 入口
 │   │   └── libs/                     # .so 产物（arm64-v8a / x86_64，gitignore，增量判断依据）
-│   └── third_party/localsend/        # Git submodule（fork 定制分支 main，基于 v1.18.1 + 鸿蒙化定制；定制提交不推上游）
+│   └── third_party/localsend/        # Git submodule（fork 定制分支 main，core 已合入 v1.18.2 及之后的上游修补；定制提交不推上游）
 ├── build-profile.json5               # 全局构建配置（含签名，gitignore）
 └── oh-package.json5                  # 全局依赖
 ```
+
+> 应用沙箱目录的唯一来源、尾斜杠约定与冷启动清理入口见
+> [architecture/app-paths.md](architecture/app-paths.md)。
 
 ## 4. 核心模块
 
@@ -88,11 +91,14 @@ HandySend/
   - `onCreate` 初始化 `BackgroundTransferService`
   - `onBackground`：MTA 接收活跃（`isMtaReceivingActive()`）则跳过停止 MTA 接收，并启动后台传输任务（同步 `AppCore.setAppForeground(false)`）
   - `onForeground`：延迟 3 秒停止后台传输任务（期间重新退后台则取消停止并复用），
-    停止保活任务，撤回后台关注通知并恢复前台状态（`setAppForeground(true)`）
+    停止保活任务，按主窗口焦点状态重算后台关注通知并恢复前台状态（`setAppForeground(true)`）
   - `onBackground`：启动后台传输任务后同步一次后台关注通知，补发前台期间已存在的待确认请求
-  - `onDestroy` 兜底停止
+  - `onDestroy` 兜底停止并撤回后台关注通知/角标
 - 2in1 设备注册 `windowStageClose` 拦截（API 14+）：标题栏点 X 时同步判断聚合传输快照——无活跃传输返回 false 正常退出；有活跃传输同步返回
   true 阻止关闭，并异步弹出应用内二次确认（继续/退出），选"退出"主动终止应用（平台无主窗口隐藏能力，不接入状态栏托盘、也不最小化窗口）
+- 2in1 设备注册主窗口 `windowStatusChange` 与 `windowEvent` 监听（API 11+）：把窗口最小化与焦点状态
+  同步给后台关注层，用于主窗口最小化或被其他窗口遮挡、但 UIAbility 未必进入 `onBackground` 的场景下
+  补发/撤回通知与角标；窗口恢复且获得焦点时撤回
 
 ### 4.2 AppService ★ 核心业务门面
 
@@ -153,19 +159,20 @@ Ability 重建不会重置 DEBUG 状态。
 |----|----|----------|
 | GENERAL | 0x0000 | AppService、EntryAbility、EntryBackupAbility、DialogService、ReceiveHistoryService、NativeBridge、NativeTypes、EventBus、HttpLogsViewModel、PermissionService 等 |
 | DISCOVERY | 0x0001 | DiscoveryRepository, DeviceRepository, MainTabViewModel |
-| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets, SendViewModel, SendContent, WebShareRepository 等（完整清单见注 1） |
+| TRANSFER | 0x0002 | SendRepository, ReceiveRepository, ReceiveTargets,<br>ReceiveDirectory, SendViewModel, SendContent, WebShareRepository 等（完整清单见注 1） |
 | NETWORK | 0x0003 | AppCore, NetworkSettingsSection |
 | SERVER | 0x0004 | ServerRepository |
 | SETTINGS | 0x0005 | SettingsRepository, PreferencesUtil, service/repository/FavoritesService, SettingsViewModel |
-| MTA | 0x0006 | service/mta/*、MtaRepository、Mta*ViewModel |
+| MTA | 0x0006 | service/mta/*、MtaRepository |
 
 > GENERAL 域另含 ImmersiveTitleBar、MainTabFloating、FileLocationUtil、FileTextUtil、UriPermission。
 >
 > **注 1**：TRANSFER 域适用模块完整清单：SendRepository, ReceiveRepository,
-> ReceiveTargets, SendViewModel, SendContent, WebShareRepository, ChecksumRepository,
-> GallerySaveService, VideoThumbnailUtil, ImageThumbnailUtil, FileEntryThumb,
+> ReceiveTargets, ReceiveDirectory, SendViewModel, SendContent, WebShareRepository,
+> ShareLinkViewModel, RustWeb（网页传输 Rust 日志归并）, ChecksumRepository, GallerySaveService,
+> VideoThumbnailUtil, ImageThumbnailUtil, FileEntryThumb,
 > service/transfer/*（会话引擎与协议适配器）, TransferCenterViewModel,
-> SessionDetailViewModel, BackgroundTransferService, BackgroundAttentionNotifier。
+> SessionDetailViewModel, SessionDetailPage, BackgroundTransferService, BackgroundAttentionNotifier。
 
 **消息格式**：`[模块] 内容`；带上下文为 `[模块] [sid=.. dir=..] 内容`；Rust 来源为 `[模块] Rust: 内容`。
 模块标签集中前置，保证 `grep '\[模块\]'` 无歧义过滤；正文数据方括号（如 `[wlan0]`）保留不影响过滤。日志消息不得含换行符。
@@ -227,10 +234,13 @@ Page 层仅调命令 + 按结果弹 Toast（严格 MVVM：VM 不碰 UIContext/fs
 
 `entry/src/main/ets/service/BackgroundAttentionNotifier.ets`
 
-应用处于后台时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知（独立通知 id，与实况进度通知区分）：
-只展示待确认请求（LocalSend / MTA 接收、Web 上传）。网页访问/网页下载不进入该通知，
-只写诊断日志并续期网页服务的有界后台保活。通知按统一注册表的待确认计数驱动发布/撤回，
-回到前台或相关会话结束即撤回；单条待确认点击直达该请求详情，多条合并回到任务中心。
+应用退到后台、PC 主窗口最小化或失去焦点（可能被其他窗口遮挡）时，把需要用户关注的事件收敛为**一条**可点击回到前台的系统通知
+（独立通知 id，与实况进度通知区分）：只展示待确认请求（LocalSend / MTA 接收、Web 上传）。
+网页访问/网页下载不进入该通知，只写诊断日志并续期网页服务的有界后台保活。
+通知按统一注册表的待确认计数驱动发布/撤回，回到前台且窗口获得焦点、窗口恢复或相关会话结束即撤回；
+单条待确认点击直达该请求详情，多条合并回到任务中心。
+PC/2in1 上同时设置应用角标（`setBadgeNumber`，数量与通知同源），撤回时清空；
+手机/平板只保留后台通知，不设置系统角标。
 
 详见 [architecture/background-transfer.md](architecture/background-transfer.md) §2。
 
@@ -243,6 +253,10 @@ Web 下载以“下载批次”建模：单文件一批、多文件一个 zip �
 取消/确认/拒绝/重试动作按适配器能力声明分发；终态判定权归适配器，注册表负责终态之后的可见窗口、归档与回收；
 接收类协议的文件清单在落盘完成后由适配器整体替换；LocalSend 发送的校验和准备阶段以专用准备进度字段与传输进度严格分离；
 任务历史（`SessionHistoryStore`）独立持久化，与文件级接收历史相互独立。
+强杀恢复：传输会话（接收/发送）在创建/文件完成时写应用沙箱草稿（`filesDir/session_drafts/`），
+启动时按最终文件大小补写任务历史与接收历史；发送方向只补任务历史并标记中断；MTA 逐条目
+提交后失败按已提交文件记录部分完成；接收临时区按协议分子目录。恢复只读，不自动续传
+（详见 `architecture/session-engine.md` §5.1）。
 
 详见 [architecture/session-engine.md](architecture/session-engine.md)。
 
@@ -439,9 +453,11 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   应用自建文件——收发文本落盘副本（`filesDir/text_send/` 与 `filesDir/text_recv/`），其唯一用途是详情页预览文本内容，
   记录一旦删除即失去全部引用，故无条件清理、无需用户决策。清理判据以
   **路径前缀**（`SessionHistory.isSelfBuiltFilePath`，覆盖发送与接收文本目录）而非传输方向为准——方向不可靠：
-  接收方向的普通文件落 `Download/`，而发送方向既可能是自建文本也可能是 picker 选中的用户原始文件。
+  接收方向的普通文件落用户设置的接收目录（默认 `Download/<包名>/`），而发送方向既可能是自建文本，
+  也可能是 picker 选中的用户原始文件。
   该判据天然排除两类不可删文件：**picker 原始文件**（用户数据，删除即数据丢失）与
-  **Download 落盘文件**（其删除权归文件接收历史页，见 [ReceiveHistoryPage 行为细节](#receivehistorypage-行为细节)——
+  **接收目录落盘文件**（其删除权归文件接收历史页，
+  见 [ReceiveHistoryPage 行为细节](#receivehistorypage-行为细节)——
   同一批接收文件在任务页是会话级记录、在接收历史页是文件级记录，两页都删会互相留失效引用）。
   弹窗文案不提及该清理：该文件对用户不可感知，属实现细节而非需用户知晓或决策的事项
 - 上述文件清理由 `SessionHistoryStore.removeSelfBuiltFilesOf` 统一承担（`clearSessionHistory` 与
@@ -455,8 +471,10 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 **SessionDetailPage 行为细节**：
 
 - 内容结构：方向说明（与分区标题同风格）→ 独立设备卡（位于文件区块上方，单层卡片容器内直接排布对端信息，不套内层色块）→ 平铺总进度与速度（位于文件区块上方，
-  历史条目无实时进度时不渲染、无卡片背景）→ 三区块结构——「文件」区块（分区标题 + 文件清单卡片〔条目直排于卡片内、相邻条目以分隔线区隔；校验和可得时一并展示；
-  文本消息会话为文本预览卡片，不展示文件清单与字节进度〕）；「详情」区块（分区标题「传输详情」+ 完整信息卡片〔总大小/任务耗时/传输耗时/平均与峰值速度 + 结果与错误（同一卡片内，不单列分区） /
+  历史条目无实时进度时不渲染、无卡片背景）→ 三区块结构——「文件」区块（分区标题 + 文件清单卡片〔条目直排于卡片内、相邻条目以分隔线区隔；
+  条目首行最小行高 48vp，缩略图、文件名（最多两行）与大小/状态列垂直居中，进度条通栏位于其下；校验和不固定展示，
+  文件有校验和时经条目菜单「校验和」弹出完整值；文本消息会话为文本预览卡片，不展示文件清单与字节进度〕）；
+  「详情」区块（分区标题「传输详情」+ 完整信息卡片〔总大小/任务耗时/传输耗时/平均与峰值速度 + 结果与错误（同一卡片内，不单列分区） /
   本机与标识〕）；「时间线」区块（分区标题 + 时间线卡片），下接悬浮底部操作区；进度行（速度 / 剩余时间）与总体百分比同侧靠右对齐；时间点信息统一由时间线承载，详情区块不重复展示
 - 设备卡展示对端设备信息（来源/发送方式徽标、型号徽标，缺失项降级省略）；设备图标按来源解析（MTA 来源用品牌图标、其余用设备类型图标，与发送页设备列表同源，进行中与结束后一致）
   ；对端标识（LocalSend 指纹，或 MTA 对端的 BLE 设备地址）默认中间缩略（保留首尾字符），标签随来源中性化，点击后弹出完整内容（弹窗文本可长按自由选择复制，单行居中、多行左对齐）
@@ -478,7 +496,8 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   PixelMap（首屏后 12 行按 90 ms 错峰预加载），视频异步生成缩略图；解码失败或条目不可读时安静回退类型图标并在再次可见时重试；
   不落盘缩略图缓存，渲染期不读盘（详见 [architecture/user-file-access.md](architecture/user-file-access.md)）
 - 点击任一条目弹出**统一操作菜单**（不再按文件类型隐式绑定点击行为，菜单项与可用性判定见
-  [architecture/session-engine.md](architecture/session-engine.md) §9）：「预览全文」/「复制」/「打开所在位置」/「用其他应用打开」/「保存到相册」（复制不受预览阈值限制，超读取上限截断并明确提示），
+  [architecture/session-engine.md](architecture/session-engine.md) §9）：「预览全文」/「复制」/「打开所在位置」/「用其他应用打开」/「保存到相册」/「校验和」
+  （复制不受预览阈值限制，超读取上限截断并明确提示；校验和仅在文件确有值时展示，点击弹出完整值弹窗），
   各项可用性按「类型 + 定位 + 来源 + 大小」判定（图库来源与应用私有文本条目仅「打开所在位置」置灰，「用其他应用打开」走应用文件分享机制保留；
   「保存到相册」仅接收方向已落盘的图片 / 视频且非图库来源时展示，已保存过的条目置灰为「已保存到相册」）；待确认且达到大文件阈值的会话在设备卡下方展示风险提示行（纯展示，不拦截确认）
 - 文本预览阈值（`utils/FilePreviewPolicy`，128KB、回退 64KB）同时作为判定与读取上限（同源细节见
@@ -507,7 +526,8 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   [architecture/session-engine.md](architecture/session-engine.md) §9）；调整这些公共实现即两页同步生效
 - 条目操作菜单：公共项为「预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册」（可用性同详情页条目，应用私有文本仅「打开所在位置」置灰；
   保存到相册仅图片 / 视频且非图库来源时展示，已保存过的条目置灰为「已保存到相册」），其后追加本页专有项「复制」（读取文件本身全文，超读取上限截断并明确提示截断）与
-  「删除记录」（保留既有确认流程；单条文本消息记录的确认改用不带文件名的通用文案）；「打开所在位置」的可用性**只依据路径非空**（Download 落盘文件不再因其来源被禁用），
+  「删除记录」（保留既有确认流程；单条文本消息记录的确认改用不带文件名的通用文案）；
+  「打开所在位置」的可用性**只依据路径非空**（接收目录落盘文件不再因其来源被禁用），
   点击时先确认文件未缺失，文件缺失则提示且不打开目录
 - 条目级可得性口径（`viewmodel/ReceiveHistoryItemViewModel`）：`canViewFullText` = 文本类且路径非空且未超预览阈值；`canCopyText` = 文本类且路径非空；
   `isPreviewOverLimit` = 文本类且路径非空且超预览阈值；`canOpenContainingFolder` = 路径非空；`isSandboxText` = 路径位于收发文本目录内；
@@ -579,8 +599,10 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 侧边栏「任务」项角标由 `MainTabViewModel.activeTransferCount` 驱动，口径为**非终态会话数**（进行中 + 待确认，与窄屏底部页签同源），
 为 0 时不显示。形态判定见 [8.5](#85-响应式设计)。
 
-主页根容器还承载两处全局行为（详见 [9. 状态管理](#9-状态管理)）：**新传输提示弹窗**——应用前台时收到新的待确认接收请求，
-在任意页面（含子页面）之上弹出统一提示（「查看」进入该会话详情、「稍后」/遮罩/返回键仅关闭；单槽位守卫、按会话标识去重；后台不弹、回前台补弹一次，
+主页根容器还承载两处全局行为（详见 [9. 状态管理](#9-状态管理)）：**新传输直达详情**——应用前台时收到新的待确认接收请求，
+直接逐条推入会话详情页（接收任务优先级高于当前页面；后到请求覆盖先到页面，用户逐条处理；
+推入前先收起当前弹层，未保存修改走各自确认；文件「拒绝/确认」、文本「关闭/复制」；
+后台或 PC 主窗口最小化不打开、恢复前台且窗口可见后补开一次，
 从通知进入前台时点击通知那一刻已存在的待确认请求除外）；
 **通知深链**——点击后台传输终态 / 待确认通知时，仅一个任务的通知直达该任务详情、多任务合并的通知回到任务中心；
 两种落点都先清空路由栈回到根、切到任务页签，详情落点再压入会话详情页。
@@ -696,7 +718,7 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 
 | 分区组件 | 内容 | 所属分组 |
 |----------|------|----------|
-| `GeneralSettingsSection` | 设备名称（随机/系统名称）+ 允许后台接收（通知权限未开启时置灰） + 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
+| `GeneralSettingsSection` | 设备名称（随机/系统名称）<br>+ 文件保存目录（默认 `Download/<包名>/`，默认值显示应用名；API 26+ 可选自定义目录，低版本置灰）<br>+ 允许后台接收（通知权限未开启时置灰）<br>+ 保存到相册/自动清空选中文件<br>+ 通知与「设备发现和连接」的权限状态 | 通用（接收与发送） |
 | `NetworkSettingsSection` | LocalSend 单卡片：LocalSend 总开关（关闭即停服务器与设备发现；有活跃传输时关闭经二次确认弹窗，确认后中断相关会话）<br>+ 服务器状态（启停/重启，总开关关闭时显示「已禁用」且按钮置灰）+ 自动确认请求 + 接收 PIN<br>+ 高级设置折叠（含安全信息（证书）半屏弹窗）+ 服务器重启与网络警告横幅（「无 Wi-Fi」「接口全关」显式联动总开关，关闭时不显示；细节见注 4） | LocalSend |
 | `ReceiveSettingsSection` | 自动确认请求（半屏弹窗）+ 接收 PIN（输入弹窗）；作为 LocalSend 卡片的内容片段（无卡片容器） | LocalSend |
 | `MtaSettingsSection` | MTA 总开关（关闭即停接收服务与发现扫描；有活跃传输时关闭经二次确认弹窗）<br>+ 允许接收开关（总开关关闭时置灰不可用）+ 显示互传提醒开关 + 模拟品牌行（品牌图标 + 本地化显示名）与 `bindSheet` 品牌选择（点选即生效并关闭） | 互传联盟（MTA） |
@@ -860,10 +882,11 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
     **渲染正确性以「转储 + 真机复核」为验证边界**——行渲染效果无法由纯逻辑用例拦截，判定方法为：转储各行互不相同而界面仍出现多行内容相同 ⇒ 渲染侧错位；转储本身即相同 ⇒ 问题回到数据侧
   - 卡片感由行内 padding/背景/圆角/描边表达，列表底部留出页签安全距离
 - 新会话感知与前台提示：`MainTabViewModel` 经 `start()`/`stop()` 订阅同一变更总线（与任务列表同源同时机刷新任务入口数量与待确认计数），刷新时比对注册表中的待确认会话，
-  出现新会话即以 `autoOpenSessionId` 一次性信号通知 `MainTabFloating`；后者在应用前台任意页面（含子页面）之上弹出统一的新传输提示弹窗
-  （`AlertDialogV2` 经 `openCustomDialog` 打开，「查看」推入该会话详情、「稍后」/遮罩/返回键仅关闭），单槽位守卫避免叠加、按会话标识去重不重复提示；
-  应用后台时不弹、回前台补弹一次（`onPageShow` 可能早于 `onForeground`，由变更总线回调兜底重试；
-  从通知进入前台时，点击通知那一刻已存在的待确认请求不再补弹）
+  出现新会话即追加到 `autoOpenSessionIds` 队列并通知 `MainTabFloating`；后者在应用前台按到达顺序逐条推入会话详情页
+  （推入前广播收起当前弹层，未保存修改走各自确认；接收任务优先级高于当前页面；后到请求覆盖先到页面；
+  文件「拒绝/确认」、文本「关闭/复制」），队列未消费时新请求追加到队尾，同一会话不重复入队；
+  应用后台或 PC 主窗口最小化时不打开、恢复前台且窗口可见后补开一次（`onPageShow` 可能早于 `onForeground`，
+  由变更总线回调兜底重试；从通知进入前台时，点击通知那一刻已存在的待确认请求不再补开）
 - 通知深链：通知点击意图经 Want 参数 `handysend.navigate`（`transferCenter` / `sessionDetail`）传递，
   详情意图另携带 `handysend.sessionId`；`EntryAbility`（冷启动 `onCreate` / 热启动 `onNewWant`）解析后置位
   `AppService` 一次性深链信号（置位时触发变更总线）；`MainTabFloating` 在冷启动 `aboutToAppear` 与热启动订阅回调中消费，
@@ -914,7 +937,7 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 `module.json5` 声明 `dataTransfer` backgroundModes。
 
 除上表 `requestPermissions` 声明的权限外，应用还使用通知授权（Notification Kit）：首次启动弹窗申请，授权状态经 `PermissionService`（§4.10）查询。后台传输的实况进度通知（§4.7）
-与后台关注通知（§4.8）依赖该授权——拒绝后通知仍可发布失败但后台传输不受影响，仅在通知栏不可见。
+与后台关注通知（§4.8）依赖该授权——拒绝后通知发布失败、角标不显示，但后台传输不受影响，仅在通知栏不可见。
 通知授权与「设备发现和连接」（蓝牙）权限的状态展示与设置入口位于设置页「通用」分组：未授权时点击先申请；
 已授权后通知项直接拉起通知设置关闭，设备发现和连接权限因系统只允许对已撤销的权限拉起设置弹窗，
 点击改为跳转系统设置的本应用详情页，返回应用时重新回查状态。

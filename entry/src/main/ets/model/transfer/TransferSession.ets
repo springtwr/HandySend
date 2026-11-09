@@ -144,6 +144,9 @@ export interface SessionCreateInput {
   // 会话是否为手动输入的文本消息（区别于文件选择器选中的 .txt 等文本文件）。
   // 由协议适配器在创建时显式声明，详情页据此决定是否渲染文本消息卡片。
   textMessage?: boolean
+  // 协议在逐文件清单可用前声明的文件总数（0 或缺省表示未知）：仅用于实时展示，
+  // 真实清单回填后由注册表清零，避免与已落盘条数混淆
+  declaredFileCount?: number
 }
 
 /**
@@ -199,6 +202,9 @@ export class TransferSession {
   @Trace stage: SessionStage = SessionStage.active
   // 是否为手动输入的文本消息会话（非文本文件）；创建后不变，不参与进度刷新
   textMessage: boolean = false
+  // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示，
+  // 真实清单回填后清零；终态展示与归档历史一律以 files.length 为准
+  @Trace declaredFileCount: number = 0
   peer: SessionPeer = emptyPeer()
   @Trace files: Array<SessionFile> = []
   @Trace bytesSent: number = 0
@@ -244,6 +250,18 @@ export function isTerminalStage(stage: SessionStage): boolean {
  */
 export function isPreparing(session: TransferSession): boolean {
   return !isTerminalStage(session.stage) && session.prepTotalBytes > 0;
+}
+
+/**
+ * 会话当前应展示的文件数：
+ * 逐文件清单尚不可用时（如 MTA 接收在下载前只有一条占位条目）取协议声明的文件总数；
+ * 声明值缺失或已进入终态时回退真实清单条数，与归档历史保持同一口径。
+ */
+export function displayFileCount(session: TransferSession): number {
+  if (!isTerminalStage(session.stage) && session.declaredFileCount > 0) {
+    return session.declaredFileCount;
+  }
+  return session.files.length;
 }
 
 /** 起止时刻各自截断毫秒后取差（秒级截断口径）；end 不晚于 start 时为 0。 */

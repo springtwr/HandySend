@@ -30,6 +30,8 @@ pub struct CapsSnapshot {
     pub share_state: ShareState,
     /// 是否提示自签证书风险（服务端按 HTTPS 与否填写）。
     pub https_hint: bool,
+    /// 本次分享标识：服务重启/更换分享后变化，页面据此丢弃旧上传会话。
+    pub share_id: String,
 }
 
 #[cfg(test)]
@@ -44,10 +46,12 @@ mod tests {
             upload_enabled: true,
             share_state: ShareState::Active,
             https_hint: false,
+            share_id: "share-1".to_string(),
         };
         let json = serde_json::to_string(&caps).unwrap();
         assert!(json.contains("\"hasDownload\":true"));
         assert!(json.contains("\"fileRevision\":7"));
+        assert!(json.contains("\"shareId\":\"share-1\""));
         assert_eq!(serde_json::from_str::<CapsSnapshot>(&json).unwrap(), caps);
     }
 

@@ -16,6 +16,7 @@ import {
 } from '@kit.UIDesignKit';
 import { buildImmersiveTitleBar } from '../common/ImmersiveTitleBar';
 import { DesignTokens } from '../common/DesignTokens';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../utils/OverlayCloseBus';
 import { EmptyState } from '../components/EmptyState';
 import { FileEntryMenuItems, FileEntryMenuOptions } from '../components/FileEntryActions';
 import { FileEntryThumb } from '../components/FileEntryThumb';
@@ -56,6 +57,11 @@ export struct ReceiveHistoryPage {
   private activeDialogId: number = -1
   // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
   private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
+  // 新传输直达详情前的弹层收起：本页只处理自己打开的确认/全文/相册弹窗
+  private overlayCloseCallback: () => void = (): void => {
+    this.closeActiveDialog();
+    this.closeGallerySaveDialog();
+  }
   // 文本消息完整内容弹窗：打开时暂存当前条目的完整文本，关闭时清空
   @Local fullTextDialogContent: string = ''
   // 全文弹窗内容不可用（文件缺失/读取失败）：弹窗内给出明确提示
@@ -74,9 +80,14 @@ export struct ReceiveHistoryPage {
     EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
 
   aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
     this.withAnimation(() => {
       this.viewModel.loadHistory();
     });
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
   }
 
   private withAnimation(action: () => void): void {

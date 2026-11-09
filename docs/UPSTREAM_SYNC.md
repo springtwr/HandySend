@@ -7,6 +7,7 @@
 ## 当前状态
 
 - 基线标签：`v1.18.1`
+- 原生库版本：`1.18.2`（`localsend_ohrs/Cargo.toml`；core 已合入 v1.18.2 及之后的上游修补，跳过项见后文表格）
 - 上次评估上游提交：`92e133aa`（2026-10-30）
 - 上次同步日期：2026-11-03
 - 游标分支：`localsend-synced`（指向 `92e133aa`，需 push 到 origin 才能团队可见）
@@ -56,7 +57,7 @@
 SUB=localsend_ohrs/third_party/localsend
 
 # 游标之后、仍触及 packages/core 的上游新提交
-git -C $SUB fetch upstream main
+git -C $SUB fetch upstream --tags
 git -C $SUB log --oneline --reverse localsend-synced..upstream/main -- packages/core
 
 # 已挑拣的上游提交（来自 cherry-pick -x 的尾注）
@@ -70,7 +71,7 @@ git -C $SUB log --format=%B v1.18.1..HEAD \
 
 ## 下次同步
 
-1. `git -C $SUB fetch upstream main`
+1. `git -C $SUB fetch upstream --tags`
 2. 按复核命令列出 `localsend-synced..upstream/main -- packages/core`
 3. 逐个查看 `git -C $SUB show <hash> -- packages/core`
 4. 需要挑拣的：`git -C $SUB cherry-pick -x <hash>`

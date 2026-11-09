@@ -6,9 +6,10 @@
 //! Download 与接收历史。接受即全量（不再逐文件挑）。
 //!
 //! 未完成的字节写在目标目录下的应用保留子目录
-//! `.handysend-upload-part/`，完成后同目录原子改名。子目录是
-//! 本应用独占的临时区，下次接受上传时可安全清理上次进程被杀
-//! 遗留的半成品，不会触碰目标目录里的用户文件。
+//! `.handysend-temp/web/`，完成后同目录原子改名。会话终结时删除未完成文件并
+//! 移除已空的子目录；网页协议子目录由本应用独占，进程被强制终止时遗留的
+//! 半成品在下次接受上传时清理，不会触碰其他协议临时文件或用户文件。旧名
+//! `.handysend-upload-part/` 作为 legacy 目录 best-effort 清理。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -16,26 +17,17 @@ use std::time::Instant;
 
 use tokio::sync::oneshot;
 
+use crate::bridge::temp_workspace;
 use crate::bridge::web::session::{SessionEndReason, SessionTimeouts};
 
-/// 目标目录内的应用保留临时子目录名（只能由本应用创建与清理）。
-pub(crate) const PART_DIR_NAME: &str = ".handysend-upload-part";
-
-/// 未完成上传的临时目录（与最终文件同父目录，保证改名是同一文件系统内的原子操作）。
+/// 未完成上传的临时目录（网页协议子目录；与最终文件同父目录，保证原子改名）。
 pub(crate) fn part_dir(final_path: &str) -> PathBuf {
-    Path::new(final_path)
-        .parent()
-        .unwrap_or_else(|| Path::new(""))
-        .join(PART_DIR_NAME)
+    temp_workspace::temp_dir(final_path, temp_workspace::TEMP_SUBDIR_WEB)
 }
 
-/// 未完成上传的临时文件路径（文件名与最终文件同名，父目录为应用保留子目录）。
+/// 未完成上传的临时文件路径（文件名与最终文件同名，父目录为网页协议子目录）。
 pub(crate) fn part_path(final_path: &str) -> PathBuf {
-    let name = Path::new(final_path)
-        .file_name()
-        .map(|name| name.to_os_string())
-        .unwrap_or_default();
-    part_dir(final_path).join(name)
+    temp_workspace::temp_path(final_path, temp_workspace::TEMP_SUBDIR_WEB)
 }
 
 /// 上传会话状态：待确认（持有决策发送端）/ 已接受。
@@ -65,7 +57,7 @@ pub struct UploadFile {
     /// 已接收字节。
     pub received: u64,
     /// 最终落盘路径（确认前由 ArkTS 指定；缺省为上传目录）。
-    /// 完成前写同名 `.part` 临时文件，完成后改名（同目录原子操作）。
+    /// 完成前写保留子目录中的同名临时文件，完成后改名（同目录原子操作）。
     pub path: String,
     /// 是否已完成。
     pub done: bool,
@@ -78,6 +70,10 @@ pub struct UploadFile {
 pub struct UploadSession {
     /// 浏览器 UUID。
     pub token: String,
+    /// 页面实例标识（同标签页刷新保留；关闭/新标签页不同）。
+    pub client_id: String,
+    /// 建会话声明清单的指纹（同 client 重试时用于判断是否同一批文件）。
+    pub batch_key: String,
     /// 归属分享标识。
     pub share_id: String,
     /// 创建时的对端 IP。
@@ -92,6 +88,8 @@ pub struct UploadSession {
     pub state: UploadState,
     /// 本次允许上传的文件表。
     pub files: HashMap<String, UploadFile>,
+    /// 建会话时声明的文件数（文件条目可能因 413/落盘失败被移除，用于判定清单是否完整）。
+    pub declared_files: usize,
     /// 是否已开始上传（任一文件收到首字节）。
     pub download_started: bool,
 }
@@ -148,18 +146,15 @@ impl UploadStore {
         Some(session)
     }
 
-    /// 过期：移除会话、清理未完成的临时文件并丢弃决策发送端（等待方收 408）。
+    /// 过期：移除会话、清理未完成的临时文件并移除空临时目录，
+    /// 丢弃决策发送端（等待方收 408）。
     pub fn expire(&mut self, token: &str) -> bool {
         let Some(session) = self.sessions.remove(token) else {
             return false;
         };
         // 只清理未完成的临时文件：已完成条目已改名为最终交付文件，
         // 不能因为会话过期把用户已收到的文件删掉。
-        for file in session.files.values() {
-            if !file.done {
-                let _ = std::fs::remove_file(part_path(&file.path));
-            }
-        }
+        cleanup_session_parts(&session);
         true
     }
 
@@ -175,8 +170,8 @@ impl UploadStore {
     ///
     /// 接受新一批上传前顺带清理目标目录内应用保留临时区的遗留文件：
     /// 进程被强制终止时这些半成品不会走到过期/拒绝路径，只能在此兜底；
-    /// 清理范围仅限 `.handysend-upload-part/` 内且不属于任何活跃会话的文件，
-    /// 不会删除最终交付文件或用户自己的文件。
+    /// 清理范围仅限网页协议子目录 `.handysend-temp/web/` 内且不属于任何
+    /// 活跃上传会话的文件，不会删除最终交付文件、其他协议临时文件或用户文件。
     pub fn set_targets(&mut self, token: &str, targets: &[(String, String)]) -> usize {
         let Some(session) = self.sessions.get_mut(token) else {
             return 0;
@@ -204,11 +199,18 @@ impl UploadStore {
         let mut dirs: HashSet<PathBuf> = HashSet::new();
         for (_, path) in targets {
             if !path.is_empty() {
-                dirs.insert(part_dir(path));
+                if let Some(parent) = Path::new(path).parent() {
+                    dirs.insert(parent.to_path_buf());
+                }
             }
         }
         for dir in dirs {
-            cleanup_parts(&dir, &active);
+            // 只清理网页协议自己的临时子目录与旧版本 legacy 目录，
+            // 不触碰 LocalSend/MTA 正在写入的临时文件。
+            temp_workspace::cleanup_namespace(&dir, temp_workspace::TEMP_SUBDIR_WEB, &active);
+            temp_workspace::cleanup_legacy(&dir, &active);
+            // 旧版协议子目录（如 local-send）新版本不再写入，升级后一并清掉。
+            temp_workspace::cleanup_legacy_subdirs(&dir);
         }
         applied
     }
@@ -259,19 +261,35 @@ impl UploadStore {
     }
 }
 
-/// 清理应用保留临时目录中的遗留文件（只处理直接子文件，目录非空时保留）。
-fn cleanup_parts(dir: &Path, active: &HashSet<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && !active.contains(&path) {
-            let _ = std::fs::remove_file(&path);
+/// 清理会话未完成的临时文件，并尝试移除已空的临时目录。
+///
+/// 已完成条目已改名为最终交付文件，不能删除；目录非空说明同目录
+/// 还有其他活跃上传，删除失败时保留，由最后一个结束的会话清理。
+pub(crate) fn cleanup_session_parts(session: &UploadSession) {
+    let mut dirs: HashSet<PathBuf> = HashSet::new();
+    for file in session.files.values() {
+        if file.path.is_empty() {
+            continue;
+        }
+        if !file.done {
+            let _ = std::fs::remove_file(part_path(&file.path));
+        }
+        dirs.insert(part_dir(&file.path));
+    }
+    for dir in dirs {
+        let _ = std::fs::remove_dir(&dir);
+        if let Some(root) = dir.parent() {
+            let _ = std::fs::remove_dir(root);
         }
     }
-    // 临时区已空时顺手移除目录；非空（仍有活跃上传）时删除失败并保留。
-    let _ = std::fs::remove_dir(dir);
+}
+
+/// 删除未完成的临时文件，并尝试移除已空的临时目录。
+///
+/// 用于上传失败分支：文件条目可能随后被移出会话，届时无法再从清单
+/// 反推临时目录，因此在这里顺手清理。
+pub(crate) fn remove_part_file_and_dir(path: &Path) {
+    temp_workspace::remove_temp_file(path);
 }
 
 #[cfg(test)]
@@ -284,6 +302,8 @@ mod tests {
         let now = Instant::now();
         let session = UploadSession {
             token: token.to_string(),
+            client_id: "client-1".to_string(),
+            batch_key: "batch-1".to_string(),
             share_id: "share-1".to_string(),
             peer_ip: "192.168.1.2".to_string(),
             user_agent: None,
@@ -293,6 +313,7 @@ mod tests {
                 decision_tx: Some(tx),
             },
             files: HashMap::new(),
+            declared_files: 0,
             download_started: false,
         };
         (session, rx)
@@ -378,24 +399,95 @@ mod tests {
 
     #[test]
     fn test_part_path_stays_in_reserved_dir() {
-        let path = part_path("/dl/dir/a.txt");
-        assert_eq!(
-            path,
-            PathBuf::from("/dl/dir").join(PART_DIR_NAME).join("a.txt")
+        let expected_dir = PathBuf::from("/dl/dir")
+            .join(temp_workspace::TEMP_DIR_NAME)
+            .join(temp_workspace::TEMP_SUBDIR_WEB);
+        assert_eq!(part_path("/dl/dir/a.txt"), expected_dir.join("a.txt"));
+        assert_eq!(part_dir("/dl/dir/a.txt"), expected_dir);
+    }
+
+    #[test]
+    fn test_cleanup_session_parts_removes_empty_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "handysend-part-cleanup-empty-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let final_path = root.join("a.txt").to_string_lossy().into_owned();
+        let part = part_path(&final_path);
+        std::fs::create_dir_all(part.parent().unwrap()).unwrap();
+        std::fs::write(&part, b"half").unwrap();
+
+        let (mut session, _rx) = pending_session("up-clean-empty");
+        session
+            .files
+            .insert("f1".to_string(), upload_file("f1", &final_path));
+        cleanup_session_parts(&session);
+
+        assert!(!part.exists(), "未完成临时文件应被删除");
+        assert!(!part_dir(&final_path).exists(), "空临时目录应被删除");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_session_parts_keeps_non_empty_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "handysend-part-cleanup-nonempty-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let final_path = root.join("a.txt").to_string_lossy().into_owned();
+        let dir = part_dir(&final_path);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mine = part_path(&final_path);
+        let other = dir.join("other.txt");
+        std::fs::write(&mine, b"half").unwrap();
+        std::fs::write(&other, b"inflight").unwrap();
+
+        let (mut session, _rx) = pending_session("up-clean-nonempty");
+        session
+            .files
+            .insert("f1".to_string(), upload_file("f1", &final_path));
+        cleanup_session_parts(&session);
+
+        assert!(!mine.exists(), "本会话的临时文件应被删除");
+        assert!(other.exists(), "其他活跃上传的临时文件不能删");
+        assert!(dir.exists(), "目录非空时应保留");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn test_cleanup_session_parts_keeps_delivered_file() {
+        let root = std::env::temp_dir().join(format!(
+            "handysend-part-cleanup-done-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let final_path = root.join("a.txt").to_string_lossy().into_owned();
+        std::fs::write(&final_path, b"done").unwrap();
+
+        let (mut session, _rx) = pending_session("up-clean-done");
+        let mut file = upload_file("f1", &final_path);
+        file.done = true;
+        session.files.insert("f1".to_string(), file);
+        cleanup_session_parts(&session);
+
+        assert!(
+            std::path::Path::new(&final_path).exists(),
+            "已交付文件不能删"
         );
-        assert_eq!(
-            part_dir("/dl/dir/a.txt"),
-            PathBuf::from("/dl/dir").join(PART_DIR_NAME)
-        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn test_set_targets_cleans_stale_parts_only() {
         let dir = std::env::temp_dir().join(format!("handysend-part-clean-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join(PART_DIR_NAME)).unwrap();
+        let web_temp = part_dir(&dir.join("probe.txt").to_string_lossy());
+        std::fs::create_dir_all(&web_temp).unwrap();
         // 上轮进程遗留的半成品、另一活跃会话的半成品、用户自己的文件。
-        let orphan = dir.join(PART_DIR_NAME).join("orphan.txt");
+        let orphan = web_temp.join("orphan.txt");
         let other_final = dir.join("keep.txt").to_string_lossy().into_owned();
         let active = part_path(&other_final);
         let user = dir.join("user.txt");
@@ -424,6 +516,54 @@ mod tests {
         assert!(!orphan.exists(), "上轮遗留的半成品应被清理");
         assert!(active.exists(), "正在上传的临时文件不能删");
         assert!(user.exists(), "目标目录里的用户文件不能删");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_set_targets_keeps_other_protocol_temp() {
+        let dir = std::env::temp_dir().join(format!(
+            "handysend-part-cross-protocol-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        let final_path = dir.join("new.txt").to_string_lossy().into_owned();
+        let web_temp = part_dir(&final_path);
+        std::fs::create_dir_all(&web_temp).unwrap();
+        let orphan = web_temp.join("orphan.txt");
+        std::fs::write(&orphan, b"stale").unwrap();
+        // LocalSend/MTA 正在写入的临时文件，网页清理不能触碰。
+        let local_temp =
+            temp_workspace::temp_dir(&final_path, temp_workspace::TEMP_SUBDIR_LOCAL_SEND);
+        let mta_temp = temp_workspace::temp_dir(&final_path, temp_workspace::TEMP_SUBDIR_MTA);
+        std::fs::create_dir_all(&local_temp).unwrap();
+        std::fs::create_dir_all(&mta_temp).unwrap();
+        let local_file = local_temp.join("new.txt");
+        let mta_file = mta_temp.join("new.txt");
+        std::fs::write(&local_file, b"inflight").unwrap();
+        std::fs::write(&mta_file, b"inflight").unwrap();
+        // 升级前旧协议子目录（local-send）中的残留，新版本不再写入。
+        let legacy_dir = dir
+            .join(temp_workspace::TEMP_DIR_NAME)
+            .join(temp_workspace::LEGACY_TEMP_SUBDIRS[0]);
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let legacy_file = legacy_dir.join("old.txt");
+        std::fs::write(&legacy_file, b"old").unwrap();
+
+        let mut store = UploadStore::default();
+        let (mut current, _rx) = pending_session("up-cross-protocol");
+        current
+            .files
+            .insert("f1".to_string(), upload_file("f1", &final_path));
+        store.insert_pending(current);
+
+        assert_eq!(
+            store.set_targets("up-cross-protocol", &[("f1".to_string(), final_path)]),
+            1
+        );
+        assert!(!orphan.exists(), "网页协议自身的遗留半成品应被清理");
+        assert!(local_file.exists(), "LocalSend 正在写入的临时文件不能删");
+        assert!(mta_file.exists(), "MTA 正在写入的临时文件不能删");
+        assert!(!legacy_file.exists(), "旧版协议子目录的残留应被清理");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

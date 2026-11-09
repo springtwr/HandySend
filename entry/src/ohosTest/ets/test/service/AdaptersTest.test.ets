@@ -4,7 +4,8 @@ import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/
 import {
   SessionDataFlow,
   SessionInitiator,
-  SessionStage
+  SessionStage,
+  displayFileCount
 } from '../../../../main/ets/model/transfer/TransferSession'
 import {
   LOCAL_SEND_KEY,
@@ -25,10 +26,12 @@ import {
   MtaSendEventDecision,
   MtaSendTerminal,
   beginMtaSendSession,
+  buildMtaSendDescriptors,
   decideMtaSendEvent,
   finishMtaSendSession,
   updateMtaSendProgress
 } from '../../../../main/ets/service/transfer/adapters/MtaSendAdapter'
+import { MtaSendRequest } from '../../../../main/ets/model/mta/MtaMainModels'
 import { MtaSenderStage } from '../../../../main/ets/model/mta/MtaSendModels'
 import { decidePeerGroupAbandon } from '../../../../main/ets/service/mta/MtaSendService'
 import { MtaConstants } from '../../../../main/ets/service/mta/MtaConstants'
@@ -90,7 +93,7 @@ function device(): DiscoveredDevice {
     ip: '192.168.1.9',
     port: 53317,
     fingerprint: 'fp',
-    version: '2.1',
+    version: '2.2',
     deviceModel: 'Model',
     deviceType: 'mobile',
     protocol: 'http',
@@ -489,6 +492,52 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('mtaSend_emptyFileIdsKeepPerFileSizes', 0, () => {
+      resetRegistry()
+      // 发送页构造的 MTA 请求不携带文件标识：适配器须按序号补全唯一标识，
+      // 否则逐文件进度会全部命中首个文件，并把其大小改写成后续文件的大小
+      let request: MtaSendRequest = {
+        targetAlias: 'MtaPeer',
+        deviceType: 'mobile',
+        deviceModel: 'Model',
+        badgeText: 'Brand',
+        bleAddress: 'AA:BB:CC:DD:EE:FF',
+        senderIdHex: '1a2b',
+        brandId: -1,
+        is5Ghz: false,
+        rssi: 0,
+        fileUris: ['u0', 'u1'],
+        fileDescriptors: [{
+          fileId: '',
+          fileName: 'zero.bin',
+          size: 60000000,
+          fileType: 'application/octet-stream'
+        },
+          {
+            fileId: '',
+            fileName: 'a.mp3',
+            size: 365200,
+            fileType: 'audio/mpeg'
+          }],
+        isTextSend: false,
+        textContent: ''
+      }
+      let descriptors = buildMtaSendDescriptors(request)
+      expect(descriptors.length).assertEqual(2)
+      expect(descriptors[0].fileId.length > 0).assertTrue()
+      expect(descriptors[0].fileId === descriptors[1].fileId).assertFalse()
+      let id = beginMtaSendSession('task-size', 'MtaPeer', 'mobile', 'Model', 'Brand', descriptors)
+      updateMtaSendProgress(id, 1234, 60365200, '发送中')
+      let session = getSession(id)
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.files[0].totalBytes).assertEqual(60000000)
+        expect(session.files[1].totalBytes).assertEqual(365200)
+        expect(session.totalBytes).assertEqual(60365200)
+      }
+      resetRegistry()
+    })
+
     it('mtaSend_sessionPerRequest_sameDeviceIndependent', 0, () => {
       resetRegistry()
       // 同一设备先后两次发送：各自使用本次请求信息创建独立会话，互不合并（FR-003）
@@ -669,6 +718,45 @@ export default function AdaptersTest() {
       clearSessionHistory()
     })
 
+    it('mtaReceive_partialFailureKeepsCommittedFiles', 0, () => {
+      resetRegistry()
+      clearSessionHistory()
+      let state = new ReceiverState()
+      state.stage = ReceiverStage.REQUEST_RECEIVED
+      let request = new ReceiveRequest()
+      request.senderName = 'MtaPartial'
+      request.fileName = 'a.txt'
+      request.fileCount = 2
+      request.totalSize = 300
+      state.receiveRequest = request
+      handleMtaReceiveState(state)
+      state.stage = ReceiverStage.DOWNLOADING
+      handleMtaReceiveState(state)
+
+      // Rust 逐条目提交了首个文件后失败：保留已提交文件，任务按部分完成收口
+      let first = new ReceivedFileEntry()
+      first.name = 'a.txt'
+      first.size = 100
+      first.fileType = 'text/plain'
+      state.receivedFiles = [first]
+      state.savedFiles = ['/storage/Download/com.example/a.txt']
+      state.endedWithPartialFiles = true
+      state.lastError = '下载中断'
+      state.stage = ReceiverStage.FAILED
+      handleMtaReceiveState(state)
+
+      let found = findByProtocol('mta-receive', 'mta-receive-session')
+      expect(found !== undefined).assertTrue()
+      if (found !== undefined) {
+        expect(found.stage).assertEqual(SessionStage.partiallyFailed)
+        expect(found.files.length).assertEqual(1)
+        expect(found.files[0].fileName).assertEqual('a.txt')
+        expect(found.files[0].path).assertEqual('/storage/Download/com.example/a.txt')
+      }
+      resetRegistry()
+      clearSessionHistory()
+    })
+
     it('resend_sameMtaPeer_replacesTerminalEntry', 0, () => {
       resetRegistry()
       // 互传发送：同一设备先后两次，第二次创建前按昵称取代上一条已终态条目
@@ -698,10 +786,12 @@ export default function AdaptersTest() {
       if (found !== undefined) {
         expect(found.stage).assertEqual(SessionStage.awaitingConfirmation)
         expect(found.peer.displayName).assertEqual('MtaSender')
-        // 下载前仅占位：单条「主文件名…」，大小暂为整包声明总量
+        // 下载前仅占位：单条「主文件名…」，大小暂为整包声明总量；
+        // 展示文件数取请求声明值，不按占位条目数
         expect(found.files.length).assertEqual(1)
         expect(found.files[0].fileName).assertEqual('note.txt…')
         expect(found.files[0].totalBytes).assertEqual(300)
+        expect(displayFileCount(found)).assertEqual(2)
       }
       state.stage = ReceiverStage.DOWNLOADING
       state.progress.receivedBytes = 150
@@ -732,6 +822,8 @@ export default function AdaptersTest() {
         expect(completed.stage).assertEqual(SessionStage.succeeded)
         // 占位条目被真实逐文件清单整体替换：数量/名称/大小/路径与真实落盘一致
         expect(completed.files.length).assertEqual(2)
+        expect(completed.declaredFileCount).assertEqual(0)
+        expect(displayFileCount(completed)).assertEqual(2)
         // 文本条目显示自身真实大小，不再是整包声明总量（否则会因超预览阈值而无法预览）
         expect(completed.files[0].fileName).assertEqual('note.txt')
         expect(completed.files[0].totalBytes).assertEqual(100)

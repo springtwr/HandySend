@@ -19,6 +19,9 @@ export const DEFAULT_SAVE_TO_GALLERY: boolean = false;
 
 export const DEFAULT_DESTINATION: string = '';
 
+// 接收文件保存目录：空串表示默认目录（Download/<包名>/）
+export const DEFAULT_RECEIVE_DIRECTORY_URI: string = '';
+
 // ── 主题 / 语言 / 外观 ──
 export const DEFAULT_THEME: string = 'system';
 

@@ -29,6 +29,9 @@ export struct SendTargetZone {
   // 点击网页图标：直接进入统一的「网页传输」面板
   @Event onOpenWeb: () => void = () => {
   }
+  // 点击云图标：进入「在线服务」站点导航页
+  @Event onOpenPortal: () => void = () => {
+  }
   // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态。
   // -1 表示自动：从未手动选择时优先显示首个有设备的来源；用户点击标签后固定为该下标，
   // 之后即使该来源设备归零也保持（便于查看来源空态与排查引导）。
@@ -312,6 +315,9 @@ export struct SendTargetZone {
           isWebActive: this.viewModel.webServiceActive,
           onOpenWeb: () => {
             this.onOpenWeb();
+          },
+          onOpenPortal: () => {
+            this.onOpenPortal();
           }
         })
 

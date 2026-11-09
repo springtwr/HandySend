@@ -85,6 +85,7 @@ import { getDeviceAlias } from '../repository/DeviceRepository';
 import { getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { sendTextDir, sendThumbnailDir } from '../repository/SendRepository';
 import { getLogger } from '../../utils/Logger';
+import { maskSecret } from '../../utils/LogRedaction';
 import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { formatSpeed } from '../../utils/FormatUtil';
 import { isLargeTransfer } from '../../utils/LargeTransferUtil';
@@ -282,7 +283,7 @@ export class MtaSendService {
     this.p2p.registerEvents(this.p2pHandlers);
     this.subscribeNativeEvents();
     this.startRustLogPolling();
-    this.appendLog('服务', 'MTA 发送页就绪', LogLevels.INFO);
+    this.appendLog('服务', 'MTA 发送页就绪', LogLevels.DEBUG);
     this.appendLog('服务', `发送者 ID=${this.senderIdHex} 发送者名称=${this.senderName}`, LogLevels.DEBUG);
   }
 
@@ -578,7 +579,7 @@ export class MtaSendService {
   async sendToDevice(device: MtaDiscoveredDevice, files: Array<MtaSendFile>,
     text?: string): Promise<void> {
     if (this.sessionActive) {
-      this.appendLog('服务', '已有发送会话进行中，忽略新的发送请求', LogLevels.WARN);
+      this.appendLog('服务', '已有发送会话进行中，忽略新的发送请求', LogLevels.DEBUG);
       return;
     }
     let textValue = text !== undefined ? text : '';
@@ -730,7 +731,7 @@ export class MtaSendService {
       }
     }
     if (!connected) {
-      await this.failSend('GATT 连接超时');
+      await this.failSend('GATT 连接超时', LogLevels.WARN);
       return;
     }
     this.appendLog('GATT', '已连接对端 GATT 服务端', LogLevels.DEBUG);
@@ -789,8 +790,8 @@ export class MtaSendService {
         `对端忙，提前收束本次发送：state=${remoteInfo.state}（就绪值=${MtaConstants.DEVICE_INFO_STATE}）` +
           ` reason=${remoteInfo.reason}（${mtaPeerBusyReasonText(remoteInfo.reason)}）` +
           ` 对端=${device.deviceName}(${device.bleAddress}) 任务=${session.taskId}`,
-        LogLevels.WARN);
-      await this.failSend(MTA_PEER_BUSY_TEXT);
+        LogLevels.DEBUG);
+      await this.failSend(MTA_PEER_BUSY_TEXT, LogLevels.INFO);
       return;
     }
 
@@ -894,7 +895,11 @@ export class MtaSendService {
     }
     this.p2pWriteDone = true;
     this.p2pWriteUsedNoResponse = usedNoResponseWrite;
-    this.appendLog('GATT', `已写回 P2pInfo: ${p2pInfoText}`, LogLevels.DEBUG);
+    // 群组口令按打码输出；key 只记录长度，避免原始报文进入日志
+    this.appendLog('GATT',
+      `已写回 P2pInfo id=${p2pInfo.id} ssid=${p2pInfo.ssid} psk=${maskSecret(p2pInfo.psk)}` +
+        ` mac=${p2pInfo.mac} port=${p2pInfo.port} key长度=${p2pInfo.key.length}`,
+      LogLevels.DEBUG);
     this.p2pInfoWrittenMs = Date.now();
     this.linkTiming.mark('写回凭据', Date.now());
     // 写回结果语义：带响应写以收到对端写回调为「成功」；无响应写无回调，本地返回即「已发出」，
@@ -1471,7 +1476,7 @@ export class MtaSendService {
         this.wsConnectedSeen = true;
         this.clearWaitingWsTimeout();
         this.setStage(MtaSenderStage.WAITING_WS);
-        this.appendLog('WS', '对端已建立 WS 连接', LogLevels.INFO);
+        this.appendLog('WS', '对端已建立 WS 连接', LogLevels.DEBUG);
         this.linkTiming.mark('对端接入', Date.now());
         // 建链阶段耗时口径：点击→对端接入（对端此时已取得凭据并建立传输通道）
         let wsClickBaseMs = this.userClickMs > 0 ? this.userClickMs : this.linkStartMs;
@@ -1486,7 +1491,7 @@ export class MtaSendService {
       case 'mtaVersionNegotiated':
         this.setStage(MtaSenderStage.NEGOTIATED);
         this.linkTiming.mark('版本协商', Date.now());
-        this.appendLog('WS', '版本协商完成', LogLevels.INFO);
+        this.appendLog('WS', '版本协商完成', LogLevels.DEBUG);
         this.appendLog('WS', `版本=${event.version}`, LogLevels.DEBUG);
         break;
       case 'mtaSendRequestSent':
@@ -1494,7 +1499,7 @@ export class MtaSendService {
         this.requestSentMs = Date.now();
         // 请求已送达：武装"等待对端开始接收"的有界窗口，对端既未开始下载也未回送状态时给出可读结果
         this.startPeerAcceptTimeout();
-        this.appendLog('WS', '已发送接收请求', LogLevels.INFO);
+        this.appendLog('WS', '已发送接收请求', LogLevels.DEBUG);
         this.appendLog('WS', `接收请求任务=${event.taskId}`, LogLevels.DEBUG);
         break;
       case 'mtaRejectSent':
@@ -1510,7 +1515,7 @@ export class MtaSendService {
         this.resetTransferStallWatchdog();
         // 记录下载开始时刻，供发送完成时输出传输阶段耗时
         this.downloadStartedMs = Date.now();
-        this.appendLog('下载', '对端开始下载', LogLevels.INFO);
+        this.appendLog('下载', '对端开始下载', LogLevels.DEBUG);
         this.appendLog('下载', `下载任务=${event.taskId}`, LogLevels.DEBUG);
         if (this.requestSentMs > 0) {
           this.appendLog('计时',
@@ -1548,8 +1553,8 @@ export class MtaSendService {
         // 等待确认阶段的「对端关闭连接 / 读取失败 / 状态等待超时」统一呈现为「对方已放弃接收」，
         // 原始原因完整保留在日志中；更早链路阶段与传输阶段保持既有文案
         if (this.state.stage === MtaSenderStage.WAITING_PEER_CONFIRM) {
-          this.appendLog('服务', `等待确认阶段收到失败：${event.reason}`, LogLevels.WARN);
-          this.failSend(MTA_PEER_ABANDONED_TEXT);
+          this.appendLog('服务', `等待确认阶段收到失败：${event.reason}`, LogLevels.DEBUG);
+          this.failSend(MTA_PEER_ABANDONED_TEXT, LogLevels.INFO);
         } else {
           this.failSend(event.reason);
         }
@@ -1626,14 +1631,14 @@ export class MtaSendService {
   }
 
   /** 本次发送失败：记录原因、进入失败阶段并释放全部传输资源 */
-  private async failSend(reason: string): Promise<void> {
+  private async failSend(reason: string, level: string = LogLevels.ERROR): Promise<void> {
     // 已被用户取消的会话保持 CANCELLED 终态，不再被旧链路的失败回调覆盖
     if (this.cancelledThisSession) {
       return;
     }
     this.setError(reason);
     this.setStage(MtaSenderStage.FAILED);
-    this.appendLog('服务', `本次发送失败：${reason}`, LogLevels.ERROR);
+    this.appendLog('服务', `本次发送失败：${reason}`, level);
     this.logPeerJoinSummary();
     this.logPeerLinkSummary();
     this.logPeerInfoRecheckSummary();
@@ -1742,7 +1747,7 @@ export class MtaSendService {
         notified = await this.waitCancelNotify();
       }
     } else {
-      this.appendLog('服务', '对端尚未取得连接凭据，无需通知取消，直接收尾', LogLevels.INFO);
+      this.appendLog('服务', '对端尚未取得连接凭据，无需通知取消，直接收尾', LogLevels.DEBUG);
     }
     this.logPeerJoinSummary();
     this.logPeerLinkSummary();
@@ -1752,7 +1757,7 @@ export class MtaSendService {
     this.setError(notified ? MTA_CANCELLED_TEXT : MTA_CANCEL_NOTIFY_FAILED_TEXT);
     this.setStage(MtaSenderStage.CANCELLED);
     await this.releaseSendResources();
-    this.appendLog('服务', '已取消本次发送并释放资源', LogLevels.INFO);
+    this.appendLog('服务', '已取消本次发送并释放资源', LogLevels.DEBUG);
     this.appendLog('计时', `取消耗时=${Date.now() - cancelStartMs}ms`, LogLevels.DEBUG);
   }
 
@@ -1787,7 +1792,7 @@ export class MtaSendService {
     }
     let costMs = this.cancelWaitStartMs > 0 ? Date.now() - this.cancelWaitStartMs : 0;
     let outcome = notified ? '已通知对端取消' : '未能通知对端取消';
-    this.appendLog('服务', outcome, notified ? LogLevels.INFO : LogLevels.WARN);
+    this.appendLog('服务', outcome, notified ? LogLevels.DEBUG : LogLevels.WARN);
     this.appendLog('计时', `${source} 等待=${costMs}ms`, LogLevels.DEBUG);
     resolve(notified);
   }
@@ -1850,7 +1855,7 @@ export class MtaSendService {
       this.waitingWsTimerId = -1;
       // 仅在会话仍停留在等待 WS 阶段时判定失败（对端解密凭据失败/P2P 连接失败/异常退出）
       if (this.sessionActive && this.state.stage === MtaSenderStage.WAITING_WS) {
-        this.failSend(`等待对端连接超时（${MtaConstants.WAITING_WS_TIMEOUT_MS}ms）`);
+        this.failSend(`等待对端连接超时（${MtaConstants.WAITING_WS_TIMEOUT_MS}ms）`, LogLevels.WARN);
       }
     }, MtaConstants.WAITING_WS_TIMEOUT_MS);
   }
@@ -1880,8 +1885,8 @@ export class MtaSendService {
         // 与 Rust 侧会话收尾统计（收到对端报文数）配对，即可区分「对端未发送」与「本端漏收」
         this.appendLog('服务',
           `等待对端开始接收窗口到期（${MtaConstants.PEER_ACCEPT_TIMEOUT_MS}ms）：窗口期内未收到对端任何结果，判定对方未接收`,
-          LogLevels.WARN);
-        this.failSend(MTA_PEER_REJECTED_TEXT);
+          LogLevels.DEBUG);
+        this.failSend(MTA_PEER_REJECTED_TEXT, LogLevels.WARN);
       }
     }, MtaConstants.PEER_ACCEPT_TIMEOUT_MS);
   }
@@ -1907,7 +1912,7 @@ export class MtaSendService {
       this.transferStallTimerId = -1;
       // 仅在仍处于传输中且会话未终结时判定失败（已完成/已取消不被迟到信号覆盖）
       if (this.sessionActive && this.state.stage === MtaSenderStage.TRANSFERRING) {
-        this.failSend(`传输长时间无进展（${MtaConstants.TRANSFER_STALL_TIMEOUT_MS}ms），判定对端已中止`);
+        this.failSend(`传输长时间无进展（${MtaConstants.TRANSFER_STALL_TIMEOUT_MS}ms），判定对端已中止`, LogLevels.WARN);
       }
     }, MtaConstants.TRANSFER_STALL_TIMEOUT_MS);
   }
@@ -1949,8 +1954,8 @@ export class MtaSendService {
         // 等待确认阶段对端已退出本次 P2P 组：立即以「对方已放弃接收」终结，不空等窗口到期
         this.appendLog('服务',
           `等待确认阶段对端已退出本次 P2P 组（连续 ${decision.zeroStreak} 次观测客户端数归零/群组不可得）`,
-          LogLevels.WARN);
-        this.failSend(MTA_PEER_ABANDONED_TEXT);
+          LogLevels.DEBUG);
+        this.failSend(MTA_PEER_ABANDONED_TEXT, LogLevels.INFO);
       }
     }).catch((e: Object): void => {
       logger.warn('查询群组客户端数失败：' + String(e));

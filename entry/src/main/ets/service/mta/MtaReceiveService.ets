@@ -6,8 +6,8 @@
  * 所有系统调用失败均转为可读文本写入日志，不向页面抛出异常。
  */
 
-import { common, bundleManager } from '@kit.AbilityKit';
-import { fileIo as fs, fileUri, statfs } from '@kit.CoreFileKit';
+import { common } from '@kit.AbilityKit';
+import { fileIo as fs, statfs } from '@kit.CoreFileKit';
 import {
   DecryptedCredentials,
   DeviceInfoJson,
@@ -22,6 +22,7 @@ import {
   ReceiverStage,
   ReceiverState,
   ReceiveRequest,
+  ReceivedFileEntry,
   WsHandshakeResult,
   buildMtaReceiveIdentityToken,
   buildWsHandshakeSummary,
@@ -46,6 +47,7 @@ import { MtaP2pConnector, P2pConnectResult } from './MtaP2pConnector';
 import { MtaTransferClient, DownloadResult } from './MtaTransferClient';
 import { nativeMtaFetchThumbnail } from '../NativeBridge';
 import { getLogger } from '../../utils/Logger';
+import { maskSecret } from '../../utils/LogRedaction';
 import { getMimeForFileName, isImage, isMediaMime } from '../../utils/MimeUtils';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
 import {
@@ -56,11 +58,59 @@ import { LogLevels } from '../../common/LogLevels';
 import { MediaFileInfo, ReceiveHistoryEntry } from '../../model/Types';
 import { MTA_SHARED_TEXT_FILE_NAME } from '../../model/mta/MtaMainModels';
 import { MTA_BRAND_ID_THIRD_PARTY, resolveMtaBrandName } from '../../model/mta/MtaBrandRegistry';
+import {
+  SessionDataFlow,
+  SessionFileStage,
+  SessionInitiator,
+  SessionPeer,
+  SessionStage
+} from '../../model/transfer/TransferSession';
+import { findByProtocol } from '../transfer/TransferSessionRegistry';
+import {
+  SESSION_DRAFT_SCHEMA_VERSION,
+  SessionDraft,
+  SessionDraftFile,
+  loadSessionDraft,
+  removeSessionDraft,
+  saveSessionDraft
+} from '../transfer/SessionDraftStore';
 import { isSaveToGallery, getMtaSimulatedBrand } from '../repository/SettingsRepository';
 import { addEntries } from '../repository/ReceiveHistoryService';
 import { ensureRecvTextDir, uniquePath } from '../repository/ReceiveTargets';
+import {
+  consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory, getReceiveDirectoryPath
+} from '../repository/ReceiveDirectory';
+import { DialogService } from '../DialogService';
 
 const logger = getLogger(LogDomains.MTA, 'HandySend:MtaReceive', '互传接收');
+
+// MTA 接收适配器的协议键（与 MtaReceiveAdapter 的 MTA_RECEIVE_KEY 保持一致；
+// 本地常量避免服务与适配器互相导入）。
+const MTA_RECEIVE_PROTOCOL_KEY: string = 'mta-receive';
+
+// MTA 接收预览缩略图缓存目录名（应用缓存根下的专用子目录）
+const MTA_THUMB_DIR_NAME: string = 'mta_thumb';
+
+/** MTA 接收预览缩略图目录（不带尾斜杠，匹配 Rust 端 `{target_dir}/文件名` 拼接） */
+function mtaThumbnailDirOf(context: common.Context): string {
+  return context.cacheDir + '/' + MTA_THUMB_DIR_NAME;
+}
+
+/** 冷启动清理 MTA 接收预览缩略图缓存；缩略图仅供确认阶段预览，可安全删除 */
+export function cleanupMtaThumbnailDirWithContext(context: common.UIAbilityContext): void {
+  let dir: string = mtaThumbnailDirOf(context);
+  try {
+    let names: Array<string> = fs.listFileSync(dir);
+    for (let i = 0; i < names.length; i++) {
+      try {
+        fs.unlinkSync(dir + '/' + names[i]);
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+    // 目录不存在——忽略
+  }
+}
 
 // 文本落盘完成通知（由协议仓库注入）：把文本文件的真实保存路径上抛，
 // 供统一会话回填逐文件路径（详情页据路径读取内容预览）。不参与协议行为。
@@ -107,7 +157,7 @@ export class MtaReceiveService {
   private rustLogTimerId: number = -1;
   /** 是否正在启动（并发闸门：避免同一异步窗口内重复触发启动） */
   private startingUp: boolean = false;
-  /** 接收文件落盘目录（Download/<bundleName>/） */
+  /** 接收文件落盘目录（默认 Download/<bundleName>/，可由用户自定义） */
   private downloadDir: string = '';
   /** 建链计时起点（收到完整 P2pInfo 时刻） */
   private linkStartMs: number = 0;
@@ -139,30 +189,17 @@ export class MtaReceiveService {
   /** 注入应用上下文（启动服务前调用） */
   init(context: common.Context): void {
     this.context = context;
-    this.downloadDir = this.resolveDownloadDir(context);
+    // 接收目录由 ReceiveDirectory 统一解析；自定义目录的授权需异步激活，
+    // 因此首次接收前可能尚无路径，实际目录在 downloadAndSave 开始时再确保。
+    this.downloadDir = getReceiveDirectoryPath();
     this.bindBleHandlers();
     this.bindP2pHandlers();
     this.bindTransferHandlers();
     this.ble.registerEvents(this.bleHandlers);
     this.p2p.registerEvents(this.p2pHandlers);
-    this.appendLog('服务', 'MTA 接收页就绪', LogLevels.INFO);
-    this.appendLog('服务', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
-  }
-
-  /**
-   * 解析接收文件落盘目录：DOWNLOAD 模式 Download/<bundleName>/。
-   * 通过 DOWNLOAD 模式 URI 取沙箱路径，失败时回退应用 filesDir。
-   */
-  private resolveDownloadDir(context: common.Context): string {
-    try {
-      let bundleFlags = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
-      let info = bundleManager.getBundleInfoForSelfSync(bundleFlags);
-      let uri = `file://docs/storage/Users/currentUser/Download/${info.name}`;
-      return new fileUri.FileUri(uri).path;
-    } catch (e) {
-      logger.warn('解析 DOWNLOAD 目录失败，回退应用目录：' + String(e));
-      return `${context.filesDir}/mta_received`;
-    }
+    this.appendLog('服务', 'MTA 接收页就绪', LogLevels.DEBUG);
+    this.appendLog('服务', `保存目录=${this.downloadDir.length > 0 ? this.downloadDir : '首次接收时解析'}`,
+      LogLevels.DEBUG);
   }
 
   /** 当前状态快照 */
@@ -313,17 +350,6 @@ export class MtaReceiveService {
     logger.log(level, `${source}: ${content}`);
   }
 
-  /** 群组口令等敏感文本的打码形式：保留首尾各 2 字符，其余以 * 代替；长度不足 5 时全部打码 */
-  private maskSecret(text: string): string {
-    if (text.length === 0) {
-      return '';
-    }
-    if (text.length <= 4) {
-      return '*'.repeat(text.length);
-    }
-    return `${text.substring(0, 2)}${'*'.repeat(text.length - 4)}${text.substring(text.length - 2)}`;
-  }
-
   /** 清空本次会话的传输相关状态（保留服务运行与已保存文件） */
   private resetSessionState(): void {
     this.sessionActive = false;
@@ -334,9 +360,16 @@ export class MtaReceiveService {
     this.state.goIpAddress = '';
     this.state.transferPort = 0;
     this.state.groupFrequency = 0;
+    // 会话已进入终态（成功/失败/取消/停止服务）：草稿不再有恢复价值。
+    // 必须在清空 receiveRequest 之前删除，否则无法再解析草稿标识。
+    let request = this.state.receiveRequest;
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
+    }
     this.state.receiveRequest = undefined;
     this.state.requestThumbnailPath = '';
     this.state.progress = new DownloadProgress();
+    this.state.endedWithPartialFiles = false;
     this.state.pendingMediaFiles = [];
     this.state.lastError = '';
     this.notifyState();
@@ -353,7 +386,7 @@ export class MtaReceiveService {
       this.requestWaitTimerId = -1;
       if (this.state.stage === ReceiverStage.NEGOTIATED) {
         this.setError('等待接收请求超时');
-        this.failAndReset('等待接收请求超时');
+        this.failAndReset('等待接收请求超时', LogLevels.WARN);
       }
     }, MtaConstants.REQUEST_WAIT_TIMEOUT_MS);
   }
@@ -396,7 +429,7 @@ export class MtaReceiveService {
    * `THUMBNAIL_PREFETCH_BUDGET_MS`），随后进入待确认阶段。
    * 请求必须在预取开始前写入状态：预取写回缩略图路径的守卫以「状态已持有该请求」
    * 为判据，若预取先于写入，则快路径（预算内取回）下守卫恒为假、路径被丢弃；
-   * 命中预览的提示弹窗会直接带缩略图，未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
+   * 命中预览的待确认详情页会直接带缩略图，未命中也不拖延展示（后台拉取仍继续，命中后经会话回填）。
    */
   private async handleReceiveRequest(request: ReceiveRequest): Promise<void> {
     this.cancelRequestWaitTimeout();
@@ -408,6 +441,8 @@ export class MtaReceiveService {
     }
     this.setStage(ReceiverStage.REQUEST_RECEIVED);
     this.notifyState();
+    // 待确认请求也写草稿：强杀后恢复为已取消，避免任务整条丢失。
+    this.writeReceiveDraft(request, SessionStage.awaitingConfirmation);
     this.appendLog('WS', `收到接收请求：来自 ${request.senderName}，共 ${request.fileCount} 个文件`, LogLevels.INFO);
     this.appendLog('WS', `接收请求 发送方=${request.senderName} 文件=${request.fileName}` +
       ` 文件数=${request.fileCount} 总字节=${request.totalSize} 任务=${request.taskId}`, LogLevels.DEBUG);
@@ -431,7 +466,7 @@ export class MtaReceiveService {
 
   /**
    * 拉取发送端提供的缩略图（图片/视频预览）：经 Rust 请求 `/thumbnail?taskId=`，
-   * 结果落到应用缓存目录并把路径写入状态，供确认界面展示。
+   * 结果落到应用缓存下的 mta_thumb 专用目录并把路径写入状态，供确认界面展示。
    * 属可选增强：任何失败只记日志，不影响接收流程。
    */
   private async fetchRequestThumbnail(request: ReceiveRequest): Promise<void> {
@@ -441,7 +476,15 @@ export class MtaReceiveService {
     if (context === undefined || goIp.length === 0 || port <= 0) {
       return;
     }
-    let targetDir = context.cacheDir;
+    let targetDir: string = mtaThumbnailDirOf(context);
+    try {
+      if (!fs.accessSync(targetDir)) {
+        fs.mkdirSync(targetDir, true);
+      }
+    } catch (e) {
+      this.appendLog('预览', '创建缩略图缓存目录失败：' + String(e), LogLevels.WARN);
+      return;
+    }
     this.appendLog('预览', `开始拉取发送端缩略图 任务=${request.taskId}`, LogLevels.DEBUG);
     let path = await nativeMtaFetchThumbnail(goIp, port, request.taskId, targetDir,
       MtaConstants.MAX_THUMBNAIL_BYTES);
@@ -468,10 +511,13 @@ export class MtaReceiveService {
     let taskId = request !== undefined ? request.taskId : '';
     try {
       await this.transfer.rejectRequest(taskId);
-      this.appendLog('WS', '已回送拒绝状态（等待用户确认超时）', LogLevels.INFO);
+      this.appendLog('WS', '已回送拒绝状态（等待用户确认超时）', LogLevels.DEBUG);
       await this.sleep(MtaConstants.STATUS_SETTLE_DELAY_MS);
     } catch (e) {
       this.appendLog('WS', '回送拒绝状态失败：' + String(e), LogLevels.ERROR);
+    }
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
     }
     await this.resetToWaiting();
   }
@@ -519,7 +565,7 @@ export class MtaReceiveService {
     this.bleHandlers.onAdvertiseStateChange = (running: boolean, detail: string): void => {
       this.state.advertisingRunning = running;
       this.notifyState();
-      // 广播启停为生命周期里程碑记 info；停止后的状态明细属诊断，记 debug
+      // 广播启停的状态明细属诊断，记 debug；服务启动/停止由服务层统一记 info
       this.appendLog('广播', detail, LogLevels.DEBUG);
     };
     this.bleHandlers.onGattConnectionChange = (deviceId: string, stateText: string): void => {
@@ -577,13 +623,13 @@ export class MtaReceiveService {
   private bindTransferHandlers(): void {
     this.transfer.setEventHandlers(this.transferHandlers);
     this.transferHandlers.onWsOpen = (): void => {
-      this.appendLog('WS', '连接已建立，等待版本协商', LogLevels.INFO);
+      this.appendLog('WS', '连接已建立，等待版本协商', LogLevels.DEBUG);
     };
     this.transferHandlers.onVersionNegotiated = (version: number): void => {
       this.setStage(ReceiverStage.NEGOTIATED);
       this.linkTiming.mark('版本协商', Date.now());
       this.scheduleRequestWaitTimeout();
-      this.appendLog('WS', '版本协商完成', LogLevels.INFO);
+      this.appendLog('WS', '版本协商完成', LogLevels.DEBUG);
       this.appendLog('WS', `版本=${version} threadLimit=${MtaConstants.THREAD_LIMIT}`, LogLevels.DEBUG);
     };
     this.transferHandlers.onReceiveRequest = (request: ReceiveRequest): void => {
@@ -619,7 +665,7 @@ export class MtaReceiveService {
     if (stage === ReceiverStage.WS_CONNECTING || stage === ReceiverStage.NEGOTIATED ||
       stage === ReceiverStage.REQUEST_RECEIVED) {
       this.setError('WS 连接被对方关闭');
-      this.failAndReset('WS 连接被对方关闭');
+      this.failAndReset('WS 连接被对方关闭', LogLevels.WARN);
       return;
     }
     if (stage === ReceiverStage.DOWNLOADING) {
@@ -643,7 +689,7 @@ export class MtaReceiveService {
     let port = this.state.transferPort;
     if (goIp.length === 0 || port <= 0) {
       this.setError('GO IP 或端口缺失，无法建立 WS');
-      this.failAndReset('GO IP 或端口缺失');
+      this.failAndReset('GO IP 或端口缺失', LogLevels.WARN);
       return;
     }
     let url = `wss://${goIp}:${port}${MtaConstants.WS_PATH}`;
@@ -694,7 +740,7 @@ export class MtaReceiveService {
     }
     if (!success) {
       this.setError('WS 连接失败');
-      this.failAndReset('WS 连接失败');
+      this.failAndReset('WS 连接失败', LogLevels.WARN);
     }
   }
 
@@ -716,17 +762,24 @@ export class MtaReceiveService {
 
   /** 收到完整 P2pInfo：解析 → 解密凭据 → p2pConnect 加入群组 → 取得 GO IP */
   private handleP2pInfoReceived(deviceId: string, payloadText: string): void {
-    this.appendLog('GATT', `完整接收 P2pInfo 来自 ${deviceId}: ${payloadText}`, LogLevels.DEBUG);
     if (this.sessionActive) {
-      this.appendLog('GATT', '已有会话在处理，忽略重复 P2pInfo', LogLevels.WARN);
+      this.appendLog('GATT', '已有会话在处理，忽略重复 P2pInfo', LogLevels.DEBUG);
       return;
     }
     let info = parseP2pInfo(payloadText);
     if (info === undefined) {
-      this.appendLog('GATT', 'P2pInfo JSON 解析失败', LogLevels.ERROR);
+      // 解析失败时只记录来源与长度，避免把可能含明文口令的原始载荷写入日志
+      this.appendLog('GATT',
+        `完整接收 P2pInfo 来自 ${deviceId} 解析失败 原始长度=${payloadText.length}`, LogLevels.DEBUG);
+      this.appendLog('GATT', 'P2pInfo JSON 解析失败', LogLevels.WARN);
       this.setError('P2pInfo 解析失败');
       return;
     }
+    // 群组口令按打码输出；key 只记录长度，避免原始报文进入日志
+    this.appendLog('GATT',
+      `完整接收 P2pInfo 来自 ${deviceId} id=${info.id} ssid=${info.ssid} psk=${maskSecret(info.psk)}` +
+        ` mac=${info.mac} port=${info.port} key长度=${info.key.length}`,
+      LogLevels.DEBUG);
     this.sessionActive = true;
     this.linkStartMs = Date.now();
     // 接收侧建链计时起点：收到对端完整凭据（P2pInfo）时刻
@@ -766,7 +819,7 @@ export class MtaReceiveService {
     this.linkTiming.mark('凭据解密', Date.now());
     // 群组口令属临时凭据：正文按打码输出并降为 debug，避免明文口令进入常规日志
     this.appendLog('P2P',
-      `凭据解密成功 ssid=${credentials.ssid} psk=${this.maskSecret(credentials.psk)} mac=${credentials.mac}`,
+      `凭据解密成功 ssid=${credentials.ssid} psk=${maskSecret(credentials.psk)} mac=${credentials.mac}`,
       LogLevels.DEBUG);
 
     // 2) p2pConnect 加入发送方 WiFi Direct 组（不影响已连 WiFi）
@@ -776,12 +829,12 @@ export class MtaReceiveService {
     this.notifyState();
     if (!result.connected) {
       this.setError(result.detail);
-      this.failAndReset(result.detail);
+      this.failAndReset(result.detail, LogLevels.WARN);
       return;
     }
     this.setStage(ReceiverStage.P2P_CONNECTED);
     this.linkTiming.mark('入组完成', Date.now());
-    this.appendLog('P2P', '已加入发送方直连组', LogLevels.INFO);
+    this.appendLog('P2P', '已加入发送方直连组', LogLevels.DEBUG);
     this.appendLog('P2P', `直连组 GO IP=${result.goIp} 端口=${this.state.transferPort}`, LogLevels.DEBUG);
 
     // 3) 建立 WS 并完成版本协商
@@ -805,9 +858,9 @@ export class MtaReceiveService {
   }
 
   /** 本次会话失败：记录阶段并复位到等待状态 */
-  private failAndReset(reason: string): void {
+  private failAndReset(reason: string, level: string = LogLevels.ERROR): void {
     this.setStage(ReceiverStage.FAILED);
-    this.appendLog('服务', `本次接收失败：${reason}，正在复位到等待状态`, LogLevels.ERROR);
+    this.appendLog('服务', `本次接收失败：${reason}，正在复位到等待状态`, level);
     this.resetToWaiting().catch((e: Object): void => {
       this.appendLog('服务', '复位异常：' + String(e), LogLevels.WARN);
     });
@@ -1007,11 +1060,11 @@ export class MtaReceiveService {
       let deviceInfoJson = this.buildDeviceInfoJson(publicKey);
       let preview = await this.startAdvertisingWithCurrentBrand();
       // 广播预览本身含换行，先折叠为单行，保证一条日志一事件
-      this.appendLog('广播', '广播已启动', LogLevels.INFO);
+      this.appendLog('广播', '广播已启动', LogLevels.DEBUG);
       this.appendLog('广播', `广播预览：${preview.split('\n').join('；')}`, LogLevels.DEBUG);
       await this.ble.startGattServer(deviceInfoJson);
-      this.appendLog('GATT', 'GATT 服务端已启动', LogLevels.INFO);
-      this.appendLog('GATT', `DeviceInfo=${deviceInfoJson}`, LogLevels.DEBUG);
+      this.appendLog('GATT', 'GATT 服务端已启动', LogLevels.DEBUG);
+      this.appendLog('GATT', `GATT 服务端 DeviceInfo=${deviceInfoJson}`, LogLevels.DEBUG);
       this.state.serviceRunning = true;
       this.state.advertisingRunning = this.ble.isAdvertising();
       this.state.gattRunning = this.ble.isGattRunning();
@@ -1122,10 +1175,11 @@ export class MtaReceiveService {
     if (storageError.length > 0) {
       this.appendLog('服务', storageError, LogLevels.WARN);
       this.setError(storageError);
-      this.failAndReset(storageError);
+      this.failAndReset(storageError, LogLevels.WARN);
       return;
     }
     let textPath: string = '';
+    this.writeReceiveDraft(request, SessionStage.active);
     try {
       textPath = this.saveTextToDisk(request, textDir);
     } catch (e) {
@@ -1134,9 +1188,10 @@ export class MtaReceiveService {
       this.failAndReset('文本落盘失败');
       return;
     }
+    this.completeTextDraft(request, textPath);
     this.appendLog('服务',
       '用户已接受文本消息，已落盘并完成接收', LogLevels.INFO);
-    this.appendLog('下载', `文本路径=${textPath} 任务=${request.taskId}`, LogLevels.DEBUG);
+    this.appendLog('下载', `文本已落盘：路径=${textPath} 任务=${request.taskId}`, LogLevels.DEBUG);
     // 上抛真实保存路径（供统一会话回填逐文件路径）：不影响协议报文与对端可见内容
     if (textSavedNotifier !== undefined) {
       textSavedNotifier(textPath);
@@ -1148,9 +1203,10 @@ export class MtaReceiveService {
     }
     // 以文本消息条目写接收历史（记真实路径，不写正文；遵循历史开关）
     this.recordTextHistory(request, textPath);
+    this.removeReceiveDraft(request);
     try {
       await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
-      this.appendLog('WS', '已回送成功状态，本次文本接收完成', LogLevels.INFO);
+      this.appendLog('WS', '已回送成功状态，本次文本接收完成', LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('WS', '回送成功状态失败：' + String(e), LogLevels.ERROR);
     }
@@ -1200,14 +1256,226 @@ export class MtaReceiveService {
       });
   }
 
+  /** 草稿使用统一会话标识；注册表缺失时回退任务 ID。 */
+  private receiveDraftSessionId(taskId: string): string {
+    let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, taskId);
+    return unified !== undefined ? unified.id : taskId;
+  }
+
+  /**
+   * 接收开始时写草稿：MTA 条目名要等 ZIP 下载后才知道，这里先用声明的主文件名
+   * 和总大小占位；强杀后恢复只用来保留一条「已中断」任务，不据此交付文件。
+   */
+  private writeReceiveDraft(request: ReceiveRequest, stage: SessionStage,
+    targetDir: string = ''): void {
+    let unified = findByProtocol(MTA_RECEIVE_PROTOCOL_KEY, request.taskId);
+    let isText: boolean = request.textContent.length > 0;
+    let fileName: string = request.fileName.length > 0 ? request.fileName :
+      (isText ? MTA_SHARED_TEXT_FILE_NAME : 'mta-receive');
+    let totalBytes: number = isText ? utf8ByteLength(request.textContent) : request.totalSize;
+    let peer: SessionPeer = unified !== undefined ? unified.peer : {
+      displayName: request.senderName,
+      badges: []
+    };
+    let file: SessionDraftFile = {
+      fileId: 'mta_archive',
+      fileName: fileName,
+      fileType: isText ? 'text/plain' : '',
+      totalBytes: totalBytes,
+      occurrence: 1,
+      checksum: '',
+      finalPath: '',
+      tempPath: '',
+      stage: SessionFileStage.waiting,
+      bytesSent: 0,
+      completedAt: 0,
+      isTextMessage: isText
+    };
+    let draft: SessionDraft = {
+      schemaVersion: SESSION_DRAFT_SCHEMA_VERSION,
+      sessionId: this.receiveDraftSessionId(request.taskId),
+      protocolKey: MTA_RECEIVE_PROTOCOL_KEY,
+      protocolSessionId: request.taskId,
+      dataFlow: SessionDataFlow.inbound,
+      initiatedBy: SessionInitiator.remote,
+      stage: stage,
+      textMessage: isText,
+      peer: peer,
+      localAlias: unified !== undefined ? unified.localAlias : '',
+      localIp: unified !== undefined ? unified.localIp : '',
+      localInterfaceName: unified !== undefined ? unified.localInterfaceName : '',
+      startedAt: unified !== undefined && unified.startedAt > 0 ? unified.startedAt : Date.now(),
+      transferStartedAt: unified !== undefined ? unified.transferStartedAt : 0,
+      updatedAt: Date.now(),
+      files: [file],
+      targetDir: targetDir.length > 0 ? targetDir : undefined,
+      capabilities: unified !== undefined ? unified.capabilities : undefined
+    };
+    // 先写新草稿，成功后再移除旧键：保存失败时仍保留待确认阶段的恢复锚点。
+    if (saveSessionDraft(draft) && stage === SessionStage.active &&
+      draft.sessionId !== request.taskId) {
+      removeSessionDraft(request.taskId);
+    }
+  }
+
+  /** 下载成功后把实际落盘条目写回草稿，随后写历史并删除草稿。 */
+  private completeReceiveDraft(request: ReceiveRequest, result: DownloadResult): void {
+    let draft: SessionDraft | undefined =
+      loadSessionDraft(this.receiveDraftSessionId(request.taskId));
+    if (draft === undefined) {
+      return;
+    }
+    let timestamp: number = Date.now();
+    let files: Array<SessionDraftFile> = [];
+    for (let i = 0; i < result.savedFiles.length; i++) {
+      let path: string = result.savedFiles[i];
+      if (path.length === 0) {
+        continue;
+      }
+      let fileName: string = this.baseNameOf(path);
+      let fileType: string = i < result.files.length ? result.files[i].fileType : '';
+      if (fileType.length === 0) {
+        fileType = getMimeForFileName(fileName);
+      }
+      let size: number = this.fileSizeOf(path);
+      files.push({
+        fileId: 'saved_' + i,
+        fileName: fileName,
+        fileType: fileType,
+        totalBytes: size,
+        occurrence: 1,
+        checksum: '',
+        finalPath: path,
+        tempPath: '',
+        stage: SessionFileStage.completed,
+        bytesSent: size,
+        completedAt: timestamp + i,
+        isTextMessage: false
+      });
+    }
+    if (files.length > 0) {
+      draft.files = files;
+    }
+    draft.stage = SessionStage.succeeded;
+    draft.updatedAt = timestamp;
+    saveSessionDraft(draft);
+  }
+
+  /** 文本落盘后把唯一文本条目写回草稿。 */
+  private completeTextDraft(request: ReceiveRequest, path: string): void {
+    let draft: SessionDraft | undefined =
+      loadSessionDraft(this.receiveDraftSessionId(request.taskId));
+    if (draft === undefined) {
+      return;
+    }
+    let size: number = this.fileSizeOf(path);
+    let fileName: string = this.baseNameOf(path);
+    let file: SessionDraftFile = {
+      fileId: 'text_0',
+      fileName: fileName.length > 0 ? fileName : MTA_SHARED_TEXT_FILE_NAME,
+      fileType: 'text/plain',
+      totalBytes: size,
+      occurrence: 1,
+      checksum: '',
+      finalPath: path,
+      tempPath: '',
+      stage: SessionFileStage.completed,
+      bytesSent: size,
+      completedAt: Date.now(),
+      isTextMessage: true
+    };
+    draft.files = [file];
+    draft.stage = SessionStage.succeeded;
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+  }
+
+  /**
+   * 单条目提交后增量更新草稿：强杀恢复可据此识别已交付文件，
+   * 失败终态也能按草稿记录部分完成（若历史尚未写入）。
+   */
+  private updatePartialReceiveDraft(request: ReceiveRequest, entry: ReceivedFileEntry,
+    savedPath: string, index: number): void {
+    let draft: SessionDraft | undefined =
+      loadSessionDraft(this.receiveDraftSessionId(request.taskId));
+    if (draft === undefined) {
+      return;
+    }
+    let timestamp: number = Date.now();
+    let file: SessionDraftFile = {
+      fileId: 'mta_saved_' + index,
+      fileName: entry.name,
+      fileType: entry.fileType,
+      totalBytes: entry.size,
+      occurrence: 1,
+      checksum: '',
+      finalPath: savedPath,
+      tempPath: '',
+      stage: SessionFileStage.completed,
+      bytesSent: entry.size,
+      completedAt: timestamp + index,
+      isTextMessage: false
+    };
+    if (draft.files.length === 1 && draft.files[0].fileId === 'mta_archive') {
+      draft.files = [file];
+    } else {
+      draft.files.push(file);
+    }
+    draft.updatedAt = timestamp;
+    saveSessionDraft(draft);
+  }
+
+  /** 下载失败收口：已提交条目按部分完成写历史，其余按失败复位。 */
+  private async handleDownloadFailure(request: ReceiveRequest, result: DownloadResult): Promise<void> {
+    if (result.savedFiles.length > 0) {
+      this.state.savedFiles = result.savedFiles;
+      this.state.receivedFiles = result.files;
+      this.state.endedWithPartialFiles = true;
+      try {
+        this.recordReceiveHistory(request, result);
+      } catch (e) {
+        this.appendLog('下载', '补记部分完成历史失败：' + String(e), LogLevels.WARN);
+      }
+    }
+    if (this.userCancelledThisDownload) {
+      await this.sendUserCancelStatus(request.taskId);
+    }
+    let reason: string = result.errorMessage.length > 0 ? result.errorMessage : '下载/保存失败';
+    this.appendLog('下载', '下载/保存失败：' + reason, LogLevels.ERROR);
+    this.setError(reason);
+    this.failAndReset(reason);
+  }
+
+  private removeReceiveDraft(request: ReceiveRequest): void {
+    removeSessionDraft(this.receiveDraftSessionId(request.taskId));
+    removeSessionDraft(request.taskId);
+  }
+
   private async downloadAndSave(request: ReceiveRequest): Promise<void> {
+    // 统一从 ReceiveDirectory 取目录：用户在设置页切换目录后，本次接收即使用最新目录
+    this.downloadDir = await ensureReceiveDirectory();
+    if (this.downloadDir.length === 0) {
+      this.appendLog('下载', '接收目录不可用', LogLevels.ERROR);
+      this.setError('接收目录不可用');
+      this.failAndReset('接收目录不可用');
+      return;
+    }
+    // 自定义目录失效已回退默认目录：接收继续，但需提示用户保存位置已变化
+    if (consumeReceiveDirectoryFallbackNotice()) {
+      DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
+    }
+    this.appendLog('下载', `保存目录=${this.downloadDir}`, LogLevels.DEBUG);
+    this.state.endedWithPartialFiles = false;
     this.setStage(ReceiverStage.DOWNLOADING);
+    // 进入下载前写草稿：强杀后至少保留一条「已中断」任务记录，
+    // 并记录目标目录供恢复时清理 MTA 临时区。
+    this.writeReceiveDraft(request, SessionStage.active, this.downloadDir);
     // 进入下载编排前校验存储预留：可用空间不足时不进入下载，避免写坏文件与半成品残留
     let storageError = await this.checkStorageReserve(request);
     if (storageError.length > 0) {
       this.appendLog('下载', storageError, LogLevels.WARN);
       this.setError(storageError);
-      this.failAndReset(storageError);
+      this.failAndReset(storageError, LogLevels.WARN);
       return;
     }
     let goIp = this.state.goIpAddress;
@@ -1221,9 +1489,18 @@ export class MtaReceiveService {
     this.earlyStatusPromise = null;
     this.userCancelledThisDownload = false;
     try {
+      let committedIndex = 0;
       let result = await this.transfer.receiveToTarget(goIp, port, request.taskId,
-        this.downloadDir, request.totalSize);
-      this.appendLog('下载', '下载、解压与落盘完成', LogLevels.INFO);
+        this.downloadDir, request.totalSize,
+        (entry: ReceivedFileEntry, savedPath: string): void => {
+          this.updatePartialReceiveDraft(request, entry, savedPath, committedIndex);
+          committedIndex++;
+        });
+      if (!result.success) {
+        await this.handleDownloadFailure(request, result);
+        return;
+      }
+      this.appendLog('下载', '下载、解压与落盘完成', LogLevels.DEBUG);
       this.state.savedFiles = result.savedFiles;
       // 透传逐文件展示元数据（文件名 + 大小 + 真实类型），供页面完成后渲染文件列表
       this.state.receivedFiles = result.files;
@@ -1233,7 +1510,9 @@ export class MtaReceiveService {
           `${result.restoredTimeCount} 个文件带有效 ZIP 条目时间，已用于还原修改时间`, LogLevels.DEBUG);
       }
       // 落盘完成后按设置写入接收历史（文本消息以单一 text/plain 条目记录）
+      this.completeReceiveDraft(request, result);
       this.recordReceiveHistory(request, result);
+      this.removeReceiveDraft(request);
       // 按「保存到相册」设置收集媒体文件（仅图片/视频），供页面完成后的保存弹窗消费
       this.state.pendingMediaFiles = this.collectMediaFiles(result);
       if (this.state.pendingMediaFiles.length > 0) {
@@ -1258,12 +1537,12 @@ export class MtaReceiveService {
         await earlyStatus;
       }
       if (this.successStatusSent) {
-        this.appendLog('WS', '本次接收完成', LogLevels.INFO);
+        this.appendLog('WS', '本次接收完成', LogLevels.DEBUG);
       } else {
         try {
           await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, request.taskId);
           this.successStatusSent = true;
-          this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.INFO);
+          this.appendLog('WS', '已回送成功状态，本次接收完成', LogLevels.DEBUG);
         } catch (e) {
           this.appendLog('WS', '回送成功状态失败：' + String(e), LogLevels.ERROR);
         }
@@ -1273,7 +1552,7 @@ export class MtaReceiveService {
       // 断开 P2P、关闭 WS 并自动重启广播，支持连续接收
       await this.completeAndRestart();
     } catch (e) {
-      // Rust 侧已在失败/取消时回滚本次已写入的目标文件，此处仅复位会话
+      // Rust 只清理未提交临时文件，已提交条目通过逐条目事件与结构化结果保留
       this.appendLog('下载', '下载/保存失败：' + String(e), LogLevels.ERROR);
       this.setError('下载/保存失败: ' + String(e));
       // 用户主动取消时回送 user refuse：让发送端得到明确结果，而非仅凭连接关闭推断
@@ -1293,7 +1572,7 @@ export class MtaReceiveService {
   private async sendUserCancelStatus(taskId: string): Promise<void> {
     try {
       await this.transfer.sendStatus(MtaConstants.STATUS_TYPE_REFUSE, MtaConstants.STATUS_REASON_REFUSE, taskId);
-      this.appendLog('WS', '已回送取消状态（用户拒绝）', LogLevels.INFO);
+      this.appendLog('WS', '已回送取消状态（用户拒绝）', LogLevels.DEBUG);
     } catch (e) {
       this.appendLog('WS', '回送取消状态失败：' + String(e), LogLevels.DEBUG);
     }
@@ -1411,6 +1690,9 @@ export class MtaReceiveService {
     } catch (e) {
       this.appendLog('WS', '回送拒绝状态异常：' + String(e), LogLevels.ERROR);
     }
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
+    }
     await this.resetToWaiting();
   }
 
@@ -1422,6 +1704,11 @@ export class MtaReceiveService {
     }
     this.appendLog('下载', '用户取消下载', LogLevels.INFO);
     this.userCancelledThisDownload = true;
+    // 用户取消即终态决策：立即移除草稿，避免随后强杀时恢复出失败/部分完成任务。
+    let request = this.state.receiveRequest;
+    if (request !== undefined) {
+      this.removeReceiveDraft(request);
+    }
     this.transfer.cancelDownload();
   }
 }

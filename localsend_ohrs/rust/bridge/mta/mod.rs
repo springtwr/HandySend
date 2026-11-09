@@ -8,7 +8,7 @@
 //! - `protocol`：应用层消息纯函数（构造/解析/JSON 序列化）
 //! - `zip_stream`：按文件清单流式写出 ZIP（下载响应体）
 //! - `unzip_stream`：可复用的 ZIP 流式解析/解压核心
-//! - `receive`：接收端 Rust 主导下载（reqwest + 流式解压 + 直接写目标目录）
+//! - `receive`：接收端 Rust 主导下载（reqwest + 流式解压 + 临时区提交）
 //! - `ws`：WS 连接上的 MTA 状态机
 //! - `server`：hyper + rustls TLS 服务器
 //!

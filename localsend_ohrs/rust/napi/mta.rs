@@ -1,7 +1,7 @@
 //! MTA 桥接 NAPI 入口。
 //!
 //! 发送端：`nativeMtaStartServer` / `nativeMtaStopServer` / `nativeMtaRejectPeer`。
-//! 接收端：Rust 主导下载 `nativeMtaReceiveDownload`（reqwest + 流式解压 + 直接写目标目录）。
+//! 接收端：Rust 主导下载 `nativeMtaReceiveDownload`（reqwest + 流式解压 + 临时区提交）。
 //! 服务器事件（`mta*`）与接收进度（`mtaReceiveProgress`）经统一的 event_forwarder
 //! 推送到 ArkTS。
 
@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use napi_derive_ohos::napi;
 use napi_ohos::bindgen_prelude::*;
+use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::bridge::lock;
@@ -124,10 +125,11 @@ pub fn native_get_interface_mac(interface_name: String) -> String {
     }
 }
 
-/// 接收端 Rust 主导下载：请求 `/download`、流式解压并直接写入 `target_dir`。
+/// 接收端 Rust 主导下载：请求 `/download`、流式解压并写入 `target_dir`。
 ///
-/// 成功返回落盘元数据 JSON `[{name,size,modifiedUnixMs,savedPath}]`；失败返回可读原因
-/// （响应码异常/停滞/取消/解压或写盘失败），且本次已写入的目标文件已清理。
+/// 返回 JSON `{ok, error, entries}`：`ok=true` 时 `entries` 为全部落盘条目；
+/// 失败时 `error` 为可读原因，`entries` 保留已提交条目（供部分完成历史），
+/// 未提交的临时文件已清理。
 ///
 /// `cancelTokenId` 为可选取消令牌 id（登记在 BridgeState.cancel_tokens）；亦可经
 /// `nativeCancelTransferLocal(taskId)` 取消本次下载。
@@ -168,7 +170,7 @@ pub async fn native_mta_receive_download(
         header: duration_from_ms(header_timeout_ms, receive::DEFAULT_HEADER_TIMEOUT),
     };
 
-    let result = mta::receive::receive_download(
+    let outcome = mta::receive::receive_download_result(
         state,
         &go_ip,
         port,
@@ -192,11 +194,20 @@ pub async fn native_mta_receive_download(
         }
     }
 
-    match result {
-        Ok(entries) => serde_json::to_string(&entries)
-            .map_err(|e| Error::from_reason(format!("序列化接收元数据失败: {e}"))),
-        Err(e) => Err(Error::from_reason(format!("MTA 接收下载失败: {e:#}"))),
+    #[derive(Serialize)]
+    struct ReceiveDownloadPayload {
+        ok: bool,
+        error: String,
+        entries: Vec<receive::ReceivedEntry>,
     }
+
+    let payload = ReceiveDownloadPayload {
+        ok: outcome.error.is_none(),
+        error: outcome.error.unwrap_or_default(),
+        entries: outcome.entries,
+    };
+    serde_json::to_string(&payload)
+        .map_err(|e| Error::from_reason(format!("序列化接收结果失败: {e}")))
 }
 
 /// 归一化 f64 为非负 u64（非有限值或负值视为 0）。

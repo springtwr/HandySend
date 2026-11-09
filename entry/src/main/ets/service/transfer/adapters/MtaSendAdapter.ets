@@ -52,8 +52,22 @@ import {
   updateFileProgress
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, hasDisplayText, registerAdapter } from './SessionAdapter';
+import {
+  removeOutboundDraft,
+  savePreparedOutboundDraft
+} from '../OutboundDraftService';
 
 export const MTA_SEND_KEY: string = 'mta-send';
+
+// 协议握手前占位草稿：任务刚发起、统一会话尚未创建时的强杀恢复锚点。
+let pendingSendDraftId: string = '';
+
+function clearPendingSendDraft(): void {
+  if (pendingSendDraftId.length > 0) {
+    removeOutboundDraft(pendingSendDraftId);
+    pendingSendDraftId = '';
+  }
+}
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionAdapter', '协议适配');
 
@@ -308,7 +322,7 @@ export function decideMtaSendInstanceEnd(instanceGeneration: number,
 // ── 发送请求 → 发送服务入参 ──
 
 /** 按请求的显示元数据构建会话文件描述符集（文本发送为单一文本条目）。 */
-function buildDescriptors(request: MtaSendRequest | undefined): Array<SessionFileDescriptor> {
+export function buildMtaSendDescriptors(request: MtaSendRequest | undefined): Array<SessionFileDescriptor> {
   let files: Array<SessionFileDescriptor> = [];
   if (request === undefined) {
     return files;
@@ -327,7 +341,9 @@ function buildDescriptors(request: MtaSendRequest | undefined): Array<SessionFil
   for (let i = 0; i < request.fileDescriptors.length; i++) {
     let descriptor = request.fileDescriptors[i];
     files.push({
-      fileId: descriptor.fileId,
+      // 发送请求的文件元数据通常不携带标识：缺失时按序号补全为会话内唯一标识。
+      // 标识重复会让逐文件进度全部命中首个文件，并把其大小改写成后续文件的大小。
+      fileId: descriptor.fileId.length > 0 ? descriptor.fileId : `mta-send-file-${i}`,
       fileName: descriptor.fileName,
       fileType: descriptor.fileType,
       totalBytes: descriptor.size,
@@ -399,12 +415,14 @@ function handleSendState(eventGeneration: number, request: MtaSendRequest | unde
       request !== undefined ? request.deviceType : '',
       request !== undefined ? request.deviceModel : '',
       request !== undefined ? request.badgeText : '',
-      buildDescriptors(request),
+      buildMtaSendDescriptors(request),
       request !== undefined ? request.brandId : -1,
       request !== undefined ? request.bleAddress : '',
       request !== undefined ? request.senderIdHex : '',
       request !== undefined && request.isTextSend);
     activeUnifiedId = unifiedId;
+    // 统一会话草稿已写入，移除协议握手前的占位草稿。
+    clearPendingSendDraft();
     // 会话已创建：注册表成为「发送中」的事实源，清除发起中标志
     sendStarting = false;
   }
@@ -452,6 +470,7 @@ function onSendSessionEnd(instanceGeneration: number): void {
   if (plan.scheduleTeardown) {
     // 当前代次会话结束：清除发起中标志（会话未创建即结束等兜底路径）
     sendStarting = false;
+    clearPendingSendDraft();
     scheduleTeardown(instanceGeneration);
   }
 }
@@ -503,6 +522,14 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
   let startMs = Date.now();
   lastSendRequest = params;
   sendContext = context;
+  // 任务刚发起立即写占位草稿：此时 MTA 还在握手，统一会话尚未创建；
+  // 强杀后恢复为已取消，避免“刚开始”窗口任务丢失。
+  clearPendingSendDraft();
+  pendingSendDraftId = 'mta-send-pending-' + Date.now().toString();
+  savePreparedOutboundDraft(pendingSendDraftId, MTA_SEND_KEY,
+    buildPeer(params.targetAlias, params.deviceType, params.deviceModel, params.badgeText,
+      params.brandId, params.bleAddress, params.senderIdHex),
+    buildMtaSendDescriptors(params), capabilities(), params.isTextSend);
   activeUnifiedId = undefined;
   sessionClosed = false;
   // 发起中标志：覆盖「点击→注册表会话创建」的短空窗，供发送页「设备忙」判定
@@ -550,6 +577,7 @@ export async function startMtaSend(params: MtaSendRequest, context: common.Conte
       sendStarting = false;
     }
     resumeMtaDiscoveryAfterSend();
+    clearPendingSendDraft();
     throw new Error(String(e));
   }
   if (generation === sendGeneration) {

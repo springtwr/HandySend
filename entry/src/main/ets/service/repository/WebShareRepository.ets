@@ -5,6 +5,7 @@ import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, ReceiveHistoryEntry } from '../../model/Types';
 import {
+  SessionFile,
   SessionFileDescriptor,
   SessionFileStage,
   SessionStage,
@@ -55,7 +56,8 @@ import {
   listWebAddresses,
   pickWebAddress
 } from '../../model/WebAddress';
-import { ensureRecvDownloadDir, ensureRecvTextDir, uniquePath } from './ReceiveTargets';
+import { ensureRecvTextDir, removeDirectoryIfEmpty, uniquePath } from './ReceiveTargets';
+import { consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory } from './ReceiveDirectory';
 import { addEntries as addHistoryEntries } from './ReceiveHistoryService';
 import { copyText } from '../../utils/ClipboardUtil';
 import { DialogService } from '../DialogService';
@@ -85,6 +87,20 @@ import {
   querySessions,
   subscribeSessions
 } from '../transfer/TransferSessionRegistry';
+import {
+  SESSION_DRAFT_SCHEMA_VERSION,
+  SessionDraft,
+  SessionDraftFile,
+  completedAtForDraft,
+  loadSessionDraft,
+  removeSessionDraft,
+  saveSessionDraft
+} from '../transfer/SessionDraftStore';
+import {
+  dirNameOf,
+  TEMP_SUBDIR_WEB,
+  tempPathForFinal
+} from '../../model/transfer/TransferTempPaths';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:WebShareRepository', '网页传输');
 
@@ -464,7 +480,7 @@ async function startWebServiceLocked(uploadEnabled: boolean): Promise<boolean> {
     return false;
   }
   if (port <= 0) {
-    logger.error('网页服务启动失败：无效 port ' + port);
+    logger.warn('网页服务启动失败：无效 port ' + port);
     markWebServiceUnavailable();
     return false;
   }
@@ -774,7 +790,7 @@ export async function startWebUpload(): Promise<void> {
       nativeSetWebServiceUploadEnabled(true);
       webUploadEnabled = true;
     } catch (e) {
-      logger.error('打开网页上传入口失败：' + e);
+      logger.warn('打开网页上传入口失败：' + e);
     }
     notifyChange();
     return;
@@ -813,7 +829,7 @@ export async function unmountShare(): Promise<void> {
     }
     logger.info('分享文件已撤下');
   } catch (e) {
-    logger.error('撤下分享文件失败：' + e);
+    logger.warn('撤下分享文件失败：' + e);
   }
   notifyChange();
 }
@@ -836,7 +852,7 @@ export async function disableWebUpload(): Promise<void> {
     }
     logger.info('网页上传入口已关闭');
   } catch (e) {
-    logger.error('关闭网页上传入口失败：' + e);
+    logger.warn('关闭网页上传入口失败：' + e);
   }
   notifyChange();
 }
@@ -1047,12 +1063,12 @@ export function handleWebDownloadEndedTyped(event: NativeWebDownloadEndedEvent):
   if (event.error !== undefined && event.error.length > 0) {
     summary += ' 原因=' + event.error;
   }
-  logger.debug('网页下载结果=' + event.outcome);
   if (event.outcome === 'failed' || event.outcome === 'partiallyFailed') {
     logger.warn(summary);
   } else {
     logger.info(summary);
   }
+  logger.debug('网页下载结果=' + event.outcome);
   notifyChange();
 }
 
@@ -1073,7 +1089,7 @@ export function applyWebSendAllowed(enabled: boolean): void {
     });
   } else if (getWebReceiveAllowed() && !webUploadEnabled) {
     startWebUpload().catch((e: Error) => {
-      logger.error('网页传输开启后补开上传入口失败：' + String(e));
+      logger.warn('网页传输开启后补开上传入口失败：' + String(e));
     });
   }
 }
@@ -1088,11 +1104,11 @@ export function applyWebReceiveAllowed(enabled: boolean): void {
   }
   if (enabled) {
     ensureWebUpload().catch((e: Error) => {
-      logger.error('允许上传开启后确保上传入口失败：' + String(e));
+      logger.warn('允许上传开启后确保上传入口失败：' + String(e));
     });
   } else {
     disableWebUpload().catch((e: Error) => {
-      logger.error('允许上传关闭后关闭上传入口失败：' + String(e));
+      logger.warn('允许上传关闭后关闭上传入口失败：' + String(e));
     });
   }
 }
@@ -1132,12 +1148,117 @@ export function hasActiveWebDownloads(): boolean {
 
 // ── Web 上传事件（由 handleNativeEvent 路由；token 即浏览器会话标识） ──
 
+/**
+ * 将网页上传会话快照写入草稿。
+ *
+ * 草稿只记录会话与文件完成状态，不记录字节进度；强杀后由
+ * SessionRecoveryService 按文件系统状态补写历史并清理临时区。
+ */
+function writeWebUploadDraft(session: TransferSession): void {
+  let previous: SessionDraft | undefined = loadSessionDraft(session.id);
+  let files: Array<SessionDraftFile> = [];
+  for (let i = 0; i < session.files.length; i++) {
+    let f: SessionFile = session.files[i];
+    files.push({
+      fileId: f.fileId,
+      fileName: f.fileName,
+      fileType: f.fileType,
+      totalBytes: f.totalBytes,
+      occurrence: f.occurrence,
+      checksum: f.checksum,
+      finalPath: f.path,
+      tempPath: f.path.length > 0 ? tempPathForFinal(f.path, TEMP_SUBDIR_WEB) : '',
+      stage: f.stage,
+      bytesSent: f.bytesSent,
+      completedAt: completedAtForDraft(previous, f.fileId,
+        f.stage === SessionFileStage.completed),
+      isTextMessage: session.textMessage
+    });
+  }
+  let draft: SessionDraft = {
+    schemaVersion: SESSION_DRAFT_SCHEMA_VERSION,
+    sessionId: session.id,
+    protocolKey: session.protocolKey,
+    protocolSessionId: session.protocolSessionId,
+    dataFlow: session.dataFlow,
+    initiatedBy: session.initiatedBy,
+    stage: session.stage,
+    textMessage: session.textMessage,
+    peer: session.peer,
+    localAlias: session.localAlias,
+    localIp: session.localIp,
+    localInterfaceName: session.localInterfaceName,
+    startedAt: session.startedAt,
+    transferStartedAt: session.transferStartedAt,
+    updatedAt: Date.now(),
+    files: files,
+    capabilities: session.capabilities
+  };
+  saveSessionDraft(draft);
+}
+
+function writeWebUploadDraftForToken(token: string): void {
+  let session = findWebUploadSession(token);
+  if (session !== undefined) {
+    writeWebUploadDraft(session);
+  }
+}
+
+/** 原生接受成功后把草稿阶段推进为 active；待确认阶段强杀才能正确归档为已取消。 */
+function markWebUploadDraftActive(token: string): void {
+  let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
+  if (draft === undefined) {
+    return;
+  }
+  draft.stage = SessionStage.active;
+  draft.updatedAt = Date.now();
+  saveSessionDraft(draft);
+}
+
+/**
+ * 草稿文件名使用统一会话标识。
+ * 优先取非终态会话：同一 token 在旧会话终态可见窗口内重连时，`findByProtocol`
+ * 可能先命中旧会话，导致草稿操作落到已删除的旧草稿上。
+ */
+function webDraftSessionId(token: string): string {
+  let session = findWebUploadSession(token);
+  return session !== undefined ? session.id : token;
+}
+
+/** 文件落盘完成后更新草稿中的最终路径与完成状态。 */
+function updateWebUploadDraftDone(token: string, fileId: string, path: string): void {
+  let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
+  if (draft === undefined) {
+    return;
+  }
+  let changed: boolean = false;
+  for (let i = 0; i < draft.files.length; i++) {
+    let file: SessionDraftFile = draft.files[i];
+    if (file.fileId !== fileId) {
+      continue;
+    }
+    if (path.length > 0) {
+      file.finalPath = path;
+      file.tempPath = tempPathForFinal(path, TEMP_SUBDIR_WEB);
+    }
+    file.stage = SessionFileStage.completed;
+    file.bytesSent = file.totalBytes;
+    file.completedAt = Date.now();
+    changed = true;
+    break;
+  }
+  if (changed) {
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+  }
+}
+
 /** 上传待确认请求到达：登记入站会话（文件清单来自浏览器声明）。 */
 export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): void {
   ensureUploadArchiveSubscribed();
   let token: string = event.token;
   if (token.length === 0) {
-    logger.warn('网页上传请求缺少 token，已忽略');
+    logger.debug('网页上传请求缺少 token，已忽略');
     return;
   }
   let ip: string = event.ip;
@@ -1166,6 +1287,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
     let isNewSession: boolean = findWebUploadSession(token) === undefined;
     logger.info('网页上传按本次挂载授权自动接受');
     beginWebUploadBurst(token, false, descriptors, ip, previewText);
+    writeWebUploadDraftForToken(token);
     // 与 LocalSend 自动接收口径一致：免确认收到文本消息时立即复制到剪贴板。
     // 只在首次登记时复制，浏览器重试 prepare 不会重复覆盖剪贴板。
     if (isNewSession && previewText.length > 0) {
@@ -1179,6 +1301,7 @@ export function handlePrepareUploadTyped(event: NativeWebUploadPrepareEvent): vo
   } else {
     logger.debug('网页上传进入待确认 token=' + redactSessionToken(token));
     beginWebUploadBurst(token, true, descriptors, ip, previewText);
+    writeWebUploadDraftForToken(token);
   }
   notifyChange();
 }
@@ -1202,6 +1325,7 @@ export function handleWebUploadDoneTyped(event: NativeWebUploadDoneEvent): void 
     return;
   }
   handleWebUploadDone(token, fileId, event.path);
+  updateWebUploadDraftDone(token, fileId, event.path);
   logger.debug('网页上传文件完成 token=' + redactSessionToken(token) + ' file=' + fileId);
   notifyChange();
 }
@@ -1262,7 +1386,7 @@ export function acceptWebUpload(token: string): void {
   if (token.length === 0) {
     return;
   }
-  // 落盘目标计算需异步（Download 目录授权）：浏览器在等待决策，
+  // 落盘目标计算需异步（接收目录授权）：浏览器在等待决策，
   // 此处 fire-and-forget，完成后放行或拒绝。
   prepareUploadTargets(token).then((ready: boolean): void => {
     if (!ready) {
@@ -1276,6 +1400,8 @@ export function acceptWebUpload(token: string): void {
       declineWebUpload(token);
       return;
     }
+    // 原生接受成功后立即推进草稿阶段，缩小「已接受但草稿仍待确认」的强杀窗口。
+    markWebUploadDraftActive(token);
     markWebUploadAccepted(token);
     logger.info('网页上传已接受');
     notifyChange();
@@ -1342,8 +1468,58 @@ setWebUploadInvokers(
 // ── 上传落盘目标与历史归档 ──
 
 /**
+ * 创建网页上传的临时占位文件：临时文件存在即代表对应最终文件名已被占用，
+ * 其他协议的同名接收会据此选择带序号的文件名，避免提交前互相截断。
+ */
+function createWebUploadTempPlaceholder(tempPath: string): boolean {
+  let tempDir: string = dirNameOf(tempPath);
+  let file: fs.File | undefined = undefined;
+  try {
+    if (tempDir.length > 0 && !fs.accessSync(tempDir)) {
+      fs.mkdirSync(tempDir, true);
+    }
+    file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY |
+      fs.OpenMode.TRUNC);
+    return true;
+  } catch (e) {
+    logger.warn('创建网页上传临时占位失败：' + tempPath + '：' + String(e));
+    return false;
+  } finally {
+    if (file !== undefined) {
+      try {
+        fs.closeSync(file);
+      } catch (_e) {
+      }
+    }
+  }
+}
+
+/** 下发目标失败时清理本次已创建的网页上传占位文件。 */
+function releaseWebUploadTempPaths(paths: Array<string>): void {
+  let dirs: Record<string, boolean> = {};
+  for (let i = 0; i < paths.length; i++) {
+    try {
+      fs.unlinkSync(paths[i]);
+    } catch (_e) {
+    }
+    let dir: string = dirNameOf(paths[i]);
+    if (dir.length > 0) {
+      dirs[dir] = true;
+    }
+  }
+  let dirKeys: Array<string> = Object.keys(dirs);
+  for (let i = 0; i < dirKeys.length; i++) {
+    removeDirectoryIfEmpty(dirKeys[i]);
+    let parent: string = dirNameOf(dirKeys[i]);
+    if (parent.length > 0) {
+      removeDirectoryIfEmpty(parent);
+    }
+  }
+}
+
+/**
  * 为待确认上传会话计算落盘目标并下发原生层。
- * 普通文件进 Download/<包名>/（重名自动加后缀）；单文本消息（message.txt）
+ * 普通文件进接收目录（默认 Download/<包名>/；重名自动加后缀）；单文本消息（message.txt）
  * 进接收文本目录。目录不可用时返回 false，调用方据此拒绝。
  */
 async function prepareUploadTargets(token: string): Promise<boolean> {
@@ -1355,25 +1531,29 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     session.files[0].fileType === 'text/plain' &&
     session.files[0].fileName === 'message.txt' &&
     isWebUploadTextMessage(session.id);
-  // 文本消息只落应用私有文本目录，不依赖 Download 目录授权；
-  // 普通文件才需要惰性获取 Download/<包名>/。
+  // 文本消息只落应用私有文本目录，不依赖接收目录授权；
+  // 普通文件才需要惰性解析接收目录。
   let downloadDir: string = '';
   if (!isTextMessage) {
     try {
-      downloadDir = await ensureRecvDownloadDir();
+      downloadDir = await ensureReceiveDirectory();
     } catch (_e) {
       downloadDir = '';
     }
     if (downloadDir.length === 0) {
-      logger.error('上传落盘目录不可用 token=' + redactSessionToken(token));
+      logger.warn('上传落盘目录不可用 token=' + redactSessionToken(token));
       return false;
+    }
+    // 自定义目录失效已回退默认目录：上传继续，但需提示用户保存位置已变化
+    if (consumeReceiveDirectoryFallbackNotice()) {
+      DialogService.showCenterToast($r('app.string.receive_directory_fallback_toast'), 3000);
     }
   }
   // 文本消息目录是应用沙箱私有目录：首次使用前必须显式创建，
   // 否则服务端创建临时文件会因目录不存在而直接失败。
   let textDir: string = isTextMessage ? ensureRecvTextDir() : '';
   if (isTextMessage && textDir.length === 0) {
-    logger.error('上传文本目录不可用 token=' + redactSessionToken(token));
+    logger.warn('上传文本目录不可用 token=' + redactSessionToken(token));
     return false;
   }
   interface UploadTargetJson {
@@ -1381,13 +1561,14 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
     path: string
   }
   let targets: Array<UploadTargetJson> = [];
+  let tempPaths: Array<string> = [];
   // 同一批内同名文件（来自不同目录）也要各自落盘，不能共用同一目标路径
   let reserved: Record<string, boolean> = {};
   for (let i = 0; i < session.files.length; i++) {
     let f = session.files[i];
     let dir: string = isTextMessage ? textDir : downloadDir;
     if (dir.length === 0) {
-      logger.error('上传落盘目录缺失 token=' + redactSessionToken(token));
+      logger.warn('上传落盘目录缺失 token=' + redactSessionToken(token));
       return false;
     }
     let fileName: string = uniquePath(dir, f.fileName);
@@ -1400,17 +1581,47 @@ async function prepareUploadTargets(token: string): Promise<boolean> {
       serial++;
     }
     reserved[dir + '/' + fileName] = true;
-    targets.push({ fileId: f.fileId, path: dir + '/' + fileName });
+    let finalPath: string = dir + '/' + fileName;
+    targets.push({ fileId: f.fileId, path: finalPath });
+    tempPaths.push(tempPathForFinal(finalPath, TEMP_SUBDIR_WEB));
+  }
+  // 最终/临时路径确定后先同步到草稿，再创建占位文件：
+  // 强杀发生在占位创建与下发目标之间时，恢复仍能按草稿路径清理。
+  let draft: SessionDraft | undefined = loadSessionDraft(webDraftSessionId(token));
+  if (draft !== undefined) {
+    for (let i = 0; i < targets.length; i++) {
+      let target = targets[i];
+      for (let j = 0; j < draft.files.length; j++) {
+        if (draft.files[j].fileId !== target.fileId) {
+          continue;
+        }
+        draft.files[j].finalPath = target.path;
+        draft.files[j].tempPath = tempPathForFinal(target.path, TEMP_SUBDIR_WEB);
+        break;
+      }
+    }
+    draft.updatedAt = Date.now();
+    saveSessionDraft(draft);
+  }
+  let tempPlaceholders: Array<string> = [];
+  for (let i = 0; i < tempPaths.length; i++) {
+    if (!createWebUploadTempPlaceholder(tempPaths[i])) {
+      releaseWebUploadTempPaths(tempPlaceholders);
+      return false;
+    }
+    tempPlaceholders.push(tempPaths[i]);
   }
   let applied: number = 0;
   try {
     applied = nativeSetWebUploadTargets(token, JSON.stringify(targets));
   } catch (e) {
     logger.error('下发上传目标失败 token=' + redactSessionToken(token) + '：' + e);
+    releaseWebUploadTempPaths(tempPlaceholders);
     return false;
   }
   if (applied !== targets.length) {
     logger.warn('上传目标部分未生效 applied=' + applied);
+    releaseWebUploadTempPaths(tempPlaceholders);
     return false;
   }
   return true;
@@ -1455,6 +1666,8 @@ function archiveFinishedUploads(): void {
       continue;
     }
     if (session.stage !== SessionStage.succeeded) {
+      // 失败/取消/拒绝的终态由注册表归档任务历史，草稿不再需要，直接清理。
+      removeSessionDraft(session.id);
       continue;
     }
     if (archivedUploadSessions[session.id] === true) {
@@ -1462,6 +1675,7 @@ function archiveFinishedUploads(): void {
     }
     archivedUploadSessions[session.id] = true;
     archiveUploadHistory(session);
+    removeSessionDraft(session.id);
   }
 }
 

@@ -23,6 +23,10 @@ const PERSIST_CAPABILITY: string = 'SystemCapability.FileManagement.AppFileServi
 const activatedUris: Set<string> = new Set();
 /** 本进程内激活失败的 URI（旧会话未持久化过）：不再重复调用，读取动作自会降级 */
 const activationFailedUris: Set<string> = new Set();
+/** 本进程内已激活读写授权的目录 URI（与只读集合分开，避免只读激活被误判为已具备写权限） */
+const activatedWritableUris: Set<string> = new Set();
+/** 本进程内读写授权激活失败的目录 URI */
+const activationFailedWritableUris: Set<string> = new Set();
 
 function isSupported(): boolean {
   try {
@@ -94,6 +98,53 @@ export async function ensureUriAccess(uri: string): Promise<void> {
     // 未持久化（旧会话）/ 非持久化来源：记录后不再重复调用，交由实际读取动作给出结果
     activationFailedUris.add(uri);
     logger.debug('URI 授权激活失败 uri=' + uri + ' 原因=' + String(e));
+  }
+}
+
+/**
+ * 选择目录后立即调用：把目录 URI 的临时授权持久化为读写权限。
+ * 接收文件需要在目录内创建新文件，READ_MODE 不足，必须带 WRITE_MODE。
+ */
+export async function persistWritableUri(uri: string): Promise<void> {
+  if (!isSupported() || !isUriLike(uri)) {
+    return;
+  }
+  let policy: fileShare.PolicyInfo = {
+    uri: uri,
+    operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE
+  };
+  try {
+    await fileShare.persistPermission([policy]);
+    // 持久化成功后清除此前的激活失败标记：下次访问会重新尝试激活
+    activationFailedUris.delete(uri);
+    activationFailedWritableUris.delete(uri);
+    logger.debug('目录读写授权持久化成功 uri=' + uri);
+  } catch (e) {
+    logger.warn('目录读写授权持久化失败 uri=' + uri + ' 原因=' + String(e));
+  }
+}
+
+/**
+ * 访问自定义接收目录前调用：激活已持久化的读写授权。
+ * 未持久化过或授权已被撤销时记录后不再重复调用，由目录校验兜底回退默认目录。
+ */
+export async function ensureWritableUriAccess(uri: string): Promise<void> {
+  if (!isUriLike(uri) || activatedWritableUris.has(uri) || activationFailedWritableUris.has(uri)) {
+    return;
+  }
+  if (!isSupported()) {
+    return;
+  }
+  let policy: fileShare.PolicyInfo = {
+    uri: uri,
+    operationMode: fileShare.OperationMode.READ_MODE | fileShare.OperationMode.WRITE_MODE
+  };
+  try {
+    await fileShare.activatePermission([policy]);
+    activatedWritableUris.add(uri);
+  } catch (e) {
+    activationFailedWritableUris.add(uri);
+    logger.debug('目录读写授权激活失败 uri=' + uri + ' 原因=' + String(e));
   }
 }
 

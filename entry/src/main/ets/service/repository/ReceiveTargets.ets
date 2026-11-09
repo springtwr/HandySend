@@ -1,9 +1,19 @@
-// 接收直写目标（fd-direct）管理：接收文件在确认接收时预创建并注册 fd，
-// Rust 网络流直接写入最终位置。
-// 本模块持有 Download/<包名>/ 目录缓存与会话目标路径登记表，
+// 接收直写目标（fd-direct）管理：接收文件在确认接收时于目标目录的临时区
+// 预创建并注册 fd，Rust 网络流写入临时文件，完成后原子改名到最终位置。
+// 本模块持有会话目标路径登记表；接收目录统一由 ReceiveDirectory 提供，
 // 会话状态（sessionFileMap/sessionFilePaths 等）仍归 ReceiveRepository 所有。
 
-import { fileIo as fs, picker, fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { ensureReceiveDirectory } from './ReceiveDirectory';
+import {
+  dirNameOf,
+  LEGACY_TEMP_DIR_NAMES,
+  LEGACY_TEMP_SUBDIRS,
+  TEMP_DIR_NAME,
+  TEMP_SUBDIR_LOCAL_SEND,
+  TEMP_SUBDIRS,
+  tempPathForFinal
+} from '../../model/transfer/TransferTempPaths';
 import {
   nativeSanitizeFileName, nativeRegisterRecvFileFd, nativeDiscardRecvFileFds
 } from '../NativeBridge';
@@ -23,11 +33,6 @@ export interface ReceivedFileEntry {
   preview?: string
 }
 
-// Download/<包名>/ 目录的持久化授权 URI 与路径（应用运行期惰性缓存；
-// 会话目标准备时经 DocumentViewPicker.save(DOWNLOAD) 获取，一次获取多次复用）
-let recvDirUriCache: string = '';
-let recvDirPathCache: string = '';
-
 // 「接收文本」目录：接收文本消息的落盘目录，位于应用私有持久目录（filesDir/text_recv/）下，
 // 与发送文本目录（filesDir/text_send/）分目录存放、清理判据共用同一前缀集合。
 // 文本落沙箱后文件名仅为内部实现细节，UI 不再向用户展示。应用上下文缺失时返回空串，由调用方拒绝会话。
@@ -46,10 +51,27 @@ function isRecvTextEntry(entry: ReceivedFileEntry): boolean {
     entry.preview !== undefined && entry.preview.length > 0;
 }
 
-// 会话已预注册的直写目标文件路径：sessionId → (fileId → 最终路径)。
-// 用于会话取消/失败时清理不完整的文件（Download 与接收文本目录均在此登记）；
-// 成功会话的文件即交付物、不清除。
-let recvTargetPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
+// 与最终路径对应的临时路径：sessionId → (fileId → 临时路径)。
+// 未完成字节只写临时区；成功提交后临时文件已改名，最终路径不在此清理。
+let recvTargetTempPaths: Map<string, Record<string, string>> = new Map<string, Record<string, string>>();
+
+/**
+ * 删除空目录；非空目录保留。
+ * 注意：OHOS `fs.rmdirSync` 会递归删除目录及全部内容，不能直接用于“尝试移除空目录”，
+ * 否则会误删同目录其他会话/协议的临时文件。
+ */
+export function removeDirectoryIfEmpty(path: string): void {
+  try {
+    if (!fs.accessSync(path)) {
+      return;
+    }
+    if (fs.listFileSync(path).length > 0) {
+      return;
+    }
+    fs.rmdirSync(path);
+  } catch (_e) {
+  }
+}
 
 function fileExistsAtPath(path: string): boolean {
   try {
@@ -61,6 +83,35 @@ function fileExistsAtPath(path: string): boolean {
 }
 
 /**
+ * 目标目录中该文件名是否已被临时文件占用。
+ * 接收临时区按协议分子目录；临时文件存在即代表对应最终文件名已被预留，
+ * 避免并发的同名接收在传输完成前选中同一最终路径。
+ */
+function tempNameReserved(dir: string, fileName: string): boolean {
+  for (let i = 0; i < TEMP_SUBDIRS.length; i++) {
+    let candidate: string = dir + '/' + TEMP_DIR_NAME + '/' + TEMP_SUBDIRS[i] + '/' + fileName;
+    if (fileExistsAtPath(candidate)) {
+      return true;
+    }
+  }
+  // 旧版协议子目录中的残留同样视为占用，避免覆盖尚未清理的半成品
+  for (let i = 0; i < LEGACY_TEMP_SUBDIRS.length; i++) {
+    let candidate: string = dir + '/' + TEMP_DIR_NAME + '/' + LEGACY_TEMP_SUBDIRS[i] + '/' + fileName;
+    if (fileExistsAtPath(candidate)) {
+      return true;
+    }
+  }
+  // 旧版临时目录中的残留同样视为占用，避免覆盖尚未清理的半成品
+  for (let i = 0; i < LEGACY_TEMP_DIR_NAMES.length; i++) {
+    let candidate: string = dir + '/' + LEGACY_TEMP_DIR_NAMES[i] + '/' + fileName;
+    if (fileExistsAtPath(candidate)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 检测目标目录中的同名文件冲突，返回不冲突的文件名。
  * 若 dir/fileName 已存在，则在文件名和扩展名之间插入 " (N)" 编号后缀（N 从 1 递增）。
  * - 无扩展名：README → README (1)
@@ -69,7 +120,7 @@ function fileExistsAtPath(path: string): boolean {
  */
 export function uniquePath(dir: string, fileName: string): string {
   let candidatePath: string = dir + '/' + fileName;
-  if (!fileExistsAtPath(candidatePath)) {
+  if (!fileExistsAtPath(candidatePath) && !tempNameReserved(dir, fileName)) {
     return fileName;
   }
   // 分离文件名主干和扩展名（基于最后一个点号）
@@ -88,52 +139,12 @@ export function uniquePath(dir: string, fileName: string): string {
   let n: number = 1;
   let renamed: string = stem + ' (' + n + ')' + ext;
   candidatePath = dir + '/' + renamed;
-  while (fileExistsAtPath(candidatePath)) {
+  while (fileExistsAtPath(candidatePath) || tempNameReserved(dir, renamed)) {
     n++;
     renamed = stem + ' (' + n + ')' + ext;
     candidatePath = dir + '/' + renamed;
   }
   return renamed;
-}
-
-// 惰性获取 Download/<包名>/ 目录（DocumentViewPicker.save 的 DOWNLOAD 模式：
-// 不弹选择界面、返回的 URI 具备持久化授权），进程内缓存复用。
-async function ensureReceiveDir(): Promise<boolean> {
-  if (recvDirUriCache.length > 0 && recvDirPathCache.length > 0) {
-    return true;
-  }
-  try {
-    let saveOptions = new picker.DocumentSaveOptions();
-    saveOptions.pickerMode = picker.DocumentPickerMode.DOWNLOAD;
-    let documentPicker = new picker.DocumentViewPicker();
-    let uris: Array<string> = await documentPicker.save(saveOptions);
-    if (uris === undefined || uris.length === 0) {
-      logger.warn('获取接收目录失败：结果为空');
-      return false;
-    }
-    recvDirUriCache = uris[0];
-    recvDirPathCache = new fileUri.FileUri(uris[0]).path;
-    return true;
-  } catch (e) {
-    logger.error('获取接收目录失败：' + e);
-    return false;
-  }
-}
-
-/**
- * 确保 Download/<包名>/ 目录可用并返回其路径（归一化去尾斜杠）；不可得返回空串。
- * 进程内缓存复用，供落盘前的存储预留检查使用。
- */
-export async function ensureRecvDownloadDir(): Promise<string> {
-  if (!(await ensureReceiveDir())) {
-    return '';
-  }
-  let dirPath: string = recvDirPathCache;
-  // 归一化：去掉尾部斜杠，便于与 '/' + 文件名拼接
-  if (dirPath.endsWith('/')) {
-    dirPath = dirPath.substring(0, dirPath.length - 1);
-  }
-  return dirPath;
 }
 
 /** 确保接收文本目录存在并返回其路径；应用上下文缺失时返回空串。 */
@@ -166,7 +177,7 @@ function findEntryIndex(entries: Array<ReceivedFileEntry>, fileId: string): numb
   return -1;
 }
 
-/** 本次待接收集合中是否含普通文件条目（需 Download 目录）。 */
+/** 本次待接收集合中是否含普通文件条目（需接收目录）。 */
 function needsDownloadDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>): boolean {
   for (let i = 0; i < fileIds.length; i++) {
     let idx: number = findEntryIndex(entries, fileIds[i]);
@@ -188,22 +199,39 @@ function needsTextDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>)
   return false;
 }
 
-// 预注册某会话待接收文件的直写目标：净化/去重文件名 → 创建文件 → open 写 fd →
-// registerRecvFileFd；同时把最终路径回写到传入的条目（filePath/fileName，
-// 供历史/相册/文本使用）并返回 fileId → 最终路径映射。
-// 文本消息条目落应用私有接收文本目录（filesDir/text_recv/），普通文件落 Download/<包名>/，
-// 重名规则一致（自动加序号、不覆盖）。
-// 任一文件准备失败 → 回滚已建文件并关闭已注册 fd，返回 undefined（调用方拒绝会话）。
+// 同一批内同名文件（来自不同目录）各自落盘：在 uniquePath 的基础上再避开本批
+// 已占用的路径，避免两遍式准备中临时文件尚未创建时选中同一最终路径。
+function uniqueBatchPath(dir: string, fileName: string,
+  reserved: Record<string, boolean>): string {
+  let candidate: string = uniquePath(dir, fileName);
+  let serial: number = 1;
+  while (reserved[dir + '/' + candidate] === true) {
+    let dot: number = fileName.lastIndexOf('.');
+    let stem: string = dot > 0 ? fileName.substring(0, dot) : fileName;
+    let ext: string = dot > 0 ? fileName.substring(dot) : '';
+    candidate = uniquePath(dir, stem + ' (' + serial + ')' + ext);
+    serial++;
+  }
+  return candidate;
+}
+
+// 预注册某会话待接收文件的直写目标：净化/去重文件名 → 计算最终路径 →
+// 先把路径写回条目并由调用方落草稿 → 在临时区创建文件并 open 写 fd →
+// registerRecvFileFd；返回 fileId → 最终路径映射。
+// 文本消息条目落应用私有接收文本目录（filesDir/text_recv/），普通文件落用户设置的接收目录
+// （默认 Download/<包名>/），重名规则一致（自动加序号、不覆盖）。
+// 任一文件准备失败 → 回滚已建临时文件并关闭已注册 fd，返回 undefined（调用方拒绝会话）。
 export async function prepareRecvTargets(sessionId: string, fileIds: Array<string>,
-  entries: Array<ReceivedFileEntry> | undefined): Promise<Record<string, string> | undefined> {
+  entries: Array<ReceivedFileEntry> | undefined,
+  beforeCreate?: () => void): Promise<Record<string, string> | undefined> {
   if (entries === undefined || entries.length === 0 || fileIds.length === 0) {
     return undefined;
   }
   // 按条目是否文本消息决定目标目录：文本目录为应用沙箱（mkdir 直建），
-  // 普通文件目录经 DocumentViewPicker 惰性获取；任一所需目录不可得即整体拒绝
+  // 普通文件目录由 ReceiveDirectory 统一解析；任一所需目录不可得即整体拒绝
   let needDownload: boolean = needsDownloadDir(entries, fileIds);
   let needText: boolean = needsTextDir(entries, fileIds);
-  let downloadDir: string = needDownload ? await ensureRecvDownloadDir() : '';
+  let downloadDir: string = needDownload ? await ensureReceiveDirectory() : '';
   let textDir: string = needText ? ensureRecvTextDir() : '';
   if (needDownload && downloadDir.length === 0) {
     return undefined;
@@ -211,38 +239,66 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
   if (needText && textDir.length === 0) {
     return undefined;
   }
+  interface RecvTargetPlan {
+    fileId: string
+    destPath: string
+    tempPath: string
+  }
+  let plans: Array<RecvTargetPlan> = [];
   let perFile: Record<string, string> = {};
-  let allOk: boolean = true;
+  let reserved: Record<string, boolean> = {};
+  // 第一遍：只计算路径，不创建临时文件；先把路径写回条目，
+  // 使调用方能在任何字节写入前把最终/临时路径落进草稿。
   for (let i = 0; i < fileIds.length; i++) {
     let fileId: string = fileIds[i];
     let entryIdx: number = findEntryIndex(entries, fileId);
     if (entryIdx < 0) {
-      allOk = false;
-      continue;
+      return undefined;
     }
     let entry: ReceivedFileEntry = entries[entryIdx];
-    // 文本消息条目落接收文本目录（沙箱），其余落 Download 目录
+    // 文本消息条目落接收文本目录（沙箱），其余落接收目录
     let dirPath: string = isRecvTextEntry(entry) ? textDir : downloadDir;
-    let destPath: string = '';
+    let name: string = nativeSanitizeFileName(entry.fileName);
+    if (name.length === 0) {
+      name = 'file_' + Date.now();
+    }
+    let uniqueName: string = uniqueBatchPath(dirPath, name, reserved);
+    reserved[dirPath + '/' + uniqueName] = true;
+    let destPath: string = dirPath + '/' + uniqueName;
+    plans.push({
+      fileId: fileId,
+      destPath: destPath,
+      tempPath: tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
+    });
+    // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
+    entry.filePath = destPath;
+    entry.fileName = uniqueName;
+    perFile[fileId] = destPath;
+  }
+  // 路径确定、临时文件尚未创建：调用方在此落草稿，强杀后仍可按草稿清理。
+  if (beforeCreate !== undefined) {
+    beforeCreate();
+  }
+  // 第二遍：创建临时文件并注册直写 fd。
+  let perTempFile: Record<string, string> = {};
+  let allOk: boolean = true;
+  for (let i = 0; i < plans.length; i++) {
+    let plan: RecvTargetPlan = plans[i];
     let opened: fs.File | undefined = undefined;
     try {
-      let name: string = nativeSanitizeFileName(entry.fileName);
-      if (name.length === 0) {
-        name = 'file_' + Date.now();
+      let tempDir: string = dirNameOf(plan.tempPath);
+      if (tempDir.length > 0 && !fs.accessSync(tempDir)) {
+        fs.mkdirSync(tempDir, true);
       }
-      let uniqueName: string = uniquePath(dirPath, name);
-      destPath = dirPath + '/' + uniqueName;
-      opened = fs.openSync(destPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
-      nativeRegisterRecvFileFd(sessionId, fileId, opened.fd, destPath);
-      perFile[fileId] = destPath;
-      // 回写最终路径：历史记录/相册保存/文本读取均以登记路径为准
-      entry.filePath = destPath;
-      entry.fileName = uniqueName;
+      opened = fs.openSync(plan.tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
+        fs.OpenMode.TRUNC);
+      nativeRegisterRecvFileFd(sessionId, plan.fileId, opened.fd, plan.destPath);
+      perTempFile[plan.fileId] = plan.tempPath;
       // 注册成功后文件句柄所有权移交原生侧，本层不再关闭
       opened = undefined;
     } catch (e) {
       allOk = false;
-      // 注册失败时已打开的文件句柄仍归本层所有，需主动关闭并删除半成品文件
+      // 注册失败时已打开的文件句柄仍归本层所有，需主动关闭并删除临时半成品
       if (opened !== undefined) {
         try {
           fs.closeSync(opened);
@@ -250,54 +306,107 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
         }
         opened = undefined;
       }
-      if (destPath.length > 0) {
-        try {
-          fs.unlinkSync(destPath);
-        } catch (_unlinkErr) {
-        }
+      try {
+        fs.unlinkSync(plan.tempPath);
+      } catch (_unlinkErr) {
       }
-      logger.error('准备接收目标失败 fileId=' + fileId + '：' + e);
+      // 回滚后尝试移除已空的协议子目录与临时区根目录
+      let tempDir: string = dirNameOf(plan.tempPath);
+      removeDirectoryIfEmpty(tempDir);
+      let tempRoot: string = dirNameOf(tempDir);
+      if (tempRoot.length > 0) {
+        removeDirectoryIfEmpty(tempRoot);
+      }
+      logger.warn('准备接收目标失败 fileId=' + plan.fileId + '：' + e);
+      break;
     }
   }
-  if (!allOk || Object.keys(perFile).length !== fileIds.length) {
-    // 回滚：关闭已注册 fd + 删除已创建的（半）文件
+  if (!allOk) {
+    // 回滚：关闭已注册 fd + 删除已创建的临时半成品（最终路径尚未出现，不碰交付物）
     nativeDiscardRecvFileFds(sessionId);
-    let keys: Array<string> = Object.keys(perFile);
+    let keys: Array<string> = Object.keys(perTempFile);
     for (let k = 0; k < keys.length; k++) {
       try {
-        fs.unlinkSync(perFile[keys[k]]);
+        fs.unlinkSync(perTempFile[keys[k]]);
       } catch (_e) {
+      }
+      let tempDir: string = dirNameOf(perTempFile[keys[k]]);
+      removeDirectoryIfEmpty(tempDir);
+      let tempRoot: string = dirNameOf(tempDir);
+      if (tempRoot.length > 0) {
+        removeDirectoryIfEmpty(tempRoot);
       }
     }
     return undefined;
   }
-  recvTargetPaths.set(sessionId, perFile);
+  recvTargetTempPaths.set(sessionId, perTempFile);
   return perFile;
 }
 
-// 删除某会话预创建的目标文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
-// 列于 keepFileIds 的文件已完成写入、属于会话的部分交付物：保留并从清理范围排除；
-// 未提供时删除全部登记文件（拒绝/超时等尚未产生完成文件的路径）。
+// 删除某会话预创建的临时文件（会话取消/失败时调用；成功会话的文件即交付物不删除）。
+// 列于 keepFileIds 的文件已完成写入并改名到最终路径，临时文件已不存在；
+// 未提供时删除全部登记临时文件（拒绝/超时等尚未产生完成文件的路径）。
+// 只操作临时区，避免把最终路径上的部分交付物误删。
 export function removeRecvTargetFiles(sessionId: string, keepFileIds?: Record<string, boolean>): void {
-  let perFile: Record<string, string> | undefined = recvTargetPaths.get(sessionId);
-  if (perFile === undefined) {
+  let perTempFile: Record<string, string> | undefined = recvTargetTempPaths.get(sessionId);
+  if (perTempFile === undefined) {
     return;
   }
-  let keys: Array<string> = Object.keys(perFile);
+  removeRecvTargetPaths(perTempFile, keepFileIds);
+  recvTargetTempPaths.delete(sessionId);
+}
+
+/**
+ * 按临时路径登记表删除未完成文件，并尝试移除空的协议子目录与临时区根目录。
+ * 只操作临时区，不触碰最终路径；keepFileIds 中的文件已完成提交，保留登记路径。
+ * 单独导出以便设备端用例直接覆盖清理策略（登记表由 prepareRecvTargets 维护）。
+ */
+export function removeRecvTargetPaths(perTempFile: Record<string, string>,
+  keepFileIds?: Record<string, boolean>): void {
+  let keys: Array<string> = Object.keys(perTempFile);
+  let tempDirs: Record<string, boolean> = {};
   for (let k = 0; k < keys.length; k++) {
+    tempDirs[dirNameOf(perTempFile[keys[k]])] = true;
     if (keepFileIds !== undefined && keepFileIds[keys[k]] === true) {
       continue;
     }
     try {
-      fs.unlinkSync(perFile[keys[k]]);
+      fs.unlinkSync(perTempFile[keys[k]]);
     } catch (_e) {
-      // 文件可能已被清理或不存在——忽略
+      // 文件可能已被提交改名或不存在——忽略
     }
   }
-  recvTargetPaths.delete(sessionId);
+  let dirKeys: Array<string> = Object.keys(tempDirs);
+  for (let k = 0; k < dirKeys.length; k++) {
+    removeDirectoryIfEmpty(dirKeys[k]);
+    // 协议子目录清空后尝试移除空的临时区根目录，避免任务结束后残留 .handysend-temp
+    let tempRoot: string = dirNameOf(dirKeys[k]);
+    if (tempRoot.length > 0) {
+      removeDirectoryIfEmpty(tempRoot);
+    }
+  }
 }
 
 // 仅清空某会话的登记表（成功会话收尾调用：目标文件即交付物不删除，只回收登记表内存）。
 export function clearRecvTargets(sessionId: string): void {
-  recvTargetPaths.delete(sessionId);
+  recvTargetTempPaths.delete(sessionId);
+}
+
+/**
+ * 当前进程内已登记的接收临时文件路径（全部会话）。
+ * 供启动清扫构造保留集：进程存活、仅 Ability 重建时，这些文件仍在写入，
+ * 不能被当作遗留半成品删除。
+ */
+export function getRegisteredRecvTempPaths(): Array<string> {
+  let result: Array<string> = [];
+  recvTargetTempPaths.forEach((perFile: Record<string, string>) => {
+    let fileIds: Array<string> = Object.keys(perFile);
+    for (let i = 0; i < fileIds.length; i++) {
+      let path: string = perFile[fileIds[i]];
+      if (path.length > 0) {
+        result.push(path);
+      }
+    }
+  });
+  return result;
 }

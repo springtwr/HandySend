@@ -251,33 +251,6 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
-/// 等待出现待确认上传会话并返回 token（下载已无待确认状态）。
-async fn wait_pending_token(state: &Arc<WebServiceState>) -> String {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let token: Option<String> = state
-            .uploads
-            .lock()
-            .unwrap()
-            .sessions
-            .iter()
-            .find(|(_, session)| {
-                matches!(
-                    session.state,
-                    localsend_core::bridge::web::upload::UploadState::Pending { .. }
-                )
-            })
-            .map(|(token, _)| token.clone());
-        if let Some(token) = token {
-            return token;
-        }
-        if tokio::time::Instant::now() >= deadline {
-            panic!("等不到待确认上传会话");
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-}
-
 /// 直接 prepare 下载会话并返回 token（下载已无待确认状态）。
 async fn prepare_download_token(addr: SocketAddr) -> String {
     let (status, _, body) = http_post(addr, "/web/prepare-download").await;
@@ -408,6 +381,16 @@ async fn test_caps_four_states_without_side_effects() {
     }
 }
 
+/// caps 携带分享标识：页面据此判断服务是否已重启/更换分享。
+#[tokio::test]
+async fn test_caps_includes_share_id() {
+    let (handle, addr, _state, _rx, _ctx) = spawn_upload_server().await;
+    let (status, _, body) = http_get(addr, "/caps").await;
+    assert_eq!(status, 200);
+    assert!(body.contains("\"shareId\":\"share-up\""), "{body}");
+    handle.abort();
+}
+
 #[tokio::test]
 async fn test_single_page_and_unknown_path() {
     let (handle, addr, _state, _rx, _ctx) = spawn_test_server(|state, _ctx| {
@@ -450,8 +433,36 @@ async fn test_single_page_and_unknown_path() {
     );
     assert!(body.contains("prepare-upload"), "单页应含上传建会话逻辑");
     assert!(
+        body.contains("waitForUploadAccept") && body.contains("waitingConfirm"),
+        "单页应在建会话后轮询等待对方确认"
+    );
+    assert!(
         body.contains("handysend_dl_token"),
-        "下载与上传 token 应分键存储"
+        "下载 token 应存于会话存储，刷新后可复用会话"
+    );
+    assert!(
+        body.contains("handysend_ul_token") && body.contains("handysend_ul_share"),
+        "上传 token 与分享标识应持久化，刷新后恢复上传状态"
+    );
+    assert!(
+        body.contains("/web/upload-status") && body.contains("restoreUploadSession"),
+        "单页应在刷新后恢复上传会话状态，结束前不允许再次发送"
+    );
+    assert!(
+        body.contains("capsShareId") && body.contains("abandonRestoredUpload"),
+        "单页应在分享更换后静默丢弃旧上传 token"
+    );
+    assert!(
+        body.contains("handysend_ul_client") && body.contains("clientId"),
+        "单页应持久化页面 client，用于建会话响应丢失后的重试复用"
+    );
+    assert!(
+        body.contains("isReloadNavigation"),
+        "新标签页/复制标签页应丢弃原标签页的上传会话"
+    );
+    assert!(
+        body.contains("interruptRestoredUpload") && body.contains("restoreInterrupted"),
+        "单页应在应用已接受但刷新后无法续传时结束会话"
     );
     assert!(body.contains("/i18n.json"), "单页应先拉取文案");
     assert!(body.contains("message.txt"), "单页应支持文本发送");
@@ -492,6 +503,10 @@ async fn test_single_page_and_unknown_path() {
         "单页应按协议判定展示 HTTPS 自签提示"
     );
     assert!(body.contains("/web/finish"), "单页应上报完成回执");
+    assert!(
+        body.contains("/web/leave"),
+        "页面离开应标记宽限，由刷新后的页面恢复上传状态"
+    );
     assert!(
         !body.contains("download data-file-id"),
         "下载链接不应使用 download 属性，否则失效时错误页会被当成文件下载"
@@ -1559,21 +1574,19 @@ async fn prepare_upload_accepted(
     files_json: &str,
 ) -> String {
     let body: Vec<u8> = files_json.as_bytes().to_vec();
-    let prepare =
-        tokio::spawn(async move { http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await });
-    let token = wait_pending_token(state).await;
+    let (status, _, resp_body) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;
+    assert_eq!(status, 202, "建会话应返回 202: {resp_body}");
+    let json: serde_json::Value = serde_json::from_str(&resp_body).expect("建会话响应 JSON");
+    let token = json["token"]
+        .as_str()
+        .expect("建会话响应缺 token")
+        .to_string();
     state
         .uploads
         .lock()
         .unwrap()
         .accept(&token, Instant::now())
         .unwrap();
-    let (status, _, resp_body) = tokio::time::timeout(Duration::from_secs(5), prepare)
-        .await
-        .expect("上传建会话超时")
-        .unwrap();
-    assert_eq!(status, 200);
-    assert!(resp_body.contains(&token));
     token
 }
 
@@ -1690,6 +1703,88 @@ async fn test_upload_flow_to_disk() {
     assert!(!state.uploads.lock().unwrap().contains(&token));
     assert!(landed.exists(), "完成回执不应删除已落盘文件");
     assert_eq!(std::fs::read(&landed).unwrap(), content);
+    let part_dir = state.upload_dir.lock().unwrap().join(".handysend-temp/web");
+    assert!(!part_dir.exists(), "会话终结后空临时目录应被删除");
+    handle.abort();
+}
+
+/// 上传状态查询：刷新后恢复用，返回会话状态与文件清单；不改变会话状态。
+#[tokio::test]
+async fn test_upload_status_reports_session_state() {
+    let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
+    let content: &[u8] = b"abc";
+    let token = prepare_upload_accepted(
+        addr,
+        &state,
+        "{\"files\":[{\"id\":\"f0\",\"fileName\":\"a.txt\",\"size\":3}]}",
+    )
+    .await;
+    let (status, _, body) = http_get(addr, &format!("/web/upload-status?token={token}")).await;
+    assert_eq!(status, 200, "状态查询失败: {body}");
+    assert!(body.contains("\"state\":\"accepted\""), "{body}");
+    assert!(body.contains("\"declaredFiles\":1"), "{body}");
+    assert!(body.contains("\"fileName\":\"a.txt\""), "{body}");
+    assert!(body.contains("\"done\":false"), "{body}");
+    // 上传完成后 done 同步。
+    let (up_status, _, _) = http_post_bytes(
+        addr,
+        &format!("/web/upload?token={token}&fileId=f0"),
+        content,
+        &[],
+    )
+    .await;
+    assert_eq!(up_status, 200);
+    let (_, _, body) = http_get(addr, &format!("/web/upload-status?token={token}")).await;
+    assert!(body.contains("\"done\":true"), "{body}");
+    // 未知 token 回 404，页面据此结束恢复态。
+    let (missing, _, _) = http_get(addr, "/web/upload-status?token=missing").await;
+    assert_eq!(missing, 404);
+    handle.abort();
+}
+
+/// 建会话 202 后页面持有 token：同 client 重试复用、不同 client 各自建会话。
+#[tokio::test]
+async fn test_upload_status_reports_pending_session() {
+    let (handle, addr, _state, _rx, _ctx) = spawn_upload_server().await;
+    let body = b"{\"files\":[{\"id\":\"f0\",\"fileName\":\"a.txt\",\"size\":3}]}".to_vec();
+    // 建会话立即 202，页面据此持有 token。
+    let (status, _, resp) =
+        http_post_bytes(addr, "/web/prepare-upload?client=page-1", &body, &[]).await;
+    assert_eq!(status, 202, "建会话应返回 202: {resp}");
+    let json: serde_json::Value = serde_json::from_str(&resp).expect("建会话响应 JSON");
+    let token = json["token"].as_str().expect("token").to_string();
+    assert!(json["shareId"].as_str().expect("shareId").len() > 0);
+    // 同一 client 重试（响应丢失）：复用同一会话。
+    let (again, _, again_resp) =
+        http_post_bytes(addr, "/web/prepare-upload?client=page-1", &body, &[]).await;
+    assert_eq!(again, 202);
+    let again_json: serde_json::Value = serde_json::from_str(&again_resp).expect("重试响应 JSON");
+    assert_eq!(again_json["token"].as_str().unwrap(), token);
+    // 状态查询返回待确认。
+    let (status, _, resp) = http_get(addr, &format!("/web/upload-status?token={token}")).await;
+    assert_eq!(status, 200);
+    assert!(resp.contains("\"state\":\"pending\""), "{resp}");
+    // 不同 client（新标签页/重开页面）：各自建会话，不复用。
+    let (other, _, other_resp) =
+        http_post_bytes(addr, "/web/prepare-upload?client=page-2", &body, &[]).await;
+    assert_eq!(other, 202);
+    let other_json: serde_json::Value = serde_json::from_str(&other_resp).expect("新页面响应 JSON");
+    assert_ne!(other_json["token"].as_str().unwrap(), token);
+    // 同一 client 换一批文件：结束旧会话，建新会话。
+    let changed_body = b"{\"files\":[{\"id\":\"f0\",\"fileName\":\"b.txt\",\"size\":4}]}".to_vec();
+    let (changed, _, changed_resp) = http_post_bytes(
+        addr,
+        "/web/prepare-upload?client=page-1",
+        &changed_body,
+        &[],
+    )
+    .await;
+    assert_eq!(changed, 202);
+    let changed_json: serde_json::Value =
+        serde_json::from_str(&changed_resp).expect("换批响应 JSON");
+    assert_ne!(changed_json["token"].as_str().unwrap(), token);
+    let (old_missing, _, _) = http_get(addr, &format!("/web/upload-status?token={token}")).await;
+    assert_eq!(old_missing, 404, "换批后旧会话应结束");
     handle.abort();
 }
 
@@ -1699,7 +1794,7 @@ async fn test_upload_flow_to_disk() {
 async fn test_stale_upload_parts_cleaned_on_next_upload() {
     let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
     let dir = state.upload_dir.lock().unwrap().clone();
-    let part_dir = dir.join(".handysend-upload-part");
+    let part_dir = dir.join(".handysend-temp/web");
     std::fs::create_dir_all(&part_dir).unwrap();
     let orphan = part_dir.join("orphan.txt");
     let user_file = dir.join("user.txt");
@@ -1736,35 +1831,29 @@ async fn test_stale_upload_parts_cleaned_on_next_upload() {
     handle.abort();
 }
 
-/// 上传拒绝与过期：403/408，临时文件清理。
+/// 上传拒绝与过期：会话移除后状态查询回 404，临时文件清理。
 #[tokio::test]
 async fn test_upload_decline_and_expire() {
     let (handle, addr, state, _rx, _ctx) = spawn_upload_server().await;
     let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
     let body: Vec<u8> = files.as_bytes().to_vec();
-    // 拒绝。
-    let prepare =
-        tokio::spawn(async move { http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await });
-    let token = wait_pending_token(&state).await;
+    // 拒绝：202 建会话 → decline → 状态查询 404。
+    let (status, _, resp) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;
+    assert_eq!(status, 202);
+    let json: serde_json::Value = serde_json::from_str(&resp).expect("建会话响应 JSON");
+    let token = json["token"].as_str().expect("token").to_string();
     let removed = state.uploads.lock().unwrap().decline(&token);
     assert!(removed.is_some());
-    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
-        .await
-        .expect("拒绝应答超时")
-        .unwrap();
-    assert_eq!(status, 403);
-    // 过期。
-    let files = "{\"files\":[{\"id\":\"u1\",\"fileName\":\"a.txt\",\"size\":3}]}";
-    let body: Vec<u8> = files.as_bytes().to_vec();
-    let prepare =
-        tokio::spawn(async move { http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await });
-    let token = wait_pending_token(&state).await;
+    let (missing, _, _) = http_get(addr, &format!("/web/upload-status?token={token}")).await;
+    assert_eq!(missing, 404);
+    // 过期：202 建会话 → expire → 状态查询 404。
+    let (status, _, resp) = http_post_bytes(addr, "/web/prepare-upload", &body, &[]).await;
+    assert_eq!(status, 202);
+    let json: serde_json::Value = serde_json::from_str(&resp).expect("建会话响应 JSON");
+    let token = json["token"].as_str().expect("token").to_string();
     assert!(state.uploads.lock().unwrap().expire(&token));
-    let (status, _, _) = tokio::time::timeout(Duration::from_secs(5), prepare)
-        .await
-        .expect("过期应答超时")
-        .unwrap();
-    assert_eq!(status, 408);
+    let (missing, _, _) = http_get(addr, &format!("/web/upload-status?token={token}")).await;
+    assert_eq!(missing, 404);
     handle.abort();
 }
 
@@ -1787,6 +1876,8 @@ async fn test_upload_size_enforcement() {
     )
     .await;
     assert_eq!(status, 413);
+    let part_dir = state.upload_dir.lock().unwrap().join(".handysend-temp/web");
+    assert!(!part_dir.exists(), "超量失败后空临时目录应被删除");
     // 短包。
     let token = prepare_upload_accepted(
         addr,
@@ -1802,6 +1893,7 @@ async fn test_upload_size_enforcement() {
     )
     .await;
     assert_eq!(status, 400);
+    assert!(!part_dir.exists(), "短包失败后空临时目录应被删除");
     handle.abort();
 }
 

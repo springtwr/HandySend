@@ -22,6 +22,7 @@ import WebShareRepositoryTest from './repository/WebShareRepositoryTest.test'
 import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
+import ReceiveTargetPrepOrderTest from './service/ReceiveTargetPrepOrderTest.test'
 import ReceiveInterruptedCleanupTest from './repository/ReceiveInterruptedCleanupTest.test'
 import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
 
@@ -36,6 +37,7 @@ import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 import HistorySegmentsTest from './model/HistorySegmentsTest.test'
 import WebAddressTest from './model/WebAddressTest.test'
+import PortalSiteTest from './model/PortalSiteTest.test'
 import WebSettingsTest from './model/WebSettingsTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
@@ -60,6 +62,7 @@ import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
 import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
 import LogFileFormatTest from './utils/LogFileFormatTest.test'
 import DebugLogBudgetTest from './utils/DebugLogBudgetTest.test'
+import LogRedactionTest from './utils/LogRedactionTest.test'
 
 // ── views/ 测试 ──
 import SessionStatusBadgeTest from './views/SessionStatusBadgeTest.test'
@@ -83,6 +86,9 @@ import TransferSessionRegistryTest from './service/TransferSessionRegistryTest.t
 import ChecksumPrepProgressTest from './service/ChecksumPrepProgressTest.test'
 import ChecksumBatchTest from './service/ChecksumBatchTest.test'
 import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
+import SessionDraftStoreTest from './service/SessionDraftStoreTest.test'
+import SessionRecoveryServiceTest from './service/SessionRecoveryServiceTest.test'
+import TempWorkspaceSweepTest from './service/TempWorkspaceSweepTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
 import GallerySaveNameTest from './service/GallerySaveNameTest.test'
@@ -90,6 +96,7 @@ import SendSessionRegistrationTest from './service/SendSessionRegistrationTest.t
 import SendDiagnosticsTest from './service/SendDiagnosticsTest.test'
 import TransferCenterTest from './viewmodel/TransferCenterTest.test'
 import SessionDetailTest from './viewmodel/SessionDetailTest.test'
+import MainTabPromptTest from './viewmodel/MainTabPromptTest.test'
 import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
 import ReceiveHistorySelectionTest from './viewmodel/ReceiveHistorySelectionTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
@@ -122,6 +129,7 @@ export default function testsuite() {
   ProgressLogicTest()
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
+  ReceiveTargetPrepOrderTest()
   ReceiveInterruptedCleanupTest()
   ProtocolToggleSettingsTest()
 
@@ -135,6 +143,7 @@ export default function testsuite() {
   SendProgressTest()
   DragDropParserTest()
   WebAddressTest()
+  PortalSiteTest()
   WebSettingsTest()
 
   // ── utils/ 迁移测试套件 ──
@@ -159,6 +168,7 @@ export default function testsuite() {
   WebAccessCodeTest()
   LogFileFormatTest()
   DebugLogBudgetTest()
+  LogRedactionTest()
 
   // ── views/ 测试套件 ──
   SessionStatusBadgeTest()
@@ -183,6 +193,9 @@ export default function testsuite() {
   ChecksumBatchTest()
   HistorySegmentsTest()
   SessionHistoryStoreTest()
+  SessionDraftStoreTest()
+  SessionRecoveryServiceTest()
+  TempWorkspaceSweepTest()
   RegistriesTest()
   AdaptersTest()
   GallerySaveNameTest()
@@ -190,6 +203,7 @@ export default function testsuite() {
   SendDiagnosticsTest()
   TransferCenterTest()
   SessionDetailTest()
+  MainTabPromptTest()
   ReceiveHistoryItemTest()
   ReceiveHistorySelectionTest()
   PendingConfirmTest()

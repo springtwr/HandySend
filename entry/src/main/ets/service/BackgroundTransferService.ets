@@ -510,6 +510,7 @@ function buildProgressContent(progress: CycleProgress): string {
 // 在途发布也不会再以过期的通知 Id 记录误导性成功/失败日志。
 function publishFrame(kind: LongTaskKind, title: string, content: string,
   progressValue: number): Promise<void> {
+  let kindText: string = kind === LongTaskKind.transfer ? '传输' : '保活';
   let targetId: number = taskNotificationId(kind);
   if (targetId < 0) {
     return Promise.resolve();
@@ -545,13 +546,13 @@ function publishFrame(kind: LongTaskKind, title: string, content: string,
       if (generation !== taskGeneration(kind) || publishedId !== taskNotificationId(kind)) {
         return;
       }
-      logger.debug(kind + ' 通知已发布 id=' + publishedId + ' progress=' + progressValue);
+      logger.debug(kindText + '通知已发布 id=' + publishedId + ' progress=' + progressValue);
     }).catch((e: Object): void => {
       if (generation !== taskGeneration(kind) || publishedId !== taskNotificationId(kind)) {
         return;
       }
       // 拒绝原因不止业务错误（如权限/系统异常对象），按可恢复降级记录（传输本身继续）
-      logger.warn(kind + ' 通知发布失败：' + String(e));
+      logger.warn(kindText + '通知发布失败：' + String(e));
     });
   }).catch((): void => {
   });

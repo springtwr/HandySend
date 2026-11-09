@@ -8,6 +8,7 @@ import {
 } from '../../model/mta/MtaBrandRegistry';
 import { getSheetWidth, isWideWidth } from '../../common/Breakpoints';
 import { uiObserver } from '@kit.ArkUI';
+import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
 // 互传联盟（MTA）设置分组：总开关 + 允许接收 + 显示互传提醒 + 模拟品牌选择。
 // 数据经 @Param 绑定父组件 VM，命令直调 VM（View → ViewModel）。
@@ -18,6 +19,18 @@ export struct MtaSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   // 是否展示模拟品牌半屏弹窗
   @Local isShowBrandSheet: boolean = false
+  // 新传输直达详情前的弹层收起：本组件只处理品牌半模态
+  private overlayCloseCallback: () => void = (): void => {
+    this.isShowBrandSheet = false;
+  }
+
+  aboutToAppear(): void {
+    subscribeOverlayClose(this.overlayCloseCallback);
+  }
+
+  aboutToDisappear(): void {
+    unsubscribeOverlayClose(this.overlayCloseCallback);
+  }
   // 可模拟品牌清单（构造时取一次，保证顺序稳定且避免重复计算）
   private brandOptions: Array<MtaSelectableBrand> = mtaSelectableBrands()
 

@@ -26,6 +26,7 @@ import {
   setPendingNavigation,
   cleanupSendDirWithContext,
   cleanupReceiveCacheDirWithContext,
+  cleanupMtaThumbnailDirWithContext,
   startMtaReceiveIfEnabled,
   stopMtaReceive,
   stopLocalServer,
@@ -41,6 +42,7 @@ import { NAVIGATION_PARAM_KEY, NAVIGATION_SESSION_PARAM_KEY, NAV_TARGET_SESSION_
 import { initFavorites } from '../service/repository/FavoritesService';
 import { initHistory } from '../service/repository/ReceiveHistoryService';
 import { initDeviceIdentity } from '../service/repository/DeviceRepository';
+import { setAppContext } from '../service/repository/AppCore';
 import { loadFromPreferences, syncSystemLanguageIfFollowing } from '../service/repository/SettingsRepository';
 import { isMtaReceivingActive } from '../service/repository/MtaRepository';
 import {
@@ -52,6 +54,8 @@ import {
 } from '../service/BackgroundTransferService';
 import {
   refreshBackgroundAttention,
+  setDesktopWindowFocused,
+  setDesktopWindowMinimized,
   withdrawBackgroundAttention
 } from '../service/BackgroundAttentionNotifier';
 import {
@@ -169,6 +173,9 @@ const PRIVACY_STATE_CHANGED_EVENT: string = 'usual.event.PRIVACY_STATE_CHANGED';
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+  // PC 主窗口状态/焦点监听回调引用，用于 onWindowStageDestroy 退订
+  private windowStatusCallback: ((status: window.WindowStatusType) => void) | null = null;
+  private windowEventCallback: ((event: window.WindowEventType) => void) | null = null;
   // 系统语言/地区变化公共事件的订阅者引用，用于 onDestroy 退订
   private localeSubscriber: commonEventManager.CommonEventSubscriber | null = null;
   // 隐私签署结果公共事件的订阅者引用，用于 onDestroy 退订
@@ -186,6 +193,8 @@ export default class EntryAbility extends UIAbility {
     // 初始化全部偏好存储（设置/任务历史/接收历史）：三个存储相互独立，
     // 各服务 init 内部亦会初始化自身存储，此处统一前置保证任何服务取数前已就绪
     initAllPreferences(this.context);
+    // 先发布应用上下文：接收历史初始化与后续会话草稿写入都依赖 filesDir。
+    setAppContext(this.context);
 
     // 初始化 FavoritesService 和 ReceiveHistoryService
     initFavorites(this.context);
@@ -307,7 +316,7 @@ export default class EntryAbility extends UIAbility {
         let content: string = record.content ?? '';
         let title: string = record.title ?? '';
         let utd: string = record.utd ?? '';
-        logger.debug('handleShareWant 记录[' + i + ']: utd=' + utd +
+        logger.debug('分享意图记录[' + i + ']：utd=' + utd +
           ' uri_empty=' + (uri.length === 0) + ' content_empty=' + (content.length === 0));
         if (uri.length > 0) {
           // URI 非空 → 文件 URI 通道
@@ -361,6 +370,8 @@ export default class EntryAbility extends UIAbility {
     this.unsubscribePrivacyStateChanged();
     // 偏好写入为防抖刷盘，进程终止前全部强制落盘，防止 pending 写入丢失
     flushAllPreferences();
+    // 退出前撤回待确认提醒与角标，避免应用退出后残留已失效的提醒
+    withdrawBackgroundAttention();
     // 兜底释放长时任务：进程终止时系统亦会清理，此处按官方最佳实践显式释放
     stopTransferTask(true);
     // 兜底清理：正常退出链路（onBackground 停 MTA → 页面 aboutToDisappear
@@ -398,6 +409,8 @@ export default class EntryAbility extends UIAbility {
         // 仅 PC/2in1：有活跃传输时拦截标题栏关闭按钮，弹出二次确认（继续/退出）
         if (deviceInfo.deviceType === '2in1') {
           this.registerCloseIntercept(windowStage);
+          // 最小化/失焦与前后台切换不是同一口径，需单独同步窗口状态以驱动通知与角标
+          this.registerDesktopWindowAttention();
         }
         // 以下初始化不参与首屏渲染，延后至内容加载完成后执行（让出主线程），
         // 避免阻塞首帧、缩短启动窗停留；延后回调内自持 try/catch 兜底异常，防止未捕获错误
@@ -405,10 +418,12 @@ export default class EntryAbility extends UIAbility {
           try {
             // 冷启动清扫临时文件：暂存列表/接收会话均为内存态，进程被杀/崩溃等
             // 意外退出后 cache 目录中的文件成为孤儿；冷启动时必无进行中的
-            // 暂存/接收，全量删除安全（含旧版本 files 目录残留，TLS 身份保留）。
-            // 该回调仅冷启动执行一次（再次拉起走 onNewWant），不会误删活文件。
+            // 暂存/接收，全量删除安全（含 MTA 预览缩略图与旧版本 files 目录残留，
+            // TLS 身份保留）。该回调仅冷启动执行一次（再次拉起走 onNewWant），
+            // 不会误删活文件。
             cleanupSendDirWithContext(this.context);
             cleanupReceiveCacheDirWithContext(this.context);
+            cleanupMtaThumbnailDirWithContext(this.context);
             // 全局注册 MaterialIcons 字体，用于指纹图标渲染（首屏不渲染该字体）
             // 使用 Flutter SDK 的 MaterialIcons-Regular.otf，其中包含 0xF0xxx PUA 码点
             uiContext.getFont().registerFont({
@@ -550,6 +565,62 @@ export default class EntryAbility extends UIAbility {
     }
   }
 
+  /**
+   * 注册 PC 主窗口状态与焦点监听（仅 2in1）：
+   * 部分机型最小化窗口时不会驱动 UIAbility 进入后台；窗口未最小化但被其他窗口
+   * 遮挡时也会失去焦点。两者都需要通知与角标兜底，不能只按 onBackground 判断。
+   */
+  private registerDesktopWindowAttention(): void {
+    if (this.mainWindow === null) {
+      return;
+    }
+    let statusCallback = (status: window.WindowStatusType): void => {
+      setDesktopWindowMinimized(status === window.WindowStatusType.MINIMIZE);
+    };
+    let eventCallback = (event: window.WindowEventType): void => {
+      if (event === window.WindowEventType.WINDOW_ACTIVE) {
+        setDesktopWindowFocused(true);
+      } else if (event === window.WindowEventType.WINDOW_INACTIVE) {
+        setDesktopWindowFocused(false);
+      }
+    };
+    try {
+      if (this.windowStatusCallback === null) {
+        this.mainWindow.on('windowStatusChange', statusCallback);
+        this.windowStatusCallback = statusCallback;
+      }
+      if (this.windowEventCallback === null) {
+        this.mainWindow.on('windowEvent', eventCallback);
+        this.windowEventCallback = eventCallback;
+      }
+      // 注册时同步一次初值：冷启动窗口通常未最小化；焦点按实际状态取
+      setDesktopWindowMinimized(this.mainWindow.getWindowStatus() === window.WindowStatusType.MINIMIZE);
+      setDesktopWindowFocused(this.mainWindow.isFocused());
+      logger.debug('PC 主窗口状态与焦点监听已注册');
+    } catch (e) {
+      logger.warn('注册 PC 主窗口状态与焦点监听失败：' + JSON.stringify(e));
+    }
+  }
+
+  /** 退订 PC 主窗口状态与焦点监听，避免窗口销毁后回调仍持有 Ability 引用。 */
+  private unregisterDesktopWindowAttention(): void {
+    if (this.mainWindow !== null) {
+      try {
+        if (this.windowStatusCallback !== null) {
+          this.mainWindow.off('windowStatusChange', this.windowStatusCallback);
+        }
+        if (this.windowEventCallback !== null) {
+          this.mainWindow.off('windowEvent', this.windowEventCallback);
+        }
+        logger.debug('PC 主窗口状态与焦点监听已退订');
+      } catch (e) {
+        logger.warn('退订 PC 主窗口状态与焦点监听失败：' + JSON.stringify(e));
+      }
+    }
+    this.windowStatusCallback = null;
+    this.windowEventCallback = null;
+  }
+
   // 2in1 设备上约束窗口最小尺寸（480x640vp）。手机/平板不受影响（设备类型不符直接跳过）。
   private applyDesktopWindowLimits(): void {
     if (deviceInfo.deviceType !== '2in1') {
@@ -575,6 +646,7 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageDestroy(): void {
     // 主窗口销毁，释放 UI 相关资源
+    this.unregisterDesktopWindowAttention();
     this.mainWindow = null;
     logger.info('Ability 窗口舞台销毁（onWindowStageDestroy）');
     // 随后可能进入 onDestroy 并关闭文件，这里同步落盘，避免异步 flush 与关闭竞态
@@ -592,8 +664,18 @@ export default class EntryAbility extends UIAbility {
     syncSystemLanguageIfFollowing();
     // 回前台延迟停止长时任务（通知随之消失）；3 秒内重新退后台则取消停止并复用任务
     stopTransferTask();
-    // 回到前台：撤回后台关注通知（用户可在应用内处理请求）
-    withdrawBackgroundAttention();
+    // 同步复位 PC 最小化/焦点标记：窗口状态事件可能晚于前后台事件或缺失，
+    // 避免回到前台后仍按最小化或失焦状态发布通知
+    setDesktopWindowMinimized(false);
+    if (this.mainWindow !== null) {
+      try {
+        setDesktopWindowFocused(this.mainWindow.isFocused());
+      } catch (e) {
+        logger.warn('读取主窗口焦点状态失败：' + JSON.stringify(e));
+      }
+    }
+    // 回到前台：按实际焦点状态重算关注通知（有焦点则撤回，无焦点仍保留提醒）
+    refreshBackgroundAttention();
     triggerRefresh();
     // 进入前台按「允许接收」开关启动 MTA 接收服务（BLE 广播 + GATT Server）
     startMtaReceiveIfEnabled(this.context);

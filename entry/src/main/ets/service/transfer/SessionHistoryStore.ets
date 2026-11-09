@@ -426,11 +426,25 @@ export function getSessionHistory(query?: SessionHistoryQuery): Array<SessionHis
   return queryHistory(sessionHistoryStore.load(), query);
 }
 
+/** 任务历史中是否已存在该会话（供恢复服务避免覆盖已归档结果）。 */
+export function hasSessionHistory(sessionId: string): boolean {
+  if (sessionId.length === 0) {
+    return false;
+  }
+  let entries: Array<SessionHistoryEntry> = sessionHistoryStore.load();
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].sessionId === sessionId) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * 清理一组条目对应的应用自建文件：按发送/接收文本目录前缀筛出可删路径后逐个删除，
  * 随后发布变更总线通知，驱动发送暂存列表自检移除底层文件已消失的手动文本条目。
  * 仅清理随记录失效即失去引用价值的自建产物（详见 collectSelfBuiltFilePaths 的判据说明）；
- * picker 原始文件与 Download 落盘文件不在此列。
+ * picker 原始文件与接收目录落盘文件不在此列。
  */
 function removeSelfBuiltFilesOf(entries: Array<SessionHistoryEntry>): void {
   let paths: Array<string> = collectSelfBuiltFilePaths(entries, sendTextDir(), recvTextDir());

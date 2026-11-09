@@ -13,7 +13,7 @@ function localDevice(fingerprint: string): DiscoveredDevice {
     ip: '192.168.1.10',
     port: 53317,
     fingerprint: fingerprint,
-    version: '2.0',
+    version: '2.2',
     deviceModel: 'X',
     deviceType: 'desktop',
     protocol: 'https',

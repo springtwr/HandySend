@@ -141,7 +141,7 @@ export async function calculateChecksumsForFiles(files: Array<SendFileItem>,
       hashStarted = true;
       files[i].hash = hash;
       logger.debug('校验和[' + i + ']: path=' + files[i].filePath + ' sha256=' +
-        (hash.length > 0 ? hash.substring(0, 16) + '...' : '（空）'),
+        (hash.length > 0 ? hash : '（空）'),
         { fileId: files[i].fileId });
     } catch (e) {
       // 打开/哈希失败：记空哈希留痕后登记剔除——不可读的文件发送亦必失败，

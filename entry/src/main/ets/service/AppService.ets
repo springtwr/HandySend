@@ -40,6 +40,7 @@ import { initBackgroundAttentionNotifier } from './BackgroundAttentionNotifier';
 
 // ── 仓库导入（门面编排） ──
 import { setAppContext, addLog, triggerRefresh } from './repository/AppCore';
+import { activateConfiguredReceiveDirectory } from './repository/ReceiveDirectory';
 import {
   loadFromPreferences,
   getTheme,
@@ -95,6 +96,9 @@ import { MTA_RECEIVE_KEY } from './transfer/adapters/MtaReceiveAdapter';
 import { WEB_DOWNLOAD_KEY } from './transfer/adapters/WebDownloadAdapter';
 import { initializeAdapters } from './transfer/adapters/SessionAdapter';
 import { registerProtocolDefaults } from './transfer/DefaultRegistrations';
+import { notifyChange } from './repository/AppCore';
+import { recoverSessionDrafts } from './transfer/SessionRecoveryService';
+import { sweepReceiveTempWorkspacesOnInit } from './transfer/TempWorkspaceSweep';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 
@@ -104,6 +108,35 @@ const logger = getLogger(LogDomains.GENERAL, 'HandySend:AppService', '应用');
 let appServiceInitialized: boolean = false;
 // 网络变化监听实例：进程全程存活，仅作持有以便观测/排查，无注销时机
 let netConnection: connection.NetConnection | null = null;
+
+/**
+ * 每次 Ability 初始化都尝试恢复会话草稿。
+ * 强杀/划掉 Ability 不一定会结束进程：进程存活时 Ability 重建会走 initAppService 早退分支，
+ * 只在首次初始化时恢复会漏掉这类“任务刚发起就退出”的场景。恢复服务会跳过仍活跃的会话。
+ * 先等待接收目录授权激活再清扫与恢复：自定义目录在进程重启后需要重新激活持久授权，
+ * 否则按路径访问临时区会失败而被静默跳过。恢复本身同步执行，草稿数量很少，IO 可接受。
+ */
+function recoverSessionDraftsOnInit(): void {
+  activateConfiguredReceiveDirectory().catch((e: Error) => {
+    logger.warn('激活接收目录授权失败：' + e.message);
+  }).then((): void => {
+    try {
+      // 先清扫接收临时区：同步部分在首次 await 前完成，覆盖草稿涉及的目录与
+      // 旧版遗留目录；接收目录解析完成后补扫无草稿可推导的残留。
+      sweepReceiveTempWorkspacesOnInit().catch((e: Error) => {
+        logger.warn('清扫接收临时区失败：' + e.message);
+      });
+      let recovered = recoverSessionDrafts();
+      logger.debug('会话草稿恢复：草稿=' + recovered.drafts + ' 成功=' + recovered.recovered +
+        ' 失败=' + recovered.failed);
+      if (recovered.recovered > 0) {
+        notifyChange();
+      }
+    } catch (e) {
+      logger.warn('会话草稿恢复失败：' + String(e));
+    }
+  });
+}
 
 // ════════════════════════════════════════════════════════════
 // 门面层再导出（业务逻辑位于 repository/*）
@@ -134,6 +167,8 @@ export { setHttpsEnabled,
   setReceivePin,
   setSaveToGallery,
   isSaveToGallery,
+  getReceiveDirectoryUri,
+  setReceiveDirectoryUri,
   setBackgroundReceiveEnabled,
   isBackgroundReceiveEnabled,
   setDestination,
@@ -326,6 +361,9 @@ export { startMtaDiscoveryScan,
   getLocalMtaDeviceIdHex,
   applyMtaSimulatedBrand } from './repository/MtaRepository';
 
+// MTA 接收预览缩略图缓存清理（冷启动）
+export { cleanupMtaThumbnailDirWithContext } from './mta/MtaReceiveService';
+
 // MTA 广播名称口径（与广播编码同源）
 export { mtaBroadcastName } from './mta/MtaBleCommon';
 
@@ -413,7 +451,9 @@ export function initAppService(context: common.UIAbilityContext): void {
     // Ability 重建时 context 实例会变化，仍需刷新以免后续操作使用失效上下文；
     // 其余模块级状态（日志/事件订阅/原生身份/网络监听）进程内只初始化一次
     setAppContext(context);
-    logger.debug('initAppService 已跳过：已初始化');
+    logger.debug('应用服务初始化已跳过：已初始化');
+    // 进程可能仍存活而 Ability 已重建：再次尝试恢复上次退出时留下的草稿。
+    recoverSessionDraftsOnInit();
     return;
   }
   appServiceInitialized = true;
@@ -506,12 +546,19 @@ export function initAppService(context: common.UIAbilityContext): void {
   loadFromPreferences();
   initDeviceIdentity();
 
+  // 启动时激活自定义接收目录的持久授权：接收历史/详情页按路径读取文件时需要
+  activateConfiguredReceiveDirectory().catch((e: Error) => {
+    logger.warn('激活接收目录授权失败：' + String(e));
+  });
+
   // 初始化统一会话引擎（协议适配器事件订阅；适配器在文件头部导入以完成注册）
   try {
     initSessionEngine();
     // 后台关注通知按注册表待确认会话与网页访问状态发布/撤回
     initBackgroundAttentionNotifier();
     logger.debug('会话引擎已初始化');
+    // 同步恢复上次强杀/退出遗留的会话草稿，保证任务列表首次构建前历史已补写。
+    recoverSessionDraftsOnInit();
   } catch (e) {
     logger.error('初始化会话引擎失败：' + JSON.stringify(e));
   }
