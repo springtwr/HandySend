@@ -2087,6 +2087,222 @@
     {
       "name": "log_file_unavailable",
       "value": "檔案日誌不可用，目前顯示暫存記憶體日誌"
+    },
+    {
+      "name": "portal_title",
+      "value": "遠端傳輸"
+    },
+    {
+      "name": "portal_add",
+      "value": "新增站點"
+    },
+    {
+      "name": "portal_add_title",
+      "value": "新增站點"
+    },
+    {
+      "name": "portal_edit_title",
+      "value": "編輯站點"
+    },
+    {
+      "name": "portal_edit",
+      "value": "編輯"
+    },
+    {
+      "name": "portal_name_label",
+      "value": "名稱"
+    },
+    {
+      "name": "portal_name_placeholder",
+      "value": "例如：UpFile"
+    },
+    {
+      "name": "portal_url_label",
+      "value": "位址"
+    },
+    {
+      "name": "portal_url_placeholder",
+      "value": "https://example.com"
+    },
+    {
+      "name": "portal_need_login",
+      "value": "需要登入"
+    },
+    {
+      "name": "portal_large_file",
+      "value": "支援大檔案"
+    },
+    {
+      "name": "portal_restore_default",
+      "value": "恢復預設"
+    },
+    {
+      "name": "portal_restore_title",
+      "value": "恢復預設站點？"
+    },
+    {
+      "name": "portal_restore_message",
+      "value": "已刪除的預設站點會重新出現，你自己新增的站點保留。"
+    },
+    {
+      "name": "portal_restore_success",
+      "value": "已恢復預設站點"
+    },
+    {
+      "name": "portal_restore_failed",
+      "value": "恢復失敗，請檢查網路"
+    },
+    {
+      "name": "portal_delete_title",
+      "value": "刪除站點？"
+    },
+    {
+      "name": "portal_delete_message",
+      "value": "確定刪除「%s」？"
+    },
+    {
+      "name": "portal_delete_confirm",
+      "value": "刪除"
+    },
+    {
+      "name": "portal_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "portal_save",
+      "value": "儲存"
+    },
+    {
+      "name": "portal_saved",
+      "value": "站點已新增"
+    },
+    {
+      "name": "portal_removed",
+      "value": "站點已刪除"
+    },
+    {
+      "name": "portal_badge_no_login",
+      "value": "免登入"
+    },
+    {
+      "name": "portal_badge_login",
+      "value": "需登入"
+    },
+    {
+      "name": "portal_badge_p2p",
+      "value": "點對點"
+    },
+    {
+      "name": "portal_badge_large_file",
+      "value": "大檔案"
+    },
+    {
+      "name": "portal_badge_temporary",
+      "value": "臨時有效"
+    },
+    {
+      "name": "portal_invalid_url",
+      "value": "位址必須以 http:// 或 https:// 開頭"
+    },
+    {
+      "name": "portal_name_required",
+      "value": "請填寫名稱"
+    },
+    {
+      "name": "portal_limit_reached",
+      "value": "最多新增 30 個站點"
+    },
+    {
+      "name": "portal_duplicate_url",
+      "value": "該位址已新增"
+    },
+    {
+      "name": "portal_site_missing",
+      "value": "站點不存在，請重新整理列表"
+    },
+    {
+      "name": "portal_open_failed",
+      "value": "無法開啟該站點"
+    },
+    {
+      "name": "portal_help",
+      "value": "使用說明"
+    },
+    {
+      "name": "portal_help_1",
+      "value": "遠端傳輸服務由列表中的第三方站點提供，點擊卡片會使用系統瀏覽器開啟對應站點。站點內容、帳號與檔案安全由第三方負責，應用不對其可用性、安全性和資料保存承擔責任。"
+    },
+    {
+      "name": "portal_help_2",
+      "value": "各站點的使用方式可能會有差異，具體使用方法請以站點內的說明為準。"
+    },
+    {
+      "name": "portal_help_3",
+      "value": "長按卡片可編輯或刪除站點；點擊列表末尾的加號可新增站點。"
+    },
+    {
+      "name": "portal_help_4",
+      "value": "點擊右上角的恢復按鈕可恢復內建的推薦站點。"
+    },
+    {
+      "name": "portal_help_5",
+      "value": "徽標說明"
+    },
+    {
+      "name": "portal_help_5_1",
+      "value": "免登入/需登入：表示該站點是否需要登入帳號"
+    },
+    {
+      "name": "portal_help_5_2",
+      "value": "大檔案：表示該站點支援傳輸大檔案"
+    },
+    {
+      "name": "portal_help_5_3",
+      "value": "臨時有效：表示在該站點傳輸的檔案到期會自動刪除"
+    },
+    {
+      "name": "portal_help_5_4",
+      "value": "點對點：表示該站點支援點對點直連傳輸，需要收發雙方同時在線，直連傳輸時檔案不經過任何伺服器，直接傳輸到收件方裝置。"
+    },
+    {
+      "name": "portal_risk_title",
+      "value": "使用第三方站點的風險提示"
+    },
+    {
+      "name": "portal_risk_intro",
+      "value": "遠端檔案傳輸服務由應用內建列表中的第三方站點提供，點擊站點後會跳轉到系統瀏覽器開啟。繼續使用前，請確認你已了解："
+    },
+    {
+      "name": "portal_risk_1",
+      "value": "站點內容、帳號與檔案安全由第三方站點負責，應用不對站點的可用性、安全性和資料保存承擔責任。"
+    },
+    {
+      "name": "portal_risk_2",
+      "value": "傳輸的檔案可能由第三方站點保存或轉發，請勿傳輸敏感資訊。"
+    },
+    {
+      "name": "portal_risk_3",
+      "value": "站點可能變更、失效或調整規則，請以站點內的說明為準。"
+    },
+    {
+      "name": "portal_risk_decline",
+      "value": "不同意"
+    },
+    {
+      "name": "portal_risk_accept",
+      "value": "同意並繼續"
+    },
+    {
+      "name": "portal_open_confirm_title",
+      "value": "在瀏覽器中開啟？"
+    },
+    {
+      "name": "portal_open_confirm_message",
+      "value": "將使用系統瀏覽器開啟「%s」：\n%s"
+    },
+    {
+      "name": "portal_open_confirm_action",
+      "value": "開啟"
     }
   ]
 }

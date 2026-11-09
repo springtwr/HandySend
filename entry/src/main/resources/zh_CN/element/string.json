@@ -2087,6 +2087,222 @@
     {
       "name": "log_file_unavailable",
       "value": "文件日志不可用，当前显示临时内存日志"
+    },
+    {
+      "name": "portal_title",
+      "value": "远程传输"
+    },
+    {
+      "name": "portal_add",
+      "value": "添加站点"
+    },
+    {
+      "name": "portal_add_title",
+      "value": "添加站点"
+    },
+    {
+      "name": "portal_edit_title",
+      "value": "编辑站点"
+    },
+    {
+      "name": "portal_edit",
+      "value": "编辑"
+    },
+    {
+      "name": "portal_name_label",
+      "value": "名称"
+    },
+    {
+      "name": "portal_name_placeholder",
+      "value": "例如：UpFile"
+    },
+    {
+      "name": "portal_url_label",
+      "value": "地址"
+    },
+    {
+      "name": "portal_url_placeholder",
+      "value": "https://example.com"
+    },
+    {
+      "name": "portal_need_login",
+      "value": "需要登录"
+    },
+    {
+      "name": "portal_large_file",
+      "value": "支持大文件"
+    },
+    {
+      "name": "portal_restore_default",
+      "value": "恢复默认"
+    },
+    {
+      "name": "portal_restore_title",
+      "value": "恢复默认站点？"
+    },
+    {
+      "name": "portal_restore_message",
+      "value": "已删除的预设站点会重新出现，你自己添加的站点保留。"
+    },
+    {
+      "name": "portal_restore_success",
+      "value": "已恢复默认站点"
+    },
+    {
+      "name": "portal_restore_failed",
+      "value": "恢复失败，请检查网络"
+    },
+    {
+      "name": "portal_delete_title",
+      "value": "删除站点？"
+    },
+    {
+      "name": "portal_delete_message",
+      "value": "确定删除「%s」？"
+    },
+    {
+      "name": "portal_delete_confirm",
+      "value": "删除"
+    },
+    {
+      "name": "portal_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "portal_save",
+      "value": "保存"
+    },
+    {
+      "name": "portal_saved",
+      "value": "站点已添加"
+    },
+    {
+      "name": "portal_removed",
+      "value": "站点已删除"
+    },
+    {
+      "name": "portal_badge_no_login",
+      "value": "免登录"
+    },
+    {
+      "name": "portal_badge_login",
+      "value": "需登录"
+    },
+    {
+      "name": "portal_badge_p2p",
+      "value": "点对点"
+    },
+    {
+      "name": "portal_badge_large_file",
+      "value": "大文件"
+    },
+    {
+      "name": "portal_badge_temporary",
+      "value": "临时有效"
+    },
+    {
+      "name": "portal_invalid_url",
+      "value": "地址必须以 http:// 或 https:// 开头"
+    },
+    {
+      "name": "portal_name_required",
+      "value": "请填写名称"
+    },
+    {
+      "name": "portal_limit_reached",
+      "value": "最多添加 30 个站点"
+    },
+    {
+      "name": "portal_duplicate_url",
+      "value": "该地址已添加"
+    },
+    {
+      "name": "portal_site_missing",
+      "value": "站点不存在，请刷新列表"
+    },
+    {
+      "name": "portal_open_failed",
+      "value": "无法打开该站点"
+    },
+    {
+      "name": "portal_help",
+      "value": "使用说明"
+    },
+    {
+      "name": "portal_help_1",
+      "value": "远程传输服务由列表中的第三方站点提供，点击卡片会使用系统浏览器打开对应站点。站点内容、账号与文件安全由第三方负责，应用不对其可用性、安全性和数据保存承担责任。"
+    },
+    {
+      "name": "portal_help_2",
+      "value": "各站点的使用方式可能会有差异，具体使用方法请以站点内的说明为准。"
+    },
+    {
+      "name": "portal_help_3",
+      "value": "长按卡片可编辑或删除站点；点击列表末尾的加号可添加站点。"
+    },
+    {
+      "name": "portal_help_4",
+      "value": "点击右上角的恢复按钮可恢复内置的推荐站点。"
+    },
+    {
+      "name": "portal_help_5",
+      "value": "徽标说明"
+    },
+    {
+      "name": "portal_help_5_1",
+      "value": "免登录/需登录：表示该站点是否需要登录账号"
+    },
+    {
+      "name": "portal_help_5_2",
+      "value": "大文件：表示该站点支持传输大文件"
+    },
+    {
+      "name": "portal_help_5_3",
+      "value": "临时有效：表示在该站点传输的文件到期会自动删除"
+    },
+    {
+      "name": "portal_help_5_4",
+      "value": "点对点：表示该站点支持点对点直连传输，需要收发双方同时在线，直连传输时文件不经过任何服务器，直接传输到收件方设备。"
+    },
+    {
+      "name": "portal_risk_title",
+      "value": "使用第三方站点的风险提示"
+    },
+    {
+      "name": "portal_risk_intro",
+      "value": "远程文件传输服务由应用内置列表中的第三方站点提供，点击站点后会跳转到系统浏览器打开。继续使用前，请确认你已了解："
+    },
+    {
+      "name": "portal_risk_1",
+      "value": "站点内容、账号与文件安全由第三方站点负责，应用不对站点的可用性、安全性和数据保存承担责任。"
+    },
+    {
+      "name": "portal_risk_2",
+      "value": "传输的文件可能由第三方站点保存或转发，请勿传输敏感信息。"
+    },
+    {
+      "name": "portal_risk_3",
+      "value": "站点可能变更、失效或调整规则，请以站点内的说明为准。"
+    },
+    {
+      "name": "portal_risk_decline",
+      "value": "不同意"
+    },
+    {
+      "name": "portal_risk_accept",
+      "value": "同意并继续"
+    },
+    {
+      "name": "portal_open_confirm_title",
+      "value": "在浏览器中打开？"
+    },
+    {
+      "name": "portal_open_confirm_message",
+      "value": "将使用系统浏览器打开「%s」：\n%s"
+    },
+    {
+      "name": "portal_open_confirm_action",
+      "value": "打开"
     }
   ]
 }

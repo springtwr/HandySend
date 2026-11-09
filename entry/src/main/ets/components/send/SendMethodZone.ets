@@ -14,6 +14,7 @@ import { listMethodsByGroup } from '../../service/transfer/TransferMethodRegistr
 export interface SendMethodZoneOptions {
   isWebActive: boolean
   onOpenWeb: () => void
+  onOpenPortal: () => void
 }
 
 /** 方式菜单项：单个入口的可点击条目。 */
@@ -69,6 +70,24 @@ export function SendMethodZone(options: SendMethodZoneOptions) {
     })
     .accessibilityGroup(true)
     .id('send_method_web')
+
+    // 在线服务入口：进入站点导航页
+    Stack() {
+      SymbolGlyph($r('sys.symbol.icloud'))
+        .fontSize(DesignTokens.font.titleM)
+        .fontColor([$r('app.color.text_primary')])
+    }
+    .responseRegion({
+      x: -12,
+      y: -12,
+      width: 48,
+      height: 48
+    })
+    .onClick(() => {
+      options.onOpenPortal();
+    })
+    .accessibilityGroup(true)
+    .id('send_method_portal')
 
     // 其它方式入口：图标 + 指定 IP 等菜单
     SymbolGlyph($r('sys.symbol.ellipsis_circle'))

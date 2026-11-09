@@ -955,6 +955,11 @@ export struct SendContent {
     });
   }
 
+  // 点击云图标：进入「在线服务」站点导航页。
+  onOpenPortalPanel(): void {
+    this.onNavigateTo('PortalPage', undefined);
+  }
+
   // 点击"指定IP分享"菜单项：未暂存文件时居中提示，否则弹出IP输入框
   onSendByIp(): void {
     // LocalSend 总开关关闭时不允许按 IP 发送（菜单入口已置灰，此处为防御纵深）
@@ -1468,6 +1473,9 @@ export struct SendContent {
             },
             onOpenWeb: () => {
               this.onOpenWebPanel();
+            },
+            onOpenPortal: () => {
+              this.onOpenPortalPanel();
             }
           })
         }

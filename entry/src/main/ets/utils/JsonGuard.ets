@@ -41,3 +41,12 @@ export function readJsonField(obj: Object, key: string): Object | undefined {
   }
   return table[key];
 }
+
+/** 读取数组字段，缺失或非数组返回空数组；元素保持 Object，由调用方逐项守卫。 */
+export function readJsonArray(obj: Object, key: string): Array<Object> {
+  let value: Object | undefined = readJsonField(obj, key);
+  if (value === undefined || !Array.isArray(value)) {
+    return [];
+  }
+  return value as Array<Object>;
+}

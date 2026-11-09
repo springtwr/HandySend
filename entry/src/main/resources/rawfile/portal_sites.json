@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "sites": [
+    {
+      "id": "airportal",
+      "name": "AirPortal",
+      "url": "https://www.airportal.cn",
+      "badges": ["login", "large-file"],
+      "order": 10
+    },
+    {
+      "id": "upfile",
+      "name": "UpFile",
+      "url": "https://upfile.live/zh-cn",
+      "badges": ["no-login", "large-file", "temporary"],
+      "order": 20
+    },
+    {
+      "id": "sendwang",
+      "name": "私传网",
+      "url": "https://send.wang",
+      "badges": ["no-login", "p2p", "large-file"],
+      "order": 30
+    },
+    {
+      "id": "pairdrop",
+      "name": "PairDrop",
+      "url": "https://pairdrop.net/",
+      "badges": ["no-login", "p2p", "large-file"],
+      "order": 40
+    },
+    {
+      "id": "webnote",
+      "name": "云便签",
+      "url": "https://webnote.cc",
+      "badges": ["no-login"],
+      "order": 50
+    }
+  ]
+}

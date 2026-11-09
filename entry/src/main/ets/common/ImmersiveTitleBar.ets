@@ -49,6 +49,8 @@ const BLUR_RADIUS: number = 16.0;
 export interface ImmersiveTitleBarParams {
   /** 标题文案；宽屏主界面下发空字符串，表示该形态不显示页签名（页签识别由侧边栏选中高亮项承担）。 */
   title: ResourceStr
+  /** 可选的副标题（如浏览页的只读域名），不传时不设置。 */
+  subTitle?: ResourceStr
   menu?: HdsNavigationMenuContentOptions
   /** 标题栏是否作为组件级安全区（内容区据此自动避让标题栏）；不传时为 true。 */
   enableComponentSafeArea?: boolean
@@ -186,6 +188,9 @@ export function buildImmersiveTitleBar(params: ImmersiveTitleBarParams): HdsNavi
   // 标题字段须恒定下发：省略该字段会让组件保留上一次设置的标题——平板由竖屏（有页签名）转为横屏
   // （宽屏侧边栏形态）时，页签名会被带过去压在侧边栏区域上方；故不显示页签名的形态显式下发空标题。
   content.title = { mainTitle: params.title };
+  if (params.subTitle !== undefined) {
+    content.title.subTitle = params.subTitle;
+  }
   // 菜单字段须恒定下发：省略该字段会让组件保留上一次设置的菜单，切换到无入口页签时
   // 表现为「更多」入口残留；无入口时显式下发空菜单，使标题栏结束端可靠清空。
   let menuContent: HdsNavigationMenuContentOptions = { value: [] };
