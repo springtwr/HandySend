@@ -784,13 +784,36 @@ function legacySendDirOf(context: common.Context): string {
   return context.filesDir + '/send/';
 }
 
+/** 旧版发送临时目录当前字节数（目录已不再写入，供设置页展示缓存大小）。 */
+export function legacySendDirBytes(): number {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return 0;
+  }
+  let dir: string = legacySendDirOf(appContext);
+  let total: number = 0;
+  try {
+    let entries: Array<string> = fs.listFileSync(dir);
+    for (let i = 0; i < entries.length; i++) {
+      try {
+        let stat = fs.lstatSync(dir + entries[i]);
+        if (!stat.isDirectory()) {
+          total += stat.size;
+        }
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+  }
+  return total;
+}
+
 // 带 context 的清理变体：供冷启动（EntryAbility.onCreate）清扫
 // {cacheDir}/send/（发送缩略图缓存）与旧版本遗留的 {filesDir}/send/
 // （手动文本暂存，已不再写入，全量删除安全）使用——此时 AppCore 尚未保存
-// 应用 context，无法在仓库层自行取 context。
-export function cleanupSendDirWithContext(context: common.UIAbilityContext): void {
-  clearDirContents(sendThumbnailDirOf(context));
-  clearDirContents(legacySendDirOf(context));
+// 应用 context，无法在仓库层自行取 context。返回实际释放的字节数。
+export function cleanupSendDirWithContext(context: common.UIAbilityContext): number {
+  return clearDirContents(sendThumbnailDirOf(context)) + clearDirContents(legacySendDirOf(context));
 }
 
 // 「发送文本」目录：发送产物（sharedText_*.txt）与手动暂存文本的统一落盘目录，
@@ -817,17 +840,23 @@ export function sendThumbnailDir(): string {
 }
 
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。
-function clearDirContents(dirPath: string): void {
+// 返回实际释放的字节数，供「清除缓存」提示使用。
+function clearDirContents(dirPath: string): number {
+  let removedBytes: number = 0;
   try {
     let entries = fs.listFileSync(dirPath);
     for (let i = 0; i < entries.length; i++) {
+      let path: string = dirPath + entries[i];
       try {
-        fs.unlinkSync(dirPath + entries[i]);
+        let size: number = fs.lstatSync(path).size;
+        fs.unlinkSync(path);
+        removedBytes += size;
       } catch (_e) {
       }
     }
   } catch (_e) {
   }
+  return removedBytes;
 }
 
 /**

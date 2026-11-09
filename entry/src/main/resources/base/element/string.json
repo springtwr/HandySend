@@ -105,6 +105,34 @@
       "value": "Are you sure you want to restore all settings to their defaults? This cannot be undone"
     },
     {
+      "name": "cache_label",
+      "value": "Cache"
+    },
+    {
+      "name": "clear_cache_title",
+      "value": "Clear cache"
+    },
+    {
+      "name": "clear_cache_confirm",
+      "value": "The following cached files will be cleared: send thumbnails, receive temp/fallback files, MTA preview thumbnails, web upload staging files, diagnostic log export temp files, and legacy send temp leftovers"
+    },
+    {
+      "name": "clear_cache_success",
+      "value": "Cleared %s of cache"
+    },
+    {
+      "name": "clear_cache_empty",
+      "value": "There is no cache to clear"
+    },
+    {
+      "name": "clear_cache_busy",
+      "value": "A transfer or save operation is in progress. Please try again later"
+    },
+    {
+      "name": "clear_cache_failed",
+      "value": "Failed to clear the cache. Please try again later"
+    },
+    {
       "name": "dialog_confirm",
       "value": "OK"
     },
