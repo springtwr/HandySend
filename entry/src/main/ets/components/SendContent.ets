@@ -955,7 +955,7 @@ export struct SendContent {
     });
   }
 
-  // 点击云图标：进入「在线服务」站点导航页。
+  // 点击云图标：进入「远程传输」站点导航页。
   onOpenPortalPanel(): void {
     this.onNavigateTo('PortalPage', undefined);
   }

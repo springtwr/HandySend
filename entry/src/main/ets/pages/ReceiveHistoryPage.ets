@@ -70,6 +70,11 @@ export struct ReceiveHistoryPage {
   @Local fullTextDialogTruncated: boolean = false
   // 全文弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local fullTextDialogContentWidth: number = 0
+  // PC/2in1 右键菜单：是否打开、当前条目 id，以及鼠标在行内的位置（vp）
+  @Local contextMenuShown: boolean = false
+  @Local contextMenuRowId: string = ''
+  @Local contextMenuX: number = 0
+  @Local contextMenuY: number = 0
   // 确认回调（打开时暂存，确认时执行）
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
@@ -88,6 +93,9 @@ export struct ReceiveHistoryPage {
 
   aboutToDisappear(): void {
     unsubscribeOverlayClose(this.overlayCloseCallback);
+    // 页面离开时收起右键菜单状态，避免页面复用后残留
+    this.contextMenuShown = false;
+    this.contextMenuRowId = '';
   }
 
   private withAnimation(action: () => void): void {
@@ -769,9 +777,31 @@ export struct ReceiveHistoryPage {
                     // 长按进入多选模式并选中本条（已在多选模式中时不重复响应）
                     .gesture(LongPressGesture().onAction(() => {
                       if (!this.viewModel.selectionMode) {
+                        this.contextMenuShown = false;
                         this.viewModel.enterSelection(ri.item.id);
                       }
                     }))
+                    // PC/2in1：鼠标右键打开行内「更多」菜单，与右侧下拉入口共用同一份菜单；
+                    // 多选模式下不响应右键（与右侧入口一致）
+                    .onMouse((event: MouseEvent) => {
+                      if (event.button === MouseButton.Right && event.action === MouseAction.Release &&
+                        !this.viewModel.selectionMode) {
+                        this.contextMenuX = event.x;
+                        this.contextMenuY = event.y;
+                        this.contextMenuRowId = ri.item.id;
+                        this.contextMenuShown = true;
+                      }
+                    })
+                    .bindContextMenu(this.contextMenuShown && this.contextMenuRowId === ri.item.id,
+                      this.historyMenuBuilder(ri.item), {
+                        anchorPosition: { x: this.contextMenuX, y: this.contextMenuY },
+                        aboutToDisappear: (): void => {
+                          if (this.contextMenuRowId === ri.item.id) {
+                            this.contextMenuShown = false;
+                            this.contextMenuRowId = '';
+                          }
+                        }
+                      })
                     // 点击态反馈：多选模式下用于切换勾选；否则为可查看文本内容
                     // （含超阈值截断预览）的条目启用系统点击缩放反馈
                     .clickEffect(this.viewModel.selectionMode ||

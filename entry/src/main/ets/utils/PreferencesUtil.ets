@@ -84,7 +84,7 @@ export const KEY_BACKGROUND_RECEIVE: string = 'backgroundReceiveEnabled';
 
 export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
 
-// ── 在线服务站点 ──
+// ── 远程传输站点 ──
 // 用户添加的站点（不含预设）。
 export const KEY_PORTAL_USER_SITES: string = 'portalUserSites';
 // 预设的本地覆盖：用户编辑过的预设副本。

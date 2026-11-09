@@ -1,5 +1,5 @@
 /**
- * PortalSite.ets — 在线服务站点模型与纯逻辑。
+ * PortalSite.ets — 远程传输站点模型与纯逻辑。
  *
  * 站点来源分两类：随应用发布的预设（builtin）与用户手动添加（非 builtin）。
  * 预设可被远程配置文件整体更新；用户删除过的预设记入 dismissed，

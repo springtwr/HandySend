@@ -29,7 +29,7 @@
       "pageSourceFile": "src/main/ets/pages/PortalPage.ets",
       "buildFunction": "PortalPageBuilder",
       "data": {
-        "description": "在线服务站点导航页"
+        "description": "远程传输站点导航页"
       }
     },
     {

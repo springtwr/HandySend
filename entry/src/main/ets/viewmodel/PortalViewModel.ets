@@ -1,5 +1,5 @@
 /**
- * PortalViewModel.ets — 在线服务入口页视图模型。
+ * PortalViewModel.ets — 远程传输入口页视图模型。
  *
  * 只承载站点列表、添加/编辑/删除命令与恢复默认状态；
  * 站点数据全部本地化，由 PortalSiteRepository 负责。
