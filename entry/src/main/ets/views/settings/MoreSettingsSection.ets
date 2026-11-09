@@ -196,8 +196,9 @@ export struct MoreSettingsSection {
 
         Button($r('app.string.sponsor_afdian'))
           .width('100%')
-          .backgroundColor($r('app.color.accent_blue_bg'))
-          .fontColor($r('app.color.ip_blue_text'))
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .margin({ top: DesignTokens.space.lg })
           .onClick(() => {
@@ -210,8 +211,9 @@ export struct MoreSettingsSection {
 
         Button($r('app.string.sponsor_wechat'))
           .width('100%')
-          .backgroundColor($r('app.color.accent_blue_bg'))
-          .fontColor($r('app.color.ip_blue_text'))
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xl })
           .onClick(() => {
@@ -369,8 +371,9 @@ export struct MoreSettingsSection {
 
       Button($r('app.string.rate_go'))
         .width('100%')
-        .backgroundColor($r('app.color.accent_blue_bg'))
-        .fontColor($r('app.color.ip_blue_text'))
+        .height(DesignTokens.size.thumbSm)
+        .backgroundColor($r('app.color.accent_blue'))
+        .fontColor($r('app.color.text_on_color'))
         .borderRadius(DesignTokens.radius.md)
         .margin({ top: DesignTokens.space.lg, bottom: DesignTokens.space.xl })
         .onClick(() => {
