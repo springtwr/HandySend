@@ -603,7 +603,7 @@ export struct PortalPage {
                   }
                 })
               }
-            }, (site: PortalSite) => site.id + '|' + site.url + '|' + site.badges.join(','))
+            }, (site: PortalSite) => site.id + '|' + site.name + '|' + site.url + '|' + site.badges.join(','))
             ListItem() {
               this.addCard()
             }
