@@ -179,7 +179,7 @@ export struct PortalPage {
     });
   }
 
-  /** 恢复默认确认：会重新拉取远程配置并复活已删除的预设，保留用户站点。 */
+  /** 恢复默认确认：会重新读取内置站点配置并复活已删除的预设，保留用户站点。 */
   private confirmRestore(): void {
     this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.portal_restore_title'),

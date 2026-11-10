@@ -2186,7 +2186,7 @@
     },
     {
       "name": "portal_restore_failed",
-      "value": "Could not restore defaults. Check your network."
+      "value": "Could not restore defaults. Please try again later."
     },
     {
       "name": "portal_delete_title",

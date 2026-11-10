@@ -2186,7 +2186,7 @@
     },
     {
       "name": "portal_restore_failed",
-      "value": "恢复失败，请检查网络"
+      "value": "恢复失败，请稍后重试"
     },
     {
       "name": "portal_delete_title",
