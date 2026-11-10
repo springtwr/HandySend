@@ -348,8 +348,8 @@ export function nativeDiscardRecvFileFds(sessionId: string): void {
 }
 
 export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string,
-  files: Array<NativeFileToSend>): Promise<NativeSendResult> {
-  let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files));
+  files: Array<NativeFileToSend>, sendKey: string): Promise<NativeSendResult> {
+  let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files), sendKey);
   let httpError: NativeHttpError | undefined = undefined;
   if (result.error !== undefined && result.error !== null) {
     let e = result.error;
@@ -373,8 +373,8 @@ export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId
 }
 
 // 触发本地 CancellationToken 取消，中断进行中的上传（不向远端发请求）。
-export function nativeCancelTransferLocal(sessionId: string): void {
-  cancelTransfer(sessionId);
+export function nativeCancelTransferLocal(cancelKey: string): void {
+  cancelTransfer(cancelKey);
 }
 
 export async function nativeCancelLocalSession(sessionId: string): Promise<void> {

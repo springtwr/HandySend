@@ -142,7 +142,8 @@ export default function SendNativeTest() {
 
       let threw: boolean = false
       try {
-        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files,
+          'send_test_cli')
         // 发送成功时验证返回结构
         expect(result !== undefined).assertTrue()
         expect(result.success !== undefined).assertTrue()

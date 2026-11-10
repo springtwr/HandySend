@@ -13,9 +13,17 @@ import { fileIo as fs } from '@kit.CoreFileKit'
 
 // sendResultErrorMessage 依赖 getAppContext()，在无 UIAbilityContext 时回退到硬编码英文消息
 // 因此可以在 instrument test 环境下验证回退逻辑
-import { prepareSendFiles, sendResultErrorMessage } from '../../../../main/ets/service/repository/SendRepository'
+import {
+  clearAllSendSessions,
+  createSendSession,
+  prepareSendFiles,
+  sendResultErrorMessage,
+  sendToDevice,
+  updateSendSessionStatus
+} from '../../../../main/ets/service/repository/SendRepository'
+import { cancel, resetRegistry } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import { NativeHttpError } from '../../../../main/ets/model/NativeTypes'
-import { SendFileItem } from '../../../../main/ets/model/Types'
+import { DiscoveredDevice, SendFileItem, SendSessionStatus } from '../../../../main/ets/model/Types'
 import { writeTestFileToSandbox } from '../helper/TestHelper'
 
 function makeError(kind: string, status?: number, message?: string): NativeHttpError {
@@ -126,6 +134,44 @@ export default function SendRepositoryTest() {
       let items: Array<SendFileItem> = await prepareSendFiles([path])
       expect(items.length).assertEqual(1)
       expect(items[0].lastModified).assertEqual(expected)
+      done()
+    })
+
+    // ── 发送启动前的终态守卫 ──
+    // 会话已取消时，即使尚未打开文件也不得再启动后端发送。
+
+    it('sendToDevice_abortsWhenUnifiedSessionCancelled', 0, async (done: Function) => {
+      resetRegistry()
+      clearAllSendSessions()
+      let device: DiscoveredDevice = {
+        alias: 'AbortPeer',
+        ip: '192.168.1.99',
+        port: 53317,
+        fingerprint: 'abort-fp',
+        version: '2.2',
+        deviceModel: 'Model',
+        deviceType: 'mobile',
+        protocol: 'http',
+        lastSeen: 0,
+        channels: []
+      }
+      let files: Array<SendFileItem> = [{
+        fileId: 'abort_f1',
+        filePath: '/nonexistent/abort.txt',
+        fileName: 'abort.txt',
+        fileType: 'text/plain',
+        size: 1
+      }]
+      let unifiedId: string = createSendSession('abort_case', device.ip, device.alias, files, device)
+      cancel(unifiedId)
+      let result = await sendToDevice(device, files, 'send_abort_case', unifiedId)
+      expect(result.success).assertFalse()
+      if (result.error !== undefined) {
+        expect(result.error.kind).assertEqual('cancelled')
+      }
+      updateSendSessionStatus('abort_case', SendSessionStatus.cancelled)
+      clearAllSendSessions()
+      resetRegistry()
       done()
     })
   })

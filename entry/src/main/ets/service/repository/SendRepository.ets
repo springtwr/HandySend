@@ -22,8 +22,7 @@ import {
   nativeSanitizeFileName,
   nativeFlushRustLogs,
   nativeCancelTransfer,
-  nativeCancelHash,
-  nativeGetCurrentSendSessionId
+  nativeCancelHash
 } from '../NativeBridge';
 import {
   getMimeForExt as mimeGetMimeForExt,
@@ -44,6 +43,7 @@ import {
   beginLocalSendSession,
   endLocalSendPrep,
   finishLocalSend,
+  getLocalSendNativeKey,
   updateLocalSendProgress,
   setLocalSendRetryInvoker
 } from '../transfer/adapters/LocalSendSendAdapter';
@@ -57,7 +57,7 @@ import {
   setStageProgress,
   updateProtocolSessionId
 } from '../transfer/TransferSessionRegistry';
-import { isTerminalStage, SessionFileDescriptor } from '../../model/transfer/TransferSession';
+import { isTerminalStage, SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
 import {
   calculateChecksumsForFiles,
   ChecksumRunOptions
@@ -305,10 +305,30 @@ export function resolveSendProtocol(localHttps: boolean, remoteHttps: boolean): 
   return 'http';
 }
 
+/**
+ * 发送前发现会话已终态时的结果：用户取消映射为取消终态，
+ * 其他原因（看门狗失败等）按普通失败返回，避免改写既有终态语义。
+ */
+function sendAbortedResult(unifiedSessionId: string): SendResult {
+  let session = getRegistrySession(unifiedSessionId);
+  if (session !== undefined && session.stage === SessionStage.cancelled) {
+    return { success: false, error: { kind: 'cancelled', message: 'Send cancelled' } };
+  }
+  return { success: false, error: { kind: 'other', message: 'Send session already ended' } };
+}
+
 export async function sendToDevice(
   device: DiscoveredDevice,
-  files: Array<SendFileItem>
+  files: Array<SendFileItem>,
+  nativeSendKey: string,
+  unifiedSessionId: string
 ): Promise<SendResult> {
+  // 会话可能在文件打开/PIN 弹窗期间被取消：终态后不再启动发送，
+  // 否则取消只落到注册表，后端仍会把文件发出去
+  if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+    logger.debug('发送前会话已终态，跳过：对端=' + device.alias);
+    return sendAbortedResult(unifiedSessionId);
+  }
   // 若存在待应用的配置变更（如 HTTPS 开关）且服务器正在运行，自动重启服务器，
   // 确保运行中的服务器协议与当前设置一致。
   // 服务器未运行时不拉起：发送为纯客户端操作，静默开启监听端口超出用户预期，
@@ -378,6 +398,10 @@ export async function sendToDevice(
   let pendingFileHandles: Array<fs.File> = [];
   try {
     while (true) {
+      if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+        logger.debug('发送前会话已终态，跳过本次尝试', sendCtx);
+        return sendAbortedResult(unifiedSessionId);
+      }
       // 每次发送前重新打开源文件 fd：上一次 nativeSendFiles（无论成功/失败/可重试错误）
       // 返回后，Rust 已关闭全部传入 fd，重试必须重新打开
       let nativeFiles: Array<NativeFileToSend> = [];
@@ -466,9 +490,22 @@ export async function sendToDevice(
         notifyChange();
         return { success: false, error: { kind: 'other', message: String(openErr) } };
       }
+      // 句柄打开期间用户可能已取消：取消已落到注册表，后端尚未接管句柄，
+      // 此时必须关闭本次打开的句柄并停止发送，否则对端仍会收到文件
+      if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+        for (let k = 0; k < opened.length; k++) {
+          try {
+            fs.closeSync(opened[k]);
+          } catch (_ce) {
+          }
+        }
+        opened = [];
+        logger.debug('打开文件后发现会话已终态，跳过发送', sendCtx);
+        return sendAbortedResult(unifiedSessionId);
+      }
       pendingFileHandles = opened;
       let roundTripStartMs: number = Date.now();
-      result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
+      result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles, nativeSendKey);
       logger.debug('发送请求往返耗时=' + (Date.now() - roundTripStartMs) + 'ms success=' + result.success, sendCtx);
       // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
       pendingFileHandles = [];
@@ -489,40 +526,23 @@ export async function sendToDevice(
         logger.debug('使用 PIN 重试发送', { targetAlias: device.alias, direction: 'send' });
         continue;
       }
-      // 409 = 接收方正忙（有残留 session），尝试发送 cancel 清理后重试
+      // 409 = 接收方正忙（有残留 session）：等待后重试。
+      // 协议响应不携带对方的 sessionId，无法定向清理；不猜测进程级「当前发送会话」，
+      // 避免并发发送时把其他会话的标识发给本接收方
       if (err !== undefined && err.kind === 'statusCode' && err.status === 409 && busyRetries < MAX_BUSY_RETRIES) {
         busyRetries++;
-        // 用上一次发送的 sessionId cancel（能清除 Active session）
-        let lastSessionId: string = nativeGetCurrentSendSessionId();
-        if (lastSessionId.length > 0) {
-          logger.debug('接收方忙碌（409），发送取消以清理会话 sessionId=' +
-            lastSessionId + '… 重试 ' + busyRetries, sendCtx);
-          let cancelTarget: NativeCancelTarget = {
-            ip: device.ip,
-            port: device.port,
-            fingerprint: device.fingerprint,
-            protocol: actualProtocol
-          };
-          try {
-            await nativeCancelTransfer(cancelTarget, lastSessionId);
-          } catch (_ce) {
-            logger.warn('取消请求失败（非致命）：' + String(_ce), sendCtx);
-          }
-          // 等待接收端处理 cancel 并释放 session slot
-          await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
-        } else {
-          logger.debug('接收方忙碌（409）但无已知 sessionId，重试 ' + busyRetries, sendCtx);
-        }
+        logger.debug('接收方忙碌（409），等待后重试 ' + busyRetries, sendCtx);
+        // 等待接收端处理上一会话并释放 session slot
+        await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
         continue;
       }
       break;
     }
     if (result !== undefined) {
-      // 发送失败后向接收端发送 cancel，清理可能残留的 session
+      // 发送失败后向接收端发送 cancel，清理可能残留的 session。
+      // 只用本会话发送结果携带的接收方会话标识：prepare 阶段失败时尚无该标识，
+      // 不能回退到进程级「当前发送会话」（并发发送下会指向其他设备/会话）
       let cancelSessionId: string = result.sessionId.length > 0 ? result.sessionId : '';
-      if (cancelSessionId.length === 0) {
-        cancelSessionId = nativeGetCurrentSendSessionId();
-      }
       // 只在有 sessionId 时发送 cancel（空 sessionId 对上游无意义）
       if (cancelSessionId.length > 0) {
         let cancelTarget: NativeCancelTarget = {
@@ -982,10 +1002,20 @@ function findSendSessionByFile(fileId: string): SendSessionState | undefined {
  * 进度只经统一标识更新，不再按逻辑会话标识做首匹配查找。
  * 首个发送方向进度事件同时作为「对端已开始接收（推断）」的诊断来源。
  */
-export function updateSendProgressForFile(fileId: string, bytesSent: number, totalBytes: number): void {
+export function updateSendProgressForFile(fileId: string, bytesSent: number, totalBytes: number,
+  receiverSessionId: string): void {
   let state = findSendSessionByFile(fileId);
   if (state === undefined) {
     return;
+  }
+  // 首个进度事件携带接收方会话标识：提前回填协议标识，供取消时向对端下发 /cancel
+  // （发送结果的回填要等整批上传结束，取消窗口内将不可用）
+  if (receiverSessionId.length > 0 &&
+    (state.receiverSessionId === undefined || state.receiverSessionId.length === 0)) {
+    updateSendSessionReceiverId(state.sessionId, receiverSessionId);
+    updateProtocolSessionId(state.unifiedSessionId, receiverSessionId);
+    logger.debug('协议会话标识提前回填 协议标识=' + receiverSessionId +
+      ' 统一会话=' + state.unifiedSessionId);
   }
   updateLocalSendProgress(state.unifiedSessionId, fileId, bytesSent, totalBytes);
   notePeerStartedReceiving(state.unifiedSessionId, bytesSent, totalBytes);
@@ -1271,9 +1301,19 @@ interface ChecksumBatch {
 
 let checksumBatches: Map<Array<SendFileItem>, ChecksumBatch> = new Map();
 
-/** 为某会话登记准备期取消回调（经 nativeCancelHash 立即中止哈希）。 */
-function registerPrepCancel(unifiedId: string, cancelId: string): void {
+/**
+ * 为某会话登记准备期取消回调（经 nativeCancelHash 立即中止哈希）。
+ *
+ * 哈希批次由同批多个发送会话共享：单个会话取消时若仍有其他会话在准备，
+ * 不能中止共享哈希，否则其余会话的当前文件会被判为哈希失败并整体剔除。
+ * 仅当本批已无任何活跃参与者时才真正中止原生哈希。
+ */
+function registerPrepCancel(batch: ChecksumBatch, unifiedId: string, cancelId: string): void {
   beginLocalSendPrep(unifiedId, (): void => {
+    if (hasActiveBatchParticipant(batch)) {
+      logger.debug('准备期取消：同批仍有活跃会话，保留共享哈希 统一会话=' + unifiedId);
+      return;
+    }
     nativeCancelHash(cancelId).catch((_e: Object): void => {
     });
   });
@@ -1301,7 +1341,7 @@ export function joinChecksumBatch(items: Array<SendFileItem>,
     // 即时获得当前进度，不重复计算
     setPrepProgress(participant.unifiedSessionId, existing.aggregateBytes, existing.totalBytes);
     if (existing.currentCancelId.length > 0) {
-      registerPrepCancel(participant.unifiedSessionId, existing.currentCancelId);
+      registerPrepCancel(existing, participant.unifiedSessionId, existing.currentCancelId);
     }
     return existing.promise;
   }
@@ -1338,7 +1378,7 @@ async function runChecksumBatch(batch: ChecksumBatch): Promise<void> {
       for (let i = 0; i < batch.participants.length; i++) {
         let unifiedId = batch.participants[i].unifiedSessionId;
         if (cancelId.length > 0) {
-          registerPrepCancel(unifiedId, cancelId);
+          registerPrepCancel(batch, unifiedId, cancelId);
         } else {
           endLocalSendPrep(unifiedId);
         }
@@ -1516,7 +1556,10 @@ async function sendToDeviceWithSession(
   // 发送异常也必须落到终态：异常路径按失败终态收口，不让会话悬挂在 active
   let result: SendResult = { success: false, error: { kind: 'other', message: 'Send failed' } };
   try {
-    result = await sendToDevice(device, files);
+    let state = sendSessions.get(sessionId);
+    let unifiedSessionId: string = state !== undefined ? state.unifiedSessionId : '';
+    let nativeSendKey: string = state !== undefined ? getLocalSendNativeKey(state.unifiedSessionId) : '';
+    result = await sendToDevice(device, files, nativeSendKey, unifiedSessionId);
   } catch (e) {
     logger.error('发送已中止：' + String(e));
     updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, String(e));

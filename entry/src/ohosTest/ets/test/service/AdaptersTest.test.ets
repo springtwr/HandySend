@@ -10,6 +10,7 @@ import {
 import {
   LOCAL_SEND_KEY,
   beginLocalSendSession,
+  getLocalSendNativeKey,
   updateLocalSendProgress,
   finishLocalSend
 } from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
@@ -207,6 +208,37 @@ export default function AdaptersTest() {
       if (failed !== undefined) {
         expect(failed.stage).assertEqual(SessionStage.failed)
       }
+      resetRegistry()
+    })
+
+    it('localsendSend_nativeCancelKey_uniquePerSession', 0, () => {
+      resetRegistry()
+      // 多设备并发发送：每个会话持有独立的原生发送键（取消只作用于本会话）
+      let firstId = beginLocalSendSession('multi_1', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      let secondId = beginLocalSendSession('multi_2', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      let firstKey = getLocalSendNativeKey(firstId)
+      let secondKey = getLocalSendNativeKey(secondId)
+      expect(firstKey.length > 0).assertTrue()
+      expect(secondKey.length > 0).assertTrue()
+      expect(firstKey === secondKey).assertFalse()
+      // 会话不存在时不下发取消目标
+      expect(getLocalSendNativeKey('missing').length).assertEqual(0)
       resetRegistry()
     })
 

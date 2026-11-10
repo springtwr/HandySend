@@ -36,7 +36,29 @@ fn close_remaining_fds(fds: &mut HashMap<String, i32>) {
     }
 }
 
+/// 清理某次发送的取消键（含接收方会话标识别名），并在槽位仍指向发送键时
+/// 复位「当前发送会话」。
+///
+/// 并发多设备发送下该槽位只用于诊断/兼容查询，取消分发一律按会话自己的键，
+/// 故槽位被其他会话覆盖时不回写，避免误伤。
+fn cleanup_send_cancel_keys(state: &Mutex<BridgeState>, cancel_key: &str, remote_session_id: &str) {
+    let mut s = lock(state);
+    s.active_transfers.remove(cancel_key);
+    // 别名仅在拿到接收方会话标识后存在
+    if !remote_session_id.is_empty() {
+        s.active_transfers.remove(remote_session_id);
+    }
+    let mut sid = lock(&s.current_send_session_id);
+    if *sid == cancel_key {
+        *sid = String::new();
+    }
+}
+
 /// 发送 prepare-upload 请求，返回包含 sessionId 和文件 token 的 JSON。
+///
+/// `cancel` 由调用方（`send_files`）创建并持有：取消它即中止等待对端确认的请求。
+/// 取消令牌的登记与生命周期归调用方，本函数不触碰 `active_transfers`，
+/// 避免并发发送时共享同一个「当前会话」槽位。
 #[allow(clippy::too_many_arguments)]
 pub async fn prepare_send(
     state: &Mutex<BridgeState>,
@@ -47,6 +69,7 @@ pub async fn prepare_send(
     pin: Option<String>,
     expected_fingerprint: Option<String>,
     public_key: Option<String>,
+    cancel: tokio_util::sync::CancellationToken,
 ) -> Result<String, BridgeError> {
     log::debug!(
         "准备发送：ip={} port={} proto={:?} has_fp={} has_pk={}",
@@ -101,17 +124,6 @@ pub async fn prepare_send(
     )
     .map_err(|e| adapt_client_error(&e))?;
 
-    let cancel = tokio_util::sync::CancellationToken::new();
-
-    // 临时键使准备阶段可取消（prepare_ 前缀加唯一标识，避免同目标并发覆盖）
-    let temp_key = format!("prepare_{}", uuid::Uuid::new_v4());
-    {
-        let mut s = lock(state);
-        s.active_transfers.insert(temp_key.clone(), cancel.clone());
-        let mut sid = lock(&s.current_send_session_id);
-        *sid = temp_key.clone();
-    }
-
     let result = client
         .prepare_upload(
             target_protocol,
@@ -126,24 +138,9 @@ pub async fn prepare_send(
         // 错误保留原始 ClientError 类型（不走 adapt_client_error 字符串化）：
         // send_files 依赖 downcast_ref::<ClientError>() 还原结构化 JSON（kind/status），
         // 401 PIN 重试、409 busy 重试与 ArkTS 侧超时判定均以该结构为准
-        .map_err(|e| BridgeError::Upstream(anyhow::Error::new(e)));
-
-    // 无论成功或失败，始终清理 prepare_ 临时键并复位会话 id：
-    // 失败时若残留 prepare_ 前缀脏值，ArkTS 侧按其取消会因键已移除而落空
-    {
-        let mut s = lock(state);
-        s.active_transfers.remove(&temp_key);
-        let mut sid = lock(&s.current_send_session_id);
-        if *sid == temp_key {
-            *sid = String::new();
-        }
-    }
-
-    let result = result?;
+        .map_err(|e| BridgeError::Upstream(anyhow::Error::new(e)))?;
 
     match result.response {
-        // 会话级取消令牌由调用方（send_files）拿到 sessionId 后插入；
-        // 此处不预插——原先预插的令牌会被调用方覆盖，形成无人持有的死令牌
         Some(resp) => Ok(json!({
             "sessionId": resp.session_id,
             "files": resp.files,
@@ -174,11 +171,18 @@ fn metadata_from_json(file: &Value) -> Option<FileMetadata> {
 }
 
 /// 发送文件到目标设备（prepare-upload → 逐文件上传 → 汇总结果）。
+///
+/// `send_key` 是调用方（ArkTS 会话）为本会话生成的原生发送键：同一键贯穿
+/// prepare 与上传阶段，取消时按该键精确触发本会话的取消令牌，不会波及并发发送。
+/// 空键仅用于兼容旧调用方/测试，此时内部生成一次性键。
+/// prepare 成功后另以接收方会话标识登记同一令牌的别名，供对端发起取消时
+/// （ArkTS 收到 `cancelReceived` 后按该标识调用本地取消）仍能精确中止本会话。
 pub async fn send_files(
     state: &Mutex<BridgeState>,
     target_json: &str,
     _sender_alias: &str,
     files_json: &str,
+    send_key: &str,
 ) -> Result<String, BridgeError> {
     let target: Value = serde_json::from_str(target_json)
         .map_err(|e| BridgeError::InvalidArgument(format!("目标 JSON 解析失败: {e}")))?;
@@ -233,6 +237,22 @@ pub async fn send_files(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
+    // 会话级取消键：同一键贯穿 prepare 与上传阶段，调用方始终按本会话自己的键取消。
+    // 不使用进程级「当前发送会话」槽位——多设备并发发送时该槽位会被相互覆盖。
+    let cancel_key = if send_key.is_empty() {
+        format!("prepare_{}", uuid::Uuid::new_v4())
+    } else {
+        send_key.to_string()
+    };
+    let session_cancel = tokio_util::sync::CancellationToken::new();
+    {
+        let mut s = lock(state);
+        s.active_transfers
+            .insert(cancel_key.clone(), session_cancel.clone());
+        let mut sid = lock(&s.current_send_session_id);
+        *sid = cancel_key.clone();
+    }
+
     let prepare_result = match prepare_send(
         state,
         &target_ip,
@@ -242,6 +262,7 @@ pub async fn send_files(
         pin,
         target_fingerprint.clone(),
         target_public_key.clone(),
+        session_cancel.clone(),
     )
     .await
     {
@@ -264,8 +285,10 @@ pub async fn send_files(
                 }),
             };
             // prepare 阶段失败（含 401 PIN / 409 busy 等可重试错误）：
-            // 关闭全部传入 fd——ArkTS 侧每次 nativeSendFiles 调用前会重新打开
+            // 关闭全部传入 fd——ArkTS 侧每次 nativeSendFiles 调用前会重新打开；
+            // 同时清理本会话取消键，避免并发发送下残留脏键
             close_remaining_fds(&mut remaining_fds);
+            cleanup_send_cancel_keys(state, &cancel_key, "");
             return Ok(json!({
                 "sessionId": "",
                 "success": false,
@@ -275,8 +298,15 @@ pub async fn send_files(
             .to_string());
         }
     };
-    let prepare_data: Value = serde_json::from_str(&prepare_result)
-        .map_err(|e| BridgeError::InvalidArgument(format!("prepare 结果解析失败: {e}")))?;
+    let prepare_data: Value = match serde_json::from_str(&prepare_result) {
+        Ok(v) => v,
+        Err(e) => {
+            cleanup_send_cancel_keys(state, &cancel_key, "");
+            return Err(BridgeError::InvalidArgument(format!(
+                "prepare 结果解析失败: {e}"
+            )));
+        }
+    };
 
     let session_id = prepare_data["sessionId"].as_str().unwrap_or("").to_string();
     let file_tokens = &prepare_data["files"];
@@ -287,9 +317,10 @@ pub async fn send_files(
         *sid = session_id.clone();
     }
 
-    // 会话级取消令牌：所有文件共享
-    let session_cancel = tokio_util::sync::CancellationToken::new();
-    {
+    // 接收方会话标识别名：对端发起取消时，ArkTS 侧 cancelReceived 处理会按该标识
+    // 调用 nativeCancelTransferLocal；别名与发送键指向同一令牌，保证能中止本会话。
+    // 本地取消始终使用发送键，此别名只用于兼容远端取消回调。
+    if !session_id.is_empty() {
         let mut s = lock(state);
         s.active_transfers
             .insert(session_id.clone(), session_cancel.clone());
@@ -384,11 +415,8 @@ pub async fn send_files(
         }
     }
 
-    // 清理会话级取消令牌
-    {
-        let mut s = lock(state);
-        s.active_transfers.remove(&session_id);
-    }
+    // 清理会话级取消键（prepare 与上传共用同一发送键，另清理接收方会话别名）
+    cleanup_send_cancel_keys(state, &cancel_key, &session_id);
 
     // 关闭上传循环结束后仍未消费的 fd（取消中断/未轮到上传的文件）
     close_remaining_fds(&mut remaining_fds);
@@ -680,7 +708,10 @@ pub async fn cancel_transfer_remote(
     Ok(())
 }
 
-/// 本地取消：触发指定会话的 CancellationToken（不向远端发请求）。
+/// 本地取消：触发指定取消键的 CancellationToken（不向远端发请求）。
+///
+/// 局域网发送以调用方生成、随 `send_files` 下传的 sendKey 为键；
+/// 接收等场景以会话标识为键。并发发送下不同会话的键互不相同。
 pub fn cancel_transfer(state: &BridgeState, session_id: &str) {
     if let Some(cancel) = state.active_transfers.get(session_id) {
         log::debug!("取消：触发取消 session={}", session_id);
@@ -898,6 +929,43 @@ mod tests {
     }
 
     #[test]
+    fn test_cancel_transfer_cancels_only_given_send_key() {
+        let mut state = BridgeState::new();
+        let first = tokio_util::sync::CancellationToken::new();
+        let second = tokio_util::sync::CancellationToken::new();
+        state
+            .active_transfers
+            .insert("send_first".to_string(), first.clone());
+        state
+            .active_transfers
+            .insert("send_second".to_string(), second.clone());
+
+        cancel_transfer(&state, "send_first");
+
+        assert!(first.is_cancelled());
+        assert!(!second.is_cancelled(), "并发发送的其他会话不应被取消");
+    }
+
+    #[test]
+    fn test_cleanup_send_cancel_keys_removes_alias() {
+        let state = Mutex::new(BridgeState::new());
+        let token = tokio_util::sync::CancellationToken::new();
+        {
+            let mut s = state.lock().unwrap();
+            s.active_transfers
+                .insert("send_key".to_string(), token.clone());
+            s.active_transfers.insert("recv-session".to_string(), token);
+        }
+
+        cleanup_send_cancel_keys(&state, "send_key", "recv-session");
+
+        assert!(
+            state.lock().unwrap().active_transfers.is_empty(),
+            "发送键与接收方会话别名应一并清理"
+        );
+    }
+
+    #[test]
     fn test_prepare_send_invalid_files_json() {
         let state = Mutex::new(BridgeState::new());
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
@@ -910,6 +978,7 @@ mod tests {
                 None,
                 None,
                 None,
+                tokio_util::sync::CancellationToken::new(),
             )
             .await
         });
@@ -917,9 +986,9 @@ mod tests {
     }
 
     #[test]
-    fn test_prepare_send_failure_resets_session_id_and_temp_key() {
+    fn test_send_files_prepare_failure_cleans_cancel_key() {
         let state = Mutex::new(BridgeState::new());
-        // 生成临时身份，使 LsHttpClient 构造成功、走到 temp_key 插入之后的网络阶段
+        // 生成临时身份，使 LsHttpClient 构造成功、走到真实网络阶段
         identity::init_with_persisted_identity(
             &state,
             "test".to_string(),
@@ -930,22 +999,24 @@ mod tests {
 
         // 连接本机保留端口必然被拒，触发 prepare 失败路径
         let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
-            prepare_send(
+            send_files(
                 &state,
-                "127.0.0.1",
-                1,
-                localsend::model::discovery::ProtocolType::Http,
+                r#"{"ip":"127.0.0.1","port":1,"protocol":"http"}"#,
+                "alias",
                 "[]",
-                None,
-                None,
-                None,
+                "send_test_failure",
             )
             .await
         });
-        assert!(result.is_err(), "连接本机保留端口应失败");
+        assert!(result.is_ok(), "prepare 失败应以结构化结果返回");
+        let value: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(value["success"], false);
 
         let s = state.lock().unwrap();
-        assert!(s.active_transfers.is_empty(), "prepare 临时键应随失败清理");
+        assert!(
+            s.active_transfers.is_empty(),
+            "prepare 失败后本会话取消键应被清理"
+        );
         let sid = s.current_send_session_id.lock().unwrap();
         assert!(
             sid.is_empty(),
@@ -956,9 +1027,9 @@ mod tests {
     #[test]
     fn test_send_files_invalid_target_json() {
         let state = Mutex::new(BridgeState::new());
-        let result = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(async { send_files(&state, "not json", "alias", "[]").await });
+        let result = tokio::runtime::Runtime::new().unwrap().block_on(async {
+            send_files(&state, "not json", "alias", "[]", "send_invalid").await
+        });
         assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
     }
 

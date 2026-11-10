@@ -130,7 +130,7 @@ async function sendLoopbackAndVerify(
     preview: undefined,
     sha256: hash
   }]
-  let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+  let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_1')
 
   // 轮询落盘（最多 10s）
   let recvPath: string = recvDir + fileName
@@ -241,7 +241,7 @@ export default function LoopbackTransferTest() {
         preview: undefined,
         sha256: hash
       }]
-      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_2')
 
       // 4. 等待接收文件落盘（轮询，最多 10s）
       let recvPath: string = getRecvDir() + SEND_FILE_NAME
@@ -324,7 +324,7 @@ export default function LoopbackTransferTest() {
           preview: undefined,
           sha256: hash
         }]
-        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_3')
         if (!result.success) {
           throw new Error('[E2E] fd send failed: ' + JSON.stringify(result.error) +
             ' [Rust 日志] ' + dumpRustLogs())
@@ -433,7 +433,7 @@ export default function LoopbackTransferTest() {
         preview: undefined,
         sha256: hash
       }]
-      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_4')
       // 无 pin 应被拒绝（发送失败）
       expect(result.success).assertFalse()
       done()

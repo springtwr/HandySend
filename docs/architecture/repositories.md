@@ -126,8 +126,8 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |
 | `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，`deviceSource=false` 使其不成为发送页来源标签） |
 | `adapters/SessionAdapter.ets` | 适配器契约（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、资源释放）与适配器注册表；可选成员见注 9 |
-| `adapters/LocalSendSendAdapter.ets` | LocalSend 发送：会话创建/进度/终态/取消/重试 |
-| `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/cancelReceived/prepareUploadAborted → 终态；待确认超时终结与资源清理 |
+| `adapters/LocalSendSendAdapter.ets` | LocalSend 发送：会话创建/进度/终态/取消/重试；接收方 `/cancel` 经 `cancelReceived` 按接收方会话标识别名中止本机发送 |
+| `adapters/LocalSendReceiveAdapter.ets` | LocalSend 接收：prepareUpload → 待确认/进行中；sessionEnd/prepareUploadAborted → 终态；待确认超时终结与资源清理 |
 | `adapters/MtaSendAdapter.ets` | MTA 发送：承接 `MtaSendService` 生命周期、收发互斥与取消/重试，并把阶段文案/进度/终态翻译为注册表操作 |
 | `adapters/MtaReceiveAdapter.ets` | MTA 接收：REQUEST_RECEIVED → 待确认；建链/下载/落盘 → 进行中；COMPLETED/FAILED → 终态；文本消息与文件会话细节见注 10 |
 | `adapters/WebDownloadAdapter.ets` | Web 下载批次：一个批次一个任务（单文件/zip），服务端批次事件驱动进度与终态，支持按 batchId 取消；匿名对端描述符兜底 |
@@ -159,7 +159,7 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 | `deviceFound` | 设备发现/更新（事件推送，无轮询） |
 | `register` | 设备注册反馈到 discovery store，同时合入 ArkTS 发现列表并通知界面刷新 |
 | `prepareUpload` | 接收文件请求（事件推送，无轮询） |
-| `sessionEnd` / `cancelReceived` | 会话结束/取消通知 |
+| `sessionEnd` / `cancelReceived` | 会话结束（sessionEnd）/ 接收方取消本机发送（cancelReceived） |
 | `uploadProgress` | 传输进度实时推送（direction: recv/send） |
 | `prepareUploadAborted` | 发送方在确认前丢弃 prepare-upload 请求 |
 | `webAccess` | 网页访问（IP/UA/文件数）；只记日志与续期保活，不建任务 |
@@ -177,7 +177,7 @@ ArkTS 主线程。NativeBridge 解析 JSON（`{"type":"...","payload":{...}}`）
 - ArkTS 侧在 `handleProgressUpdate()` 中处理单个进度事件（仅携带 `progress` 0.0~1.0，由会话文件映射补齐 bytesSent/totalBytes/filePath），更新 `activeProgress` 并通知 VM 刷新
 - 接收进度完成时触发会话完成逻辑：文件导出、历史记录、auto-finish、清理
 - 发送进度由事件驱动实时更新，会话完成由 `sendToDevice`/`sendToDeviceMulti` 的 Promise 流程处理
-- 取消通知使用 `cancelReceived` 事件（本地取消另发 `/cancel` 请求到发送方）
+- 取消通知使用 `cancelReceived` 事件（本地取消另发 `/cancel` 请求到发送方）；接收方取消本机发送时，按接收方会话标识别名触发本机发送令牌
 
 ## 接收失败语义
 

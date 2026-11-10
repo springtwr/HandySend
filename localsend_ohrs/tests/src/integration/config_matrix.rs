@@ -634,12 +634,30 @@ async fn test_bridge_send_files_to_multi_receivers() {
     let send_task_a = tokio::spawn({
         let sender = sender.clone();
         let files_json = files_json.clone();
-        async move { client::send_files(&sender, &target_a, "HandySend", &files_json).await }
+        async move {
+            client::send_files(
+                &sender,
+                &target_a,
+                "HandySend",
+                &files_json,
+                "send_target_a",
+            )
+            .await
+        }
     });
     let prepare_a = wait_for_event(&mut rx_a, |e| {
         matches!(e, BridgeEvent::PrepareUpload { .. })
     })
     .await;
+    // 发送期间取消令牌以调用方下传的发送键为键登记（并发发送可按各自键精确取消）
+    assert!(
+        sender
+            .lock()
+            .unwrap()
+            .active_transfers
+            .contains_key("send_target_a"),
+        "发送键应作为取消令牌的键登记"
+    );
     let session_a = match &prepare_a {
         BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
         _ => unreachable!(),
@@ -658,12 +676,29 @@ async fn test_bridge_send_files_to_multi_receivers() {
     let send_task_b = tokio::spawn({
         let sender = sender.clone();
         let files_json = files_json.clone();
-        async move { client::send_files(&sender, &target_b, "HandySend", &files_json).await }
+        async move {
+            client::send_files(
+                &sender,
+                &target_b,
+                "HandySend",
+                &files_json,
+                "send_target_b",
+            )
+            .await
+        }
     });
     let prepare_b = wait_for_event(&mut rx_b, |e| {
         matches!(e, BridgeEvent::PrepareUpload { .. })
     })
     .await;
+    assert!(
+        sender
+            .lock()
+            .unwrap()
+            .active_transfers
+            .contains_key("send_target_b"),
+        "第二个会话的发送键应独立登记，不与前一会话共用"
+    );
     let session_b = match &prepare_b {
         BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
         _ => unreachable!(),
@@ -981,4 +1016,105 @@ async fn test_upload_progress_sequence() {
 
     server::stop_server(&state);
     let _ = std::fs::remove_dir_all(&save_dir);
+}
+
+// ── 接收方取消经会话标识别名精确中止本机发送 ──────────────────────
+
+#[tokio::test]
+async fn test_bridge_send_cancel_by_receiver_session_alias() {
+    let (recv, mut rx) = new_state_with_event_tx();
+    init_identity(&recv, "alias-recv");
+    let recv_dir = format!("{}/handysend-alias-recv/", std::env::temp_dir().display());
+    let _ = std::fs::remove_dir_all(&recv_dir);
+    std::fs::create_dir_all(&recv_dir).unwrap();
+    recv.lock().unwrap().save_dir = recv_dir.clone();
+    let port = server::start_server(recv.clone(), 0, false, true, None, None)
+        .await
+        .unwrap();
+
+    let sender = new_state_with_event_tx().0;
+    init_identity(&sender, "alias-sender");
+
+    // 稀疏大文件：保证取消发生在传输中，避免与“已完成”竞态
+    let send_path = format!("{}/handysend-alias-big.bin", std::env::temp_dir().display());
+    let size: u64 = 64 * 1024 * 1024;
+    {
+        let f = std::fs::File::create(&send_path).unwrap();
+        f.set_len(size).unwrap();
+    }
+    let files_json = json!([{
+        "fileId": "alias-1",
+        "fileName": "alias-big.bin",
+        "size": size,
+        "fileType": "application/octet-stream",
+        "filePath": send_path,
+        "preview": null,
+        "sha256": null,
+    }])
+    .to_string();
+    let target = json!({
+        "ip": "127.0.0.1", "port": port, "protocol": "http",
+        "fingerprint": "", "pin": null, "publicKey": null,
+    })
+    .to_string();
+
+    let send_task = tokio::spawn({
+        let sender = sender.clone();
+        async move {
+            client::send_files(&sender, &target, "HandySend", &files_json, "send_alias_key").await
+        }
+    });
+
+    let prepare = wait_for_event(&mut rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let session_id = match prepare {
+        BridgeEvent::PrepareUpload { session_id, .. } => session_id,
+        _ => unreachable!(),
+    };
+    server::accept_transfer(&recv, &session_id, &["alias-1".to_string()]).unwrap();
+
+    // prepare 成功后发送方以接收方会话标识登记同一取消令牌的别名；
+    // 模拟 ArkTS 收到 cancelReceived 后按该标识调用 nativeCancelTransferLocal
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if sender
+            .lock()
+            .unwrap()
+            .active_transfers
+            .contains_key(&session_id)
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "接收方会话标识别名未登记"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    {
+        let s = sender.lock().unwrap();
+        client::cancel_transfer(&s, &session_id);
+    }
+
+    let result = send_task.await.unwrap().unwrap();
+    let value: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(value["success"], false, "别名取消后发送应失败: {result}");
+    assert_eq!(
+        value["error"]["kind"], "cancelled",
+        "应为取消终态: {result}"
+    );
+
+    let s = sender.lock().unwrap();
+    assert!(
+        !s.active_transfers.contains_key("send_alias_key"),
+        "发送键应清理"
+    );
+    assert!(
+        !s.active_transfers.contains_key(&session_id),
+        "接收方会话别名应清理"
+    );
+    drop(s);
+
+    server::stop_server(&recv);
+    let _ = std::fs::remove_dir_all(&recv_dir);
+    let _ = std::fs::remove_file(&send_path);
 }

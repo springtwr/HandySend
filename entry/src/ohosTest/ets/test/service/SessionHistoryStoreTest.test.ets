@@ -183,7 +183,10 @@ function terminalInput(): SessionCreateInput {
   return {
     protocolKey: 'test',
     protocolSessionId: 'p-cache',
-    dataFlow: SessionDataFlow.outbound,
+    // 历史存储用例不验证发送草稿：使用入站方向，避免每个会话在创建与终结时
+    // 各写一次草稿并同步 fsync；251 条批量用例会因此在主线程累计上千次 fsync，
+    // 触发系统 THREAD_BLOCK_6S 看门狗（仅测试数据形态，不影响历史读写本身）
+    dataFlow: SessionDataFlow.inbound,
     initiatedBy: SessionInitiator.local,
     peer: emptyPeer(),
     files: [{

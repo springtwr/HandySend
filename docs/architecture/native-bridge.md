@@ -38,13 +38,13 @@
 | `nativeCancelWebDownload(batchId)` | 取消指定网页下载批次 |
 | `nativeAcceptWebSession(token)` / `nativeDeclineWebSession(token)` / `nativeExpireWebSession(token)` | 接受 / 拒绝 / 令待确认浏览器会话过期 |
 | `nativeRespondTransfer(sessionId, accept, acceptedFileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
-| `nativeSendFiles(target, senderAlias, files)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
+| `nativeSendFiles(target, senderAlias, files, sendKey)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath；`sendKey` 见注 5） |
 | `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收直写 fd（respondTransfer 前逐文件；`path` 为最终路径，fd 打开在 `.handysend-temp/localsend/`；终态由 Rust 关闭） |
 | `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
 | `nativeCancelTransfer(target, sessionId)` | 向对端设备发送取消传输请求 |
-| `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
+| `nativeCancelTransferLocal(cancelKey)` | 按取消键取消本地传输（局域网发送传会话专属 `sendKey`；对端取消回调传接收方会话标识，二者指向同一令牌；其他场景传对应会话标识） |
 | `nativeCancelLocalSession(sessionId)` | 取消本地会话 |
-| `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID |
+| `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID（进程级、最后写入者优先；仅用于诊断/兼容查询，并发发送下可能不是目标会话，不可作为按会话取消的依据） |
 | `nativeFlushRustLogs()` | 轮询 Rust 日志缓冲并按原始级别输出到 hilog（`level\|target\|message` 前缀分割） |
 | `nativePollDebugLogWithLevels()` | 带级别的 Rust 日志轮询（返回原始 `level\|target\|message` 元素，供 MTA 链路按级别还原展示） |
 | `nativeSetRustLogLevel(level)` | 同步 Rust 日志级别，供诊断日志开关联动 |
@@ -95,6 +95,11 @@
 > ArkTS 按对端声明值与容差计算）、`maxEntryBytes` 为单条目解压上限（0 表示不限制）；
 > `connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待
 > 响应头超时（缺省用 Rust 侧默认值）。
+>
+> **注 5**：`nativeSendFiles` 的 `sendKey` 为调用方生成的本会话原生发送键：Rust 以它为键登记
+> 取消令牌，并在 prepare 与上传阶段全程复用；`nativeCancelTransferLocal(sendKey)` 因而只中止
+> 本会话，不会波及其他并发发送。prepare 成功后另以接收方会话标识登记同一令牌的别名，供对端
+> 发起取消时（ArkTS 收到 `cancelReceived` 后按该标识调用本地取消）仍能命中本会话。
 
 > 完整封装清单以 `entry/src/main/ets/service/NativeBridge.ets` 为准。
 

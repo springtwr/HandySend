@@ -690,18 +690,27 @@ function pruneTerminalSessionState(): void {
 
 export function handleCancelReceivedEventTyped(event: NativeCancelReceivedEvent): void {
   let sessionId: string = event.sessionId;
-  if (sessionId.length > 0) {
+  if (sessionId.length === 0) {
+    return;
+  }
+  // 协议层仅在取消目标不属于本机接收会话时上报 cancelReceived：多数情况下
+  // 该标识属于本机发送会话（接收方主动取消）。先按接收状态表区分，避免把
+  // 发送标识写进接收状态表、或对发送会话执行接收侧清理。
+  if (isLocalReceiveSessionId(sessionId, Object.keys(receiveSessionStates))) {
     receiveSessionStates[sessionId] = 'canceledBySender';
     removeProgressForSession(sessionId);
     finishLocalReceiveSession(sessionId, SessionStage.cancelled);
     // 清理该会话在沙箱目录中的半成品文件
     cleanupSessionReceiveFiles(sessionId);
-    // 触发本地 CancellationToken 取消——中断 Rust 层进行中的 send_files
-    // （当本机是发送方，收到接收方的 /cancel 通知时）
-    nativeCancelTransferLocal(sessionId);
     logger.info('发送方已取消传输');
     notifyChange();
+    return;
   }
+  // 发送方向：接收方取消，按接收方会话标识别名触发本机发送令牌
+  nativeCancelTransferLocal(sessionId);
+  removeProgressForSession(sessionId);
+  logger.info('接收方已取消传输 对端=' + event.ip);
+  notifyChange();
 }
 
 // 发送方在我们仍在决策时丢弃了 prepare-upload 请求
@@ -810,8 +819,9 @@ function handleSendProgressProgress(sessionId: string, fileId: string, progress:
     filePath: filePath
   };
   upsertProgress(progressEntry);
-  // 统一会话事实源：按文件标识归属到发送会话后，经统一会话标识同步本方向字节进度
-  updateSendProgressForFile(fileId, bytesSent, totalBytes);
+  // 统一会话事实源：按文件标识归属到发送会话后，经统一会话标识同步本方向字节进度；
+  // 事件携带的会话标识即接收方协议会话标识，同时用于提前回填
+  updateSendProgressForFile(fileId, bytesSent, totalBytes, sessionId);
   handleSendProgress(progressEntry);
 }
 

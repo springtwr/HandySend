@@ -85,7 +85,7 @@ export default function LoopbackNativeTest() {
       let result: NativeSendResult | undefined = undefined
       let threw: boolean = false
       try {
-        result = await nativeSendFiles(target, 'HandySendTest', files)
+        result = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_native_1')
       } catch (_e) {
         threw = true
       }

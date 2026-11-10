@@ -244,8 +244,9 @@ export default function SendPageTest() {
       expect(succeeded.settled).assertTrue()
       expect(succeeded.sessionId).assertEqual(okId)
       expect(succeeded.failure === undefined).assertTrue()
-      // 没有新建会话且发送已不活跃：视为结算，不提示
-      let idle = viewModel.mtaSendOutcome(['no-such-session'])
+      // 没有新建会话且发送已不活跃：视为结算，不提示。
+      // 基线必须包含本用例已创建的两个终态会话，否则它们会被当成“新会话”
+      let idle = viewModel.mtaSendOutcome(viewModel.mtaSendSessionIds())
       expect(idle.settled).assertTrue()
       expect(idle.sessionId).assertEqual('')
       expect(idle.failure === undefined).assertTrue()
