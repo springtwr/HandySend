@@ -905,7 +905,8 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
 - 跨页面共享 URIs：`setPendingSharedUris`/`consumePendingSharedUris` inbox
 - 持久化偏好：`PreferencesUtil` 按用途分三个**相互独立的存储文件**——应用设置（含设备身份、网络名单、收藏）`handysend_settings`、任务历史
   `handysend_session_history`、文件接收历史 `handysend_receive_history`（历史为高频写且体积随条目增长，与设置的低频小写入隔离）；全部设置项默认值集中定义于
-  `model/SettingsDefaults.ets`（唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、视图层非默认值判断均引用该常量）
+  `model/SettingsDefaults.ets`（默认值唯一事实来源，Repository 初始值/回退值、ViewModel 初始值与「恢复默认」、
+  视图层非默认值判断均引用该常量）
 - 历史保留容量：任务历史目标 750 条（`SESSION_HISTORY_CAPACITY`）、硬上限 1000 条（`SESSION_HISTORY_MAX_ENTRIES`），
   文件接收历史 `RECEIVE_HISTORY_CAPACITY = 5000`（文件），集中定义于 `model/HistoryCapacity.ets`（唯一事实源）。
   两者**计数单位不同且不可换算**——一次传输产生 1 条任务历史却产生 N 条接收历史；100 文件批次下任务历史覆盖 750–1000 次传输

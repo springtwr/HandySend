@@ -83,7 +83,7 @@ import { LANGUAGE_LIST } from '../../common/LanguageConstants';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '设置');
 
-// ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
+// ── 设置运行时状态（缓存当前值；Preferences 负责持久化；部分纯偏好项不缓存，直接读） ──
 
 let httpsEnabled: boolean = DEFAULT_ENCRYPTED_TRANSFER;
 let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;

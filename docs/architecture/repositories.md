@@ -87,8 +87,30 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 
 ### 状态管理
 
-设置与运行时状态由 Repository 模块变量持有；**会话状态与聚合的唯一事实源为 `service/transfer/TransferSessionRegistry`**，VM 通过注册表查询 + `subscribeSessions`/`notifyChange` 刷新。跨页面共享
+设置与运行时状态主要由 Repository 模块变量持有（少数纯偏好项直接读 Preferences，
+见下节）；**会话状态与聚合的唯一事实源为 `service/transfer/TransferSessionRegistry`**，
+VM 通过注册表查询 + `subscribeSessions`/`notifyChange` 刷新。跨页面共享
 URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接收文本消息/媒体文件信息以 `peek/consume` 队列供相册保存与文本展示消费；会话生命周期信号经注册表变更总线发布。
+
+### 设置访问约定
+
+设置项分三层，每层只在一个地方定义或持有：
+
+| 层 | 来源 | 说明 |
+|----|------|------|
+| 默认值 | `model/SettingsDefaults.ets` | 新默认值集中定义于此；初始值、回退值、恢复默认、视图层默认值判断应引用该常量 |
+| 运行时当前值 | `SettingsRepository` 模块变量，或 Preferences（纯偏好项直接读） | 多数设置启动时经 `loadFromPreferences()` 读入模块变量；纯偏好项不缓存 |
+| 持久化 | `PreferencesUtil`（访问层 `PreferencesRepo`） | 设置存储 `handysend_settings`；KEY 定义在 `utils/PreferencesUtil.ets` |
+
+- **初始化时序**：`EntryAbility.onCreate` 在加载任何设置之前调用 `initAllPreferences(context)`，之后才执行
+  `initDeviceIdentity()` 与 `loadFromPreferences()`；任何设置 getter/setter 都不得早于该初始化。
+  未初始化时读取按默认值处理、写入/删除被丢弃且不抛异常；`PreferencesUtil` 对每个存储实例的
+  首次此类访问打一条 warn（`HandySend:PreferencesUtil`），用于定位「设置改了不生效且无报错」。
+- **模式选择**：需要「进程内有效但不持久化」的状态（如 `webLastPort`、`serverNeedsRestart`）必须用
+  `SettingsRepository` 模块变量；纯用户偏好可让 getter 直接读 Preferences，避免多一份缓存。
+- **读写路径**：VM/View 经 AppService 门面调用 `SettingsRepository`，不直接访问 `PreferencesUtil` /
+  `PreferencesRepo`。设备身份是既有例外：`DeviceRepository` 初始化与刷新时直接经 `PreferencesRepo`
+  读取 `customAlias`，与 `SettingsRepository.getCustomAlias` 同键同源。
 
 ## 统一会话引擎（service/transfer/）
 
