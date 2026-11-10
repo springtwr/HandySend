@@ -122,7 +122,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `OutboundDraftService.ets` | 发送方向草稿：会话创建/文件完成/终态维护出站快照，强杀恢复只补任务历史 |
 | `SessionRecoveryService.ets` | 启动恢复：读取草稿、按文件系统实际状态补写任务与接收历史、清理本协议临时区 |
 | `DeviceSourceRegistry.ets` | 设备来源注册表（标签/图标/排序/发现数据源/空态与条件化引导/是否收藏）；空态支持可选 `dynamicText()` 动态文案（优先于静态 `text`，如 MTA 蓝牙关闭时切换提示） |
-| `TransferMethodRegistry.ets` | 传输方式注册表（网页传输/指定 IP，按「网页」与「其它方式」分组） |
+| `TransferMethodRegistry.ets` | 传输方式注册表（指定 IP、收藏列表等，按「其它方式」分组渲染） |
 | `SettingsGroupRegistry.ets` | 设置分组注册表（通用组固定 + 协议组动态） |
 | `DefaultRegistrations.ets` | 协议默认注册集中点（来源/方式/设置分组；网页分享来源仅为会话条目提供来源协议标签，`deviceSource=false` 使其不成为发送页来源标签） |
 | `adapters/SessionAdapter.ets` | 适配器契约（能力声明、展示描述符、确认/拒绝/取消/重试、事件翻译、资源释放）与适配器注册表；可选成员见注 9 |

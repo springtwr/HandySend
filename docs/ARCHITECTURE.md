@@ -368,6 +368,7 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
 | `MainTabFloating` | 主页（三个稳定一级区域：发送 / 任务 / 设置）+ 导航根容器 + 主页面标题栏 |
 | `SessionDetailPage` | 唯一通用会话详情页：协议差异仅经适配器描述符、能力声明与可选插槽表达（详见下方说明） |
 | `ShareLinkPage` | 网页传输：总开关启停、二维码/访问码/手动地址、允许上传与上传免确认 |
+| `PortalPage` | 远程传输站点导航：内置与自定义站点的增删改、恢复默认与首次风险声明（详见 [architecture/portal-sites.md](architecture/portal-sites.md)） |
 | `DeviceDetailsPage` | 设备详情 |
 | `ReceiveHistoryPage` | 文件级接收历史（入口移入任务标题栏「更多」菜单） |
 | `VerifyPage` / `TroubleshootPage` | 验证/常见问题 |
@@ -576,7 +577,7 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
 ├── SendContent (装配发送页三区；根 Stack 承载收藏设备半模态面板 bindSheet)
 │   ├── SendContentZone  内容区（四个类型入口磁贴 + 暂存列表，列表最多 4 行、超出滚动）
 │   └── SendTargetZone   目标区（来源注册表驱动：来源标签/设备网格/收藏/刷新/空态）
-│       └── SendMethodZone 方式区（方式注册表驱动：网页组 / 其它方式组）
+│       └── SendMethodZone 方式区（网页、远程传输图标入口 + 其它方式菜单）
 ├── TransferCenterContent (任务：合并会话列表〔进行中/待确认/终态可见窗口/历史，时间倒序，按会话标识去重〕 + 待确认交互 + 空态)
 └── SettingsContent (按设置分组注册表装配 views/settings/ 各分区)
 ```
@@ -682,6 +683,10 @@ MTA（互传联盟）主流程接入复用上述统一列表：发现的互传�
 服务监听全部网卡，
 面板按网络接口筛选提供轻量地址选择器（只影响展示地址，服务仍监听全部网卡；Wi-Fi/有线/VPN 默认启用，蜂窝/网桥/未知默认关闭）；
 端口默认 53310，被占用时回退临时端口，实际端口仅在本次进程内复用，重启应用后重新优先使用配置端口。
+
+发送页方式区的云图标打开远程传输站点导航页（`PortalPage`）：页面列出随包内置与用户添加的第三方传文件站点，
+点击卡片经确认后交给系统浏览器打开，应用不承载网页内容、也不代理文件；站点的校验、持久化与
+首次风险声明详见 [architecture/portal-sites.md](architecture/portal-sites.md)。
 
 ### 8.3 浮动 Tab 栏
 
@@ -959,6 +964,9 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   网页独立加密传输（HTTPS）、本次访问码（6 位数字，分享面板展示）、仅影响展示地址的网络接口筛选与面板地址选择器、
   端口（默认 53310，可自定义，占用时回退临时端口且实际端口仅在本次进程内复用）；网页下载批次经统一会话注册表展示，
   扫码或通过访问码的下载直接放行（只记访问日志），下载批次可在任务页结束；网页上传仍按上传免确认开关在任务页确认
+- **远程传输**：发送页站点导航页汇集随包内置与用户添加的第三方传文件站点（可添加、编辑、删除与恢复默认），
+  点击卡片经确认后交给系统浏览器打开；站点数据全部本地，应用不承载网页内容也不代理文件
+  （详见 [architecture/portal-sites.md](architecture/portal-sites.md)）
 - **接收**：自动确认请求（off/paired/on，文本消息同样按模式决策，纯文本消息自动接收时复制到剪贴板并在屏幕中央提示，
   文本与文件混合的请求不写剪贴板）、
   相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、
