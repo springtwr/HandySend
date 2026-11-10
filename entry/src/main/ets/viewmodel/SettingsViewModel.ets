@@ -38,6 +38,8 @@ import {
   isCreateChecksums,
   isVerifyChecksums,
   isAutoClearStagedAfterSend,
+  isAutoOpenSessionDetailAfterSend,
+  setAutoOpenSessionDetailAfterSend,
   isAdvancedSettings,
   getPort,
   getMulticastGroup,
@@ -136,6 +138,7 @@ import {
   DEFAULT_NETWORK_WHITELIST,
   DEFAULT_NETWORK_BLACKLIST,
   DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_AUTO_OPEN_SESSION_DETAIL,
   DEFAULT_LOCALSEND_ENABLED,
   DEFAULT_MTA_ENABLED,
   DEFAULT_WEB_SEND_ENABLED,
@@ -219,6 +222,7 @@ export class SettingsViewModel {
   @Trace public createChecksums: boolean = DEFAULT_CREATE_CHECKSUMS
   @Trace public verifyChecksums: boolean = DEFAULT_VERIFY_CHECKSUMS
   @Trace public autoClearStaged: boolean = DEFAULT_AUTO_CLEAR_STAGED
+  @Trace public autoOpenSessionDetail: boolean = DEFAULT_AUTO_OPEN_SESSION_DETAIL
   @Trace public serverNeedsRestart: boolean = false
   @Trace public hideTabBarOnScroll: boolean = DEFAULT_HIDE_TAB_BAR_ON_SCROLL
   @Trace public theme: string = DEFAULT_THEME
@@ -277,6 +281,7 @@ export class SettingsViewModel {
     this.createChecksums = isCreateChecksums();
     this.verifyChecksums = isVerifyChecksums();
     this.autoClearStaged = isAutoClearStagedAfterSend();
+    this.autoOpenSessionDetail = isAutoOpenSessionDetailAfterSend();
     this.advancedSettings = isAdvancedSettings();
     this.port = getPort();
     this.multicastGroup = getMulticastGroup();
@@ -425,6 +430,12 @@ export class SettingsViewModel {
   setAutoClearStagedAfterSendEnabled(on: boolean): void {
     this.autoClearStaged = on;
     setAutoClearStagedAfterSend(on);
+  }
+
+  /** 点击设备发送后自动进入该任务详情（默认关闭：保持停留发送页的既有行为） */
+  setAutoOpenSessionDetailEnabled(on: boolean): void {
+    this.autoOpenSessionDetail = on;
+    setAutoOpenSessionDetailAfterSend(on);
   }
 
   // LocalSend 总开关：开启或无活跃传输时立即持久化并启停服务器（含设备发现与网页分享）；
@@ -866,6 +877,8 @@ export class SettingsViewModel {
     // 发送设置
     this.autoClearStaged = DEFAULT_AUTO_CLEAR_STAGED;
     setAutoClearStagedAfterSend(DEFAULT_AUTO_CLEAR_STAGED);
+    this.autoOpenSessionDetail = DEFAULT_AUTO_OPEN_SESSION_DETAIL;
+    setAutoOpenSessionDetailAfterSend(DEFAULT_AUTO_OPEN_SESSION_DETAIL);
 
     // 安全
     this.encryptedTransfer = DEFAULT_ENCRYPTED_TRANSFER;

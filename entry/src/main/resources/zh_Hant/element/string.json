@@ -337,6 +337,14 @@
       "value": "接收的檔案包含圖片時會提示儲存到相簿"
     },
     {
+      "name": "auto_open_session_detail_label",
+      "value": "自動進入任務詳情"
+    },
+    {
+      "name": "auto_open_session_detail_desc",
+      "value": "點擊裝置傳送後自動進入該任務的詳情頁"
+    },
+    {
       "name": "advanced_settings_label",
       "value": "進階設定"
     },

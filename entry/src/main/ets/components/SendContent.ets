@@ -13,7 +13,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
   subscribe, unsubscribe, connectByIp, getPort,
-  getHttpsEnabled, resolveSendProtocol
+  getHttpsEnabled, resolveSendProtocol, isAutoOpenSessionDetailAfterSend
 } from '../service/AppService';
 import { DiscoveredDevice, StagedFile, FavoriteDevice } from '../model/Types';
 import { SendContentZone } from './send/SendContentZone';
@@ -134,6 +134,8 @@ export struct SendContent {
   // MTA 发起前会话快照：建链完成即返回，不能靠发起返回判定结果，
   // 改在变更通知里等本次新建会话进入终态（见 checkMtaSendWatch）
   private mtaWatchBeforeIds: Array<string> | undefined = undefined
+  // 本次 MTA 发送已自动进入详情的新会话标识：只跳转一次，避免每次注册表变更重复导航
+  private mtaAutoOpenSessionId: string = ''
 
   // 发现快照刷新时更新面板在线状态（面板打开期间设备上线/离线实时反映）
   @Monitor('viewModel.discoveredDevices')
@@ -528,7 +530,8 @@ export struct SendContent {
 
   /**
    * 发起内联发送并给出结果反馈：
-   * 点击当帧即确认「已开始发送」（不引入人为延迟）；会话终结为失败时弹出失败浮卡。
+   * 点击当帧即确认「已开始发送」（不引入人为延迟）；会话终结为失败时弹出失败浮卡
+   * （「自动进入任务详情」开启时改为跳转详情页，失败由详情页承载、不再弹卡）。
    * 预判不可发起（忙/无内容）时不弹开始确认，避免两条提示互相打架。
    */
   private beginInlineSend(device: DiscoveredDevice): void {
@@ -539,15 +542,27 @@ export struct SendContent {
     }
     // 发送前快照：失败提示只认本次点击后新建的会话，历史失败不会被重复提示
     let beforeIds: Array<string> = this.viewModel.sendSessionIdsForIp(device.ip);
+    // 自动进入任务详情：新会话登记后立即跳转，此时发送仍在后台继续；
+    // 已进入详情时不再弹失败浮卡（失败原因在详情页可见）
+    let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
+    let autoOpened: boolean = false;
     this.showSendToast($r('app.string.send_started_toast'), device.alias);
-    this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
+    this.viewModel.sendToMultipleDeviceInline(device, (sessionId: string) => {
+      if (autoEnterDetail && !this.isDetached) {
+        autoOpened = true;
+        // 离开发送页前收起既有失败浮卡：浮卡挂在 UIContext 层，切页签不会自动消失，
+        // 其内容属于上一次发送，留在详情页会误导
+        this.closeSendFailureCard();
+        this.onOpenSessionDetail(sessionId);
+      }
+    }).then((result: SendInitiateResult) => {
       if (this.isDetached) {
         return;
       }
       // 竞态兜底：预判后被并发操作拦截时按实际结果补提示
       this.showSendInitiateFeedback(result);
       let failure: SendFailureNotice | undefined = this.viewModel.newSendFailure(device.ip, beforeIds);
-      if (failure !== undefined) {
+      if (failure !== undefined && !autoOpened) {
         this.showSendFailureCard(failure);
       }
     }).catch((e: Object) => {
@@ -911,28 +926,39 @@ export struct SendContent {
   }
 
   /**
-   * 发起 MTA 发送并给出与局域网一致的反馈：点击当帧确认开始，会话终结为失败时弹浮卡。
+   * 发起 MTA 发送并给出与局域网一致的反馈：点击当帧确认开始，会话终结为失败时弹浮卡
+   * （「自动进入任务详情」开启时改为进入详情页，失败由详情页承载）。
    * 结果只能等会话终态：`startMtaSend` 在建链（写回 P2pInfo）后就返回，
    * 早于对端确认/传输，按发起返回查询会漏掉「对方拒绝」这类终态。
    */
   private beginMtaSend(device: DiscoveredDevice, params: MtaSendRequest): void {
     this.mtaWatchBeforeIds = this.viewModel.mtaSendSessionIds();
+    this.mtaAutoOpenSessionId = '';
     this.showSendToast($r('app.string.send_started_toast'), device.alias);
     this.viewModel.startMtaSend(params);
   }
 
-  /** 检查本次 MTA 发起的结局：已结算则停止监听，失败时弹浮卡。 */
+  /** 检查本次 MTA 发起的结局：新会话出现时按设置进入详情，已结算则停止监听，失败时弹浮卡。 */
   private checkMtaSendWatch(): void {
     let beforeIds: Array<string> | undefined = this.mtaWatchBeforeIds;
     if (beforeIds === undefined) {
       return;
     }
     let outcome: MtaSendOutcome = this.viewModel.mtaSendOutcome(beforeIds);
+    // 新会话一出现即按设置进入详情（MTA 会话在发送状态事件中才登记，故在变更通知里补跳）；
+    // 已自动进入时不再弹失败浮卡，失败原因在详情页可见
+    if (outcome.sessionId.length > 0 && this.mtaAutoOpenSessionId.length === 0 &&
+      isAutoOpenSessionDetailAfterSend() && !this.isDetached) {
+      this.mtaAutoOpenSessionId = outcome.sessionId;
+      // 与点击设备路径一致：离开发送页前收起既有失败浮卡，避免旧内容覆盖详情页
+      this.closeSendFailureCard();
+      this.onOpenSessionDetail(outcome.sessionId);
+    }
     if (!outcome.settled) {
       return;
     }
     this.mtaWatchBeforeIds = undefined;
-    if (outcome.failure !== undefined && !this.isDetached) {
+    if (outcome.failure !== undefined && this.mtaAutoOpenSessionId.length === 0 && !this.isDetached) {
       this.showSendFailureCard(outcome.failure);
     }
   }
@@ -1207,7 +1233,15 @@ export struct SendContent {
     }
     // 收藏发送同样经大文件二次确认门禁（总量达阈值时先弹确认）
     this.runAfterLargeFileConfirm(() => {
-      this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
+      let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
+      this.viewModel.sendToFavorite(favorite, (sessionId: string) => {
+        if (autoEnterDetail && !this.isDetached) {
+          // 面板是模态：先收起面板再跳转，避免详情页被半模态遮挡；旧失败浮卡同样在离开前收起
+          this.isShowFavoritesSheet = false;
+          this.closeSendFailureCard();
+          this.onOpenSessionDetail(sessionId);
+        }
+      }).then((result: FavoriteSendResult) => {
         this.favoritesPanelViewModel.clearProbing();
         this.showFavoriteSendFeedback(result);
       });

@@ -16,6 +16,7 @@ import {
   KEY_CREATE_CHECKSUMS,
   KEY_VERIFY_CHECKSUMS,
   KEY_AUTO_CLEAR_STAGED,
+  KEY_AUTO_OPEN_SESSION_DETAIL,
   KEY_ADVANCED_SETTINGS,
   KEY_PORT,
   KEY_MULTICAST_GROUP,
@@ -59,6 +60,7 @@ import {
   DEFAULT_NETWORK_WHITELIST,
   DEFAULT_NETWORK_BLACKLIST,
   DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_AUTO_OPEN_SESSION_DETAIL,
   DEFAULT_LOCALSEND_ENABLED,
   DEFAULT_MTA_ENABLED,
   DEFAULT_WEB_SEND_ENABLED,
@@ -630,6 +632,16 @@ export function setAutoClearStagedAfterSend(enabled: boolean): void {
 
 export function isAutoClearStagedAfterSend(): boolean {
   return preferencesRepo.getBoolean(KEY_AUTO_CLEAR_STAGED, DEFAULT_AUTO_CLEAR_STAGED);
+}
+
+/** 点击设备发送后是否自动进入该任务详情页（默认关闭）。 */
+export function setAutoOpenSessionDetailAfterSend(enabled: boolean): void {
+  preferencesRepo.setBoolean(KEY_AUTO_OPEN_SESSION_DETAIL, enabled);
+  notifyChange();
+}
+
+export function isAutoOpenSessionDetailAfterSend(): boolean {
+  return preferencesRepo.getBoolean(KEY_AUTO_OPEN_SESSION_DETAIL, DEFAULT_AUTO_OPEN_SESSION_DETAIL);
 }
 
 export function setAdvancedSettings(enabled: boolean): void {

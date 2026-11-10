@@ -84,6 +84,9 @@ export const KEY_BACKGROUND_RECEIVE: string = 'backgroundReceiveEnabled';
 
 export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
 
+// 点击设备发送后自动进入该任务详情页
+export const KEY_AUTO_OPEN_SESSION_DETAIL: string = 'autoOpenSessionDetailAfterSend';
+
 // ── 远程传输站点 ──
 // 用户添加的站点（不含预设）。
 export const KEY_PORTAL_USER_SITES: string = 'portalUserSites';

@@ -225,12 +225,15 @@ export default function SendPageTest() {
       }]
       let before: Array<string> = viewModel.mtaSendSessionIds()
       let failId = beginMtaSendSession('mta_fail', 'MTA 设备', 'mobile', 'M', '', descriptors)
-      // 会话仍在进行：未结算，不能提前下结论
-      expect(viewModel.mtaSendOutcome(before).settled).assertFalse()
+      // 会话仍在进行：未结算，不能提前下结论；新会话标识已可识别（自动进入详情用）
+      let pending = viewModel.mtaSendOutcome(before)
+      expect(pending.settled).assertFalse()
+      expect(pending.sessionId).assertEqual(failId)
       // 对方拒收：拒收属于需要提示的终态
       finishMtaSendSession(failId, MtaSendTerminal.rejected, '对方拒绝接收')
       let rejected = viewModel.mtaSendOutcome(before)
       expect(rejected.settled).assertTrue()
+      expect(rejected.sessionId).assertEqual(failId)
       expect(rejected.failure !== undefined ? rejected.failure.message : '')
         .assertEqual('对方拒绝接收')
       // 成功：结算但不产生失败摘要
@@ -239,10 +242,12 @@ export default function SendPageTest() {
       finishMtaSendSession(okId, MtaSendTerminal.success)
       let succeeded = viewModel.mtaSendOutcome(beforeOk)
       expect(succeeded.settled).assertTrue()
+      expect(succeeded.sessionId).assertEqual(okId)
       expect(succeeded.failure === undefined).assertTrue()
       // 没有新建会话且发送已不活跃：视为结算，不提示
       let idle = viewModel.mtaSendOutcome(['no-such-session'])
       expect(idle.settled).assertTrue()
+      expect(idle.sessionId).assertEqual('')
       expect(idle.failure === undefined).assertTrue()
       resetRegistry()
     })

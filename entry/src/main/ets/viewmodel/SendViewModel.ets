@@ -132,12 +132,14 @@ export interface SendFailureNotice {
   message: string
 }
 
-/** 一次 MTA 发起的结局：是否已结算，以及失败时的展示摘要。 */
+/** 一次 MTA 发起的结局：是否已结算、新建会话标识，以及失败时的展示摘要。 */
 export class MtaSendOutcome {
   /** 本次发起是否已有结论（会话全部终态，或确认未产生会话） */
   settled: boolean = false
   /** 失败摘要（成功/取消/未产生会话时为空） */
   failure: SendFailureNotice | undefined = undefined
+  /** 本次发起新建的会话标识（尚未出现新会话时为空串） */
+  sessionId: string = ''
 }
 
 /** 需要向用户提示的失败终态：失败、部分失败与对方拒收；取消由用户主动发起，不提示。 */
@@ -1331,11 +1333,14 @@ export class SendViewModel {
     return '';
   }
 
-  // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经任务/详情页呈现。
+  // 点击设备即发送（无单/多目标模式差异）：默认发送后停留发送页，进度经任务/详情页呈现；
+  // 「自动进入任务详情」开启时由视图层按新会话回调跳转详情。
   // 目标是否已有活跃发送取自统一会话注册表，另以在途 IP 集合弥补「点击→会话创建」的空窗；
   // 不再维护以 IP 为键的发送状态/进度/错误映射。
   // 返回明确发起结果：被拦截不再静默返回，由视图层据结果给出可见提示。
-  async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<SendInitiateResult> {
+  // `onSessionCreated` 在会话登记后立即回调（发送仍在继续），供「自动进入任务详情」使用。
+  async sendToMultipleDeviceInline(device: DiscoveredDevice,
+    onSessionCreated?: (sessionId: string) => void): Promise<SendInitiateResult> {
     // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
     let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
     let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
@@ -1361,7 +1366,11 @@ export class SendViewModel {
       // 发送前该目标已有会话标识：用于识别本次新建的会话
       let beforeIds: Array<string> = this.sendSessionIdsForIp(device.ip);
       // 使用 sendToDeviceMulti 发送单设备——它会创建会话并驱动进度（点击即发送，无模式差异）
-      await sendToDeviceMulti([device], items);
+      await sendToDeviceMulti([device], items, (unifiedIds: Array<string>) => {
+        if (onSessionCreated !== undefined && unifiedIds.length > 0) {
+          onSessionCreated(unifiedIds[0]);
+        }
+      });
       // 暂存内容默认保留以支持连续发送；仅在「发送成功后自动清空暂存」开启且本次成功时清空
       if (isAutoClearStagedAfterSend() && this.hasNewSucceededSendTo(device.ip, beforeIds)) {
         this.clearStagedFiles();
@@ -1379,7 +1388,8 @@ export class SendViewModel {
    * 收藏设备发送编排：在线（发现快照命中）直接发送；离线按已保存地址与端口定向探测，
    * 探测成功后再发送。返回结果枚举供视图层给出提示。
    */
-  async sendToFavorite(favorite: FavoriteDevice): Promise<FavoriteSendResult> {
+  async sendToFavorite(favorite: FavoriteDevice,
+    onSessionCreated?: (sessionId: string) => void): Promise<FavoriteSendResult> {
     // LocalSend 总开关关闭时不允许发送（入口已置灰，此处为防御纵深）
     if (!this.localSendEnabled) {
       return FavoriteSendResult.disabled;
@@ -1400,7 +1410,7 @@ export class SendViewModel {
       }
       device = probed;
     }
-    let result: SendInitiateResult = await this.sendToMultipleDeviceInline(device);
+    let result: SendInitiateResult = await this.sendToMultipleDeviceInline(device, onSessionCreated);
     if (result === SendInitiateResult.blocked) {
       return FavoriteSendResult.busy;
     }
@@ -1438,6 +1448,7 @@ export class SendViewModel {
     let filter: SessionFilter = { protocolKey: MTA_SEND_KEY };
     let sessions: Array<TransferSession> = querySessions(filter);
     let freshCount: number = 0;
+    let freshId: string = '';
     let pending: boolean = false;
     for (let i = 0; i < sessions.length; i++) {
       let session: TransferSession = sessions[i];
@@ -1445,11 +1456,15 @@ export class SendViewModel {
         continue;
       }
       freshCount++;
+      if (freshId.length === 0) {
+        freshId = session.id;
+      }
       if (!isTerminalStage(session.stage)) {
         pending = true;
       }
     }
     let outcome = new MtaSendOutcome();
+    outcome.sessionId = freshId;
     if (freshCount === 0) {
       outcome.settled = !isMtaSendSessionActive();
       return outcome;

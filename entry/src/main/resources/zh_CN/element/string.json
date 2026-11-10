@@ -337,6 +337,14 @@
       "value": "接收的文件包含图片时会提示保存到相册"
     },
     {
+      "name": "auto_open_session_detail_label",
+      "value": "自动进入任务详情"
+    },
+    {
+      "name": "auto_open_session_detail_desc",
+      "value": "点击设备发送后自动进入该任务的详情页"
+    },
+    {
       "name": "advanced_settings_label",
       "value": "高级设置"
     },

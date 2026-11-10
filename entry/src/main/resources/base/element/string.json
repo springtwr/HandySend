@@ -337,6 +337,14 @@
       "value": "Prompt to save to gallery when received files contain images"
     },
     {
+      "name": "auto_open_session_detail_label",
+      "value": "Open task detail after sending"
+    },
+    {
+      "name": "auto_open_session_detail_desc",
+      "value": "Open the task detail page automatically after sending to a device"
+    },
+    {
       "name": "advanced_settings_label",
       "value": "Advanced settings"
     },

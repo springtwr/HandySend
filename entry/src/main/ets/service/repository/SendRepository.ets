@@ -1401,7 +1401,8 @@ function backfillSessionHashes(items: Array<SendFileItem>, unifiedIds: Array<str
 
 export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
-  files: Array<SendFileItem>
+  files: Array<SendFileItem>,
+  onSessionsCreated?: (unifiedIds: Array<string>) => void
 ): Promise<void> {
   // 为每台设备创建独立的会话（唯一会话标识 + 独立文件标识），使用一致的 sessionId 映射
   let sessionIds: Array<string> = [];
@@ -1415,6 +1416,15 @@ export async function sendToDeviceMulti(
     sessionFilesList.push(sessionFiles);
     let unifiedId: string = createSendSession(sessionId, device.ip, device.alias, sessionFiles, device);
     unifiedIds.push(unifiedId);
+  }
+  // 会话已登记到统一注册表：立即通知调用方（供「自动进入任务详情」在发送开始前拿到新会话标识）。
+  // 回调属于视图侧导航，异常不得中断已登记会话的发送，故在此兜底。
+  if (onSessionsCreated !== undefined) {
+    try {
+      onSessionsCreated(unifiedIds);
+    } catch (e) {
+      logger.warn('发送会话创建回调异常：' + String(e));
+    }
   }
 
   // 准备阶段：开关开启且存在缺失 hash 的文件时，会话立即置准备态并展示字节级进度。
