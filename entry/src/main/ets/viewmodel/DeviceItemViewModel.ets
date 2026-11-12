@@ -52,6 +52,31 @@ export class DeviceItemViewModel {
     return address.length > 0 ? 'mta:' + address : this.item.fingerprint;
   }
 
+  // 列表键值中的别名部分：LocalSend 用实际显示别名（含收藏自定义别名）；
+  // MTA 仅在存在真实广播名时使用别名。名称缺失时 alias 回退为 BLE 地址，
+  // 地址已由 keyMta 承载，这里返回空串避免同一地址重复参与 key。
+  get keyAlias(): string {
+    if (!this.isMta) {
+      return this.alias;
+    }
+    let bleAddress = this.item.mtaBleAddress !== undefined ? this.item.mtaBleAddress : this.item.fingerprint;
+    return this.alias.length > 0 && this.alias !== bleAddress ? this.alias : '';
+  }
+
+  // 列表键值中的 MTA 发送相关字段：BLE 地址、品牌与 5GHz 标记都会进入发送请求，
+  // 变化时必须触发列表行重建，避免 onSend 拿到旧的 DeviceItemViewModel.item。
+  // RSSI 变化频繁且不决定发送目标，不纳入 key。
+  get keyMta(): string {
+    if (!this.isMta) {
+      return '';
+    }
+    let bleAddress = this.item.mtaBleAddress !== undefined ? this.item.mtaBleAddress : this.item.fingerprint;
+    let brandId = this.item.mtaBrandId !== undefined ? this.item.mtaBrandId : -1;
+    let brandName = this.item.mtaBrandName !== undefined ? this.item.mtaBrandName : '';
+    let is5Ghz = this.item.mtaIs5Ghz !== undefined && this.item.mtaIs5Ghz;
+    return `${bleAddress}|${brandId}|${brandName}|${is5Ghz}`;
+  }
+
   // 是否互传联盟（MTA）来源设备：用于列表条目变体与发送路由分流
   get isMta(): boolean {
     return isMtaDevice(this.item);

@@ -245,11 +245,10 @@ export struct SendTargetZone {
           })
         }
       }).key((item: DeviceItemViewModel) =>
-      // 身份取稳定键（MTA 为发送者 ID）：广播地址轮换不再触发条目重建。
-      // LocalSend 的 alias 必须纳入 key：Repeat 全量加载模式下 key 不变时，即使数据
-      // 已更新也不会刷新（昵称单独变化会一直显示旧名）；MTA 仍排除 alias，避免
-      // 广播地址轮换时 alias 回退为地址导致卡片反复重建
-      item.identityKey + '|' + (item.isMta ? '' : item.alias) + '|' + item.ip + ':' + item.item.port +
+      // 身份取稳定键（MTA 为发送者 ID），但 MTA 的 BLE 地址/品牌/5GHz 是发送目标的一部分，
+      // 必须纳入 key；Repeat 全量加载模式下 key 不变时即使数据更新也不会刷新。
+      // LocalSend 与 MTA 的真实广播昵称由 keyAlias 参与；MTA 地址回退别名不重复参与。
+      item.identityKey + '|' + item.keyAlias + '|' + item.keyMta + '|' + item.ip + ':' + item.item.port +
         '|' + item.deviceModel + '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
     }
     .width('100%')

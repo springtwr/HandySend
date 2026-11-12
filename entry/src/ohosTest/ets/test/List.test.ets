@@ -102,6 +102,7 @@ import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
 import ReceiveHistorySelectionTest from './viewmodel/ReceiveHistorySelectionTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
+import DeviceItemViewModelTest from './viewmodel/DeviceItemViewModelTest.test'
 import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
 import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
 import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
@@ -210,6 +211,7 @@ export default function testsuite() {
   ReceiveHistorySelectionTest()
   PendingConfirmTest()
   SendPageTest()
+  DeviceItemViewModelTest()
   ShareLinkViewModelTest()
   BackgroundAggregateTest()
   AdapterExtensibilityTest()
