@@ -15,7 +15,13 @@ import {
   registerMethod,
   clearMethods
 } from '../../../../main/ets/service/transfer/TransferMethodRegistry'
-import { DiscoveredDevice, FavoriteDevice, SendFileItem, StagedFile } from '../../../../main/ets/model/Types'
+import {
+  DiscoveredDevice,
+  FavoriteDevice,
+  SendFileItem,
+  SendSessionStatus,
+  StagedFile
+} from '../../../../main/ets/model/Types'
 import { SessionFileDescriptor, SessionStage } from '../../../../main/ets/model/transfer/TransferSession'
 import { DeviceTypePartition } from '../../../../main/ets/model/SendDeviceGrouping'
 import {
@@ -187,6 +193,7 @@ export default function SendPageTest() {
       expect(notice !== undefined ? notice.sessionId : '').assertEqual(failId)
       expect(notice !== undefined ? notice.message : '').assertEqual('接收端不支持加密传输')
       expect(notice !== undefined ? notice.alias : '').assertEqual('A')
+      expect(notice !== undefined ? notice.suggestRefresh : true).assertFalse()
       // 仅统计目标设备：其它地址的失败不参与
       expect(pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.8') === undefined).assertTrue()
       // 原因缺失时消息为空：由浮卡只展示标题，不编造文案
@@ -194,6 +201,12 @@ export default function SendPageTest() {
       finishLocalSend(silentId, false)
       let silent = pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.7')
       expect(silent !== undefined ? silent.message : 'x').assertEqual('')
+      // 超时/连接失败：建议刷新设备列表（对端可能已更换网络或 IP）
+      let timeoutId = beginLocalSendSession('new_timeout', target, files)
+      finishLocalSend(timeoutId, false, '接收方未响应', SendSessionStatus.timeout)
+      let timeoutNotice = pickNewSendFailure(beforeIds, getAllSessions(), '10.0.0.7')
+      expect(timeoutNotice !== undefined ? timeoutNotice.sessionId : '').assertEqual(timeoutId)
+      expect(timeoutNotice !== undefined ? timeoutNotice.suggestRefresh : false).assertTrue()
       // MTA 会话不携带对端 IP：空 IP 表示按协议整体取最新一条失败
       let mtaBefore: Array<string> = []
       let existing = getAllSessions()
@@ -211,6 +224,7 @@ export default function SendPageTest() {
       let mtaNotice = pickNewSendFailure(mtaBefore, getAllSessions(), '')
       expect(mtaNotice !== undefined ? mtaNotice.sessionId : '').assertEqual(mtaId)
       expect(mtaNotice !== undefined ? mtaNotice.message : '').assertEqual('组网失败')
+      expect(mtaNotice !== undefined ? mtaNotice.suggestRefresh : true).assertFalse()
       resetRegistry()
     })
 

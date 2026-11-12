@@ -19,6 +19,7 @@ import {
 } from '../../model/NativeTypes';
 import {
   nativeSendFiles,
+  nativeClientInfo,
   nativeSanitizeFileName,
   nativeFlushRustLogs,
   nativeCancelTransfer,
@@ -260,7 +261,9 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     }
     if (err.kind === 'reqwest') {
       if (isTimeoutOrConnectionMessage(err.message)) {
-        return localizedText($r('app.string.send_error_timeout'), 'Receiver did not respond');
+        return localizedText($r('app.string.send_error_timeout'),
+          'Receiver did not respond. Make sure the other device is open; if its network changed, ' +
+          'refresh the device list and retry');
       }
       // 其他 reqwest 错误（协议不匹配等）保留其原始消息。
       return err.message;
@@ -317,6 +320,21 @@ function sendAbortedResult(unifiedSessionId: string): SendResult {
   return { success: false, error: { kind: 'other', message: 'Send session already ended' } };
 }
 
+/**
+ * 发送前轻量探活：/info 使用 5 秒超时。
+ * prepare-upload 的总超时为 30 秒（包含接收方确认），对端换网/IP 后旧地址不可达时，
+ * 用户会长时间看不到失败原因；先探活可把不可达场景收敛到 5 秒内。
+ * 返回错误文本，探活成功返回 undefined。
+ */
+async function probeDeviceReachable(device: DiscoveredDevice, protocol: string): Promise<string | undefined> {
+  try {
+    await nativeClientInfo(protocol, device.ip, device.port);
+    return undefined;
+  } catch (e) {
+    return String(e);
+  }
+}
+
 export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>,
@@ -358,6 +376,22 @@ export async function sendToDevice(
   };
 
   logger.debug('协议协商结果：' + actualProtocol, sendCtx);
+
+  // 发送前先做一次 /info 探活：对端换网后旧 IP 不可达时，prepare-upload 会等满
+  // 30 秒总超时才报错；探活 5 秒超时可让失败浮卡尽快出现。
+  let probeError: string | undefined = await probeDeviceReachable(device, actualProtocol);
+  // 探活期间用户可能已取消：优先按取消收口，不再打开文件、不进入发送
+  if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+    logger.debug('探活期间会话已终态，跳过发送', sendCtx);
+    return sendAbortedResult(unifiedSessionId);
+  }
+  if (probeError !== undefined) {
+    logger.warn('发送前探活失败，按连接失败处理：' + probeError, sendCtx);
+    return {
+      success: false,
+      error: { kind: 'reqwest', message: 'connection failed: ' + probeError }
+    };
+  }
 
   let target: NativeTargetDevice = {
     ip: device.ip,

@@ -910,7 +910,7 @@
     },
     {
       "name": "send_error_timeout",
-      "value": "接收方未响应，请确认对方已打开应用后重试"
+      "value": "接收方未响应，请确认对方已打开应用；若对方更换过网络，请刷新设备列表后重试"
     },
     {
       "name": "send_error_cancelled",
@@ -943,6 +943,14 @@
     {
       "name": "send_failure_card_action_detail",
       "value": "查看详情"
+    },
+    {
+      "name": "send_failure_card_action_refresh",
+      "value": "刷新设备列表"
+    },
+    {
+      "name": "send_refreshing_devices_toast",
+      "value": "正在刷新设备列表…"
     },
     {
       "name": "send_protocol_block_title",
@@ -1938,7 +1946,7 @@
     },
     {
       "name": "favorites_probe_failed",
-      "value": "无法连接到该设备，请检查网络"
+      "value": "无法连接到该设备，请检查网络；若对方更换过网络或 IP，请刷新设备列表后重试"
     },
     {
       "name": "multi_select_cancel",

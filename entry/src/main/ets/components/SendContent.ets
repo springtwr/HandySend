@@ -113,6 +113,8 @@ export struct SendContent {
   @Local private sendFailureTitle: string = ''
   @Local private sendFailureBody: string = ''
   @Local private sendFailureMulti: boolean = false
+  // 是否在失败浮卡提供“刷新设备列表”：仅超时/连接类失败（对端可能已更换网络或 IP）
+  @Local private sendFailureSuggestRefresh: boolean = false
   private sendFailureSessionId: string = ''
   private sendFailureCount: number = 0
   private sendFailureLastMessage: string = ''
@@ -623,6 +625,9 @@ export struct SendContent {
       this.sendFailureUniform = this.sendFailureUniform && notice.message === this.sendFailureLastMessage;
     }
     this.sendFailureLastMessage = notice.message;
+    // 仅当多次失败原因一致且本次为网络类失败时才给刷新入口：
+    // 混合原因时刷新列表无法解决，仍指引用户去任务页
+    this.sendFailureSuggestRefresh = this.sendFailureUniform && notice.suggestRefresh;
     this.sendFailureTitle = multi ?
       getStringSync(this.getUIContext(), $r('app.string.send_failure_card_title_multi'))
         .replace('%s', this.sendFailureCount.toString()) :
@@ -740,6 +745,7 @@ export struct SendContent {
     this.sendFailureTitle = '';
     this.sendFailureBody = '';
     this.sendFailureMulti = false;
+    this.sendFailureSuggestRefresh = false;
     this.sendFailureSessionId = '';
     this.sendFailureCount = 0;
     this.sendFailureLastMessage = '';
@@ -762,6 +768,15 @@ export struct SendContent {
     this.onOpenTaskCenter();
   }
 
+  /** 网络类失败浮卡的刷新入口：关闭浮卡后刷新设备列表，并提示用户等待扫描完成。 */
+  private refreshDevicesFromFailureCard(): void {
+    this.closeSendFailureCard();
+    this.refreshDevices();
+    this.getUIContext()
+      .getPromptAction()
+      .showToast({ message: $r('app.string.send_refreshing_devices_toast'), duration: 1500 });
+  }
+
   @Builder
   sendFailureCard() {
     Row({ space: DesignTokens.space.sm }) {
@@ -781,8 +796,21 @@ export struct SendContent {
           Text(this.sendFailureBody)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
-            .maxLines(2)
+            .maxLines(5)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+
+        if (this.sendFailureSuggestRefresh) {
+          Text($r('app.string.send_failure_card_action_refresh'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.accent_blue_text'))
+            .width('100%')
+            .height(DesignTokens.size.inlineButton)
+            .textAlign(TextAlign.Start)
+            .onClick(() => {
+              this.refreshDevicesFromFailureCard();
+            })
+            .id('send_failure_refresh')
         }
       }
       .layoutWeight(1)
@@ -1253,7 +1281,7 @@ export struct SendContent {
     if (result === FavoriteSendResult.probeFailed) {
       this.getUIContext()
         .getPromptAction()
-        .showToast({ message: $r('app.string.favorites_probe_failed'), duration: 2000, alignment: Alignment.Center });
+        .showToast({ message: $r('app.string.favorites_probe_failed'), duration: 3000, alignment: Alignment.Center });
     } else if (result === FavoriteSendResult.busy) {
       this.getUIContext()
         .getPromptAction()

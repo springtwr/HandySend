@@ -910,7 +910,7 @@
     },
     {
       "name": "send_error_timeout",
-      "value": "Receiver did not respond. Make sure the other device is ready and try again"
+      "value": "Receiver did not respond. Make sure the other device is open; if its network changed, refresh the device list and retry"
     },
     {
       "name": "send_error_cancelled",
@@ -943,6 +943,14 @@
     {
       "name": "send_failure_card_action_detail",
       "value": "View details"
+    },
+    {
+      "name": "send_failure_card_action_refresh",
+      "value": "Refresh devices"
+    },
+    {
+      "name": "send_refreshing_devices_toast",
+      "value": "Refreshing device list…"
     },
     {
       "name": "send_protocol_block_title",
@@ -1938,7 +1946,7 @@
     },
     {
       "name": "favorites_probe_failed",
-      "value": "Device unreachable. Please check the network."
+      "value": "Device unreachable. Check the network; if the device changed networks or IP, refresh the device list and try again."
     },
     {
       "name": "multi_select_cancel",

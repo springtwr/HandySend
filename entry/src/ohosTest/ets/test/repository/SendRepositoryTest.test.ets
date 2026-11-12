@@ -35,6 +35,11 @@ function makeError(kind: string, status?: number, message?: string): NativeHttpE
   return err
 }
 
+// 无 UIAbilityContext 时 localizedText 回退的英文文案（与 SendRepository 的 fallback 保持一致）
+const TIMEOUT_FALLBACK: string =
+  'Receiver did not respond. Make sure the other device is open; if its network changed, ' +
+    'refresh the device list and retry'
+
 export default function SendRepositoryTest() {
   describe('SendRepositoryTest', () => {
 
@@ -84,13 +89,13 @@ export default function SendRepositoryTest() {
     it('sendResultErrorMessage_reqwest_timeout_mapped', 0, () => {
       let err: NativeHttpError = makeError('reqwest', undefined, 'operation timed out')
       let msg: string = sendResultErrorMessage(err)
-      expect(msg).assertEqual('Receiver did not respond')
+      expect(msg).assertEqual(TIMEOUT_FALLBACK)
     })
 
     it('sendResultErrorMessage_reqwest_connection_refused_mapped', 0, () => {
       let err: NativeHttpError = makeError('reqwest', undefined, 'connection refused')
       let msg: string = sendResultErrorMessage(err)
-      expect(msg).assertEqual('Receiver did not respond')
+      expect(msg).assertEqual(TIMEOUT_FALLBACK)
     })
 
     it('sendResultErrorMessage_reqwest_other_keeps_original_message', 0, () => {

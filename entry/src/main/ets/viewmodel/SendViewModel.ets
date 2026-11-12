@@ -53,7 +53,8 @@ import {
   SourceFileMeta,
   StagedFile,
   FavoriteDevice,
-  TransferFileDescriptor
+  TransferFileDescriptor,
+  SendSessionStatus
 } from '../model/Types';
 import { TransferSession, SessionFilter, SessionStage, isTerminalStage } from '../model/transfer/TransferSession';
 import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
@@ -130,6 +131,8 @@ export interface SendFailureNotice {
   alias: string
   /** 失败原因（会话记录的本地化错误信息；可能为空，此时浮卡只展示标题） */
   message: string
+  /** 是否建议刷新设备列表（仅超时/连接类失败：对端可能已更换网络或 IP） */
+  suggestRefresh: boolean
 }
 
 /** 一次 MTA 发起的结局：是否已结算、新建会话标识，以及失败时的展示摘要。 */
@@ -180,7 +183,10 @@ export function pickNewSendFailure(beforeIds: Array<string>, sessions: Array<Tra
   return {
     sessionId: latest.id,
     alias: latest.peer.displayName,
-    message: latest.errorMessage
+    message: latest.errorMessage,
+    // 仅超时/连接类失败提示刷新设备列表：对端可能已更换网络或 IP；
+    // 拒收、取消、PIN 错误等失败刷新列表无意义
+    suggestRefresh: latest.errorCode === SendSessionStatus.timeout
   };
 }
 

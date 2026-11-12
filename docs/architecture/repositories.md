@@ -50,7 +50,8 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 > 优先 dup 该句柄（缺失/失效时按路径异步打开）并携带 fd（fd-direct），
 > Rust 侧以 pread 从文件头读取，多个会话并发复用同一句柄也不受共享偏移影响；
 > 文本消息准备：prepareSendFiles 对命中「手动文本来源」入参的条目读取文本
-> 内容填入 preview（见「文本消息准备」）。
+> 内容填入 preview（见「文本消息准备」）。发送前先用 `/info` 做一次 5 秒超时的探活：
+> 旧 IP 不可达时直接按连接失败收口，避免等满 prepare-upload 的 30 秒请求超时。
 >
 > **注 3**：`ReceiveRepository` 为接收链路的**协议 I/O 与事件来源**：pending requests、
 > 自动确认、接收会话/进度事件、finishReceiveSession、请求轮询、接收直写目标管理（确认接收

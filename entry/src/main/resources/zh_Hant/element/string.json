@@ -910,7 +910,7 @@
     },
     {
       "name": "send_error_timeout",
-      "value": "接收方未回應，請確認對方已開啟應用後重試"
+      "value": "接收方未回應，請確認對方已開啟應用；若對方更換過網路，請重新整理裝置列表後再試"
     },
     {
       "name": "send_error_cancelled",
@@ -943,6 +943,14 @@
     {
       "name": "send_failure_card_action_detail",
       "value": "查看詳情"
+    },
+    {
+      "name": "send_failure_card_action_refresh",
+      "value": "重新整理裝置列表"
+    },
+    {
+      "name": "send_refreshing_devices_toast",
+      "value": "正在重新整理裝置列表…"
     },
     {
       "name": "send_protocol_block_title",
@@ -1938,7 +1946,7 @@
     },
     {
       "name": "favorites_probe_failed",
-      "value": "無法連線到該裝置，請檢查網路"
+      "value": "無法連線到該裝置，請檢查網路；若對方更換過網路或 IP，請重新整理裝置列表後再試"
     },
     {
       "name": "multi_select_cancel",
