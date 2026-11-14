@@ -166,6 +166,23 @@ export default function TransferSessionRegistryTest() {
       resetRegistry()
     })
 
+    it('create_session_noPeerIp_leavesLocalNetworkEmpty', 0, () => {
+      resetRegistry()
+      // 无对端 IP（MTA 等无 IP 协议）无法判定本机承载端点：留空，由详情页显示占位符，
+      // 不再用主接口（通常是 wlan0）冒充
+      let s = createSession(makeInput())
+      expect(s.localIp).assertEqual('')
+      expect(s.localInterfaceName).assertEqual('')
+      // 非 IPv4 文本（如网页上传的回退 token）同样按无法判定处理
+      let invalid = makeInput()
+      invalid.protocolSessionId = 'p-token'
+      invalid.peer = namedPeer('web', 'web-token')
+      let s2 = createSession(invalid)
+      expect(s2.localIp).assertEqual('')
+      expect(s2.localInterfaceName).assertEqual('')
+      resetRegistry()
+    })
+
     it('timeline_startedRecordedAtFirstByteProgress', 0, () => {
       resetRegistry()
       let s = createSession(makeInput())

@@ -48,6 +48,7 @@ import IPValidatorTest from './utils/IPValidatorTest.test'
 import EventBusTest from './utils/EventBusTest.test'
 import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
 import NetworkInterfaceRulesTest from './utils/NetworkInterfaceRulesTest.test'
+import NetworkInterfaceSelectionTest from './utils/NetworkInterfaceSelectionTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
 import LargeTransferUtilTest from './utils/LargeTransferUtilTest.test'
@@ -156,6 +157,7 @@ export default function testsuite() {
   EventBusTest()
   NetworkPresentationTest()
   NetworkInterfaceRulesTest()
+  NetworkInterfaceSelectionTest()
   SpeedEstimatorTest()
   MtaProgressUtilTest()
   LargeTransferUtilTest()

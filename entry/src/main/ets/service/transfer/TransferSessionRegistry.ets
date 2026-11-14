@@ -13,9 +13,14 @@
  *   不使用按协议分散的一次性事件队列。
  */
 
-import { notifyChange, subscribe, unsubscribe } from '../repository/AppCore';
+import { getLocalInterfaces, notifyChange, subscribe, unsubscribe } from '../repository/AppCore';
 import { getDeviceAlias, getLocalDeviceInfo } from '../repository/DeviceRepository';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
+import {
+  isIpv4Address,
+  selectDefaultRouteInterface,
+  selectInterfaceForPeer
+} from '../../utils/NetworkInterfaceSelection';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import {
@@ -92,7 +97,7 @@ interface SpeedSample {
   lastBytes: number
 }
 
-/** 会话记录用的本机网卡：取自启停过滤后的接口列表，与 getLocalDeviceInfo 的主 IP 同一选取结果。 */
+/** 回退用的本机主接口：有对端 IP 但无法推断承载接口时使用；取自启停过滤后的接口列表。 */
 function defaultLocalInterface(): NetworkInterface | undefined {
   let info: LocalDeviceInfo = getLocalDeviceInfo();
   let list: Array<NetworkInterface> = info.interfaces;
@@ -108,6 +113,35 @@ function defaultLocalInterface(): NetworkInterface | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * 会话记录用的本机网卡：
+ * - 对端 IP 落在某个本机接口网段时取该接口（本次传输实际经过的网卡）。匹配使用全部
+ *   本机接口（按实际路由证据，不受发现/接收的启停过滤限制）；
+ * - 发送方向的对端在跨网段/虚拟组网中时，按默认网络接口取本机地址（发送源地址由
+ *   默认路由决定）。默认接口取启停过滤后的列表，避免把用户已关闭的接口记成来源；
+ * - 对端 IP 缺失/非法（如 MTA 等无 IP 协议）时留空，不用主接口冒充；
+ * - 接收方向无法从对端 IP 反推被连接的本机地址（如端口映射），与有对端 IP 但
+ *   无法推断时一样，回退到本机主接口。
+ */
+function localInterfaceForPeer(peerIp: string, dataFlow: SessionDataFlow): NetworkInterface | undefined {
+  // 无对端 IP 无法判定本机承载端点：留空（详情页显示占位符）
+  if (!isIpv4Address(peerIp)) {
+    return undefined;
+  }
+  let matched: NetworkInterface | undefined = selectInterfaceForPeer(getLocalInterfaces(), peerIp);
+  if (matched !== undefined) {
+    return matched;
+  }
+  if (dataFlow === SessionDataFlow.outbound) {
+    let viaDefault: NetworkInterface | undefined =
+      selectDefaultRouteInterface(getLocalDeviceInfo().interfaces);
+    if (viaDefault !== undefined) {
+      return viaDefault;
+    }
+  }
+  return defaultLocalInterface();
 }
 
 /** 采样瞬时速度并维护会话峰值速度（不可得时保持既有值）。 */
@@ -362,9 +396,9 @@ export function createSession(input: SessionCreateInput): TransferSession {
   // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示
   session.declaredFileCount = input.declaredFileCount !== undefined ? input.declaredFileCount : 0;
   session.startedAt = Date.now();
-  // 采集本机标识（昵称 / 默认 IP / 网卡接口名），随历史持久化以支撑详情展示
+  // 采集本机标识（昵称 / 承载 IP 与网卡接口名，无法推断时留空），随历史持久化以支撑详情展示
   session.localAlias = getDeviceAlias();
-  let localInterface = defaultLocalInterface();
+  let localInterface = localInterfaceForPeer(input.peer.ip ?? '', input.dataFlow);
   session.localIp = localInterface !== undefined ? localInterface.ip : '';
   session.localInterfaceName = localInterface !== undefined ? localInterface.name : '';
   let files: Array<SessionFile> = [];

@@ -218,7 +218,8 @@ export class TransferSession {
   @Trace errorMessage: string = ''
   // 协议/链路错误码（无法取得时为空串）
   @Trace errorCode: string = ''
-  // 本机设备标识（昵称 / 默认 IP / 网卡接口名）：创建会话时采集，写入历史以支撑详情展示
+  // 本机设备标识（昵称 / 承载会话的 IP / 网卡接口名）：创建会话时按对端 IP 选择承载接口
+  // （发送方向跨网段时取默认路由接口；对端 IP 缺失/非法时留空）；写入历史以支撑详情展示
   localAlias: string = ''
   localIp: string = ''
   localInterfaceName: string = ''
