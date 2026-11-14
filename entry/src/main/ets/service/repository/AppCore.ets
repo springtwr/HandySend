@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { connection } from '@kit.NetworkKit';
+import { wifiManager } from '@kit.ConnectivityKit';
 import { LogEntry, NetworkInterface, NetworkType } from '../../model/Types';
 import { getLogger } from '../../utils/Logger';
 import { appendDiagnosticLog, clearDiagnosticLogs } from '../log/DiagnosticLogService';
@@ -151,10 +152,29 @@ let localInterfaces: Array<NetworkInterface> = []; // 所有本地网卡
 
 // ── 多网卡网络检测 ──
 
+/** 将 IpInfo 的十进制整数 IPv4 转为点分十进制文本（0 → "0.0.0.0"）。 */
+function ipv4Text(value: number): string {
+  let v: number = value >>> 0;
+  return ((v >> 24) & 0xff) + '.' + ((v >> 16) & 0xff) + '.' + ((v >> 8) & 0xff) + '.' + (v & 0xff);
+}
+
 function getAllLocalIps(): Array<NetworkInterface> {
   let result: Array<NetworkInterface> = [];
 
   try {
+    // 热点（SoftAP）与 STA Wi-Fi 在接口列表中都表现为 wifi 类型：
+    // 热点接口不会出现在 connection API 的已连接网络里，据此与普通 Wi-Fi 区分；
+    // STA 地址用于在 Wi-Fi 未连接等场景下兜底排除。
+    let hotspotActive: boolean = false;
+    let staIp: string = '';
+    try {
+      hotspotActive = wifiManager.isHotspotActive();
+      if (hotspotActive) {
+        staIp = ipv4Text(wifiManager.getIpInfo().ipAddress);
+      }
+    } catch (e) {
+      logger.warn('查询热点状态失败：' + JSON.stringify(e));
+    }
     // 主数据源：Rust 侧 if_addrs 枚举所有有 IP 的网络接口
     let rustInterfaces: Array<NetworkInterfaceInfo> = nativeGetNetworkInterfaces();
 
@@ -184,16 +204,36 @@ function getAllLocalIps(): Array<NetworkInterface> {
       logger.warn('获取 connection API 网络列表失败：' + JSON.stringify(e));
     }
 
+    // 热点接口候选（result 下标）：仅在候选唯一时标注，避免把次要 STA 误标为热点
+    let hotspotCandidates: Array<number> = [];
+
     // 交叉匹配：Rust 接口名 ↔ ConnectionProperties.interfaceName
     for (let i = 0; i < rustInterfaces.length; i++) {
       let rustIf = rustInterfaces[i];
       let type = NetworkType.unknown;
       let isDefault = false;
+      // 该地址是否属于 connection API 的已连接网络（热点地址不在其中）
+      let connectedAddress: boolean = false;
 
       // 在 connection API 返回的激活网络中查找匹配
       for (let j = 0; j < connProps.length; j++) {
         let props = connProps[j];
         if (props.interfaceName !== undefined && props.interfaceName === rustIf.name) {
+          // 同一接口可能同时承载 STA 与热点地址：按 linkAddresses 判断本地址
+          // 是否属于已连接网络；linkAddresses 为空时退回按接口名认定。
+          let linkAddresses = props.linkAddresses;
+          let hasLinkAddresses: boolean = linkAddresses !== undefined && linkAddresses.length > 0;
+          let ipInLinkAddresses: boolean = false;
+          if (hasLinkAddresses) {
+            for (let k = 0; k < linkAddresses.length; k++) {
+              let linkAddr = linkAddresses[k].address;
+              if (linkAddr !== undefined && linkAddr.address === rustIf.ip) {
+                ipInLinkAddresses = true;
+                break;
+              }
+            }
+          }
+          connectedAddress = !hasLinkAddresses || ipInLinkAddresses;
           // 匹配成功：从 bearerTypes 推导 type
           let bearerTypes = connBearerTypes[j];
           if (bearerTypes.includes(connection.NetBearType.BEARER_WIFI)) {
@@ -222,8 +262,18 @@ function getAllLocalIps(): Array<NetworkInterface> {
         prefixLength: rustIf.prefixLength,
         type: type,
         isDefault: isDefault,
+        isHotspot: false,
         name: rustIf.name
       });
+      // 热点开启时，不属于已连接网络、也不是 STA 地址的 Wi-Fi 接口作为热点候选
+      if (hotspotActive && type === NetworkType.wifi && !connectedAddress && rustIf.ip !== staIp) {
+        hotspotCandidates.push(result.length - 1);
+      }
+    }
+
+    // 次要 STA 也可能不在 connection 列表中；候选不唯一时无法可靠区分热点，宁可不标注
+    if (hotspotCandidates.length === 1) {
+      result[hotspotCandidates[0]].isHotspot = true;
     }
   } catch (e) {
     logger.warn('获取本地 IP 失败：' + JSON.stringify(e));
@@ -236,6 +286,7 @@ function getAllLocalIps(): Array<NetworkInterface> {
       prefixLength: 24,
       type: NetworkType.unknown,
       isDefault: true,
+      isHotspot: false,
       name: ''
     });
   }

@@ -641,6 +641,10 @@
       "value": "Wi-Fi"
     },
     {
+      "name": "network_type_hotspot",
+      "value": "Hotspot"
+    },
+    {
       "name": "network_type_cellular",
       "value": "Cellular"
     },
@@ -2055,6 +2059,10 @@
     {
       "name": "web_address_switch",
       "value": "Switch web address"
+    },
+    {
+      "name": "web_address_multi_hint",
+      "value": "Multiple network interfaces detected. Make sure the selected network interface is on the same network as the other device."
     },
     {
       "name": "web_service_restart_title",

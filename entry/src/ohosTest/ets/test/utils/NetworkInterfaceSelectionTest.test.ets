@@ -16,7 +16,8 @@ function makeInterface(name: string, ip: string, prefixLength: number,
     ip: ip,
     prefixLength: prefixLength,
     type: type,
-    isDefault: isDefault
+    isDefault: isDefault,
+    isHotspot: false
   }
 }
 

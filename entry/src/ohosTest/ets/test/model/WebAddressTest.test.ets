@@ -12,12 +12,14 @@ import {
 } from '../../../../main/ets/model/WebAddress'
 import { NetworkInterface, NetworkType } from '../../../../main/ets/model/Types'
 
-function iface(name: string, ip: string, type: NetworkType, isDefault: boolean): NetworkInterface {
+function iface(name: string, ip: string, type: NetworkType, isDefault: boolean,
+  isHotspot: boolean = false): NetworkInterface {
   return {
     name: name,
     ip: ip,
     type: type,
     isDefault: isDefault,
+    isHotspot: isHotspot,
     prefixLength: 24
   }
 }
@@ -71,6 +73,20 @@ export default function WebAddressTest() {
       let onlyEth: Array<WebAddress> = listWebAddresses(list, [], ['wlan0'])
       expect(onlyEth.length).assertEqual(1)
       expect(onlyEth[0].name).assertEqual('eth0')
+    })
+
+    it('preserves_hotspot_flag', 0, () => {
+      let list: Array<NetworkInterface> = [
+        iface('wlan0', '192.168.1.5', NetworkType.wifi, true),
+        iface('ap0', '192.168.43.1', NetworkType.wifi, false, true)
+      ]
+      let result: Array<WebAddress> = listWebAddresses(list, [], [])
+      expect(result.length).assertEqual(2)
+      // 同为 Wi-Fi 类型：默认路由的 STA 在前，热点标记随后透传
+      expect(result[0].name).assertEqual('wlan0')
+      expect(result[0].isHotspot).assertFalse()
+      expect(result[1].name).assertEqual('ap0')
+      expect(result[1].isHotspot).assertTrue()
     })
 
     it('picks_selected_or_falls_back_to_first', 0, () => {

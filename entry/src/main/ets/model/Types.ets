@@ -68,6 +68,7 @@ export interface NetworkInterface {
   prefixLength: number
   type: NetworkType
   isDefault: boolean // 是否为默认网络
+  isHotspot: boolean // 是否为热点（SoftAP）接口
   name: string // 接口名（如 "wlan0"、"eth0"）
 }
 

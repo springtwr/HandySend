@@ -55,13 +55,21 @@ export struct WebAccessEntryCard {
     return typeof label === 'string' ? label : getStringSync(this.getUIContext(), label);
   }
 
+  /** 地址所属网络类型文案：热点接口标注「热点」，其余按网络类型（如 Wi-Fi）。 */
+  private addressTypeLabel(address: WebAddress): string {
+    if (address.isHotspot) {
+      return getStringSync(this.getUIContext(), $r('app.string.network_type_hotspot'));
+    }
+    return this.interfaceLabel(address.type);
+  }
+
   private checkModifier(address: WebAddress): SymbolGlyphModifier | undefined {
     return this.isAddressSelected(address) ?
       new SymbolGlyphModifier($r('sys.symbol.checkmark')) : undefined;
   }
 
   private addressMenuLabel(address: WebAddress): string {
-    return this.interfaceLabel(address.type) + ' · ' + address.ip;
+    return this.addressTypeLabel(address) + ' · ' + address.ip;
   }
 
   @Builder
@@ -112,24 +120,35 @@ export struct WebAccessEntryCard {
 
       // 手动访问地址：多网卡时单击打开接口菜单，长按/双击复制；单网卡时单击复制
       if (this.addresses.length > 1) {
-        Row({ space: DesignTokens.space.mini }) {
-          Text(this.manualUrl())
-            .fontSize(DesignTokens.font.bodyS)
-            .fontColor($r('app.color.purple_text'))
-            .id('web_access_manual_url')
+        Column({ space: DesignTokens.space.xxs }) {
+          Row({ space: DesignTokens.space.mini }) {
+            Text(this.manualUrl())
+              .fontSize(DesignTokens.font.bodyS)
+              .fontColor($r('app.color.purple_text'))
+              .id('web_access_manual_url')
 
-          SymbolGlyph($r('sys.symbol.chevron_down'))
-            .fontSize(DesignTokens.font.iconXs)
-            .fontColor([$r('app.color.text_tertiary')])
+            SymbolGlyph($r('sys.symbol.chevron_down'))
+              .fontSize(DesignTokens.font.iconXs)
+              .fontColor([$r('app.color.text_tertiary')])
+          }
+          .padding(DesignTokens.space.mini)
+          .borderRadius(DesignTokens.radius.sm)
+          .bindMenu(this.addressMenu)
+          .gesture(LongPressGesture().onAction(() => {
+            this.onCopy(this.manualUrl());
+          }))
+          .accessibilityText($r('app.string.web_address_switch'))
+          .id('web_access_address_selector')
+
+          // 多接口时提示网络一致性：与他人不在同一网络时扫码打不开网页
+          Text($r('app.string.web_address_multi_hint'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.warning_orange'))
+            .textAlign(TextAlign.Center)
+            .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md })
+            .id('web_access_address_hint')
         }
-        .padding(DesignTokens.space.mini)
-        .borderRadius(DesignTokens.radius.sm)
-        .bindMenu(this.addressMenu)
-        .gesture(LongPressGesture().onAction(() => {
-          this.onCopy(this.manualUrl());
-        }))
-        .accessibilityText($r('app.string.web_address_switch'))
-        .id('web_access_address_selector')
+        .alignItems(HorizontalAlign.Center)
       } else {
         Text(this.manualUrl())
           .fontSize(DesignTokens.font.bodyS)

@@ -641,6 +641,10 @@
       "value": "Wi-Fi"
     },
     {
+      "name": "network_type_hotspot",
+      "value": "熱點"
+    },
+    {
       "name": "network_type_cellular",
       "value": "蜂窩網路"
     },
@@ -2055,6 +2059,10 @@
     {
       "name": "web_address_switch",
       "value": "切換網頁位址"
+    },
+    {
+      "name": "web_address_multi_hint",
+      "value": "偵測到多個網路介面，請確保所選網路介面與其他人處於同一網路"
     },
     {
       "name": "web_service_restart_title",

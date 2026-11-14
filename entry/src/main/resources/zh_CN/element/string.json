@@ -641,6 +641,10 @@
       "value": "Wi-Fi"
     },
     {
+      "name": "network_type_hotspot",
+      "value": "热点"
+    },
+    {
       "name": "network_type_cellular",
       "value": "蜂窝网络"
     },
@@ -2055,6 +2059,10 @@
     {
       "name": "web_address_switch",
       "value": "切换网页地址"
+    },
+    {
+      "name": "web_address_multi_hint",
+      "value": "检测到多个网络接口，请确保所选网络接口与其他人处于同一网络"
     },
     {
       "name": "web_service_restart_title",
