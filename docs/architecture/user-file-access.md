@@ -37,7 +37,7 @@ Picker 返回的 URI（`file://media/...`、`file://docs/...`）只带临时授�
 - **选择后立即持久化**：`persistPickedUris` 调 `fileShare.persistPermission`（只读），
   把临时授权写入系统数据库（不占应用存储、不复制文件）；
 - **访问前激活**：`ensureUriAccess` 调 `fileShare.activatePermission`，按下述时机调用：
-  缩略图解码前（`FileEntryThumb`）、打开类动作探测前（`FileLocationUtil`）；
+  缩略图解码前（`FileEntryThumb`，仅可解码的图片）、打开类动作探测前（`FileLocationUtil`）；
   进程内用集合缓存成功/失败结果，避免重复 IPC；
 - **删除时撤销**：清空或删除任务历史时 `revokeUriAccess` 撤销这些 URI 的持久化授权。
 
@@ -136,6 +136,10 @@ MTA 接收、网页上传仍按平铺文件名落盘；本次改动只作用于 
 - 不把 `file://media/...` 直接交给 `Image`，否则失败时拿不到错误原因；
 - 仅在该行滚入可视区时加载；首屏后 12 行按 90 ms 错峰预加载，滚动时缩略图已就绪；
 - 不落盘任何缩略图缓存（大批量传图会显著增加应用占用空间）；
+- 只对 Image Kit 可解码的图片格式（JPEG、PNG、GIF、WebP、BMP、SVG、ICO、HEIF、DNG、TIFF、AVIF 等；
+  部分格式受系统版本与设备硬件影响）尝试解码；`image/*` 中系统不支持的格式（如 XCF、PSD）
+  与文档等非图片条目直接回退类型图标，不发起必然失败的解码，也不会在缩略图阶段对这些条目的
+  Picker URI 触发授权激活；
 - 解码失败显示类型图标，重新滚入可视区时重试；图片/视频加载中显示占位块，避免图标闪烁。
 
 ## 5. 详情页文件清单

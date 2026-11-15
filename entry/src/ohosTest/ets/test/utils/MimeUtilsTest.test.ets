@@ -6,6 +6,7 @@ import {
   getMimeForExt,
   getMimeForFileName,
   isImageExtension,
+  isThumbnailDecodableImage,
   aggregateMtaMimeType
 } from '../../../../main/ets/utils/MimeUtils'
 
@@ -190,6 +191,36 @@ export default function MimeUtilsTest() {
       expect(isImageExtension('heic')).assertTrue()
       expect(isImageExtension('zip')).assertFalse()
       expect(isImageExtension('')).assertFalse()
+    })
+
+    // ── isThumbnailDecodableImage：是否值得发起缩略图解码 ──
+
+    it('isThumbnailDecodableImage_supported_mime_true', 0, () => {
+      expect(isThumbnailDecodableImage('image/jpeg', 'a.jpg')).assertTrue()
+      expect(isThumbnailDecodableImage('image/png', 'a.png')).assertTrue()
+      expect(isThumbnailDecodableImage('image/heic', 'a.heic')).assertTrue()
+      expect(isThumbnailDecodableImage('image/tiff', 'a.tiff')).assertTrue()
+      // 带参数的 MIME 按分号前的主类型判断
+      expect(isThumbnailDecodableImage('image/jpeg; charset=utf-8', 'a')).assertTrue()
+    })
+
+    it('isThumbnailDecodableImage_unsupported_image_mime_false', 0, () => {
+      // Image Kit 不支持 XCF：属 image/* 但不应发起解码
+      expect(isThumbnailDecodableImage('image/x-xcf', 'video_cover.xcf')).assertFalse()
+      expect(isThumbnailDecodableImage('image/vnd.adobe.photoshop', 'a.psd')).assertFalse()
+    })
+
+    it('isThumbnailDecodableImage_extension_fallback', 0, () => {
+      // MIME 缺失或为通用二进制时按扩展名兜底（对端元数据不准的图片仍能出缩略图）
+      expect(isThumbnailDecodableImage('application/octet-stream', 'a.PNG')).assertTrue()
+      expect(isThumbnailDecodableImage('', 'a.webp')).assertTrue()
+      expect(isThumbnailDecodableImage('application/octet-stream', 'a.zip')).assertFalse()
+    })
+
+    it('isThumbnailDecodableImage_non_image_false', 0, () => {
+      expect(isThumbnailDecodableImage('text/plain', 'a.txt')).assertFalse()
+      expect(isThumbnailDecodableImage('application/pdf', 'a.pdf')).assertFalse()
+      expect(isThumbnailDecodableImage('', '')).assertFalse()
     })
   })
 }
