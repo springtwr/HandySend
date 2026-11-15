@@ -23,7 +23,13 @@ import {
   nativeDiscardRecvFileFds
 } from '../NativeBridge';
 import {
-  ReceivedFileEntry, prepareRecvTargets, removeRecvTargetFiles, clearRecvTargets
+  MAX_RECV_FILES,
+  ReceivedFileEntry,
+  RecvPrepareError,
+  RecvPrepareOutcome,
+  clearRecvTargets,
+  prepareRecvTargets,
+  removeRecvTargetFiles
 } from './ReceiveTargets';
 import { consumeReceiveDirectoryFallbackNotice, ensureReceiveDirectory } from './ReceiveDirectory';
 import { getFavorites } from './FavoritesService';
@@ -64,10 +70,11 @@ import {
   markReceiveActive,
   setLocalReceiveInvokers,
   updateReceiveProgress,
-  updateReceiveSessionFilePath,
+  updateReceiveSessionFileTargets,
   LOCAL_RECEIVE_KEY
 } from '../transfer/adapters/LocalSendReceiveAdapter';
 import {
+  baseNameOf,
   TEMP_SUBDIR_LOCAL_SEND,
   tempPathForFinal
 } from '../../model/transfer/TransferTempPaths';
@@ -525,8 +532,16 @@ export function handlePrepareUploadEventTyped(event: NativePrepareUploadEvent): 
       // 使 UI 呈现"传输失败"而非误导性的"发送方已取消"
       acceptWithTargets(sid, allFileIds).then((acceptError: string) => {
         if (acceptError.length > 0) {
-          receiveSessionStates[sid] = 'failed';
+          // 自动接收没有 respondToRequest 的失败收口，这里补统一会话终态，
+          // 避免只改内部状态而详情页仍停留在进行中
+          if (receiveSessionStates[sid] === 'sending') {
+            receiveSessionStates[sid] = 'failed';
+            finishLocalReceiveSession(sid, SessionStage.failed, acceptError, 'prepare_failed');
+            // 干净失败不需要强杀恢复草稿；避免下次启动把已终结会话重复归档
+            removeLocalSendDraft(sid);
+          }
           logger.warn('会话自动接收失败 会话=' + sid + '，原因=' + acceptError);
+          notifyChange();
         }
       }).catch((e: Error) => {
         logger.warn('自动确认接收失败：' + e.message);
@@ -761,7 +776,10 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
     if (entries !== undefined) {
       for (let i = 0; i < entries.length; i++) {
         if (entries[i].fileId === fileId) {
-          filePath = getReceiveCacheDir() + entries[i].fileName;
+          // 目标确定后 entry.filePath 已是实际最终路径（含嵌套目录）；
+          // 仅在尚未登记时回退旧的缓存目录拼接，避免把相对名拼成错误路径。
+          filePath = entries[i].filePath.length > 0 ?
+            entries[i].filePath : getReceiveCacheDir() + entries[i].fileName;
           break;
         }
       }
@@ -873,6 +891,19 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
   }
 }
 
+/** 会话是否包含带目录分量的文件：有目录时不做整会话“保存到相册”。 */
+function sessionContainsDirectories(entries: Array<ReceivedFileEntry> | undefined): boolean {
+  if (entries === undefined) {
+    return false;
+  }
+  for (let i = 0; i < entries.length; i++) {
+    if (entries[i].fileName.indexOf('/') >= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * 完成一个接收会话：导出文件、记录历史、清理。
  * 当会话中的所有文件均下载完成时调用。全程同步执行。
@@ -939,8 +970,10 @@ function finishReceiveSession(sessionId: string): void {
   logger.debug('已设置接收完成标记 会话=' + sessionId, { sessionId: sessionId, direction: 'recv' });
 
   // ── 提取媒体文件信息供相册保存弹窗使用 ──
-  if (isSaveToGallery()) {
-    let allEntries = sessionFileMap[sessionId];
+  // 文件夹会话不做整会话相册保存：保存后文件会脱离目录结构；单文件菜单的手动保存仍保留
+  let allEntriesForGallery = sessionFileMap[sessionId];
+  if (isSaveToGallery() && !sessionContainsDirectories(allEntriesForGallery)) {
+    let allEntries = allEntriesForGallery;
     if (allEntries !== undefined && allEntries.length > 0) {
       let mediaFiles: Array<MediaFileInfo> = [];
       for (let i = 0; i < allEntries.length; i++) {
@@ -1129,7 +1162,38 @@ function acceptPrepareFailedMessage(): string {
   return fallback;
 }
 
-// 执行"接收确认"：先校验存储预留，再预创建直写目标并注册 fd，最后向 Rust 发送 accept 响应。
+/** 读取接收相关本地化文案；应用上下文缺失/读取失败时回退英文。 */
+function receiveFolderMessage(res: Resource, fallback: string): string {
+  try {
+    let appContext = getAppContext();
+    if (appContext !== undefined) {
+      return appContext.resourceManager.getStringSync(res.id);
+    }
+  } catch (_e) {
+  }
+  return fallback;
+}
+
+/** 接收目标准备失败原因 → 可直接展示的本地化文案。 */
+function recvPrepareErrorMessage(error: RecvPrepareError): string {
+  if (error === RecvPrepareError.tooMany) {
+    return receiveFolderMessage($r('app.string.receive_folder_too_many_files'),
+      'Too many files in the incoming folder, rejected').replace('%s', String(MAX_RECV_FILES));
+  }
+  if (error === RecvPrepareError.invalidPath) {
+    return receiveFolderMessage($r('app.string.receive_folder_invalid_path'),
+      'The sender provided an invalid file path, rejected');
+  }
+  if (error === RecvPrepareError.reservedName) {
+    return receiveFolderMessage($r('app.string.receive_folder_reserved_name'),
+      'The sender folder contains a reserved temporary directory name, rejected');
+  }
+  return acceptPrepareFailedMessage();
+}
+
+// 执行"接收确认"：先校验存储预留，再规划最终路径/创建临时文件并注册路径目标，
+// 最后向 Rust 发送 accept 响应。路径目标模式下不预持有 fd，Rust 在上传到达时
+// 用 O_NOFOLLOW 打开临时路径。
 // 存储不足/目标准备失败/respond 抛异常时直接拒绝会话并回滚；返回空串表示接受成功，
 // 否则返回可直接展示给用户的失败原因（调用方透传到会话错误信息）。
 async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Promise<string> {
@@ -1141,6 +1205,16 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     }
     return acceptPrepareFailedMessage();
   }
+  // 文件数硬上限先于存储检查：避免为超限请求做无谓的目录/空间查询
+  if (fileIds.length > MAX_RECV_FILES) {
+    logger.warn('接收文件数超过上限，拒绝会话 文件数=' + fileIds.length +
+      ' 上限=' + MAX_RECV_FILES);
+    try {
+      nativeRespondTransfer(sessionId, false, []);
+    } catch (_e) {
+    }
+    return recvPrepareErrorMessage(RecvPrepareError.tooMany);
+  }
   // 落盘前存储预留检查：可用空间不足时直接拒绝，避免写坏文件与半成品残留
   let storageError: string = await checkStorageBeforeAccept(sessionId, fileIds);
   if (storageError.length > 0) {
@@ -1151,34 +1225,55 @@ async function acceptWithTargets(sessionId: string, fileIds: Array<string>): Pro
     }
     return storageError;
   }
-  let targetPaths: Record<string, string> | undefined =
+  let outcome: RecvPrepareOutcome =
     await prepareRecvTargets(sessionId, fileIds, sessionFileMap[sessionId],
       (): void => {
-        // 路径已确定、临时文件尚未创建：先把最终/临时路径落进草稿，
+        // 路径已确定、目录/临时文件尚未创建：先把最终/临时路径落进草稿，
         // 强杀后启动恢复仍能据此清理临时区。
         writeLocalSendDraft(sessionId, SessionStage.active);
       });
-  if (targetPaths === undefined) {
-    logger.warn('准备接收目标失败，拒绝会话');
+  if (outcome.paths === undefined) {
+    logger.warn('准备接收目标失败，拒绝会话 原因=' + outcome.error);
     try {
       nativeRespondTransfer(sessionId, false, []);
     } catch (_e) {
     }
-    return acceptPrepareFailedMessage();
+    return recvPrepareErrorMessage(outcome.error);
   }
-  // 回写直写路径：进度事件/历史记录按登记路径补齐
+  let targetPaths: Record<string, string> = outcome.paths;
+  // 回写最终路径与实际相对名：进度事件/历史记录/详情名称均按登记值补齐。
+  // 批量写入：大文件夹逐文件通知会造成 N 次全数组复制与 N 次 UI 刷新。
   let pathKeys: Array<string> = Object.keys(targetPaths);
+  let entries = sessionFileMap[sessionId];
+  let targetNames: Record<string, string> = {};
   for (let k = 0; k < pathKeys.length; k++) {
-    sessionFilePaths[sessionId + ':' + pathKeys[k]] = targetPaths[pathKeys[k]];
-    // 会话逐文件路径：供详情页按路径读取文本内容（须在会话终结前写入）
-    updateReceiveSessionFilePath(sessionId, pathKeys[k], targetPaths[pathKeys[k]]);
+    let fileId: string = pathKeys[k];
+    sessionFilePaths[sessionId + ':' + fileId] = targetPaths[fileId];
+    if (entries !== undefined) {
+      for (let e = 0; e < entries.length; e++) {
+        if (entries[e].fileId === fileId) {
+          // 描述符里的原始名可能带相对前缀或未去重：回写实际落盘名
+          targetNames[fileId] = entries[e].fileName;
+          break;
+        }
+      }
+    }
+  }
+  updateReceiveSessionFileTargets(sessionId, targetPaths, targetNames);
+  // 准备期间对方取消/本地失败：不再放行，回滚已建目标；终态由取消路径负责，不覆盖
+  if (receiveSessionStates[sessionId] !== 'sending') {
+    logger.debug('准备目标期间会话已终态，回滚目标并跳过放行 会话=' + sessionId);
+    nativeDiscardRecvFileFds(sessionId);
+    removeRecvTargetFiles(sessionId);
+    removeLocalSendDraft(sessionId);
+    return '';
   }
   // 草稿已在创建临时文件前写入（含最终/临时路径），此处直接向对端确认。
   try {
     nativeRespondTransfer(sessionId, true, fileIds);
     logger.info('已接受请求，共 ' + fileIds.length + ' 个文件');
   } catch (e) {
-    // respond 失败（如会话已被发送方清理/过期）：回滚已注册 fd 与已建文件
+    // respond 失败（如会话已被发送方清理/过期）：回滚已注册路径与已建文件
     logger.error('接受响应失败：' + e);
     nativeDiscardRecvFileFds(sessionId);
     removeRecvTargetFiles(sessionId);
@@ -1218,11 +1313,19 @@ export async function respondToRequest(sessionId: string, accept: boolean,
     let ids: Array<string> = acceptedFileIds.length > 0 ? acceptedFileIds : collectSessionFileIds(sessionId);
     let acceptError: string = await acceptWithTargets(sessionId, ids);
     if (acceptError.length > 0) {
-      // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件），
-      // 失败原因透传到会话错误信息（存储不足等本地原因用户可见）
-      receiveSessionStates[sessionId] = 'canceledBySender';
-      finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
-      logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId);
+      // 准备期间对方取消时状态已不在 sending：不覆盖既有终态
+      if (receiveSessionStates[sessionId] === 'sending') {
+        // 准备失败/响应异常：按取消呈现（发送方收到拒绝；本端清理已建文件），
+        // 失败原因透传到会话错误信息（存储不足、路径非法、文件过多等用户可见）
+        receiveSessionStates[sessionId] = 'canceledBySender';
+        finishLocalReceiveSession(sessionId, SessionStage.failed, acceptError, 'prepare_failed');
+        // 干净失败不需要强杀恢复草稿；避免下次启动把已终结会话重复归档
+        removeLocalSendDraft(sessionId);
+        logger.debug('会话因本地准备失败被拒绝 会话=' + sessionId);
+      } else {
+        logger.debug('准备失败但会话已终态，保留既有终态 会话=' + sessionId +
+          ' 状态=' + receiveSessionStates[sessionId]);
+      }
     }
   } else {
     receiveSessionStates[sessionId] = 'canceledBySender';
@@ -1293,24 +1396,30 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
       realPath = pathMap[f.fileId];
     }
     // 导出路径包含重命名后的实际文件名（如 "photo (1).jpg"），
-    // 历史记录应显示磁盘上的真实文件名而非发送方原始文件名
+    // 历史记录应显示磁盘上的真实文件名而非发送方原始文件名；
+    // 文件夹会话同时保留相对目录前缀：Photos/2024/a (1).jpg。
     let displayFileName: string = f.fileName;
     if (pathMap !== undefined && pathMap[f.fileId] !== undefined) {
-      let lastSlash: number = realPath.lastIndexOf('/');
-      if (lastSlash >= 0) {
-        displayFileName = realPath.substring(lastSlash + 1);
-      } else {
-        displayFileName = realPath;
+      let realBase: string = baseNameOf(realPath);
+      if (realBase.length === 0) {
+        realBase = realPath;
       }
+      let lastSlash: number = f.fileName.lastIndexOf('/');
+      displayFileName = lastSlash >= 0 ?
+        f.fileName.substring(0, lastSlash + 1) + realBase : realBase;
     }
-    // 尝试从磁盘获取实际文件大小
+    // 文件大小优先取请求声明值（已由 Rust 写入时校验），避免大文件夹逐文件同步 stat；
+    // 旧会话/无声明值的条目才回退磁盘查询。
     let fileSize: number = 0;
-    if (realPath.length > 0) {
+    let declaredSize: number | undefined = sessionFileSizes[sessionId + ':' + f.fileId];
+    if (declaredSize !== undefined) {
+      fileSize = declaredSize;
+    } else if (realPath.length > 0) {
       try {
         let stat = fs.statSync(realPath);
         fileSize = stat.size;
       } catch (_e) {
-        // 回退：尝试从待处理请求数据中获取大小
+        // 回退：保持 0
       }
     }
     // isMessage 判断：text/plain + preview 有内容（LocalSend 协议中手动输入文本的 preview 包含文本内容）

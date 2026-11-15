@@ -4,6 +4,11 @@
 import { describe, it, beforeAll, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import {
+  MAX_RECV_FILES,
+  ReceivedFileEntry,
+  RecvPrepareError,
+  RecvPrepareOutcome,
+  prepareRecvTargets,
   removeDirectoryIfEmpty,
   removeRecvTargetPaths,
   uniquePath
@@ -115,6 +120,28 @@ export default function ReceiveTargetsTest() {
       removeRecvTargetPaths(perTemp)
       expect(fs.accessSync(tempDir)).assertFalse()
       expect(fs.accessSync(tempRoot)).assertFalse()
+    })
+
+    it('prepare_rejects_more_than_max_files', 0, async (done: Function) => {
+      // 文件数上限在目标规划/目录解析之前返回，不触碰文件系统
+      let ids: Array<string> = []
+      let entries: Array<ReceivedFileEntry> = []
+      let count: number = MAX_RECV_FILES + 1
+      for (let i = 0; i < count; i++) {
+        let id: string = 'cap_' + i
+        ids.push(id)
+        entries.push({
+          sessionId: 'cap_session',
+          fileId: id,
+          filePath: '',
+          fileName: 'file_' + i + '.bin',
+          fileType: 'application/octet-stream'
+        })
+      }
+      let outcome: RecvPrepareOutcome = await prepareRecvTargets('cap_session', ids, entries)
+      expect(outcome.error).assertEqual(RecvPrepareError.tooMany)
+      expect(outcome.paths === undefined).assertTrue()
+      done()
     })
   })
 }

@@ -23,6 +23,7 @@ import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
 import ReceiveTargetPrepOrderTest from './service/ReceiveTargetPrepOrderTest.test'
+import ReceiveSessionNameTest from './service/ReceiveSessionNameTest.test'
 import ReceiveInterruptedCleanupTest from './repository/ReceiveInterruptedCleanupTest.test'
 import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
 
@@ -33,6 +34,7 @@ import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
 import SessionArchiveRulesTest from './model/SessionArchiveRulesTest.test'
+import ReceivedPathTest from './model/ReceivedPathTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 import HistorySegmentsTest from './model/HistorySegmentsTest.test'
@@ -133,6 +135,7 @@ export default function testsuite() {
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
   ReceiveTargetPrepOrderTest()
+  ReceiveSessionNameTest()
   ReceiveInterruptedCleanupTest()
   ProtocolToggleSettingsTest()
 
@@ -143,6 +146,7 @@ export default function testsuite() {
   MtaProtocolModelsTest()
   MtaDiscoveryGuardTest()
   SessionArchiveRulesTest()
+  ReceivedPathTest()
   SendProgressTest()
   DragDropParserTest()
   WebAddressTest()

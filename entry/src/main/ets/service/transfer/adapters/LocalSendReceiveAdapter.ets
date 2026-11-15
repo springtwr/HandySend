@@ -24,6 +24,7 @@ import {
   getSession,
   setStage,
   updateFileProgress,
+  updateSessionFileTargets,
   updateSessionFilePath
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
@@ -194,6 +195,16 @@ export function updateReceiveSessionFilePath(protocolSessionId: string, fileId: 
     return;
   }
   updateSessionFilePath(unifiedId, fileId, path);
+}
+
+/** 批量回写接收目标的最终路径与实际相对名（accept 阶段一次完成，避免 N 次通知）。 */
+export function updateReceiveSessionFileTargets(protocolSessionId: string,
+  paths: Record<string, string>, names: Record<string, string>): void {
+  let unifiedId = unifiedByProtocol.get(protocolSessionId);
+  if (unifiedId === undefined) {
+    return;
+  }
+  updateSessionFileTargets(unifiedId, paths, names);
 }
 
 function resolveProtocolId(sessionId: string): string {

@@ -42,10 +42,12 @@ pub struct PendingFile {
     pub sha256: Option<String>,
 }
 
-/// 接收文件预注册的写入目标（ArkTS 侧直写最终位置时使用）。
+/// 接收文件预注册的写入目标（ArkTS 侧在 accept 前登记）。
 ///
-/// - `fd`：ArkTS 已打开的目标文件写描述符；交由 Rust 消费（写入完成后关闭）。
-/// - `path`：目标文件真实路径（供 ArkTS 记账/历史记录，Rust 不执行路径语义）。
+/// - `fd >= 0`：ArkTS 已打开临时文件的写描述符；交由 Rust 消费（写入完成后关闭）。
+/// - `fd = -1`：路径目标模式；Rust 在上传到达时打开 `path` 对应的临时路径
+///   （`temp_path_for(path)`），不预持有句柄。
+/// - `path`：目标文件最终真实路径（供写入成功后 rename 与 ArkTS 记账）。
 #[derive(Clone, Debug)]
 pub struct RecvTargetFd {
     pub fd: i32,

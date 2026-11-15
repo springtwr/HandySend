@@ -10,6 +10,8 @@
 use crate::bridge::config;
 use crate::bridge::lock;
 use std::os::fd::FromRawFd;
+#[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+use std::os::fd::IntoRawFd;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -272,12 +274,29 @@ pub async fn start_server(
     Ok(local_port)
 }
 
+/// 在上传到达时打开 ArkTS 预创建的临时文件（路径目标模式）。
+///
+/// 只用于 ohos/android：临时文件由 ArkTS 在 accept 前创建并关闭；这里用
+/// `O_NOFOLLOW` 复用同一个路径，拿到 fd 后仍交给 `FileUploadTarget::Fd`。
+/// 这样不预持有 N 个 fd，同时保留“写入目标绑定 inode”的边界。
+#[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+fn open_recv_temp_path(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+}
+
 /// 处理 FileUpload：取回存储的 target_tx，应答直写目标（预注册 fd 优先），跟踪进度。
 ///
 /// 目标选择规则（无沙箱回退）：
-/// - ArkTS 已在 respondTransfer 前经 register_recv_file_fd 预注册该文件 → `Fd` 直写临时区，
-///   写入成功后由结果任务 `rename` 到最终位置；
-/// - 未预注册（异常时序/目标准备失败被拒绝的会话残留）→ 丢弃 target_tx 使上传失败，不落沙箱。
+/// - ArkTS 注册了具体 fd → `Fd` 直写临时区；
+/// - ArkTS 注册 `fd = -1`（路径目标模式）→ 本函数在上传到达时用 `O_NOFOLLOW`
+///   打开预创建的临时路径，再走 `Fd`；
+/// - 未注册（异常时序/目标准备失败被拒绝的会话残留）→ 丢弃 target_tx 使上传失败，不落沙箱。
 async fn handle_file_upload(
     state: &Mutex<BridgeState>,
     session_id: &str,
@@ -319,17 +338,44 @@ async fn handle_file_upload(
                     std::path::Path::new(&final_path),
                     crate::bridge::temp_workspace::TEMP_SUBDIR_LOCAL_SEND,
                 );
-                log::debug!(
-                    "接收：fd 直接保存 session={} file={} path={} temp={}",
-                    session_id,
-                    file_id,
-                    final_path,
-                    temp_path.display()
-                );
+                // fd >= 0：沿用原直写句柄；fd = -1：路径目标模式，上传到达时打开预创建临时文件
+                let fd: i32 = if recv_fd.fd >= 0 {
+                    log::debug!(
+                        "接收：fd 直接保存 session={} file={} path={} temp={}",
+                        session_id,
+                        file_id,
+                        final_path,
+                        temp_path.display()
+                    );
+                    recv_fd.fd
+                } else {
+                    match open_recv_temp_path(&temp_path) {
+                        Ok(file) => {
+                            log::debug!(
+                                "接收：路径目标在上传时打开 session={} file={} path={} temp={}",
+                                session_id,
+                                file_id,
+                                final_path,
+                                temp_path.display()
+                            );
+                            file.into_raw_fd()
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "接收：打开预创建临时文件失败 session={} file={} temp={}: {e}",
+                                session_id,
+                                file_id,
+                                temp_path.display()
+                            );
+                            drop(target_tx);
+                            return;
+                        }
+                    }
+                };
                 // fd 所有权随 from_raw_fd 移交，写入完成后关闭；提交 rename 由结果任务完成
                 (
                     localsend::http::server::common::save::FileUploadTarget::Fd {
-                        fd: recv_fd.fd,
+                        fd,
                         result_tx,
                         progress_tx: Some(progress_tx),
                     },
@@ -339,7 +385,7 @@ async fn handle_file_upload(
             }
             None => {
                 log::warn!(
-                    "文件上传：会话无已注册目标 fd session={} file={}，上传失败（无沙箱回退）",
+                    "文件上传：会话无已注册目标 session={} file={}，上传失败（无沙箱回退）",
                     session_id,
                     file_id
                 );
@@ -512,9 +558,11 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
     lock(&s.pending_requests).clear();
     s.pending_decisions.clear();
     s.pending_file_uploads.clear();
-    // 服务器停止：关闭所有尚未消费的接收直写 fd
+    // 服务器停止：关闭所有尚未消费的接收直写 fd（fd = -1 的路径目标无句柄可关）
     for (_key, recv_fd) in s.recv_target_fds.drain() {
-        let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+        if recv_fd.fd >= 0 {
+            let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+        }
     }
     s.session_peers.clear();
 }
@@ -580,10 +628,14 @@ pub fn fail_file_upload(
     )))
 }
 
-/// 预注册接收文件的直写目标 fd（ArkTS 侧在 respondTransfer 前逐文件调用）。
+/// 预注册接收文件的落盘目标（ArkTS 侧在 respondTransfer 前逐文件调用）。
 ///
-/// 注册后 fd 所有权移交 Rust：FileUpload 到达时经 `from_raw_fd` 消费并关闭；
-/// 若该文件最终未上传（拒绝/会话取消/发送方中止），由会话终态清理关闭。
+/// - `fd >= 0`：ArkTS 已打开临时文件并移交写句柄，FileUpload 到达时直接消费；
+/// - `fd = -1`：路径目标模式，ArkTS 只预创建空临时文件并关闭，Rust 在上传到达时
+///   用 `O_NOFOLLOW` 打开 `temp_path_for(path)`，拿到 fd 后仍走 Fd 分支。
+///
+/// fd 所有权在注册时移交 Rust（路径目标模式没有句柄）；若该文件最终未上传，
+/// 由会话终态清理关闭（仅 fd 模式）。
 pub fn register_recv_file_fd(
     state: &Mutex<BridgeState>,
     session_id: &str,
@@ -591,16 +643,18 @@ pub fn register_recv_file_fd(
     fd: i32,
     path: &str,
 ) -> Result<(), BridgeError> {
-    if fd < 0 {
+    if fd < -1 {
         return Err(BridgeError::InvalidArgument("接收句柄无效".to_string()));
     }
     let mut s = lock(state);
-    // 覆盖注册前关闭旧句柄，避免泄漏
+    // 覆盖注册前关闭旧句柄，避免泄漏（路径目标模式无句柄）
     if let Some(old) = s
         .recv_target_fds
         .remove(&(session_id.to_string(), file_id.to_string()))
     {
-        let _ = unsafe { std::fs::File::from_raw_fd(old.fd) };
+        if old.fd >= 0 {
+            let _ = unsafe { std::fs::File::from_raw_fd(old.fd) };
+        }
     }
     s.recv_target_fds.insert(
         (session_id.to_string(), file_id.to_string()),
@@ -628,8 +682,10 @@ pub fn close_unconsumed_recv_fds(state: &Mutex<BridgeState>, session_id: &str) {
     for key in keys {
         let entry = lock(state).recv_target_fds.remove(&key);
         if let Some(recv_fd) = entry {
-            // 将裸 fd 包装进 File 并立即释放即完成关闭（不依赖 libc/nix）
-            let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+            // 路径目标模式（fd = -1）没有句柄；fd >= 0 时包装进 File 立即释放即完成关闭
+            if recv_fd.fd >= 0 {
+                let _ = unsafe { std::fs::File::from_raw_fd(recv_fd.fd) };
+            }
         }
     }
 }
@@ -1202,10 +1258,27 @@ mod tests {
     }
 
     #[test]
-    fn test_register_recv_file_fd_rejects_negative_fd() {
-        // 非法句柄直接报错，不进入登记表
+    fn test_register_recv_file_fd_accepts_path_mode() {
+        // 路径目标模式：fd = -1 合法，写入登记表；discard 时没有句柄可关
         let state = Mutex::new(BridgeState::new());
-        let result = register_recv_file_fd(&state, "s-neg", "f-neg", -1, "/tmp/target.bin");
+        register_recv_file_fd(&state, "s-path", "f-path", -1, "/tmp/target.bin").unwrap();
+        {
+            let s = state.lock().unwrap();
+            let entry = s
+                .recv_target_fds
+                .get(&("s-path".to_string(), "f-path".to_string()))
+                .expect("路径目标应进入登记表");
+            assert_eq!(entry.fd, -1);
+        }
+        discard_recv_file_fds(&state, "s-path");
+        assert!(state.lock().unwrap().recv_target_fds.is_empty());
+    }
+
+    #[test]
+    fn test_register_recv_file_fd_rejects_invalid_negative_fd() {
+        // 只允许 -1；更小的负数仍视为非法
+        let state = Mutex::new(BridgeState::new());
+        let result = register_recv_file_fd(&state, "s-neg", "f-neg", -2, "/tmp/target.bin");
         assert!(matches!(result, Err(BridgeError::InvalidArgument(_))));
         assert!(state.lock().unwrap().recv_target_fds.is_empty());
     }

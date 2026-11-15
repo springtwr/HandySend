@@ -2355,6 +2355,18 @@
     {
       "name": "portal_open_confirm_action",
       "value": "打开"
+    },
+    {
+      "name": "receive_folder_too_many_files",
+      "value": "发送方文件夹超过 %s 个文件，已拒绝接收"
+    },
+    {
+      "name": "receive_folder_invalid_path",
+      "value": "发送方提供的文件路径不合法，已拒绝接收"
+    },
+    {
+      "name": "receive_folder_reserved_name",
+      "value": "发送方文件夹包含应用保留的临时目录名，已拒绝接收"
     }
   ]
 }

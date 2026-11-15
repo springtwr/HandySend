@@ -68,9 +68,9 @@ function dumpRustLogs(): string {
   return lines.join(' | ')
 }
 
-// 预注册接收目标 fd 并接受会话：fd-direct 接收路径要求 respondTransfer 前
-// 在临时区创建文件并注册最终路径（对齐生产流程 ReceiveRepository.prepareRecvTargets），
-// Rust 写入完成后负责 rename 到最终路径；否则服务器无落盘目标，上传以 500 失败。
+// 预注册接收目标并接受会话：路径目标模式要求 accept 前创建最终目录与空临时文件，
+// 然后注册 fd = -1（最终路径）；Rust 在上传到达时用 O_NOFOLLOW 打开临时文件，
+// 写入完成后 rename 到最终路径，否则服务器无落盘目标，上传以 500 失败。
 function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
   if (e.type !== 'prepareUpload') {
     return
@@ -79,12 +79,15 @@ function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
   let ids: Array<string> = []
   for (let i = 0; i < pe.files.length; i++) {
     let destPath: string = recvDir + pe.files[i].fileName
+    let finalDir: string = destPath.substring(0, destPath.lastIndexOf('/'))
+    ensureDir(finalDir)
     let tempPath: string = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
     let tempDir: string = tempPath.substring(0, tempPath.lastIndexOf('/'))
     ensureDir(tempDir)
     let file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
       fs.OpenMode.TRUNC)
-    nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, file.fd, destPath)
+    fs.closeSync(file)
+    nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, -1, destPath)
     ids.push(pe.files[i].fileId)
   }
   nativeRespondTransfer(pe.sessionId, true, ids)
@@ -343,6 +346,63 @@ export default function LoopbackTransferTest() {
           throw new Error('[E2E] fd 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
         }
         expect(readFileContent(recvPath) === content).assertTrue()
+      } finally {
+        offBridgeEvent('prepareUpload', prepareHandler)
+      }
+      done()
+    })
+
+    it('loopback_nested_relative_path_preserves_directories', 0, async (done: Function) => {
+      let sendName: string = 'nested_src_' + Date.now().toString() + '.txt'
+      let recvName: string = 'outer/inner/nested_' + Date.now().toString() + '.txt'
+      let content: string = 'NESTED-' + Date.now().toString() + '-0123456789abcdef'
+      let sendPath: string = writeTestFileToSandbox(sendName, content)
+
+      let prepareHandler = (e: NativeEvent): void => {
+        if (e.type === 'prepareUpload') {
+          acceptWithRecvTargets(e, getRecvDir())
+        }
+      }
+      onBridgeEvent('prepareUpload', prepareHandler)
+      try {
+        let hash: string = await nativeHashFileStream(sendPath, undefined)
+        let target: NativeTargetDevice = {
+          ip: '127.0.0.1',
+          port: suitePort,
+          fingerprint: 'test_fp',
+          protocol: 'http'
+        }
+        let files: Array<NativeFileToSend> = [{
+          fileId: 'e2e_nested_1',
+          filePath: sendPath,
+          fileName: recvName,
+          fileType: 'text/plain',
+          size: content.length,
+          preview: undefined,
+          sha256: hash
+        }]
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files,
+          'loopback_transfer_nested')
+        if (!result.success) {
+          throw new Error('[E2E] nested send failed: ' + JSON.stringify(result.error) +
+            ' [Rust 日志] ' + dumpRustLogs())
+        }
+        let recvPath: string = getRecvDir() + recvName
+        let saved: boolean = false
+        let deadline: number = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (fileExists(recvPath)) {
+            saved = true
+            break
+          }
+          await sleep(200)
+        }
+        if (!saved) {
+          throw new Error('[E2E] nested 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+        }
+        expect(readFileContent(recvPath) === content).assertTrue()
+        // 嵌套最终目录下的临时区清空后应被移除
+        expect(fs.accessSync(getRecvDir() + 'outer/inner/' + TEMP_DIR_NAME)).assertFalse()
       } finally {
         offBridgeEvent('prepareUpload', prepareHandler)
       }

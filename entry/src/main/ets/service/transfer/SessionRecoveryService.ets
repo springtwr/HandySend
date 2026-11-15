@@ -266,7 +266,11 @@ function buildSessionFile(file: SessionDraftFile, completed: boolean,
 function buildReceiveEntry(draft: SessionDraft, file: SessionDraftFile,
   actualSize: number): ReceiveHistoryEntry {
   let fileName: string = baseNameOf(file.finalPath);
-  if (fileName.length === 0) {
+  let slash: number = file.fileName.lastIndexOf('/');
+  if (slash >= 0) {
+    // 文件夹会话：保留相对目录前缀，只替换最后一段为实际落盘名
+    fileName = file.fileName.substring(0, slash + 1) + fileName;
+  } else if (fileName.length === 0) {
     fileName = file.fileName;
   }
   let entry: ReceiveHistoryEntry = {

@@ -2355,6 +2355,18 @@
     {
       "name": "portal_open_confirm_action",
       "value": "開啟"
+    },
+    {
+      "name": "receive_folder_too_many_files",
+      "value": "傳送方資料夾超過 %s 個檔案，已拒絕接收"
+    },
+    {
+      "name": "receive_folder_invalid_path",
+      "value": "傳送方提供的檔案路徑不合法，已拒絕接收"
+    },
+    {
+      "name": "receive_folder_reserved_name",
+      "value": "傳送方資料夾包含應用保留的暫存目錄名稱，已拒絕接收"
     }
   ]
 }

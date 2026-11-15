@@ -2355,6 +2355,18 @@
     {
       "name": "portal_open_confirm_action",
       "value": "Open"
+    },
+    {
+      "name": "receive_folder_too_many_files",
+      "value": "The incoming folder has more than %s files and was rejected"
+    },
+    {
+      "name": "receive_folder_invalid_path",
+      "value": "The sender provided an invalid file path; the transfer was rejected"
+    },
+    {
+      "name": "receive_folder_reserved_name",
+      "value": "The sender folder contains a reserved temporary directory name; the transfer was rejected"
     }
   ]
 }

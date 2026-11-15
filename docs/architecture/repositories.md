@@ -25,9 +25,9 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、<br>Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
-| `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收直写目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
+| `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveDirectory.ets` | 接收目录唯一来源：默认 `Download/<包名>/`（DOWNLOAD 模式）、<br>自定义目录（FOLDER Picker + 读写持久授权）、启动激活与失效回退 |
-| `ReceiveTargets.ets` | 接收直写目标登记：接收文本目录与目标路径登记表，<br>供取消/失败清理与相册保存读取；接收目录由 `ReceiveDirectory.ets` 统一提供 |
+| `ReceiveTargets.ets` | 接收目标登记：相对路径解析、最终目录/临时文件、路径目标与新建目录登记表，<br>供取消/失败清理与相册保存读取；接收目录由 `ReceiveDirectory.ets` 统一提供 |
 | `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与会话登记；下载任务经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
@@ -220,12 +220,13 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 
 文本内容在所有链路上都是**文件**，会话与历史上只保留路径与元数据：
 
-- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 按条目是否文本消息分流目标目录——普通文件落
-  `ReceiveDirectory.ensureReceiveDirectory` 提供的接收目录（默认 `Download/<包名>/`，
-  用户可在设置中自定义），
-  文本消息落应用私有接收文本目录（`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供），
-  重名规则一致（`uniquePath`，同名自动加序号、不覆盖）；
-  接收完成处理不读取全文、不删除文本文件，文件长期保留在接收文本目录。
+- **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 先解析 `fileName` 的相对路径并逐段净化，
+  再按条目是否文本消息分流目标目录——普通文件落 `ReceiveDirectory.ensureReceiveDirectory` 提供的
+  接收目录（默认 `Download/<包名>/`，用户可在设置中自定义），文本消息落应用私有接收文本目录
+  （`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供）；每个最终目录内用 `uniquePath`
+  消歧（同名自动加序号、不覆盖），嵌套目录按相对路径逐级创建；单次请求上限 2000 个文件。
+  目标注册使用路径目标模式：accept 前只创建空临时文件并注册 `fd = -1`，Rust 上传到达时打开，
+  不预持有 N 个 fd。接收完成处理不读取全文、不删除文本文件，文件长期保留在接收文本目录。
 - **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**先做存储预留检查、再把文本写入接收文本目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。
 - **发送**：局域网手输文本（`SendViewModel.stageTextFile`）与互传发送文本（`MtaSendService.writeSharedTextFile`）写入应用**私有持久目录** `filesDir/text_send/`，
   路径统一由 `SendRepository.sendTextDir` 提供；未发起发送的暂存文本在移出/清空暂存时仍按既有规则删除，已发起发送的文本（`StagedFile.persisted`）不被暂存清理删除。
@@ -234,8 +235,11 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
   确有删除时发布变更总线通知，驱动发送暂存列表自检移除底层文件已消失的手动文本条目。
   该目录**不在**冷启动清理范围内（冷启动清理只针对手动文本暂存临时目录 `{cacheDir}/send/` 与旧版本遗留的 `{filesDir}/send/`，见 `SendRepository.cleanupSendDirWithContext`），
   故每次启动都不会破坏已发送文本的预览，文件只在用户主动清空任务历史时被删除。互传发送对端可见的条目名保持 `sharedText.txt` 不变（协议行为不变）。
-- **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经 `LocalSendReceiveAdapter.updateReceiveSessionFilePath` 在会话终结前写入逐文件路径；
-  发送侧由发送适配器在会话创建时携带。归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
+- **路径贯通**：接收侧在 `acceptWithTargets` 预注册目标后经
+  `LocalSendReceiveAdapter.updateReceiveSessionFileTargets` 批量写入逐文件最终路径与实际相对名
+  （含 ` (N)`；一次数组替换 + 一次变更通知），使任务详情与磁盘/接收历史一致；
+  发送侧由发送适配器在会话创建时携带。
+  归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
 - **文件级接收历史**：`ReceiveHistoryEntry` 只写入路径与元数据；读取旧数据时剥离其遗留的 `textContent` 字段并全量回写一次；
   `ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
   接收历史页的查看全文/复制改为经共用工具 `utils/FileTextUtil.readTextOfLocation` 读取文件（沙箱路径直读、选择器 URI 经文件描述符读取，失败返回不可用并由界面明确提示）。

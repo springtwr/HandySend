@@ -465,6 +465,66 @@ export function updateSessionFilePath(sessionId: string, fileId: string, path: s
   return false;
 }
 
+/**
+ * 运行期回写会话文件显示名：接收目标确定最终相对路径（含 ` (N)` 后缀）后调用，
+ * 使任务详情/任务历史的文件名与磁盘实际落盘一致。
+ * 会话不存在、已终态、名称为空或文件标识未命中时为空操作。
+ */
+export function updateSessionFileName(sessionId: string, fileId: string, fileName: string): boolean {
+  if (sessionId.length === 0 || fileId.length === 0 || fileName.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    if (session.files[i].fileId === fileId) {
+      session.files[i].fileName = fileName;
+      // SessionFile.fileName 非 @Trace：替换数组引用，驱动详情清单重建行并读取新名称
+      session.files = session.files.slice();
+      notifyChange();
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 批量回写接收目标的最终路径与显示名（一次数组替换 + 一次变更通知）。
+ * 大文件夹逐文件调用单条更新会产生 N 次全数组复制与 N 次 UI 通知，故 accept 阶段使用本入口。
+ */
+export function updateSessionFileTargets(sessionId: string, paths: Record<string, string>,
+  names: Record<string, string>): boolean {
+  if (sessionId.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  let changed: boolean = false;
+  for (let i = 0; i < session.files.length; i++) {
+    let file = session.files[i];
+    let path: string | undefined = paths[file.fileId];
+    if (path !== undefined && path.length > 0 && file.path !== path) {
+      file.path = path;
+      changed = true;
+    }
+    let name: string | undefined = names[file.fileId];
+    if (name !== undefined && name.length > 0 && file.fileName !== name) {
+      file.fileName = name;
+      changed = true;
+    }
+  }
+  if (changed) {
+    // path/fileName 均非 @Trace：替换数组引用，驱动详情清单重建行
+    session.files = session.files.slice();
+    notifyChange();
+  }
+  return changed;
+}
+
 /** 回填接收确认阶段的对端预览图路径（目前仅 MTA 缩略图使用）。
  *
  * 会话已终结、路径为空或与现有值相同时为空操作，返回是否写入。

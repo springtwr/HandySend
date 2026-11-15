@@ -71,6 +71,35 @@ MTA 三条接收链路共用，禁止各自解析路径。
   LocalSend 接收（含纯文本放行后）、网页上传普通文件、MTA 文件接收或设置页
   会消费一次性回退提示，用 Toast 告知用户保存位置已改为默认目录。
 
+## 2.2 文件夹接收（LocalSend 入站）
+
+LocalSend 的文件夹传输是“多个文件 + `fileName` 带相对路径”（如 `Photos/2024/a.jpg`），
+协议没有目录对象。接收侧由 `model/transfer/ReceivedPath.ets` 解析：
+
+- 只按 `/` 分段；`\` 在 OHOS 是合法文件名字符（上游 Windows 发送端已转 `/`）；
+- 丢弃空段与 `.`；`..`、首字符 `/`、盘符路径、UNC 前缀直接拒绝；
+- 出现 `.handysend-temp` / `.handysend-upload-part` 等应用临时区名时拒绝整个请求
+  （避免相对路径与临时区/启动清扫重叠，或形成 temp/final 路径别名）；
+- 每段经 `nativeSanitizeFileName` 净化，每个最终目录内用 `uniquePath` 消歧，
+  重名得到 ` (N)`；不同目录的同名文件互不影响；
+- 单次 LocalSend 请求上限 2000 个文件（`MAX_RECV_FILES`），超过整包拒绝并给出文案。
+
+`ReceiveTargets.prepareRecvTargets` 分两阶段：先规划全部最终路径并回写条目/草稿，
+再创建最终目录、空临时文件并注册路径目标。路径目标模式下 accept 前不持有 fd：
+临时文件创建后立即关闭，`registerRecvFileFd` 注册 `fd = -1`；Rust 在上传到达时用
+`O_NOFOLLOW` 打开临时路径，取得 fd 后仍走 `FileUploadTarget::Fd`，完成后
+`rename` 到最终路径。因此大文件夹不会占用 N 个 fd，后台写入也不依赖 ArkTS 逐文件回调。
+
+配套行为：
+
+- 会话含目录时不弹整会话“保存到相册”（保存后文件会脱离目录）；单文件手动保存仍可用；
+- 任务详情的文件名在目标确定后经批量 `updateSessionFileTargets` 回写为实际相对路径
+  （含去重后缀，一次通知），与磁盘、接收历史一致；
+- 取消/失败只删除临时文件与本次新建的空目录，已完成文件保留并补记历史；
+  强杀恢复沿用会话草稿中的最终/临时路径，嵌套目录无需额外字段。
+
+MTA 接收、网页上传仍按平铺文件名落盘；本次改动只作用于 LocalSend 入站路径解析与目标注册。
+
 ## 3. 暂存句柄与复用
 
 `SendViewModel` 为暂存项保留只读句柄（`stagedHandles`，上限 400，对应「4 次 × 100 个」的常见组合），
