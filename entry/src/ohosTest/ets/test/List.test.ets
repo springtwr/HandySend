@@ -23,6 +23,8 @@ import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
 import ReceiveTargetPrepOrderTest from './service/ReceiveTargetPrepOrderTest.test'
+import FolderScanTest from './service/FolderScanTest.test'
+import SendFolderStagingTest from './service/SendFolderStagingTest.test'
 import ReceiveSessionNameTest from './service/ReceiveSessionNameTest.test'
 import ReceiveInterruptedCleanupTest from './repository/ReceiveInterruptedCleanupTest.test'
 import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
@@ -35,6 +37,8 @@ import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
 import SessionArchiveRulesTest from './model/SessionArchiveRulesTest.test'
 import ReceivedPathTest from './model/ReceivedPathTest.test'
+import SendFolderPathTest from './model/SendFolderPathTest.test'
+import FolderSummaryTest from './model/FolderSummaryTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 import HistorySegmentsTest from './model/HistorySegmentsTest.test'
@@ -60,6 +64,8 @@ import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
+import FolderSelectionTest from './utils/FolderSelectionTest.test'
+import TransferLimitsTest from './utils/TransferLimitsTest.test'
 import GallerySavePolicyTest from './utils/GallerySavePolicyTest.test'
 import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
 import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
@@ -135,6 +141,8 @@ export default function testsuite() {
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
   ReceiveTargetPrepOrderTest()
+  FolderScanTest()
+  SendFolderStagingTest()
   ReceiveSessionNameTest()
   ReceiveInterruptedCleanupTest()
   ProtocolToggleSettingsTest()
@@ -147,6 +155,8 @@ export default function testsuite() {
   MtaDiscoveryGuardTest()
   SessionArchiveRulesTest()
   ReceivedPathTest()
+  SendFolderPathTest()
+  FolderSummaryTest()
   SendProgressTest()
   DragDropParserTest()
   WebAddressTest()
@@ -171,6 +181,8 @@ export default function testsuite() {
   FingerprintIconsTest()
   FilePreviewPolicyTest()
   FileLocationUtilTest()
+  FolderSelectionTest()
+  TransferLimitsTest()
   GallerySavePolicyTest()
   TextAlignUtilTest()
   WebAccessCodeTest()

@@ -114,6 +114,11 @@
                 "scheme": "file",
                 "utd": "general.file",
                 "maxFileSupported": 50
+              },
+              {
+                "scheme": "file",
+                "utd": "general.folder",
+                "maxFileSupported": 50
               }
             ]
           }

@@ -1725,7 +1725,12 @@ async fn start_download(
         )
         .await;
     });
-    let file_name = meta_file.file_name.replace('/', "-");
+    let file_name = meta_file
+        .file_name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(meta_file.file_name.as_str())
+        .to_string();
     let mut response = Response::new(body.boxed());
     *response.status_mut() = status;
     let headers = response.headers_mut();
@@ -1821,9 +1826,30 @@ fn open_zip_source(source: FileSource) -> anyhow::Result<File> {
     }
 }
 
-/// ZIP 条目名去重：同名文件按 `name_2.ext` 递增，避免覆盖。
+/// ZIP 条目名清洗：保留相对目录（`/`），逐段去掉分隔符、`.`、`..`。
+/// 网页下载的文件夹靠条目名建目录；不能把整条路径压成单段。
+fn sanitize_zip_entry_name(name: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for raw in name.split(['/', '\\']) {
+        let segment = raw.trim();
+        if segment.is_empty() || segment == "." || segment == ".." {
+            continue;
+        }
+        let cleaned = sanitize_file_name(segment);
+        if !cleaned.is_empty() {
+            parts.push(cleaned);
+        }
+    }
+    if parts.is_empty() {
+        "unnamed".to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
+/// ZIP 条目名去重：同一完整路径按 `name_2.ext` 递增，避免覆盖。
 fn unique_zip_name(name: &str, used: &mut HashMap<String, usize>) -> String {
-    let base = sanitize_file_name(name);
+    let base = sanitize_zip_entry_name(name);
     let count = used.entry(base.clone()).or_insert(0);
     *count += 1;
     if *count == 1 {
@@ -3613,4 +3639,36 @@ pub async fn bind_loopback() -> std::io::Result<(TcpListener, SocketAddr)> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
     Ok((listener, addr))
+}
+
+#[cfg(test)]
+mod zip_name_tests {
+    use super::*;
+
+    #[test]
+    fn zip_entry_keeps_nested_directories() {
+        assert_eq!(
+            sanitize_zip_entry_name("Photos/2024/a.jpg"),
+            "Photos/2024/a.jpg"
+        );
+        assert_eq!(
+            sanitize_zip_entry_name("Photos\\2024\\a.jpg"),
+            "Photos/2024/a.jpg"
+        );
+    }
+
+    #[test]
+    fn zip_entry_drops_traversal_segments() {
+        assert_eq!(sanitize_zip_entry_name("../secret/a.txt"), "secret/a.txt");
+        assert_eq!(sanitize_zip_entry_name("./Photos/./a.jpg"), "Photos/a.jpg");
+        assert_eq!(sanitize_zip_entry_name("Photos/"), "Photos");
+    }
+
+    #[test]
+    fn zip_duplicate_is_unique_per_full_path() {
+        let mut used: HashMap<String, usize> = HashMap::new();
+        assert_eq!(unique_zip_name("Photos/a.txt", &mut used), "Photos/a.txt");
+        assert_eq!(unique_zip_name("Photos/a.txt", &mut used), "Photos/a_2.txt");
+        assert_eq!(unique_zip_name("Other/a.txt", &mut used), "Other/a.txt");
+    }
 }

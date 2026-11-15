@@ -104,6 +104,25 @@ LocalSend 的文件夹传输是“多个文件 + `fileName` 带相对路径”�
 
 MTA 接收、网页上传仍按平铺文件名落盘；本次改动只作用于 LocalSend 入站路径解析与目标注册。
 
+## 2.3 文件夹发送（LocalSend 出站）
+
+- 入口：发送页“文件夹”磁贴，仅 `isFolderSelectionSupported()`（API 26+ 且
+  `FolderSelection` syscap）可用；系统文件管理器的 `general.folder` 分享记录进入同一
+  扫描/暂存链路。
+- 扫描：`FolderScan` 递归 `fs.listFile` + `fs.stat`，逐段调用 `nativeSanitizeFileName`，
+  跳过 `..`、绝对路径、应用临时区名与不可读项；单次上限 2000。
+- 暂存：一个文件夹只生成一个聚合条目（名称、文件数、总大小）；发送时展开为逐文件。
+- 文件命名：`fileName = <根目录名>/<相对路径>`；发送条目的 `filePath` 为本机路径，
+  `pathSource = true`，Rust 逐文件打开，不一次持有 N 个 fd。
+- 文档 Picker 的 `file://docs/...` 也转本机路径走 `fd = -1`；图库 `file://media/...`
+  仍用 fd。`stagedHandles` 的 400 上限只服务普通文件空闲缓存，文件夹不占用。
+- 上限：收发统一 `MAX_BATCH_FILES = 2000`；文件/图库选择器单次 500；发送超过 500
+  软提示压缩，超过 2000 拒绝。
+- 历史：文件夹与 >100 文件的批次在任务历史只存摘要（文件数/总大小/成功失败/失败名单）；
+  接收历史一个文件夹一条，打开所在目录交给系统文件管理器。
+- MTA 不接收文件夹语义（MTA 接收会把 zip 条目压成末段名），发送侧阻止并提示；
+  网页分享把 ZIP 条目名逐段清洗，保留目录。
+
 ## 3. 暂存句柄与复用
 
 `SendViewModel` 为暂存项保留只读句柄（`stagedHandles`，上限 400，对应「4 次 × 100 个」的常见组合），

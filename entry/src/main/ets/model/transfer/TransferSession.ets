@@ -26,6 +26,24 @@ export enum SessionDataFlow {
   inbound = 'inbound'
 }
 
+/** 内容类型：普通文件批次或文件夹批次；协议层仍按文件传输。 */
+export enum SessionContentKind {
+  files = 'files',
+  folder = 'folder'
+}
+
+/** 文件夹批次的摘要信息（发送源目录或接收落盘根目录）。 */
+export interface SessionFolderInfo {
+  // 单根时为根目录名；多根时为空
+  name: string
+  // 单根时为根目录路径；多根时为空
+  path: string
+  // 根目录数量；单根为 1
+  rootCount: number
+  fileCount: number
+  totalBytes: number
+}
+
 /** 发起方：本机发起（local）或对端发起（remote）。 */
 export enum SessionInitiator {
   local = 'local',
@@ -147,6 +165,10 @@ export interface SessionCreateInput {
   // 协议在逐文件清单可用前声明的文件总数（0 或缺省表示未知）：仅用于实时展示，
   // 真实清单回填后由注册表清零，避免与已落盘条数混淆
   declaredFileCount?: number
+  // 内容类型；缺省按普通文件批次处理
+  contentKind?: SessionContentKind
+  // 文件夹摘要；contentKind 为 folder 时提供
+  folder?: SessionFolderInfo
 }
 
 /**
@@ -202,6 +224,9 @@ export class TransferSession {
   @Trace stage: SessionStage = SessionStage.active
   // 是否为手动输入的文本消息会话（非文本文件）；创建后不变，不参与进度刷新
   textMessage: boolean = false
+  // 内容类型与文件夹摘要：创建后不变；历史归档据此决定摘要/逐文件明细
+  contentKind: SessionContentKind = SessionContentKind.files
+  folder?: SessionFolderInfo = undefined
   // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示，
   // 真实清单回填后清零；终态展示与归档历史一律以 files.length 为准
   @Trace declaredFileCount: number = 0

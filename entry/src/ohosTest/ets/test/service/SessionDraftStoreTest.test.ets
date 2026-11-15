@@ -6,13 +6,16 @@ import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
   SessionDraftFile,
+  appendSessionDraftRecord,
   cleanupSessionDraftTmp,
   loadAllSessionDrafts,
   loadSessionDraft,
+  loadSessionDraftRecords,
   removeSessionDraft,
   sanitizeDraftId,
   saveSessionDraft,
   sessionDraftDir,
+  sessionDraftLogPath,
   sessionDraftPath
 } from '../../../../main/ets/service/transfer/SessionDraftStore'
 import {
@@ -102,6 +105,30 @@ export default function SessionDraftStoreTest() {
       }
       removeSessionDraft(id)
       expect(loadSessionDraft(id) === undefined).assertTrue()
+    })
+
+    it('completion_log_replays_into_header', 0, () => {
+      let id = 'draft-journal-' + Date.now().toString()
+      let draft = makeDraft(id, [makeFile('f1', '/tmp/a.txt'), makeFile('f2', '/tmp/b.txt')])
+      expect(saveSessionDraft(draft)).assertTrue()
+      appendSessionDraftRecord(id, {
+        fileId: 'f1',
+        stage: SessionFileStage.completed,
+        bytes: 3,
+        at: 1234,
+        path: '/tmp/a.txt'
+      })
+      expect(loadSessionDraftRecords(id).length).assertEqual(1)
+      let loaded = loadSessionDraft(id)
+      expect(loaded !== undefined).assertTrue()
+      if (loaded !== undefined) {
+        expect(loaded.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(loaded.files[0].completedAt).assertEqual(1234)
+        expect(loaded.files[1].stage).assertEqual(SessionFileStage.waiting)
+      }
+      removeSessionDraft(id)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+      expect(fs.accessSync(sessionDraftLogPath(id))).assertFalse()
     })
 
     it('cleanup_removes_tmp_file', 0, () => {

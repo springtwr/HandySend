@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/ets/model/Types'
 import {
+  SessionContentKind,
   SessionDataFlow,
   SessionInitiator,
   SessionStage,
@@ -328,6 +329,52 @@ export default function AdaptersTest() {
       let done = getSession(id)
       if (done !== undefined) {
         expect(done.stage).assertEqual(SessionStage.succeeded)
+      }
+      resetRegistry()
+    })
+
+    it('localsendReceive_folderSummary', 0, () => {
+      resetRegistry()
+      let id = ensureReceiveSession('sess-folder', 'Sender', '10.0.0.2', 'fp', 'mobile', 'Model',
+        [{
+          fileId: 'f1',
+          fileName: 'Photos/a.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 10
+        }, {
+          fileId: 'f2',
+          fileName: 'Photos/sub/b.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 20
+        }], true, '')
+      let s = getSession(id)
+      expect(s !== undefined).assertTrue()
+      if (s !== undefined) {
+        expect(s.contentKind).assertEqual(SessionContentKind.folder)
+        expect(s.folder !== undefined).assertTrue()
+        if (s.folder !== undefined) {
+          expect(s.folder.name).assertEqual('Photos')
+          expect(s.folder.rootCount).assertEqual(1)
+          expect(s.folder.fileCount).assertEqual(2)
+          expect(s.folder.totalBytes).assertEqual(30)
+        }
+      }
+      resetRegistry()
+    })
+
+    it('localsendReceive_plainFilesKeepDefaultKind', 0, () => {
+      resetRegistry()
+      let id = ensureReceiveSession('sess-plain', 'Sender', '10.0.0.2', 'fp', 'mobile', 'Model',
+        [{
+          fileId: 'f1',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 1
+        }], true, '')
+      let s = getSession(id)
+      if (s !== undefined) {
+        expect(s.contentKind).assertEqual(SessionContentKind.files)
+        expect(s.folder === undefined).assertTrue()
       }
       resetRegistry()
     })

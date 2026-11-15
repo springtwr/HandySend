@@ -25,6 +25,38 @@
       "value": "檔案"
     },
     {
+      "name": "send_folder",
+      "value": "資料夾"
+    },
+    {
+      "name": "send_batch_unsupported",
+      "value": "目前裝置不支援選擇資料夾"
+    },
+    {
+      "name": "send_folder_empty",
+      "value": "資料夾中沒有可傳送的檔案"
+    },
+    {
+      "name": "send_folder_too_many",
+      "value": "資料夾檔案數超過單次上限 %d，建議壓縮後傳送"
+    },
+    {
+      "name": "send_folder_scan_failed",
+      "value": "掃描資料夾失敗，請重試"
+    },
+    {
+      "name": "send_batch_over_limit",
+      "value": "單次最多傳送 %d 個檔案，建議壓縮後傳送"
+    },
+    {
+      "name": "send_batch_soft_hint",
+      "value": "檔案較多（%d 個），建議壓縮資料夾後傳送"
+    },
+    {
+      "name": "send_mta_folder_unsupported",
+      "value": "互傳暫不支援資料夾，請傳送到區域網路裝置"
+    },
+    {
       "name": "send_media",
       "value": "圖庫"
     },
@@ -1087,6 +1119,30 @@
     {
       "name": "history_delete_files_label",
       "value": "同時刪除檔案"
+    },
+    {
+      "name": "history_delete_folder_label",
+      "value": "同時刪除資料夾"
+    },
+    {
+      "name": "history_folder_file_count",
+      "value": "%d 個檔案"
+    },
+    {
+      "name": "history_folder_multi_name",
+      "value": "多個資料夾"
+    },
+    {
+      "name": "session_folder_open",
+      "value": "開啟資料夾"
+    },
+    {
+      "name": "session_folder_progress",
+      "value": "成功 %d · 失敗 %d"
+    },
+    {
+      "name": "session_folder_file_count",
+      "value": "%d 個檔案"
     },
     {
       "name": "history_delete_message_file",

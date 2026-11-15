@@ -8,13 +8,16 @@
 
 import {
   SessionCapabilities,
+  SessionContentKind,
   SessionDataFlow,
   SessionDisplayDescriptor,
   SessionFileDescriptor,
+  SessionFolderInfo,
   SessionInitiator,
   SessionPeer,
   SessionStage
 } from '../../../model/transfer/TransferSession';
+import { summarizeInboundFolder } from '../../../model/transfer/FolderSummary';
 import { nativeCancelLocalSession } from '../../NativeBridge';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
@@ -134,6 +137,7 @@ export function ensureReceiveSession(protocolSessionId: string, senderAlias: str
   if (textPreview.length > 0) {
     textPreviewByProtocol.set(protocolSessionId, textPreview);
   }
+  let folder: SessionFolderInfo | undefined = summarizeInboundFolder(files);
   let session = createSession({
     protocolKey: LOCAL_RECEIVE_KEY,
     protocolSessionId: protocolSessionId,
@@ -141,6 +145,8 @@ export function ensureReceiveSession(protocolSessionId: string, senderAlias: str
     initiatedBy: SessionInitiator.remote,
     peer: buildPeer(senderAlias, senderIp, senderFingerprint, senderDeviceType, senderDeviceModel),
     files: files,
+    contentKind: folder !== undefined ? SessionContentKind.folder : SessionContentKind.files,
+    folder: folder,
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active,
     // 仅手动输入文本携带 preview；文件选择器选取的 .txt 不带该字段

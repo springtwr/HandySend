@@ -25,6 +25,38 @@
       "value": "Files"
     },
     {
+      "name": "send_folder",
+      "value": "Folder"
+    },
+    {
+      "name": "send_batch_unsupported",
+      "value": "This device does not support folder selection"
+    },
+    {
+      "name": "send_folder_empty",
+      "value": "No files to send in this folder"
+    },
+    {
+      "name": "send_folder_too_many",
+      "value": "Folder has more than %d files; compress it before sending"
+    },
+    {
+      "name": "send_folder_scan_failed",
+      "value": "Failed to scan the folder; try again"
+    },
+    {
+      "name": "send_batch_over_limit",
+      "value": "At most %d files per send; compress the folder first"
+    },
+    {
+      "name": "send_batch_soft_hint",
+      "value": "%d files selected; compressing the folder is recommended"
+    },
+    {
+      "name": "send_mta_folder_unsupported",
+      "value": "MTA does not support folders; send to a LocalSend device"
+    },
+    {
       "name": "send_media",
       "value": "Gallery"
     },
@@ -1087,6 +1119,30 @@
     {
       "name": "history_delete_files_label",
       "value": "Also delete files"
+    },
+    {
+      "name": "history_delete_folder_label",
+      "value": "Also delete folder"
+    },
+    {
+      "name": "history_folder_file_count",
+      "value": "%d files"
+    },
+    {
+      "name": "history_folder_multi_name",
+      "value": "Folders"
+    },
+    {
+      "name": "session_folder_open",
+      "value": "Open folder"
+    },
+    {
+      "name": "session_folder_progress",
+      "value": "%d succeeded · %d failed"
+    },
+    {
+      "name": "session_folder_file_count",
+      "value": "%d files"
     },
     {
       "name": "history_delete_message_file",

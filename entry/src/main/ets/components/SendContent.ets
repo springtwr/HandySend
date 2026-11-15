@@ -25,6 +25,7 @@ import { getSheetWidth, isNarrowWidth, isWidescreenSideBarLayout, isWideWidth } 
 import {
   SendViewModel,
   SendInitiateResult,
+  BatchNoticeKind,
   SendFailureNotice,
   MtaSendOutcome,
   FavoriteSendResult,
@@ -143,6 +144,41 @@ export struct SendContent {
   @Monitor('viewModel.discoveredDevices')
   onDiscoveredDevicesChange(): void {
     this.favoritesPanelViewModel.refreshOnlineStatus();
+  }
+
+  // 批量上限/文件夹扫描提示：ViewModel 只置一次类型，视图取本地化文案后清除。
+  @Monitor('viewModel.batchNotice')
+  onLimitNoticeChange(): void {
+    let kind: BatchNoticeKind = this.viewModel.batchNotice;
+    if (kind === BatchNoticeKind.none) {
+      return;
+    }
+    let count: number = this.viewModel.batchNoticeCount;
+    this.viewModel.batchNotice = BatchNoticeKind.none;
+    let res: Resource | undefined = undefined;
+    if (kind === BatchNoticeKind.unsupported) {
+      res = $r('app.string.send_batch_unsupported');
+    } else if (kind === BatchNoticeKind.emptyFolder) {
+      res = $r('app.string.send_folder_empty');
+    } else if (kind === BatchNoticeKind.folderTooMany) {
+      res = $r('app.string.send_folder_too_many');
+    } else if (kind === BatchNoticeKind.scanFailed) {
+      res = $r('app.string.send_folder_scan_failed');
+    } else if (kind === BatchNoticeKind.overLimit) {
+      res = $r('app.string.send_batch_over_limit');
+    } else if (kind === BatchNoticeKind.softHint) {
+      res = $r('app.string.send_batch_soft_hint');
+    } else if (kind === BatchNoticeKind.mtaFolderUnsupported) {
+      res = $r('app.string.send_mta_folder_unsupported');
+    }
+    if (res === undefined) {
+      return;
+    }
+    let text: string = getStringSync(this.getUIContext(), res);
+    if (count > 0) {
+      text = text.replace('%d', String(count));
+    }
+    this.getUIContext().getPromptAction().showToast({ message: text, duration: 3000 });
   }
 
   // 面板关闭时退出多选：面板视图模型的生命周期跟随发送页（@Local 字段）而非面板本身，

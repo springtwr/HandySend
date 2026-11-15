@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import {
   DiscoveredDevice,
   TransferProgress,
@@ -89,6 +89,8 @@ let activeProgress: Array<TransferProgress> = [];
 // 共享 URI 收件箱：
 // EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
+// 共享文件夹收件箱：系统分享的 general.folder 单独存放，避免被当成普通文件。
+let pendingSharedFoldersJson: string = '';
 // 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
 let pendingSharedTextsJson: string = '';
 
@@ -159,6 +161,16 @@ export function setPendingSharedUris(json: string): void {
 export function consumePendingSharedUris(): string {
   let json: string = pendingSharedUrisJson;
   pendingSharedUrisJson = '';
+  return json;
+}
+
+export function setPendingSharedFolders(json: string): void {
+  pendingSharedFoldersJson = json;
+}
+
+export function consumePendingSharedFolders(): string {
+  let json: string = pendingSharedFoldersJson;
+  pendingSharedFoldersJson = '';
   return json;
 }
 
@@ -451,8 +463,14 @@ export async function sendToDevice(
         let openedCount: number = 0;
         let dupFailedCount: number = 0;
         let noFdCount: number = 0;
+        let pathSourceCount: number = 0;
         await forEachConcurrently(files.length, async (index: number): Promise<void> => {
           let f: SendFileItem = files[index];
+          // 路径模式：不打开 fd，prepare 先发，Rust 在上传时逐文件打开。
+          if (f.pathSource === true) {
+            pathSourceCount++;
+            return;
+          }
           let sourceFd: number | undefined = f.sourceFd;
           // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）。
           // dup 副本与暂存句柄共享文件偏移，但 Rust 侧以 pread 从文件头读取、不推进偏移，
@@ -485,9 +503,23 @@ export async function sendToDevice(
         });
         logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' + files.length +
           ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount + ' dup失败=' + dupFailedCount +
-          ' 无句柄=' + noFdCount, sendCtx);
+          ' 无句柄=' + noFdCount + ' 路径模式=' + pathSourceCount, sendCtx);
         for (let i = 0; i < files.length; i++) {
           let f = files[i];
+          if (f.pathSource === true) {
+            nativeFiles.push({
+              fileId: f.fileId,
+              filePath: f.filePath,
+              fileName: f.fileName,
+              fileType: f.fileType,
+              size: f.size,
+              fd: -1,
+              preview: f.preview,
+              sha256: f.hash,
+              lastModified: f.lastModified
+            });
+            continue;
+          }
           let file: fs.File | undefined = handles[i];
           if (file === undefined) {
             throw new Error('源文件句柄缺失：' + f.filePath);
@@ -772,15 +804,37 @@ export async function prepareSendFiles(
 async function buildSendFileItem(uri: string, index: number,
   manualTextSourceUris: Set<string>, knownMeta?: Map<string, SourceFileMeta>,
   knownFds?: Map<string, number>): Promise<SendFileItem> {
-  let rawName = extractFileName(uri);
-  if (rawName === '' || rawName.length > 200) {
-    rawName = 'file_' + Date.now();
+  let known: SourceFileMeta | undefined = knownMeta !== undefined ? knownMeta.get(uri) : undefined;
+  // 文件夹条目的 wireName 已由扫描阶段逐段净化；不要再对整段调用 sanitize，
+  // 否则会把 '/' 替换掉。普通文件仍按 URI 末段净化。
+  let rawName: string = known !== undefined && known.wireName !== undefined ?
+    known.wireName : extractFileName(uri);
+  if (known === undefined || known.wireName === undefined) {
+    if (rawName === '' || rawName.length > 200) {
+      rawName = 'file_' + Date.now();
+    }
+    rawName = nativeSanitizeFileName(rawName);
   }
-  // 净化文件名，确保其符合当前平台规范
-  rawName = nativeSanitizeFileName(rawName);
+  let filePath: string = known !== undefined && known.sourcePath !== undefined ? known.sourcePath : uri;
+  let pathSource: boolean = known !== undefined && known.sourcePath !== undefined;
+  // 文档 Picker 的 file://docs/... 与沙箱路径可直接交给 Rust 按路径打开；
+  // 图库 file://media/... 仍用 fd，避免媒体库授权只对 URI 生效。
+  if ((known === undefined || known.sourcePath === undefined) && !uri.startsWith('file://media/')) {
+    if (uri.startsWith('file://docs/')) {
+      try {
+        let converted: string = new fileUri.FileUri(uri).path;
+        if (converted.length > 0) {
+          filePath = converted;
+          pathSource = true;
+        }
+      } catch (_e) {
+      }
+    } else if (!uri.startsWith('file://')) {
+      pathSource = true;
+    }
+  }
   let size: number;
   let lastModified: number;
-  let known: SourceFileMeta | undefined = knownMeta !== undefined ? knownMeta.get(uri) : undefined;
   if (known !== undefined) {
     // 暂存阶段已按同一来源（已打开句柄）读过：直接复用，省掉一次 open/stat 往返
     size = known.size;
@@ -789,7 +843,7 @@ async function buildSendFileItem(uri: string, index: number,
     // filePath 直接承载源定位（picker URI 或沙箱路径），不复制文件到沙箱；
     // 发送时由 sendToDevice 复用暂存句柄（或按需打开）直读源文件；
     // 此处仅在缺少已知元数据时 open+stat 取真实大小/修改时间后立即关闭
-    let file = await fs.open(uri, fs.OpenMode.READ_ONLY);
+    let file = await fs.open(filePath, fs.OpenMode.READ_ONLY);
     try {
       let stat = fs.statSync(file.fd);
       size = stat.size;
@@ -813,12 +867,13 @@ async function buildSendFileItem(uri: string, index: number,
   }
   let item: SendFileItem = {
     fileId: 'send_' + index + '_' + Date.now(),
-    filePath: uri,
+    filePath: filePath,
     fileName: rawName,
     fileType: mimeGetMimeForFileName(rawName),
     size: size,
     preview: preview,
-    lastModified: lastModified
+    lastModified: lastModified,
+    pathSource: pathSource
   };
   // 暂存阶段已打开过的句柄：随条目下传，发送 dup 复用（Rust 以 pread 读取）、校验和归位后读、网页分享借用
   let knownFd: number | undefined = knownFds !== undefined ? knownFds.get(uri) : undefined;
@@ -1008,7 +1063,9 @@ function filesForSession(files: Array<SendFileItem>): Array<SendFileItem> {
       hash: f.hash,
       lastModified: f.lastModified,
       // 透传暂存阶段保留的源句柄：发送时 dup 复用，由 Rust 以 pread 从文件头读取
-      sourceFd: f.sourceFd
+      sourceFd: f.sourceFd,
+      // 透传路径模式：文件夹/文档条目发送时由 Rust 按 filePath 打开
+      pathSource: f.pathSource
     });
   }
   return result;

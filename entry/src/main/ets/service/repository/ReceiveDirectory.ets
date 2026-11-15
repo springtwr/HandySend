@@ -10,18 +10,14 @@
 
 import { common, bundleManager } from '@kit.AbilityKit';
 import { fileIo as fs, fileUri, picker } from '@kit.CoreFileKit';
-import { deviceInfo } from '@kit.BasicServicesKit';
 import { getReceiveDirectoryUri, setReceiveDirectoryUri } from './SettingsRepository';
 import { getAppContext } from './AppCore';
 import { ensureWritableUriAccess, persistWritableUri } from '../../utils/UriPermission';
+import { isFolderSelectionSupported } from '../../utils/FolderSelection';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveDirectory', '接收目录');
-
-// 目录选择能力最低 API：手机/平板 26.0.0 起支持（2in1 13+）。
-// 设置项按产品要求统一以 API 26 为界，低于该版本置灰。
-const FOLDER_SELECT_MIN_API: number = 26;
 
 // 文档类 URI 前缀：文件管理器以 currentUser 根目录为视角展示相对路径
 const DOC_USER_ROOT: string = 'file://docs/storage/Users/currentUser/';
@@ -60,12 +56,7 @@ function normalizeDirectoryPath(path: string): string {
 
 /** 设备是否具备目录选择能力（API 26+ 且系统声明 FolderSelection） */
 export function isReceiveDirectorySelectionSupported(): boolean {
-  try {
-    return deviceInfo.sdkApiVersion >= FOLDER_SELECT_MIN_API &&
-      canIUse('SystemCapability.FileManagement.UserFileService.FolderSelection');
-  } catch (_e) {
-    return false;
-  }
+  return isFolderSelectionSupported();
 }
 
 // 文件管理器的特殊目录在 URI 中使用内部名，界面按系统语言展示不同名称。

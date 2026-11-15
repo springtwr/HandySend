@@ -7,11 +7,13 @@
 
 import {
   SessionCapabilities,
+  SessionContentKind,
   SessionDataFlow,
   SessionDisplayDescriptor,
   SessionEventKind,
   SessionFile,
   SessionFileStage,
+  SessionFolderInfo,
   SessionStage,
   SessionTimelineEvent,
   TransferSession,
@@ -22,7 +24,11 @@ import {
   isTerminalStage,
   resolveSessionActions
 } from '../model/transfer/TransferSession';
-import { SessionHistoryEntry, SessionHistoryFileEntry } from '../model/transfer/SessionHistory';
+import {
+  SessionHistoryEntry,
+  SessionHistoryFailure,
+  SessionHistoryFileEntry
+} from '../model/transfer/SessionHistory';
 import {
   cancel as registryCancel,
   confirmSession,
@@ -474,12 +480,66 @@ export class SessionDetailViewModel {
     return this.session !== undefined ? this.files : this.historyFiles;
   }
 
-  /** 当前展示的文件数：逐文件清单不可用时取协议声明值（与任务列表同口径）。 */
+  /** 当前展示的文件数：历史摘要条目以归档的 fileCount 为准（files 可能为空）。 */
   fileCount(): number {
     if (this.session !== undefined) {
       return displayFileCount(this.session);
     }
+    if (this.historyEntry !== undefined) {
+      return this.historyEntry.fileCount;
+    }
     return this.historyFiles.length;
+  }
+
+  /** 是否为文件夹摘要会话（实时或历史）。 */
+  isFolderSession(): boolean {
+    if (this.session !== undefined) {
+      return this.session.contentKind === SessionContentKind.folder;
+    }
+    return this.historyEntry !== undefined &&
+      this.historyEntry.contentKind === SessionContentKind.folder;
+  }
+
+  /** 文件夹摘要（实时或历史）；非文件夹返回 undefined。 */
+  folderInfo(): SessionFolderInfo | undefined {
+    if (this.session !== undefined) {
+      return this.session.folder;
+    }
+    return this.historyEntry !== undefined ? this.historyEntry.folder : undefined;
+  }
+
+  /** 摘要完成/失败数：历史优先读取归档值，实时从逐文件状态统计。 */
+  completedCount(): number {
+    if (this.historyEntry !== undefined && this.historyEntry.completedCount !== undefined) {
+      return this.historyEntry.completedCount;
+    }
+    let count: number = 0;
+    for (let i = 0; i < this.files.length; i++) {
+      if (this.files[i].stage === SessionFileStage.completed) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  failedCount(): number {
+    if (this.historyEntry !== undefined && this.historyEntry.failedCount !== undefined) {
+      return this.historyEntry.failedCount;
+    }
+    let count: number = 0;
+    for (let i = 0; i < this.files.length; i++) {
+      if (this.files[i].stage === SessionFileStage.failed) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  failedFiles(): Array<SessionHistoryFailure> {
+    if (this.historyEntry !== undefined && this.historyEntry.failedFiles !== undefined) {
+      return this.historyEntry.failedFiles;
+    }
+    return [];
   }
 
   /**

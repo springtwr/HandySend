@@ -18,6 +18,7 @@ import { receiveHistoryPreferencesUtil } from '../../../../main/ets/utils/Prefer
 import { getMimeForFileName } from '../../../../main/ets/utils/MimeUtils'
 import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
 import { getTestAppContext } from '../helper/TestContext'
+import { getTestCacheDir } from '../helper/TestHelper'
 
 function makeEntry(id: string, fileName: string): ReceiveHistoryEntry {
   let entry: ReceiveHistoryEntry = {
@@ -102,6 +103,26 @@ export default function ReceiveHistoryServiceTest() {
       addEntries([makeEntry('h-clear-2', 'b.png')])
       clearAll()
       expect(getHistory().length).assertEqual(0)
+    })
+
+    it('removeEntry_folderWithFiles_deletesRecursively', 0, () => {
+      clearAll()
+      let root: string = getTestCacheDir() + '/recv_hist_folder_' + Date.now();
+      if (!fs.accessSync(root)) {
+        fs.mkdirSync(root, true);
+      }
+      let file = fs.openSync(root + '/a.txt', fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
+      fs.writeSync(file.fd, 'a');
+      fs.closeSync(file);
+      let entry: ReceiveHistoryEntry = makeEntry('h-folder', 'Photos');
+      entry.path = root;
+      entry.fileType = 'folder';
+      entry.isFolder = true;
+      entry.fileCount = 1;
+      addEntries([entry]);
+      removeEntry('h-folder', true);
+      expect(getHistory().length).assertEqual(0);
+      expect(fs.accessSync(root)).assertFalse();
     })
 
     it('removeEntry_nonexistent_no_effect', 0, () => {

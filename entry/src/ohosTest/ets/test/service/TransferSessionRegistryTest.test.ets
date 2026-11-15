@@ -34,10 +34,12 @@ import {
   NO_PROGRESS_ERROR_CODE
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
+  SessionContentKind,
   SessionCreateInput,
   SessionDataFlow,
   SessionEventKind,
   SessionFileStage,
+  SessionFolderInfo,
   SessionInitiator,
   SessionPeer,
   SessionStage,
@@ -163,6 +165,37 @@ export default function TransferSessionRegistryTest() {
       expect(s.timeline.length).assertEqual(1) // created（「已开始」在首个字节进度时才记录）
       expect(getActiveCount()).assertEqual(1)
       expect(getSession(s.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('create_session_defaults_to_files_content', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      expect(s.contentKind).assertEqual(SessionContentKind.files)
+      expect(s.folder === undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('create_session_keeps_folder_summary', 0, () => {
+      resetRegistry()
+      let input: SessionCreateInput = makeInput()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 12,
+        totalBytes: 3456
+      }
+      input.contentKind = SessionContentKind.folder
+      input.folder = folder
+      let s = createSession(input)
+      expect(s.contentKind).assertEqual(SessionContentKind.folder)
+      expect(s.folder !== undefined).assertTrue()
+      if (s.folder !== undefined) {
+        expect(s.folder.name).assertEqual('Photos')
+        expect(s.folder.fileCount).assertEqual(12)
+        expect(s.folder.totalBytes).assertEqual(3456)
+      }
       resetRegistry()
     })
 

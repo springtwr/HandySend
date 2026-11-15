@@ -10,6 +10,7 @@ import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
   SessionDraftFile,
+  appendSessionDraftRecord,
   completedAtForDraft,
   loadSessionDraft,
   removeSessionDraft,
@@ -125,27 +126,15 @@ export function saveOutboundDraft(session: TransferSession): void {
   saveSessionDraft(draft);
 }
 
-/** 单文件完成时更新草稿状态；非发送方向或草稿不存在时为空操作。 */
+/** 单文件完成时追加完成日志；不再全量读/写会话头。 */
 export function updateOutboundDraftFile(sessionId: string, fileId: string,
   stage: SessionFileStage, bytesSent: number): void {
-  let draft: SessionDraft | undefined = loadSessionDraft(sessionId);
-  if (draft === undefined || draft.dataFlow !== SessionDataFlow.outbound) {
-    return;
-  }
-  for (let i = 0; i < draft.files.length; i++) {
-    let file: SessionDraftFile = draft.files[i];
-    if (file.fileId !== fileId) {
-      continue;
-    }
-    file.stage = stage;
-    file.bytesSent = bytesSent;
-    if (stage === SessionFileStage.completed && file.completedAt === 0) {
-      file.completedAt = Date.now();
-    }
-    draft.updatedAt = Date.now();
-    saveSessionDraft(draft);
-    return;
-  }
+  appendSessionDraftRecord(sessionId, {
+    fileId: fileId,
+    stage: stage,
+    bytes: bytesSent,
+    at: Date.now()
+  });
 }
 
 /** 会话终结后删除出站草稿。 */

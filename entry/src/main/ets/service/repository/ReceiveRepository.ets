@@ -8,6 +8,7 @@ import {
   ReceiveHistoryEntry,
   MediaFileInfo
 } from '../../model/Types';
+import { buildFolderReceiveHistoryEntry } from '../../model/transfer/FolderSummary';
 import {
   NativePrepareUploadEvent,
   NativeProgressEvent,
@@ -83,7 +84,7 @@ import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
   SessionDraftFile,
-  loadSessionDraft,
+  appendSessionDraftRecord,
   removeSessionDraft,
   saveSessionDraft
 } from '../transfer/SessionDraftStore';
@@ -197,31 +198,15 @@ function writeLocalSendDraft(sessionId: string, stage: SessionStage): void {
   saveSessionDraft(draft);
 }
 
-/** 单文件完成：更新草稿中的路径与完成状态。 */
+/** 单文件完成：追加完成日志，恢复时按最终路径回放；不再全量重写会话头。 */
 function updateLocalSendDraftDone(sessionId: string, fileId: string, path: string): void {
-  let draft: SessionDraft | undefined = loadSessionDraft(localDraftSessionId(sessionId));
-  if (draft === undefined) {
-    draft = loadSessionDraft(sessionId);
-  }
-  if (draft === undefined) {
-    return;
-  }
-  for (let i = 0; i < draft.files.length; i++) {
-    let file: SessionDraftFile = draft.files[i];
-    if (file.fileId !== fileId) {
-      continue;
-    }
-    if (path.length > 0) {
-      file.finalPath = path;
-      file.tempPath = tempPathForFinal(path, TEMP_SUBDIR_LOCAL_SEND);
-    }
-    file.stage = SessionFileStage.completed;
-    file.bytesSent = file.totalBytes;
-    file.completedAt = Date.now();
-    draft.updatedAt = Date.now();
-    saveSessionDraft(draft);
-    return;
-  }
+  appendSessionDraftRecord(localDraftSessionId(sessionId), {
+    fileId: fileId,
+    stage: SessionFileStage.completed,
+    bytes: 0,
+    at: Date.now(),
+    path: path
+  });
 }
 
 /** 会话终结后删除草稿。 */
@@ -1384,8 +1369,45 @@ export function shouldAutoAccept(senderFingerprint: string): boolean {
 
 // ── 接收历史记录 ──
 
+function realPathOf(file: ReceivedFileEntry, pathMap?: Record<string, string>): string {
+  if (pathMap !== undefined && pathMap[file.fileId] !== undefined) {
+    return pathMap[file.fileId];
+  }
+  return file.filePath;
+}
+
+function fileSizeOf(path: string): number {
+  if (path.length === 0) {
+    return 0;
+  }
+  try {
+    return fs.statSync(path).size;
+  } catch (_e) {
+    return 0;
+  }
+}
+
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
   pathMap?: Record<string, string>): void {
+  // 文件夹会话只记一条摘要：接收历史是文件级列表，2000 个文件会挤占大量条目。
+  let names: Array<string> = [];
+  let sizes: Array<number> = [];
+  for (let i = 0; i < files.length; i++) {
+    names.push(files[i].fileName);
+    let declaredSize: number | undefined = sessionFileSizes[sessionId + ':' + files[i].fileId];
+    sizes.push(declaredSize !== undefined ? declaredSize : files[i].filePath.length > 0 ?
+      fileSizeOf(files[i].filePath) : 0);
+  }
+  let firstPath: string = files.length > 0 ? realPathOf(files[0], pathMap) : '';
+  let folderEntry: ReceiveHistoryEntry | undefined = buildFolderReceiveHistoryEntry(sessionId,
+    names, sizes, firstPath, files.length > 0 ? files[0].fileName : '', senderAlias);
+  if (folderEntry !== undefined) {
+    addHistoryEntries([folderEntry]);
+    logger.debug('已添加文件夹接收历史 count=' + folderEntry.fileCount +
+      ' root=' + folderEntry.fileName);
+    return;
+  }
+
   // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史
   let entries: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < files.length; i++) {

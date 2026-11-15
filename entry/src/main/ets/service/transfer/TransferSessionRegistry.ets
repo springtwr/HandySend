@@ -26,6 +26,7 @@ import { LogDomains } from '../../common/LogDomains';
 import {
   OverallSnapshot,
   SessionCapabilities,
+  SessionContentKind,
   SessionCreateInput,
   SessionDataFlow,
   SessionEventKind,
@@ -393,6 +394,8 @@ export function createSession(input: SessionCreateInput): TransferSession {
   session.capabilities = input.capabilities;
   session.stageText = input.stageText ?? '';
   session.textMessage = input.textMessage === true;
+  session.contentKind = input.contentKind !== undefined ? input.contentKind : SessionContentKind.files;
+  session.folder = input.folder;
   // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示
   session.declaredFileCount = input.declaredFileCount !== undefined ? input.declaredFileCount : 0;
   session.startedAt = Date.now();

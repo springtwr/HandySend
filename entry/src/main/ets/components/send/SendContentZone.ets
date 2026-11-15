@@ -68,6 +68,18 @@ export struct SendContentZone {
           })
       }
 
+      // 文件夹：聚合为一个暂存条目，发送时展开为逐文件
+      if (this.viewModel.isFolderPickSupported()) {
+        GridItem() {
+          this.pickAction($r('sys.symbol.folder'), $r('app.string.send_folder'), 'send_pick_folder',
+            compact, () => {
+              this.dispatchPick(() => {
+                this.viewModel.pickFolder();
+              });
+            })
+        }
+      }
+
       // 图库：图库选择器不设 MIMEType 即同时展示图片与视频并可混选
       GridItem() {
         this.pickAction($r('sys.symbol.picture_fill'), $r('app.string.send_media'), 'send_pick_media',
@@ -119,13 +131,13 @@ export struct SendContentZone {
           })
       }
     }
-    // 空态整行 1×4 铺满卡片；气泡内 2×2 紧凑排布，避免气泡横跨大半个屏幕
-    .columnsTemplate(compact ? '1fr 1fr' : '1fr 1fr 1fr 1fr')
-    .rowsTemplate(compact ? '1fr 1fr' : '1fr')
+    // 空态一行五格铺满卡片；气泡内 2 列紧凑排布，第五项落在第二行
+    .columnsTemplate(compact ? '1fr 1fr' : '1fr 1fr 1fr 1fr 1fr')
+    .rowsTemplate(compact ? '1fr 1fr 1fr' : '1fr')
     .columnsGap(DesignTokens.space.inner)
     .rowsGap(DesignTokens.space.inner)
     .width('100%')
-    .height(compact ? ACTION_TILE_HEIGHT_COMPACT * 2 + DesignTokens.space.inner :
+    .height(compact ? ACTION_TILE_HEIGHT_COMPACT * 3 + DesignTokens.space.inner * 2 :
       ACTION_TILE_HEIGHT.getValue(this.breakpointInfo.widthBreakpoint))
     .id(compact ? 'send_type_picker_compact' : 'send_type_picker')
   }
@@ -192,8 +204,15 @@ export struct SendContentZone {
   @Builder
   stagedRow(ri: RepeatItem<StagedFile>) {
     Row({ space: DesignTokens.space.sm }) {
-      // 缩略图 40vp（行高 48）：图片源直显，视频用异步生成的缩略图，其余回退类型图标
-      if (ri.item.isImage) {
+      // 缩略图 40vp（行高 48）：文件夹用目录图标；图片源直显，视频用异步生成的缩略图，
+      // 其余回退类型图标
+      if (ri.item.isFolder === true) {
+        SymbolGlyph($r('sys.symbol.folder'))
+          .fontSize(DesignTokens.size.iconLg)
+          .fontColor([$r('app.color.text_secondary')])
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+      } else if (ri.item.isImage) {
         Image(ri.item.uri)
           .width(DesignTokens.size.iconLg)
           .height(DesignTokens.size.iconLg)
@@ -217,8 +236,10 @@ export struct SendContentZone {
       // 文件名（flex 自适应宽度，最多两行，超出尾部截断）。
       // 文本消息条目不展示沙箱文件名（内部实现细节），直接展示正文预览，便于分辨内容；
       // 文本消息条目可点击进入编辑；普通文件点击无操作（编辑能力仅面向 isManualText 标记的条目）
-      Text(ri.item.isManualText === true && ri.item.textPreview !== undefined ?
-        ri.item.textPreview : ri.item.fileName)
+      Text(ri.item.isFolder === true ?
+        ri.item.fileName + '（' + (ri.item.folderFileCount ?? 0) + ' 个文件）' :
+        (ri.item.isManualText === true && ri.item.textPreview !== undefined ?
+          ri.item.textPreview : ri.item.fileName))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_primary'))
         // 文件名最多两行，超长尾部截断（48vp 行高内垂直居中）

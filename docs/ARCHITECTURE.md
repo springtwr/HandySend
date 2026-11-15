@@ -491,9 +491,11 @@ Rust 桥接层测试（单元 + 集成）与 ArkTS 静态检查（codelinter）�
   PixelMap（首屏后 12 行按 90 ms 错峰预加载），视频异步生成缩略图；系统不支持的图片格式、非图片条目直接回退类型图标，
   解码失败或条目不可读时安静回退并在再次可见时重试；
   不落盘缩略图缓存，渲染期不读盘（详见 [architecture/user-file-access.md](architecture/user-file-access.md)）
-- LocalSend 文件夹接收：`fileName` 中的相对路径按目录树落盘（逐段净化、每个目录内去重、
-  单次上限 2000），目标注册使用路径目标模式（accept 前不持 fd）；详见
-  [architecture/user-file-access.md](architecture/user-file-access.md) §2.2
+- LocalSend 文件夹收发：发送侧按目录递归扫描、聚合为一个暂存条目，`fileName` 携带
+  `<根目录名>/<相对路径>`，文档 Picker 与文件夹条目走 `fd = -1` 路径模式；接收侧
+  按相对路径落盘（逐段净化、每个目录内去重，收发上限 2000）。文件夹与 >100 文件批次
+  的任务历史只存摘要，接收历史一个文件夹一条；详见
+  [architecture/user-file-access.md](architecture/user-file-access.md) §2.2/§2.3
 - 点击任一条目弹出**统一操作菜单**（不再按文件类型隐式绑定点击行为，菜单项与可用性判定见
   [architecture/session-engine.md](architecture/session-engine.md) §9）：「预览全文」/「复制」/「打开所在位置」/「用其他应用打开」/「保存到相册」/「校验和」
   （复制不受预览阈值限制，超读取上限截断并明确提示；校验和仅在文件确有值时展示，点击弹出完整值弹窗），

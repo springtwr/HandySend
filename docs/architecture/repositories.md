@@ -240,6 +240,14 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
   （含 ` (N)`；一次数组替换 + 一次变更通知），使任务详情与磁盘/接收历史一致；
   发送侧由发送适配器在会话创建时携带。
   归档（`SessionHistoryStore.buildHistoryEntry`）逐文件透传路径，历史态预览据此读取内容。
+- **文件夹摘要**：发送侧 `FolderScan` 递归扫描并以单个聚合条目暂存，`prepareSendFiles`
+  按 `SourceFileMeta.wireName/sourcePath` 生成相对名与本机路径；文档 Picker/文件夹条目走
+  `fd = -1`，Rust 逐文件打开。接收侧 `summarizeInboundFolder` 识别相对路径会话。
+  `buildHistoryEntry` 对文件夹与 >100 文件批次只写摘要（`contentKind`/`folder`/
+  `completedCount`/`failedCount`/`failedFiles`），`files` 为空；接收历史由
+  `buildFolderReceiveHistoryEntry` 只生成一条，删除时按 `isFolder` 递归删除。
+- **草稿完成日志**：`SessionDraftStore` 的会话头只在创建/快速保存时写一次，单文件完成
+  `appendSessionDraftRecord` 追加 `.log`，恢复时回放；不再逐文件全量重写 JSON。
 - **文件级接收历史**：`ReceiveHistoryEntry` 只写入路径与元数据；读取旧数据时剥离其遗留的 `textContent` 字段并全量回写一次；
   `ReceiveHistoryService.deleteEntryFile` 对文本与普通文件一致删除；
   接收历史页的查看全文/复制改为经共用工具 `utils/FileTextUtil.readTextOfLocation` 读取文件（沙箱路径直读、选择器 URI 经文件描述符读取，失败返回不可用并由界面明确提示）。

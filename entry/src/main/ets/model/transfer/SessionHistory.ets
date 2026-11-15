@@ -8,8 +8,10 @@
 
 import { SESSION_HISTORY_CAPACITY } from '../HistoryCapacity';
 import {
+  SessionContentKind,
   SessionDataFlow,
   SessionFileStage,
+  SessionFolderInfo,
   SessionHistoryOutcome,
   SessionInitiator,
   SessionTimelineEvent
@@ -23,11 +25,19 @@ import {
  * 沿用「读取不校验版本」策略，旧条目仍带这两个字段，直接忽略即可，无需迁移。
  * v5 新增可选文本消息标记 `textMessage`（区分手输文本消息与 .txt 文本文件）；
  * 旧条目缺省该字段，展示层按非文本消息降级。
+ * v6 新增文件夹/大批次摘要字段（contentKind/folder/counts/failedFiles）；
+ * 旧条目缺省按普通文件批次处理，files 仍保留全量。
  */
-export const SESSION_HISTORY_SCHEMA_VERSION: number = 5;
+export const SESSION_HISTORY_SCHEMA_VERSION: number = 6;
 
 /** 单条历史的时间线保留上限（有界，避免长时传输时间线无界增长）。 */
 export const SESSION_HISTORY_TIMELINE_CAPACITY: number = 50;
+
+/** 任务历史摘要中的失败文件（仅保留失败项，成功项不入库）。 */
+export interface SessionHistoryFailure {
+  fileName: string
+  reason: string
+}
 
 /** 任务历史中的逐文件条目（终态快照）。 */
 export interface SessionHistoryFileEntry {
@@ -61,9 +71,18 @@ export interface SessionHistoryEntry {
   // 旧条目缺省为 undefined，按非 MTA 降级
   peerMtaBrandId?: number
   // ── 逐文件清单与聚合 ──
+  // 文件夹或 >100 文件批次只存摘要，files 为空；旧条目仍有全量明细
   files: Array<SessionHistoryFileEntry>
   fileCount: number
   totalBytes: number
+  // ── 摘要（v6，可选） ──
+  contentKind?: SessionContentKind
+  folder?: SessionFolderInfo
+  completedCount?: number
+  failedCount?: number
+  failedFiles?: Array<SessionHistoryFailure>
+  // 是否因摘要策略省略了逐文件明细
+  detailOmitted?: boolean
   // 是否为手动输入的文本消息会话（可选：旧条目缺省按非文本消息降级）
   textMessage?: boolean
   // ── 结果与错误 ──
@@ -289,7 +308,11 @@ export function sanitizeHistory(entries: Array<SessionHistoryEntry>): Array<Sess
       continue;
     }
     let e = entries[i];
-    // files 为空但 fileCount>0 的脏条目剔除
+    // 摘要条目（文件夹/大批次）允许 files 为空；普通条目 files 为空但 fileCount>0 视为脏数据
+    if (e.detailOmitted === true) {
+      result.push(e);
+      continue;
+    }
     if (e.files.length === 0 && e.fileCount > 0) {
       continue;
     }
@@ -325,6 +348,13 @@ function rebuildAggregatesFromFiles(e: SessionHistoryEntry, totalBytes: number):
     files: e.files,
     fileCount: e.files.length,
     totalBytes: totalBytes,
+    // 摘要字段必须随条目透传，否则 sanitize 会把文件夹/大批次信息清空
+    contentKind: e.contentKind,
+    folder: e.folder,
+    completedCount: e.completedCount,
+    failedCount: e.failedCount,
+    failedFiles: e.failedFiles,
+    detailOmitted: e.detailOmitted,
     textMessage: e.textMessage,
     outcome: e.outcome,
     errorMessage: e.errorMessage,

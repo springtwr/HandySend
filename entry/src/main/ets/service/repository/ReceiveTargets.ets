@@ -26,6 +26,7 @@ import {
   sanitizeReceivedPath
 } from '../../model/transfer/ReceivedPath';
 import { getAppContext } from './AppCore';
+import { MAX_BATCH_FILES } from '../../model/TransferLimits';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
@@ -223,8 +224,8 @@ function uniqueBatchPath(dir: string, fileName: string,
   return candidate;
 }
 
-/** 单次 LocalSend 接收的文件数硬上限：防止 UI/历史/Preferences 被恶意请求拖垮。 */
-export const MAX_RECV_FILES: number = 2000;
+/** 单次 LocalSend 接收的文件数硬上限：与发送共用同一批量上限。 */
+export const MAX_RECV_FILES: number = MAX_BATCH_FILES;
 
 /** 接收目标准备失败原因（供调用方映射本地化文案）。 */
 export enum RecvPrepareError {

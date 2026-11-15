@@ -134,6 +134,20 @@ export default function ReceiveHistoryItemTest() {
       done()
     })
 
+    it('folderEntry_isNotTextAndKeepsCount', 0, () => {
+      let entry: ReceiveHistoryEntry = entryOf('Photos', 'folder',
+        '/storage/Users/currentUser/Download/Photos', false, 99);
+      entry.isFolder = true;
+      entry.fileCount = 7;
+      let item = new ReceiveHistoryItemViewModel(entry);
+      expect(item.isFolder).assertTrue();
+      expect(item.fileCount).assertEqual(7);
+      expect(item.isTextEntry).assertFalse();
+      expect(item.canViewFullText).assertFalse();
+      expect(item.canCopyText).assertFalse();
+      expect(item.formattedSize.length > 0).assertTrue();
+    })
+
     it('textPreview_unknownSize_previewableAsBefore', 0, async (done: Function) => {
       // 大小不可得（为 0）：按可预览处理，不因缺信息误禁
       let path = writeTestFileToSandbox('recv_hist_unknown_size.txt', TEXT_CONTENT)

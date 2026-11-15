@@ -25,6 +25,38 @@
       "value": "文件"
     },
     {
+      "name": "send_folder",
+      "value": "文件夹"
+    },
+    {
+      "name": "send_batch_unsupported",
+      "value": "当前设备不支持选择文件夹"
+    },
+    {
+      "name": "send_folder_empty",
+      "value": "文件夹中没有可发送的文件"
+    },
+    {
+      "name": "send_folder_too_many",
+      "value": "文件夹文件数超过单次上限 %d，建议压缩后发送"
+    },
+    {
+      "name": "send_folder_scan_failed",
+      "value": "扫描文件夹失败，请重试"
+    },
+    {
+      "name": "send_batch_over_limit",
+      "value": "单次最多发送 %d 个文件，建议压缩后发送"
+    },
+    {
+      "name": "send_batch_soft_hint",
+      "value": "文件较多（%d 个），建议压缩目录后发送"
+    },
+    {
+      "name": "send_mta_folder_unsupported",
+      "value": "互传暂不支持文件夹，请发送到局域网设备"
+    },
+    {
       "name": "send_media",
       "value": "图库"
     },
@@ -1087,6 +1119,30 @@
     {
       "name": "history_delete_files_label",
       "value": "同时删除文件"
+    },
+    {
+      "name": "history_delete_folder_label",
+      "value": "同时删除文件夹"
+    },
+    {
+      "name": "history_folder_file_count",
+      "value": "%d 个文件"
+    },
+    {
+      "name": "history_folder_multi_name",
+      "value": "多个文件夹"
+    },
+    {
+      "name": "session_folder_open",
+      "value": "打开文件夹"
+    },
+    {
+      "name": "session_folder_progress",
+      "value": "成功 %d · 失败 %d"
+    },
+    {
+      "name": "session_folder_file_count",
+      "value": "%d 个文件"
     },
     {
       "name": "history_delete_message_file",

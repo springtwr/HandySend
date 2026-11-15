@@ -38,10 +38,13 @@ import {
   SESSION_HISTORY_STORAGE_SEGMENT_COUNT
 } from '../../../../main/ets/model/HistoryCapacity'
 import {
+  SessionContentKind,
   SessionCreateInput,
   SessionDataFlow,
   SessionEventKind,
+  SessionFileDescriptor,
   SessionFileStage,
+  SessionFolderInfo,
   SessionHistoryOutcome,
   SessionInitiator,
   SessionStage,
@@ -240,7 +243,7 @@ export default function SessionHistoryStoreTest() {
       expect(RECEIVE_HISTORY_SEGMENT_SIZE).assertEqual(250)
       expect(RECEIVE_HISTORY_STORAGE_SEGMENT_COUNT).assertEqual(20)
       // 归档条目的 schema 版本参与持久化契约，变更需显式确认读侧兼容性
-      expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(5)
+      expect(SESSION_HISTORY_SCHEMA_VERSION).assertEqual(6)
     })
 
     // ── 分段存储：容量为段大小整数倍，裁剪只丢弃最旧整段 ──
@@ -704,6 +707,93 @@ export default function SessionHistoryStoreTest() {
       let sanitized = sanitizeHistory([dirty, clean])
       expect(sanitized.length).assertEqual(1)
       expect(sanitized[0].sessionId).assertEqual('s')
+    })
+
+    it('build_entry_folderUsesSummary', 0, () => {
+      resetRegistry()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 2,
+        totalBytes: 30
+      }
+      let input: SessionCreateInput = {
+        protocolKey: 'test',
+        protocolSessionId: 'folder',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f1',
+          fileName: 'Photos/a.txt',
+          fileType: 'text/plain',
+          totalBytes: 10
+        }, {
+          fileId: 'f2',
+          fileName: 'Photos/b.txt',
+          fileType: 'text/plain',
+          totalBytes: 20
+        }],
+        capabilities: defaultCapabilities(),
+        contentKind: SessionContentKind.folder,
+        folder: folder
+      }
+      let s = createSession(input)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.contentKind).assertEqual(SessionContentKind.folder)
+          expect(built.detailOmitted).assertTrue()
+          expect(built.files.length).assertEqual(0)
+          expect(built.fileCount).assertEqual(2)
+          expect(built.totalBytes).assertEqual(30)
+          expect(built.completedCount).assertEqual(2)
+          expect(built.folder !== undefined).assertTrue()
+          if (built.folder !== undefined) {
+            expect(built.folder.name).assertEqual('Photos')
+          }
+        }
+      }
+      resetRegistry()
+    })
+
+    it('build_entry_largeFileBatchUsesSummary', 0, () => {
+      resetRegistry()
+      let files: Array<SessionFileDescriptor> = []
+      for (let i = 0; i < 101; i++) {
+        files.push({
+          fileId: 'f' + i,
+          fileName: 'a' + i + '.txt',
+          fileType: 'text/plain',
+          totalBytes: 1
+        })
+      }
+      let input: SessionCreateInput = {
+        protocolKey: 'test',
+        protocolSessionId: 'large',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: files,
+        capabilities: defaultCapabilities()
+      }
+      let s = createSession(input)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.detailOmitted).assertTrue()
+          expect(built.files.length).assertEqual(0)
+          expect(built.fileCount).assertEqual(101)
+        }
+      }
+      resetRegistry()
     })
 
     it('build_entry_onlyForTerminal', 0, () => {

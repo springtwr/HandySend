@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
+  SessionContentKind,
   SessionCreateInput,
   SessionCapabilities,
   SessionDataFlow,
+  SessionFolderInfo,
   SessionDisplayDescriptor,
   SessionEventKind,
   SessionFile,
@@ -216,6 +218,44 @@ export default function SessionDetailTest() {
       vm.refresh()
       expect(vm.fileCount()).assertEqual(2)
       vm.unload()
+      resetRegistry()
+    })
+
+    it('folderSession_exposesSummaryAndHidesPerFileMode', 0, () => {
+      resetRegistry()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 2,
+        totalBytes: 30
+      }
+      let input: SessionCreateInput = {
+        protocolKey: 'test-folder-detail',
+        protocolSessionId: 'folder-detail',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f1', fileName: 'Photos/a.txt', fileType: 'text/plain', totalBytes: 10
+        }, {
+          fileId: 'f2', fileName: 'Photos/b.txt', fileType: 'text/plain', totalBytes: 20
+        }],
+        capabilities: { canCancel: true, canRetry: false, needsConfirm: false, hasByteProgress: true,
+          canSaveToGallery: false, hasVerify: false },
+        contentKind: SessionContentKind.folder,
+        folder: folder
+      }
+      let s = createSession(input)
+      let vm: SessionDetailViewModel = new SessionDetailViewModel();
+      vm.load(s.id);
+      expect(vm.isFolderSession()).assertTrue();
+      expect(vm.fileCount()).assertEqual(2);
+      expect(vm.folderInfo() !== undefined).assertTrue();
+      if (vm.folderInfo() !== undefined) {
+        expect(vm.folderInfo()?.name).assertEqual('Photos');
+      }
+      vm.unload();
       resetRegistry()
     })
 
