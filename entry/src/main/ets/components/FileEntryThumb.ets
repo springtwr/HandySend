@@ -144,9 +144,17 @@ export struct FileEntryThumb {
     let file: fs.File | undefined = undefined;
     let source: image.ImageSource | undefined = undefined;
     try {
-      // 访问前激活持久化授权：临时授权可能已超过有效期（与进程是否重启无关）
-      await ensureUriAccess(location.uri);
-      file = await fs.open(location.uri, fs.OpenMode.READ_ONLY);
+      // 仅 Picker / 媒体库来源需要激活持久化授权；接收文件等普通路径直接可读，
+      // 不要对从未持久化的文件 URI 调用 activatePermission。
+      if (location.needsPermissionActivation) {
+        await ensureUriAccess(location.uri);
+      }
+      let openTarget: string = location.needsPermissionActivation ?
+        location.uri : location.localPath;
+      if (openTarget.length === 0) {
+        openTarget = location.uri;
+      }
+      file = await fs.open(openTarget, fs.OpenMode.READ_ONLY);
       source = image.createImageSource(file.fd);
       // 运行时可能在解码前置阶段返回 undefined（声明类型未覆盖），按不可用处理
       let info: image.ImageInfo | undefined = source.getImageInfoSync(0);

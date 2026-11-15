@@ -126,6 +126,16 @@ export default function FileLocationUtilTest() {
       expect(isFileMissing(empty)).assertTrue()
     })
 
+    it('activation_need_follows_input_form', 0, () => {
+      // 普通绝对路径（接收文件/沙箱文件）直接按路径访问，不需要文件 URI 授权激活
+      expect(normalizeFileLocation(LOCAL_PATH).needsPermissionActivation).assertFalse()
+      // Picker 文档 URI / 图库 URI 仍需要持久化授权激活
+      expect(normalizeFileLocation(DOC_URI).needsPermissionActivation).assertTrue()
+      expect(normalizeFileLocation(GALLERY_IMAGE_URI).needsPermissionActivation).assertTrue()
+      // 空定位无需激活
+      expect(normalizeFileLocation('').needsPermissionActivation).assertFalse()
+    })
+
     it('open_result_states_mapping', 0, () => {
       // 结果态集合完整且取值稳定：调用方据此给出明确提示，不静默
       expect(FileOpenResult.success).assertEqual('success')

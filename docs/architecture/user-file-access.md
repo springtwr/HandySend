@@ -45,6 +45,10 @@ Picker 返回的 URI（`file://media/...`、`file://docs/...`）只带临时授�
 声明；能力是否存在用 `canIUse('SystemCapability.FileManagement.AppFileService.FolderAuthorization')`
 判定，不支持时静默降级。
 
+**接收文件不走 Picker URI 授权**：接收目录中的文件是普通绝对路径，缩略图与打开动作按路径读取；
+`normalizeFileLocation` 对普通路径返回 `needsPermissionActivation = false`，不调用按文件 URI 的
+`activatePermission`。只有落点本身是 `file://`（Picker 文档 URI、图库 URI）时才需要激活持久化授权。
+
 未持久化过的历史条目（旧版本产生）无法激活，读取时按不可用降级并提示「文件暂不可用」。
 
 ### 2.1 接收目录的选择与授权
