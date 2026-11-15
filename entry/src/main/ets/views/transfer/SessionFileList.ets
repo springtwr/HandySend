@@ -1,16 +1,19 @@
 /**
  * SessionFileList.ets — 详情页文件清单
  *
- * 逐文件条目：首行由类型图标 / 图片与视频缩略区、文件名（最多两行）、大小与状态列组成，
+ * 逐文件条目：首行由类型图标 / 图片与视频缩略区、文件名（最多两行，超出按系统能力选择行中/行尾省略）、
+ * 大小与状态列组成，
  * 首行内容在 48vp 最小行高内垂直居中（与发送页暂存列表一致，单行 / 两行文件名首行等高）；
  * 其下为通栏的独立进度条与百分比。
  * 条目直接排布于外层文件卡片容器内（不套独立色块），相邻条目之间以分隔线区隔。
  * 直接读取可观测视图模型的实时清单（进度 / 阶段随 `@Trace` 字段刷新）。
  * 无字节进度的会话（如单条文本消息的仅预览送达）不渲染进度条与百分比，仅列文件与状态。
- * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册 / 校验和），
+ * 条目点击弹出统一操作菜单（预览全文 / 打开所在位置 / 用其他应用打开 / 保存到相册 / 校验和；
+ * 文件名被两行省略时另有完整文件名），
  * 校验和不再固定展示，仅在文件有校验和时作为菜单项提供完整值弹窗；不再按文件类型隐式绑定点击行为。
  */
 
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { DesignTokens } from '../../common/DesignTokens';
 import { SessionFile, SessionFileStage } from '../../model/transfer/TransferSession';
 import { SessionDetailViewModel } from '../../viewmodel/SessionDetailViewModel';
@@ -51,6 +54,52 @@ export struct SessionFileList {
   }
   // 查看校验和（由详情页统一弹出完整值弹窗，与页内其它弹窗同一层管理）
   @Event onShowChecksum: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
+  // 查看完整文件名（列表最多两行会省略，由详情页弹出完整值弹窗）
+  @Event onShowFullName: (file: SessionFile) => void = (_file: SessionFile) => {
+  }
+
+  // 文件名省略位置：系统 API >= 24 支持多行行中省略（保留扩展名等末尾字符），
+  // 低版本降级为行尾省略；版本能力在组件创建时确定一次。
+  // 组合判断：数值判断在前短路（低版本上不调用 apiAvailable），再以 apiAvailable 确认能力可用
+  private ellipsisMode: EllipsisMode = deviceInfo.sdkApiVersion >= 24 && deviceInfo.apiAvailable(24) ?
+    EllipsisMode.MULTILINE_CENTER : EllipsisMode.END
+  // 文件名实际布局宽度（按条目键记录，vp）：用于判定文件名是否会在两行内被省略
+  private fileNameWidths: Record<string, number> = {}
+
+  private fileKeyOf(file: SessionFile): string {
+    return file.fileId + '#' + file.occurrence;
+  }
+
+  /**
+   * 文件名是否会被两行省略：按该条目文件名的实际布局宽度，比较完整排版高度与两行限制高度。
+   * 尚未记录宽度（行尚未布局）时按「可能省略」处理，避免菜单入口意外消失。
+   * 测量的字号与断行规则须与文件名 Text 的渲染属性保持一致，否则判定会与实机排版分叉。
+   */
+  private isFileNameTruncated(file: SessionFile): boolean {
+    let width: number | undefined = this.fileNameWidths[this.fileKeyOf(file)];
+    if (width === undefined || width <= 0) {
+      return true;
+    }
+    let twoLinesHeight: Length | undefined = this.getUIContext().getMeasureUtils().measureTextSize({
+      textContent: file.fileName,
+      constraintWidth: width,
+      fontSize: DesignTokens.font.bodyM,
+      maxLines: 2,
+      wordBreak: WordBreak.BREAK_ALL,
+      overflow: TextOverflow.Ellipsis
+    }).height;
+    let fullHeight: Length | undefined = this.getUIContext().getMeasureUtils().measureTextSize({
+      textContent: file.fileName,
+      constraintWidth: width,
+      fontSize: DesignTokens.font.bodyM,
+      wordBreak: WordBreak.BREAK_ALL
+    }).height;
+    if (typeof twoLinesHeight !== 'number' || typeof fullHeight !== 'number') {
+      return true;
+    }
+    // 0.5px 容差：两次测量的行高取整误差不应误判为省略
+    return fullHeight > twoLinesHeight + 0.5;
   }
 
   private percentOf(file: SessionFile): number {
@@ -111,11 +160,22 @@ export struct SessionFileList {
     };
   }
 
-  /** 条目操作菜单：容器在本组件内包一层，菜单项集合由公共实现提供。 */
+  /** 条目操作菜单：容器在本组件内包一层，菜单项集合由公共实现提供，末尾追加详情页专有项。 */
   @Builder
   entryMenu(file: SessionFile) {
     Menu() {
       FileEntryMenuItems(this.menuOptionsFor(file))
+      // 完整文件名：条目点击仍弹菜单（菜单优先），查看全文由菜单项进入，
+      // 避免文件名区域的点击与条目菜单争抢同一手势；仅在文件名确实被两行省略时提供
+      if (file.fileName.length > 0 && this.isFileNameTruncated(file)) {
+        MenuItem({
+          content: $r('app.string.session_file_full_name'),
+          startIcon: $r('sys.symbol.doc_text')
+        })
+          .onClick(() => {
+            this.onShowFullName(file);
+          })
+      }
     }
   }
 
@@ -155,15 +215,22 @@ export struct SessionFileList {
                 fileName: ri.item.fileName
               })
 
-              // 详情页以完整辨识文件为目标：文件名最多两行，超出省略；
+              // 详情页以完整辨识文件为目标：文件名最多两行，超出时按系统能力选择行中/行尾省略；
               // 无空格长串按字符断行，避免整段被挤出可视区
               Text(ri.item.fileName)
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .ellipsisMode(this.ellipsisMode)
                 .wordBreak(WordBreak.BREAK_ALL)
                 .layoutWeight(1)
+                .onAreaChange((_oldValue: Area, newValue: Area) => {
+                  // 记录文件名的实际布局宽度（vp），供菜单项「完整文件名」判断是否被两行省略
+                  if (typeof newValue.width === 'number') {
+                    this.fileNameWidths[this.fileKeyOf(ri.item)] = newValue.width;
+                  }
+                })
 
               // 大小与状态列：同列右对齐，整体垂直居中（不要求与文件名首行对齐）
               Column({ space: DesignTokens.space.tiny }) {
