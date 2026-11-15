@@ -431,6 +431,28 @@ async fn test_single_page_and_unknown_path() {
         body.contains("id=\"drag-hint\"") && body.contains("supportsFileDrag"),
         "桌面端应在选择文件入口提示可拖入文件"
     );
+    assert!(
+        body.contains("id=\"wechat-hint\"")
+            && body.contains("id=\"wechat-hint-text\"")
+            && body.contains("id=\"wechat-hint-copy\"")
+            && body.contains("id=\"wechat-hint-copy-label\"")
+            && body.contains("id=\"wechat-hint-error\"")
+            && body.contains("id=\"wechat-guide\"")
+            && body.contains("id=\"wechat-guide-title\"")
+            && body.contains("id=\"wechat-guide-text\"")
+            && body.contains("id=\"wechat-guide-hint\"")
+            && body.contains("id=\"wechat-guide-error\"")
+            && body.contains("id=\"wechat-guide-copy\"")
+            && body.contains("id=\"wechat-guide-close\"")
+            && body.contains("wechatHint")
+            && body.contains("wechatGuideCopy")
+            && body.contains("MicroMessenger")
+            && body.contains("WindowsWechat")
+            && body.contains("blockWechatDownload")
+            && body.contains("prepareWechatHandoff")
+            && body.contains("/web/handoff"),
+        "单页应识别微信内置浏览器并拦截下载入口"
+    );
     assert!(body.contains("prepare-upload"), "单页应含上传建会话逻辑");
     assert!(
         body.contains("waitForUploadAccept") && body.contains("waitingConfirm"),
@@ -1092,6 +1114,178 @@ async fn test_protocol_switch_uses_distinct_cookie_names() {
     let cap_http = header(&cap_http_headers, "set-cookie").expect("换令牌应下发 Cookie");
     assert!(cap_http.starts_with("handysend_web_cap="));
     assert!(!cap_http.contains("Secure"));
+    handle.abort();
+}
+
+/// 微信扫码后生成短期浏览器交接令牌：微信页面保留 `?h=` 供「在浏览器打开」携带，
+/// 系统浏览器兑换后免访问码；令牌单次有效，失效时回退访问码页。
+#[tokio::test]
+async fn test_wechat_browser_handoff() {
+    let wechat_ua: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) \
+        AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.50";
+    let browser_ua: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) \
+        AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-wechat".to_string());
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
+
+    // 微信扫码：302 到带交接令牌的地址，并下发微信 WebView 能力 Cookie。
+    let (status, headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-wechat", &[("User-Agent", wechat_ua)])
+            .await;
+    assert_eq!(status, 302);
+    let location: String = header(&headers, "location")
+        .expect("微信入口应重定向")
+        .to_string();
+    assert!(
+        location.starts_with("/?h="),
+        "微信入口应带浏览器交接令牌: {location}"
+    );
+    let wechat_cookie: String = header(&headers, "set-cookie")
+        .expect("微信入口应下发能力 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+
+    // 微信页面带 ?h= 打开：不消费交接令牌，按能力 Cookie 正常渲染内容页。
+    let (page_status, _, page) = http_request_with_headers(
+        addr,
+        "GET",
+        &location,
+        &[
+            ("Cookie", wechat_cookie.as_str()),
+            ("User-Agent", wechat_ua),
+        ],
+    )
+    .await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"open\""));
+
+    // 系统浏览器打开同一地址：消费交接令牌，302 到干净地址并下发浏览器能力 Cookie。
+    let (browser_status, browser_headers, _) =
+        http_request_with_headers(addr, "GET", &location, &[("User-Agent", browser_ua)]).await;
+    assert_eq!(browser_status, 302);
+    assert_eq!(header(&browser_headers, "location"), Some("/"));
+    let browser_cookie: String = header(&browser_headers, "set-cookie")
+        .expect("浏览器交接应下发能力 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let (page_status, _, page) = http_request_with_headers(
+        addr,
+        "GET",
+        "/",
+        &[
+            ("Cookie", browser_cookie.as_str()),
+            ("User-Agent", browser_ua),
+        ],
+    )
+    .await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"open\""));
+
+    // 交接令牌一次性：第三个浏览器再用同一地址只能回到访问码页。
+    let (reuse_status, _, reuse_body) = http_request_with_headers(
+        addr,
+        "GET",
+        &location,
+        &[("User-Agent", "ThirdBrowser/1.0")],
+    )
+    .await;
+    assert_eq!(reuse_status, 200);
+    assert!(reuse_body.contains("data-auth=\"locked\""));
+
+    // 微信页面可主动取一条新交接令牌（复制浏览器链接兜底）。
+    let (handoff_status, _, handoff_body) = http_request_with_headers(
+        addr,
+        "POST",
+        "/web/handoff",
+        &[
+            ("Cookie", wechat_cookie.as_str()),
+            ("User-Agent", wechat_ua),
+        ],
+    )
+    .await;
+    assert_eq!(handoff_status, 200);
+    let handoff_json: serde_json::Value =
+        serde_json::from_str(&handoff_body).expect("交接响应应为 JSON");
+    let handoff_token: &str = handoff_json["token"].as_str().expect("交接响应缺 token");
+    let handoff_path: String = format!("/?h={handoff_token}");
+    let (copy_status, copy_headers, _) =
+        http_request_with_headers(addr, "GET", &handoff_path, &[("User-Agent", browser_ua)]).await;
+    assert_eq!(copy_status, 302);
+    assert_eq!(header(&copy_headers, "location"), Some("/"));
+    handle.abort();
+}
+
+/// 同一 IP 的浏览器交接令牌有上限：重复生成会淘汰最早一枚，避免有效凭据无限堆积。
+#[tokio::test]
+async fn test_handoff_token_limit_per_ip() {
+    let wechat_ua: &str = "WeChat MicroMessenger/8.0.50";
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-native".to_string());
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
+    // 微信扫码：拿到一枚二维码原生交接令牌与微信 WebView 能力 Cookie。
+    let (qr_status, qr_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-native", &[("User-Agent", wechat_ua)])
+            .await;
+    assert_eq!(qr_status, 302);
+    let qr_location: String = header(&qr_headers, "location")
+        .expect("扫码应重定向到交接地址")
+        .to_string();
+    let native_token: String = qr_location
+        .strip_prefix("/?h=")
+        .expect("二维码交接地址应带 h 参数")
+        .to_string();
+    let wechat_cookie: String = header(&qr_headers, "set-cookie")
+        .expect("扫码应下发能力 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let mut tokens: Vec<String> = Vec::new();
+    for _ in 0..9 {
+        let (status, _, body) = http_request_with_headers(
+            addr,
+            "POST",
+            "/web/handoff",
+            &[
+                ("Cookie", wechat_cookie.as_str()),
+                ("User-Agent", wechat_ua),
+            ],
+        )
+        .await;
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).expect("交接响应应为 JSON");
+        tokens.push(
+            json["token"]
+                .as_str()
+                .expect("交接响应缺 token")
+                .to_string(),
+        );
+    }
+    // 复制链接上限 8：最早一枚已被淘汰，浏览器打开只会回退到访问码页。
+    let old_path = format!("/?h={}", tokens[0]);
+    let (old_status, old_headers, old_body) =
+        http_request_with_headers(addr, "GET", &old_path, &[("User-Agent", "Safari/17.0")]).await;
+    assert_eq!(old_status, 200);
+    assert!(old_body.contains("data-auth=\"locked\""));
+    assert_eq!(header(&old_headers, "location"), None);
+    // 复制令牌的淘汰不影响二维码原生交接令牌。
+    let native_path = format!("/?h={native_token}");
+    let (native_status, native_headers, _) =
+        http_request_with_headers(addr, "GET", &native_path, &[("User-Agent", "Safari/17.0")])
+            .await;
+    assert_eq!(native_status, 302);
+    assert_eq!(header(&native_headers, "location"), Some("/"));
+    // 最后一枚复制令牌仍可兑换。
+    let new_path = format!("/?h={}", tokens[8]);
+    let (new_status, new_headers, _) =
+        http_request_with_headers(addr, "GET", &new_path, &[("User-Agent", "Safari/17.0")]).await;
+    assert_eq!(new_status, 302);
+    assert_eq!(header(&new_headers, "location"), Some("/"));
     handle.abort();
 }
 

@@ -75,6 +75,12 @@ const CAPABILITY_COOKIE: &str = "handysend_web_cap";
 const CAPABILITY_COOKIE_HTTPS: &str = "handysend_web_cap_https";
 /// 访问码授权有效期（服务重启或访问码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+/// 微信内置浏览器 → 系统浏览器的短期交接令牌有效期。
+const HANDOFF_TTL: Duration = Duration::from_secs(5 * 60);
+/// 每个客户端 IP 同时保留的复制链接交接令牌上限。
+const MAX_COPY_HANDOFFS_PER_IP: usize = 8;
+/// 每个客户端 IP 只保留最新的二维码原生交接令牌。
+const MAX_NATIVE_HANDOFFS_PER_IP: usize = 1;
 /// 页面关闭后的结束宽限：刷新会在宽限内重新心跳并取消关闭。
 /// 留足重新加载（含文案与快照请求）的时间，避免刷新被误判为关闭。
 const LEAVE_GRACE: Duration = Duration::from_secs(15);
@@ -228,6 +234,17 @@ impl ClientBinding {
     }
 }
 
+/// 微信内置浏览器到系统浏览器的短期交接令牌：绑定接收方 IP，仅能兑换一次。
+#[derive(Clone, Copy, Debug)]
+pub struct HandoffToken {
+    /// 绑定创建时的对端 IP。
+    pub peer_ip: IpAddr,
+    /// 交接令牌过期时刻。
+    pub expires_at: Instant,
+    /// 是否由页面「复制浏览器链接」生成（区分于二维码原生交接）。
+    pub is_copy: bool,
+}
+
 /// 连接关闭信号：硬停止或重启服务时通知所有已建立连接退出，
 /// 避免浏览器复用旧 keep-alive/SSE 连接继续读到旧状态。
 #[derive(Debug, Default)]
@@ -293,6 +310,8 @@ pub struct WebServiceState {
     pub auth_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
     /// 能力令牌换取的浏览器 Cookie token → 客户端绑定（IP/UA 绑定）。
     pub cap_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
+    /// 微信内置浏览器 → 系统浏览器的短期交接令牌（单次、同 IP）。
+    pub handoffs: Arc<Mutex<HashMap<String, HandoffToken>>>,
     /// 当前分享文件表（换表版本号单调增）。
     pub files: Arc<Mutex<SharedFileTable>>,
     /// 文件展示顺序（与 ArkTS 暂存列表一致；仅用于浏览器列表排序，不参与内容定位）。
@@ -468,9 +487,10 @@ impl WebServiceState {
     }
 
     /// 全量惰性打扫（各请求入口调用）：上传超时终结（清临时文件并上报
-    /// `Finished`）+ 保留区过期释放 + 上传关闭宽限 + 待下载批次过期。
+    /// `Finished`）+ 保留区过期释放 + 上传关闭宽限 + 待下载批次/浏览器交接令牌过期。
     pub(crate) async fn sweep_all(&self, now: Instant) {
         self.sweep_retained(now);
+        lock(&self.handoffs).retain(|_, entry| entry.expires_at > now);
         let closed: Vec<String> = {
             let mut closing = lock(&self.closing);
             let expired: Vec<String> = closing
@@ -614,6 +634,11 @@ impl WebServiceState {
         if !constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
             return None;
         }
+        Some(self.issue_capability_session(headers, peer))
+    }
+
+    /// 为当前客户端签发能力 Cookie token（IP + UA 绑定）。
+    fn issue_capability_session(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> String {
         let now = Instant::now();
         let token = uuid::Uuid::new_v4().to_string();
         let mut sessions = lock(&self.cap_sessions);
@@ -626,7 +651,70 @@ impl WebServiceState {
                 expires_at: now + AUTH_TTL,
             },
         );
-        Some(token)
+        token
+    }
+
+    /// 生成微信内置浏览器 → 系统浏览器的短期交接令牌。
+    /// `is_copy` 区分页面复制链接与二维码原生交接，两类分别计数，复制令牌不会挤掉原生令牌。
+    fn issue_handoff(&self, peer: SocketAddr, is_copy: bool) -> String {
+        let now = Instant::now();
+        let token = uuid::Uuid::new_v4().to_string();
+        let peer_ip = peer.ip();
+        let limit = if is_copy {
+            MAX_COPY_HANDOFFS_PER_IP
+        } else {
+            MAX_NATIVE_HANDOFFS_PER_IP
+        };
+        let mut handoffs = lock(&self.handoffs);
+        handoffs.retain(|_, entry| entry.expires_at > now);
+        // 同一 IP、同一用途只保留最近若干枚：正常页面复用同一枚，恶意重复调用也不至于无限堆积。
+        while handoffs
+            .values()
+            .filter(|entry| entry.peer_ip == peer_ip && entry.is_copy == is_copy)
+            .count()
+            >= limit
+        {
+            let oldest = handoffs
+                .iter()
+                .filter(|(_, entry)| entry.peer_ip == peer_ip && entry.is_copy == is_copy)
+                .min_by_key(|(_, entry)| entry.expires_at)
+                .map(|(token, _)| token.clone());
+            match oldest {
+                Some(token) => {
+                    handoffs.remove(&token);
+                }
+                None => break,
+            }
+        }
+        handoffs.insert(
+            token.clone(),
+            HandoffToken {
+                peer_ip,
+                expires_at: now + HANDOFF_TTL,
+                is_copy,
+            },
+        );
+        token
+    }
+
+    /// 兑换浏览器交接令牌：校验 IP/有效期并原子消费，成功后签发能力 Cookie token。
+    /// 令牌不存在、已过期、已使用或 IP 不一致时返回 `None`；错误 IP 不消费令牌。
+    fn consume_handoff(
+        &self,
+        presented: &str,
+        headers: &hyper::HeaderMap,
+        peer: SocketAddr,
+    ) -> Option<String> {
+        let now = Instant::now();
+        let mut handoffs = lock(&self.handoffs);
+        handoffs.retain(|_, entry| entry.expires_at > now);
+        let entry = *handoffs.get(presented)?;
+        if entry.peer_ip != peer.ip() {
+            return None;
+        }
+        handoffs.remove(presented);
+        drop(handoffs);
+        Some(self.issue_capability_session(headers, peer))
     }
 
     /// 校验访问码并发放新的浏览器授权 token（绑定当前 IP/UA）。
@@ -715,6 +803,20 @@ impl WebServiceState {
             let _ = tx.send(event).await;
         }
     }
+}
+
+/// 是否为移动端微信内置浏览器：UA 含 `MicroMessenger`，排除桌面微信。
+fn is_wechat_mobile(headers: &hyper::HeaderMap) -> bool {
+    let Some(value) = headers.get(hyper::header::USER_AGENT) else {
+        return false;
+    };
+    let Ok(user_agent) = value.to_str() else {
+        return false;
+    };
+    let user_agent = user_agent.to_ascii_lowercase();
+    user_agent.contains("micromessenger")
+        && !user_agent.contains("windowswechat")
+        && !user_agent.contains("macwechat")
 }
 
 /// User-Agent 摘要（Cookie 会话的身份绑定因子；缺失按空串参与摘要）。
@@ -872,6 +974,7 @@ async fn handle(
     }
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
+        ("POST", "/web/handoff") => Ok(handoff_response(&state, peer)),
         ("GET", "/web/events") => Ok(events_response(&state)),
         // 上传地址与下载地址同页（单页按 caps 条件渲染两段）：`/upload`
         // 打开即定位上传段，浏览器扫上传码直达。
@@ -1036,7 +1139,8 @@ fn leave_response(
 
 /// 单页/上传页：二维码能力令牌与访问码是并列入口。
 /// 带令牌时换取 HttpOnly Cookie；裸地址在设置了访问码时渲染访问码页，
-/// 未设置访问码时给出「请扫码」提示页。
+/// 未设置访问码时给出「请扫码」提示页。微信内扫码还会下发短期浏览器交接令牌，
+/// 供系统浏览器打开时免访问码进入。
 fn page_response(
     state: &WebServiceState,
     req: &Request<Incoming>,
@@ -1044,12 +1148,32 @@ fn page_response(
     peer: SocketAddr,
     path: &'static str,
 ) -> Response<BoxBody> {
+    let wechat = is_wechat_mobile(req.headers());
+    // 微信页面上的 h 参数只给系统浏览器兑换，微信自身不消费；这样「在浏览器打开」
+    // 仍带着令牌。浏览器兑换成功即换发能力 Cookie 并回到干净地址；失效时回退访问码。
+    if let Some(presented) = query.get("h") {
+        if !wechat {
+            if let Some(token) = state.consume_handoff(presented, req.headers(), peer) {
+                let secure = is_secure(state);
+                let cookie = cookie_header(capability_cookie_name(secure), &token, secure);
+                return redirect_with_cookie(path, &cookie);
+            }
+            log::debug!("浏览器交接令牌无效或已使用 ip={}", peer.ip());
+        }
+    }
     if state.capability_required() {
         if let Some(presented) = query.get("t") {
             match state.exchange_capability(presented, req.headers(), peer) {
                 Some(token) => {
                     let secure = is_secure(state);
                     let cookie = cookie_header(capability_cookie_name(secure), &token, secure);
+                    if wechat {
+                        // 微信 WebView 与系统浏览器不共享 Cookie：把二维码授权换成
+                        // 短期交接令牌留在地址栏，供「在浏览器打开」携带兑换。
+                        let handoff = state.issue_handoff(peer, false);
+                        let location = format!("{path}?h={handoff}");
+                        return redirect_with_cookie(&location, &cookie);
+                    }
                     return redirect_with_cookie(path, &cookie);
                 }
                 None => {
@@ -1091,9 +1215,10 @@ fn page_response(
     html_response(state, req, peer)
 }
 
-/// 能力令牌换取成功：带 Cookie 重定向到去掉令牌的干净地址，
-/// 避免令牌停留在地址栏、历史记录与后续请求的 Referer 中。
-fn redirect_with_cookie(path: &'static str, cookie: &str) -> Response<BoxBody> {
+/// 能力/交接令牌换取成功：带 Cookie 重定向。
+/// 普通浏览器回到干净地址，避免长期令牌停留在地址栏；微信 WebView 回到带短期
+/// 交接令牌的地址，供「在浏览器打开」携带兑换，令牌 5 分钟、单次、同 IP。
+fn redirect_with_cookie(path: &str, cookie: &str) -> Response<BoxBody> {
     let mut response = full_response(StatusCode::FOUND, "text/plain; charset=utf-8", "");
     if let Ok(value) = hyper::header::HeaderValue::from_str(path) {
         response
@@ -1244,6 +1369,14 @@ fn caps_response(state: &WebServiceState) -> Response<BoxBody> {
     snapshot.has_download = !files.files.is_empty();
     snapshot.file_revision = files.revision;
     let body: String = serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string());
+    json_response(StatusCode::OK, &body)
+}
+
+/// `POST /web/handoff`：为已授权页面生成一条短期浏览器交接令牌。
+/// 微信页面可先取得链接再复制到系统浏览器，不依赖微信菜单保留 URL 参数。
+fn handoff_response(state: &WebServiceState, peer: SocketAddr) -> Response<BoxBody> {
+    let token = state.issue_handoff(peer, true);
+    let body = serde_json::json!({ "token": token }).to_string();
     json_response(StatusCode::OK, &body)
 }
 

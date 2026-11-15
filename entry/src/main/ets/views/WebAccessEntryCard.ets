@@ -10,7 +10,7 @@ import { getStringSync } from '../utils/ResourceUtil';
  *
  * 访问码组在上（访问码与手动访问地址），二维码组在下。
  * 手动地址：多网卡时单击打开接口下拉菜单，长按/双击复制；
- * 单网卡时单击复制。token 只存在于二维码链接中，普通用户无需感知。
+ * 单网卡时单击复制。能力令牌只存在于二维码链接中，普通用户无需感知。
  */
 @ComponentV2
 export struct WebAccessEntryCard {
