@@ -12,9 +12,8 @@ import { sendTextDir } from '../service/repository/SendRepository';
 import { recvTextDir } from '../service/repository/ReceiveTargets';
 
 // 包装单个接收历史条目的条目级 ViewModel。
-// 依据基于场景的列表策略（方案 B）选择：条目为
-// 可修改（可删除），因此每个条目被包装而不是暴露
-// 将原始 DTO 暴露给视图。
+// 条目可变（可删除），因此对每个条目单独包装，
+// 不把原始 DTO 直接暴露给视图。
 // 文本预览策略（可预览性判定、读取上限）与会话详情页共用同一套公共能力，
 // 两页口径不分叉；类型图标与媒体缩略由公共组件 FileEntryThumb 承载。
 @ObservedV2
