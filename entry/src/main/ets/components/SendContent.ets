@@ -585,9 +585,14 @@ export struct SendContent {
     let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
     let autoOpened: boolean = false;
     // 暂存元数据仍在补全时先明确告知“准备中”，准备完成后自动发起发送
-    this.showSendToast(this.viewModel.isFillingStagedMeta ?
+    let preparingAtClick: boolean = this.viewModel.isFillingStagedMeta;
+    this.showSendToast(preparingAtClick ?
       $r('app.string.send_preparing_files') : $r('app.string.send_started_toast'), device.alias);
     this.viewModel.sendToMultipleDeviceInline(device, (sessionId: string) => {
+      // 排队发送终于建立任务：补一条“已开始发送”，避免用户以为还需要再点一次
+      if (preparingAtClick && !autoEnterDetail && !this.isDetached) {
+        this.showSendToast($r('app.string.send_started_toast'), device.alias);
+      }
       if (autoEnterDetail && !this.isDetached) {
         autoOpened = true;
         // 离开发送页前收起既有失败浮卡：浮卡挂在 UIContext 层，切页签不会自动消失，

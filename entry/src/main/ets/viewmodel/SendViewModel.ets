@@ -1609,31 +1609,28 @@ export class SendViewModel {
   // `onSessionCreated` 在会话登记后立即回调（发送仍在继续），供「自动进入任务详情」使用。
   async sendToMultipleDeviceInline(device: DiscoveredDevice,
     onSessionCreated?: (sessionId: string) => void): Promise<SendInitiateResult> {
-    // 暂存元数据未补全时先排队等待，准备完成后再发起；重复点击返回 preparing 提示
+    // 暂存元数据未补全时先排队等待，准备完成后再发起；重复点击返回 preparing 提示。
+    // preparing 状态持续到统一会话真正登记，避免准备阶段再次点击被误报为“已有任务”。
     if (this.preparingSendIps.has(device.ip)) {
       return SendInitiateResult.preparing;
     }
-    if (this.isFillingStagedMeta) {
-      this.preparingSendIps.add(device.ip);
-      try {
-        await this.ensureStagedMeta();
-      } finally {
-        this.preparingSendIps.delete(device.ip);
-      }
-    }
-    // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
-    let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
-    let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
-    // 该目标已有非终态发送会话或在途即拒绝重复点击；在途集合弥补「点击→会话创建」之间的空窗
-    let result: SendInitiateResult = decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
-      this.hasActiveSendTo(device.ip), hasContent);
-    if (result !== SendInitiateResult.initiated) {
-      return result;
-    }
-    // 本次发送已发起：手输文本的持久文件此后不随暂存列表清理而删除
-    this.markManualTextPersisted();
-    this.inFlightSendIps.add(device.ip);
+    this.preparingSendIps.add(device.ip);
     try {
+      if (this.isFillingStagedMeta) {
+        await this.ensureStagedMeta();
+      }
+      // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
+      let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
+      let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
+      // 该目标已有非终态发送会话或在途即拒绝重复点击；在途集合弥补「点击→会话创建」之间的空窗
+      let result: SendInitiateResult = decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
+        this.hasActiveSendTo(device.ip), hasContent);
+      if (result !== SendInitiateResult.initiated) {
+        return result;
+      }
+      // 本次发送已发起：手输文本的持久文件此后不随暂存列表清理而删除
+      this.markManualTextPersisted();
+      this.inFlightSendIps.add(device.ip);
       // 复用缓存的预准备文件（快速准备产物），避免每点一台设备就重新 prepare
       let items: Array<SendFileItem> | undefined = cached;
       if (items === undefined || items.length === 0) {
@@ -1647,6 +1644,8 @@ export class SendViewModel {
       let beforeIds: Array<string> = this.sendSessionIdsForIp(device.ip);
       // 使用 sendToDeviceMulti 发送单设备——它会创建会话并驱动进度（点击即发送，无模式差异）
       await sendToDeviceMulti([device], items, (unifiedIds: Array<string>) => {
+        // 会话已登记：结束 preparing 状态，任务从此可见；后续点击按正常忙判定处理
+        this.preparingSendIps.delete(device.ip);
         if (onSessionCreated !== undefined && unifiedIds.length > 0) {
           onSessionCreated(unifiedIds[0]);
         }
@@ -1658,6 +1657,7 @@ export class SendViewModel {
       }
       return SendInitiateResult.initiated;
     } finally {
+      this.preparingSendIps.delete(device.ip);
       this.inFlightSendIps.delete(device.ip);
       // 发送期间跳过的分享表同步在此补一次（保证网页面板与暂存内容一致）
       this.scheduleShareSync();
