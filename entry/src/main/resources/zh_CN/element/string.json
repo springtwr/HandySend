@@ -34,7 +34,7 @@
     },
     {
       "name": "send_batch_unsupported",
-      "value": "当前设备不支持选择文件夹"
+      "value": "鸿蒙7.0以下设备不支持选择文件夹"
     },
     {
       "name": "send_folder_empty",

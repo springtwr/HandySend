@@ -34,7 +34,7 @@
     },
     {
       "name": "send_batch_unsupported",
-      "value": "This device does not support folder selection"
+      "value": "Folder selection is not supported below HarmonyOS 7.0"
     },
     {
       "name": "send_folder_empty",

@@ -34,7 +34,7 @@
     },
     {
       "name": "send_batch_unsupported",
-      "value": "目前裝置不支援選擇資料夾"
+      "value": "鴻蒙7.0以下裝置不支援選擇資料夾"
     },
     {
       "name": "send_folder_empty",

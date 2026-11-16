@@ -214,7 +214,7 @@ export struct GeneralSettingsSection {
       })
       .id('settings_alias_entry')
 
-      // 文件保存目录：默认 Download/<包名>（界面显示应用名）；自定义目录需要 API 26+
+      // 文件保存目录：默认 Download/<包名>（界面显示应用名）；自定义目录需设备具备文件夹选择能力
       Row() {
         Text($r('app.string.receive_directory_label'))
           .fontSize(DesignTokens.font.bodyM)

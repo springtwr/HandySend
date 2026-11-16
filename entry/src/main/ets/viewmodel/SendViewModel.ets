@@ -838,7 +838,7 @@ export class SendViewModel {
     }
   }
 
-  /** 设备是否支持文件夹选择（发送页入口显隐）。 */
+  /** 设备是否支持文件夹选择（入口始终展示，仅点击时据此拦截并提示）。 */
   isFolderPickSupported(): boolean {
     return isFolderSelectionSupported();
   }

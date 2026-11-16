@@ -1,7 +1,7 @@
 /**
  * SendContentZone.ets — 发送页内容区
  *
- * 内容类型选择 + 暂存列表：无暂存内容时展示一行四个类型入口磁贴，有暂存内容时展示
+ * 内容类型选择 + 暂存列表：无暂存内容时展示三列两行六个类型入口磁贴，有暂存内容时展示
  * 统计/添加/清空操作行与暂存条目列表（40vp 缩略图、48vp 行高、红色圆形移除按钮）；
  * 已选内容后再次添加时以锚在按钮下方的气泡复用同一组入口磁贴。
  * 磁贴高度、图标与字号随宽度断点放大；暂存列表按条目数取整行（最多 4 行，超出内部滚动）。
@@ -15,7 +15,7 @@ import { StagedFile } from '../../model/Types';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { getFileTypeIconResource } from '../../utils/FileTypeIconUtil';
 
-// 类型入口磁贴：高度、图标与字号随宽度断点放大，避免宽屏下四格被压成扁条
+// 类型入口磁贴：高度、图标与字号随宽度断点放大，避免宽屏下六格被压成扁条
 const ACTION_TILE_HEIGHT: WidthBreakpointType<number> = new WidthBreakpointType<number>(72, 96, 112, 128);
 const ACTION_ICON_SIZE: WidthBreakpointType<number> = new WidthBreakpointType<number>(24, 28, 32, 32);
 const ACTION_LABEL_FONT: WidthBreakpointType<number> = new WidthBreakpointType<number>(12, 12, 14, 14);
@@ -68,16 +68,15 @@ export struct SendContentZone {
           })
       }
 
-      // 文件夹：聚合为一个暂存条目，发送时展开为逐文件
-      if (this.viewModel.isFolderPickSupported()) {
-        GridItem() {
-          this.pickAction($r('sys.symbol.folder_fill'), $r('app.string.send_folder'), 'send_pick_folder',
-            compact, () => {
-              this.dispatchPick(() => {
-                this.viewModel.pickFolder();
-              });
-            })
-        }
+      // 文件夹：聚合为一个暂存条目，发送时展开为逐文件。
+      // 入口在所有 API 版本展示以保持磁贴栅格完整；不具备能力的设备点击时只提示，不拉起选择器
+      GridItem() {
+        this.pickAction($r('sys.symbol.folder_fill'), $r('app.string.send_folder'), 'send_pick_folder',
+          compact, () => {
+            this.dispatchPick(() => {
+              this.viewModel.pickFolder();
+            });
+          })
       }
 
       // 下载：文件选择器直接定位到 Download 目录
@@ -434,7 +433,7 @@ export struct SendContentZone {
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-      // 卡片高度随内容：空态只有一行入口磁贴（72~128，随宽度断点），加入首个文件后长到列表高度
+      // 卡片高度随内容：空态为两行入口磁贴（72~128，随宽度断点），加入首个文件后长到列表高度
       // 卡片成为内容区首元素：沿用原标题行的顶部间距，避免内容贴顶
       .margin({ top: DesignTokens.space.md })
     }
