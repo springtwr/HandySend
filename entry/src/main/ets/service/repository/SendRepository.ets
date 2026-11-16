@@ -347,6 +347,40 @@ async function probeDeviceReachable(device: DiscoveredDevice, protocol: string):
   }
 }
 
+/**
+ * 从本次失败的条目中挑出可回退句柄重试的路径模式文件。
+ * 返回副本（pathSource=false，保留暂存句柄供 dup）；未命中项不返回。
+ */
+export function buildPathFallbackItems(files: Array<SendFileItem>,
+  failedFiles: Array<string>): Array<SendFileItem> {
+  if (failedFiles.length === 0) {
+    return [];
+  }
+  let failedSet: Set<string> = new Set<string>();
+  for (let i = 0; i < failedFiles.length; i++) {
+    failedSet.add(failedFiles[i]);
+  }
+  let items: Array<SendFileItem> = [];
+  for (let i = 0; i < files.length; i++) {
+    let f: SendFileItem = files[i];
+    if (f.pathSource === true && failedSet.has(f.fileId)) {
+      items.push({
+        fileId: f.fileId,
+        filePath: f.filePath,
+        fileName: f.fileName,
+        fileType: f.fileType,
+        size: f.size,
+        preview: f.preview,
+        hash: f.hash,
+        lastModified: f.lastModified,
+        sourceFd: f.sourceFd,
+        pathSource: false
+      });
+    }
+  }
+  return items;
+}
+
 export async function sendToDevice(
   device: DiscoveredDevice,
   files: Array<SendFileItem>,
@@ -439,6 +473,12 @@ export async function sendToDevice(
   let pinAttempts = 0;
   let busyRetries = 0;
   let result: NativeSendResult | undefined = undefined;
+  // 本次尝试实际发送的条目：路径模式失败后只把失败条目改为句柄模式重试
+  let attemptFiles: Array<SendFileItem> = files;
+  // 路径模式已回退句柄重试过：只回退一次，避免反复建立接收方会话
+  let pathFallbackApplied: boolean = false;
+  // 未参与回退重试的失败文件：回退成功时仍需按部分失败收口
+  let failedElsewhere: Array<string> = [];
   // 当前迭代已打开、尚未交由 Rust 接管的文件句柄（nativeSendFiles 正常返回后
   // Rust 对所有传入 fd 全权负责并关闭；仅当调用抛异常时才由本层关闭避免泄漏）
   let pendingFileHandles: Array<fs.File> = [];
@@ -453,8 +493,12 @@ export async function sendToDevice(
       let nativeFiles: Array<NativeFileToSend> = [];
       let opened: Array<fs.File> = [];
       let handles: Array<fs.File | undefined> = [];
-      for (let i = 0; i < files.length; i++) {
+      // 回退重试阶段按句柄打开失败的条目：只剔除该文件，不中止其余文件
+      let openFailed: Array<boolean> = [];
+      let attemptFailedIds: Array<string> = [];
+      for (let i = 0; i < attemptFiles.length; i++) {
         handles.push(undefined);
+        openFailed.push(false);
       }
       try {
         // 受限并发打开：串行打开数百个选择器/媒体库来源的文件会让对端迟迟收不到发送请求
@@ -464,8 +508,8 @@ export async function sendToDevice(
         let dupFailedCount: number = 0;
         let noFdCount: number = 0;
         let pathSourceCount: number = 0;
-        await forEachConcurrently(files.length, async (index: number): Promise<void> => {
-          let f: SendFileItem = files[index];
+        await forEachConcurrently(attemptFiles.length, async (index: number): Promise<void> => {
+          let f: SendFileItem = attemptFiles[index];
           // 路径模式：不打开 fd，prepare 先发，Rust 在上传时逐文件打开。
           if (f.pathSource === true) {
             pathSourceCount++;
@@ -498,14 +542,30 @@ export async function sendToDevice(
           } else {
             noFdCount++;
           }
-          handles[index] = await fs.open(f.filePath, fs.OpenMode.READ_ONLY);
-          openedCount++;
+          try {
+            handles[index] = await fs.open(f.filePath, fs.OpenMode.READ_ONLY);
+            openedCount++;
+          } catch (openOneErr) {
+            // 首次发送沿用整体失败语义；回退重试阶段只把该文件计入失败，
+            // 其余文件继续发送（单文件失败不拖垮整个会话）
+            if (!pathFallbackApplied) {
+              throw new Error(String(openOneErr));
+            }
+            openFailed[index] = true;
+            logger.warn('句柄回退打开失败，按单文件失败处理：' + f.filePath);
+          }
         });
-        logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' + files.length +
-          ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount + ' dup失败=' + dupFailedCount +
-          ' 无句柄=' + noFdCount + ' 路径模式=' + pathSourceCount, sendCtx);
-        for (let i = 0; i < files.length; i++) {
-          let f = files[i];
+        logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' +
+          attemptFiles.length + ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount +
+          ' dup失败=' + dupFailedCount + ' 无句柄=' + noFdCount + ' 路径模式=' + pathSourceCount +
+          ' 回退重试=' + pathFallbackApplied, sendCtx);
+        for (let i = 0; i < attemptFiles.length; i++) {
+          let f = attemptFiles[i];
+          // 回退阶段打不开句柄的文件不进入本次协议会话，避免拖垮其余文件
+          if (openFailed[i]) {
+            attemptFailedIds.push(f.fileId);
+            continue;
+          }
           if (f.pathSource === true) {
             nativeFiles.push({
               fileId: f.fileId,
@@ -536,6 +596,29 @@ export async function sendToDevice(
             sha256: f.hash,
             lastModified: f.lastModified
           });
+        }
+        for (let i = 0; i < attemptFailedIds.length; i++) {
+          if (failedElsewhere.indexOf(attemptFailedIds[i]) < 0) {
+            failedElsewhere.push(attemptFailedIds[i]);
+          }
+        }
+        if (nativeFiles.length === 0) {
+          // 回退重试阶段全部句柄都打不开：不再建协议会话，按整体失败收口
+          for (let k = 0; k < opened.length; k++) {
+            try {
+              fs.closeSync(opened[k]);
+            } catch (_ce) {
+            }
+          }
+          opened = [];
+          logger.error('回退重试无可用源文件句柄', sendCtx);
+          result = {
+            sessionId: '',
+            success: false,
+            failedFiles: attemptFailedIds,
+            error: { kind: 'other', message: '源文件句柄打开失败' }
+          };
+          break;
         }
       } catch (openErr) {
         // 任一源文件打开失败（如授权失效）：关闭已打开句柄，按整体失败返回。
@@ -576,11 +659,63 @@ export async function sendToDevice(
       // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
       pendingFileHandles = [];
       if (result.success) {
-        logger.debug('发送成功', { sessionId: result.sessionId, direction: 'send' });
-        notifyChange();
-        return { success: true, sessionId: result.sessionId };
+        if (failedElsewhere.length === 0) {
+          logger.debug('发送成功', { sessionId: result.sessionId, direction: 'send' });
+          notifyChange();
+          return { success: true, sessionId: result.sessionId };
+        }
+        // 回退重试成功，但首次尝试还有未参与回退的失败文件：按部分失败收口
+        result = {
+          sessionId: result.sessionId,
+          success: false,
+          failedFiles: failedElsewhere.slice(),
+          error: {
+            kind: 'partialFailure',
+            message: failedElsewhere.length + ' of ' + files.length + ' files failed'
+          }
+        };
+        break;
       }
       let err = result.error;
+      // 路径模式在原生侧打不开时，该文件计入 failedFiles，其余文件仍会正常上传；
+      // 这里只把失败路径条目改为句柄模式重发一次，避免一个文件失败拖垮整批
+      if (err !== undefined && err.kind === 'partialFailure' && !pathFallbackApplied &&
+        result.failedFiles.length > 0) {
+        let retryItems: Array<SendFileItem> = buildPathFallbackItems(attemptFiles, result.failedFiles);
+        if (retryItems.length > 0) {
+          // 未参与回退的失败文件保留到最终结果
+          let retriedSet: Set<string> = new Set<string>();
+          for (let i = 0; i < retryItems.length; i++) {
+            retriedSet.add(retryItems[i].fileId);
+          }
+          for (let i = 0; i < result.failedFiles.length; i++) {
+            let failedId: string = result.failedFiles[i];
+            if (!retriedSet.has(failedId) && failedElsewhere.indexOf(failedId) < 0) {
+              failedElsewhere.push(failedId);
+            }
+          }
+          // 首次会话仍有接收方待结束状态：先取消，避免回退重试被 409 忙拒绝。
+          // 已成功上传的文件不会因取消而撤销（接收方已落盘）。
+          if (result.sessionId.length > 0) {
+            let retryCancelTarget: NativeCancelTarget = {
+              ip: device.ip,
+              port: device.port,
+              fingerprint: device.fingerprint,
+              protocol: actualProtocol
+            };
+            try {
+              await nativeCancelTransfer(retryCancelTarget, result.sessionId);
+              logger.debug('回退前已取消首次会话 sessionId=' + result.sessionId, sendCtx);
+            } catch (_ce) {
+              logger.warn('回退前取消首次会话失败（继续重试）：' + String(_ce), sendCtx);
+            }
+          }
+          attemptFiles = retryItems;
+          pathFallbackApplied = true;
+          logger.warn('路径模式发送失败，回退句柄重试 文件数=' + retryItems.length, sendCtx);
+          continue;
+        }
+      }
       if (err !== undefined && err.kind === 'statusCode' && err.status === 401 && pinAttempts < MAX_PIN_ATTEMPTS) {
         // 用户取消（askForPin 返回 undefined）时跳出循环，按 401 错误结束
         let pin: string | undefined = await askForPin(device.alias, pinAttempts > 0);
@@ -605,6 +740,16 @@ export async function sendToDevice(
       break;
     }
     if (result !== undefined) {
+      // 回退重试的失败文件并回最终结果（去重），供会话历史与失败明细使用
+      if (!result.success && failedElsewhere.length > 0) {
+        let merged: Array<string> = failedElsewhere.slice();
+        for (let i = 0; i < result.failedFiles.length; i++) {
+          if (merged.indexOf(result.failedFiles[i]) < 0) {
+            merged.push(result.failedFiles[i]);
+          }
+        }
+        result.failedFiles = merged;
+      }
       // 发送失败后向接收端发送 cancel，清理可能残留的 session。
       // 只用本会话发送结果携带的接收方会话标识：prepare 阶段失败时尚无该标识，
       // 不能回退到进程级「当前发送会话」（并发发送下会指向其他设备/会话）
@@ -723,7 +868,10 @@ export function handleSendProgress(progress: TransferProgress): void {
   let completed: boolean = bytesSent >= totalBytes && totalBytes > 0;
 
   if (completed) {
-    logger.debug('文件上传完成', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+    // 逐文件完成日志按会话节流：上千文件逐条写日志会长时间占用主线程
+    if (progressLogThrottle.shouldLog(sessionId + ':completed', Date.now())) {
+      logger.debug('文件上传完成', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+    }
   } else if (progressLogThrottle.shouldLog(key, Date.now())) {
     logger.debug('传输进度：' + bytesSent + '/' + totalBytes + ' 字节',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });

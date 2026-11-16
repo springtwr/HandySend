@@ -1,6 +1,7 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { getLogger } from '../../utils/Logger';
+import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
 import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { LogDomains } from '../../common/LogDomains';
 import { SendFileItem, ReceiveHistoryEntry } from '../../model/Types';
@@ -1038,8 +1039,8 @@ export function handleWebDownloadProgressTyped(event: NativeWebDownloadProgressE
   if (event.batchId.length === 0 || event.fileId.length === 0) {
     return;
   }
+  // 注册表的字节进度通知已按 120ms 合并，这里不再逐条刷新界面
   handleWebDownloadProgress(event.batchId, event.fileId, event.sentBytes, event.totalBytes);
-  notifyChange();
 }
 
 /** 单文件完成。 */
@@ -1048,9 +1049,11 @@ export function handleWebDownloadFileDoneTyped(event: NativeWebDownloadFileDoneE
     return;
   }
   handleWebDownloadFileDone(event.batchId, event.fileId, event.totalBytes);
-  logger.debug('网页下载文件完成 batch=' + redactSessionToken(event.batchId) + ' file=' +
-    event.fileId + ' 字节=' + event.totalBytes);
-  notifyChange();
+  // 逐文件完成日志按批次节流：zip 批次可能包含上千条目
+  if (progressLogThrottle.shouldLog(event.batchId + ':completed', Date.now())) {
+    logger.debug('网页下载文件完成 batch=' + redactSessionToken(event.batchId) + ' file=' +
+      event.fileId + ' 字节=' + event.totalBytes);
+  }
 }
 
 /** 下载批次终态。 */

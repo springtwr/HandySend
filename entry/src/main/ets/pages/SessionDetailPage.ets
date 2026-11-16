@@ -344,11 +344,18 @@ export struct SessionDetailPage {
   }
 
   private openFailedFilesDialog(): void {
+    // 失败文件可能上千：只展示前 200 条，其余给出总数，避免弹窗文本过长
+    const MAX_FAILED_SHOWN = 200;
     let names: Array<string> = [];
     let failed = this.viewModel.failedFiles();
-    for (let i = 0; i < failed.length; i++) {
+    let shown: number = Math.min(failed.length, MAX_FAILED_SHOWN);
+    for (let i = 0; i < shown; i++) {
       names.push(failed[i].reason.length > 0 ?
         failed[i].fileName + '：' + failed[i].reason : failed[i].fileName);
+    }
+    if (failed.length > shown) {
+      names.push(getStringSync(this.getUIContext(), $r('app.string.session_folder_failed_more'))
+        .replace('%d', String(failed.length - shown)));
     }
     if (names.length === 0) {
       return;
@@ -381,12 +388,18 @@ export struct SessionDetailPage {
     this.failedFilesDialogValue = '';
   }
 
+  /** 弹窗内容区必须在 @Builder 上下文创建，不能在普通回调中直接实例化组件。 */
+  @Builder
+  failedFilesDialogContent() {
+    SingleValueDialogContent({ value: this.failedFilesDialogValue })
+  }
+
   @Builder
   failedFilesDialog() {
     CustomContentDialogV2({
       primaryTitle: $r('app.string.session_folder_failed_files'),
       contentBuilder: () => {
-        SingleValueDialogContent({ value: this.failedFilesDialogValue })
+        this.failedFilesDialogContent();
       },
       buttons: [
         new AdvancedDialogV2Button({

@@ -158,14 +158,45 @@ export function sessionDraftLogPath(sessionId: string): string {
 }
 
 /**
- * 追加一条完成记录：只做一次小写入，不读/不重写会话头。
- * 进程被强杀时页缓存仍保留；掉电最多丢最后几条，恢复时按最终路径兜底。
+ * 完成记录先写内存，再按 50 条或 1 秒批量落盘：
+ * 上千文件逐条 open/write/close 会长时间占用主线程；批量写保持 append-only，
+ * 最坏只丢最后约 1 秒的完成记录，恢复时按最终路径兜底。
  */
 let draftAppendCount: number = 0;
 let draftFlushTimer: number = -1;
+const pendingDraftLines: Map<string, Array<string>> = new Map<string, Array<string>>();
 
-/** 刷单会话完成日志（周期/退后台使用）。 */
+/** 把某会话暂存的完成记录一次性追加到日志文件（不 fsync）。 */
+function writePendingDraftLines(sessionId: string): void {
+  let lines: Array<string> | undefined = pendingDraftLines.get(sessionId);
+  if (lines === undefined || lines.length === 0) {
+    pendingDraftLines.delete(sessionId);
+    return;
+  }
+  pendingDraftLines.delete(sessionId);
+  let path: string = sessionDraftLogPath(sessionId);
+  if (path.length === 0) {
+    return;
+  }
+  let file: fs.File | undefined = undefined;
+  try {
+    file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.APPEND | fs.OpenMode.WRITE_ONLY);
+    fs.writeSync(file.fd, lines.join(''));
+  } catch (e) {
+    logger.warn('追加会话完成日志失败 session=' + sanitizeDraftId(sessionId) + '：' + String(e));
+  } finally {
+    if (file !== undefined) {
+      try {
+        fs.closeSync(file);
+      } catch (_closeErr) {
+      }
+    }
+  }
+}
+
+/** 刷单会话完成日志：先落暂存记录，再 fsync（周期/退后台使用）。 */
 export function flushSessionDraftLog(sessionId: string): void {
+  writePendingDraftLines(sessionId);
   let path: string = sessionDraftLogPath(sessionId);
   if (path.length === 0) {
     return;
@@ -193,29 +224,19 @@ export function appendSessionDraftRecord(sessionId: string, record: SessionDraft
   if (dir.length === 0) {
     return;
   }
-  let path: string = dir + '/' + sanitizeDraftId(sessionId) + DRAFT_LOG_SUFFIX;
-  let file: fs.File | undefined = undefined;
-  try {
-    file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.APPEND | fs.OpenMode.WRITE_ONLY);
-    let line: string = JSON.stringify(record) + '\n';
-    fs.writeSync(file.fd, line);
-  } catch (e) {
-    logger.warn('追加会话完成日志失败 session=' + sanitizeDraftId(sessionId) + '：' + String(e));
-  } finally {
-    if (file !== undefined) {
-      try {
-        fs.closeSync(file);
-      } catch (_e) {
-      }
-    }
+  let lines: Array<string> | undefined = pendingDraftLines.get(sessionId);
+  if (lines === undefined) {
+    lines = [];
+    pendingDraftLines.set(sessionId, lines);
   }
-  // 每 50 条刷一次，兼顾掉电窗口与写入放大；进程强杀不依赖此调用。
+  lines.push(JSON.stringify(record) + '\n');
+  // 每 50 条落盘并 fsync，兼顾掉电窗口与写入放大；进程强杀不依赖此调用。
   draftAppendCount++;
   if (draftAppendCount >= 50) {
     draftAppendCount = 0;
     flushSessionDraftLog(sessionId);
   }
-  // 1 秒合并刷盘：连续完成大量小文件时不逐条 fsync。
+  // 1 秒合并刷盘：连续完成大量小文件时不逐条 open/fsync。
   if (draftFlushTimer < 0) {
     draftFlushTimer = setTimeout((): void => {
       draftFlushTimer = -1;
@@ -226,6 +247,11 @@ export function appendSessionDraftRecord(sessionId: string, record: SessionDraft
 
 /** 退后台/退出前把全部完成日志刷到磁盘；进程强杀不依赖此调用。 */
 export function flushAllSessionDraftLogs(): void {
+  let pendingIds: Array<string> = Array.from(pendingDraftLines.keys());
+  for (let i = 0; i < pendingIds.length; i++) {
+    writePendingDraftLines(pendingIds[i]);
+  }
+  draftAppendCount = 0;
   let dir: string = sessionDraftDir();
   if (dir.length === 0) {
     return;
@@ -257,6 +283,8 @@ export function flushAllSessionDraftLogs(): void {
 
 /** 读取并解析完成日志；坏行跳过，不影响会话头恢复。 */
 export function loadSessionDraftRecords(sessionId: string): Array<SessionDraftRecord> {
+  // 内存暂存记录先落盘，读取结果才与最近一次 append 一致
+  writePendingDraftLines(sessionId);
   let path: string = sessionDraftLogPath(sessionId);
   if (path.length === 0) {
     return [];
@@ -476,6 +504,7 @@ export function loadAllSessionDrafts(): Array<SessionDraft> {
 
 /** 删除指定会话的草稿与临时文件。 */
 export function removeSessionDraft(sessionId: string): void {
+  pendingDraftLines.delete(sessionId);
   let path: string = sessionDraftPath(sessionId);
   if (path.length === 0) {
     return;

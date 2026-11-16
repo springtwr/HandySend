@@ -1149,6 +1149,10 @@
       "value": "View failed files"
     },
     {
+      "name": "session_folder_failed_more",
+      "value": "%d more failed files"
+    },
+    {
       "name": "history_delete_message_file",
       "value": "Will delete: %s"
     },
