@@ -247,8 +247,10 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 单文件 `GET /web/download`：按 token 查快照归属后下发；fd 内容源在换表时由保留区 `dup` 私有副本、
   请求定位时再复制一份消费（`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片。
 - 多文件 `POST /web/download-batch` 登记选中文件（或 `all=true`）→ `GET /web/download-batch?batch=` 流式 ZIP；
-  一个批次一个任务，ZIP 条目以文件名去重、不预打包、不落临时文件；批次在首次 `GET` 时消费，
-  重复请求返回 410，页面每次点击需重新登记。
+  ZIP 条目以文件名去重、不预打包、不落临时文件。批次在 TTL 内可重复请求：
+  浏览器确认下载前的探测 GET 不消费批次（只取 ZIP 开头几个字节的 `Range` 请求直接回 206、不建任务），
+  成功下发后才移除，中断/失败保留供下载管理器重试；同一批次中断后重试会新建下载任务
+  （前一条按已取消收口），成功后的重复请求返回 410。
 - ZIP 使用 `Stored`，发响应头前按条目名/大小精确计算 `Content-Length`（含 Zip64），
   浏览器下载管理器因此能显示百分比；条目时间取源文件本地时间，单个文件 ≥4GB 使用 `large_file`。
 - 批次事件 `WebDownloadStarted` / `WebDownloadProgress` / `WebDownloadFileDone` / `WebDownloadEnded`

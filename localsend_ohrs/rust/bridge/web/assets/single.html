@@ -3052,8 +3052,8 @@ html[data-auth="open"] #gate {
 
   function triggerZip(batchId) {
     if (blockWechatDownload()) { return; }
-    // 批次在服务端一次性消费：触发后立即作废预准备，避免再次点击复用已消费的 batchId
-    // 而得到 410「分享内容已更新」。勾选未变时重新预准备，保住连续点击的用户手势。
+    // 触发后作废本地预准备，避免勾选变化后复用旧批次；服务端批次在成功下发后才消费，
+    // 浏览器确认下载前的探测/中断不会使其失效，下载管理器重试同一地址仍可完成。
     preparedBatchId = '';
     preparedSignature = '';
     var a = document.createElement('a');

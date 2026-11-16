@@ -133,7 +133,7 @@ pub enum ProgressEvent {
         user_agent: Option<String>,
         file_count: usize,
     },
-    /// 下载批次开始（第一个 body chunk 成功入队后发）。
+    /// 下载批次开始（每个下发流开始时发一次；同一批次重试会再次发）。
     DownloadStarted {
         batch_id: String,
         ip: String,
@@ -153,7 +153,7 @@ pub enum ProgressEvent {
         file_id: String,
         total_bytes: u64,
     },
-    /// 下载批次结束（成功/失败/取消，只发一次）。
+    /// 下载批次结束（每个下发流结束发一次；同一批次重试会有新的一对开始/结束事件）。
     DownloadEnded {
         batch_id: String,
         outcome: DownloadOutcome,
@@ -281,7 +281,7 @@ impl ShutdownSignal {
     }
 }
 
-/// 多选下载的待开始批次（POST 登记，GET 消费；不建应用任务）。
+/// 多选下载的待下载批次（POST 登记，GET 成功下发后才消费；不建应用任务）。
 #[derive(Clone, Debug)]
 pub struct PendingZipBatch {
     pub token: String,
@@ -332,7 +332,7 @@ pub struct WebServiceState {
     pub file_events: Option<tokio::sync::broadcast::Sender<FileTableChange>>,
     /// 上传会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
     pub session_events: Option<tokio::sync::broadcast::Sender<String>>,
-    /// 多选下载待开始批次（POST 登记，GET 消费；60s 过期）。
+    /// 多选下载待下载批次（POST 登记，GET 成功下发后消费；60s 过期）。
     pub pending_batches: Arc<Mutex<HashMap<String, PendingZipBatch>>>,
     /// 活动下载批次的取消标志（应用取消时置位）。
     pub active_batches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -2164,7 +2164,7 @@ async fn prepare_download_batch(
     json_response(StatusCode::OK, &response.to_string())
 }
 
-/// `GET /web/download-batch?batch=`：消费待下载批次并流式下发 ZIP。
+/// `GET /web/download-batch?batch=`：流式下发待下载批次，成功后才消费批次。
 async fn download_batch(
     req: &Request<Incoming>,
     query: &HashMap<String, String>,
@@ -2180,7 +2180,10 @@ async fn download_batch(
         log::debug!("批次下载缺少 batch ip={}", peer.ip());
         return download_error_response(req, StatusCode::BAD_REQUEST, ended_message);
     };
-    let pending = { lock(&state.pending_batches).remove(batch_id) };
+    // 批次在 TTL 内可重复取用：部分 Android 浏览器/下载管理器会在确认下载前先发一次
+    // 探测 GET（读取少量字节后断开），确认后才发起真正的下载。首次 GET 即消费会让
+    // 第二次请求拿到 410；改为成功下发后才移除，中断/失败保留到 TTL 结束供重试。
+    let pending = { lock(&state.pending_batches).get(batch_id).cloned() };
     let Some(pending) = pending else {
         log::debug!("下载批次不存在或已过期 batch={} ip={}", batch_id, peer.ip());
         return download_error_response(req, StatusCode::GONE, updated_message);
@@ -2221,32 +2224,26 @@ async fn download_batch(
         };
         (offered, session.user_agent.clone())
     };
-    let (entries, total_len, force_zip64, batch) = {
+    // 先只规划条目元数据与 ZIP 总长（不打开内容源）：浏览器预检只需要响应头，
+    // 不应因探测而打开全部文件或创建下载任务。
+    let (planned, total_len, force_zip64, batch_files) = {
         if offered.is_empty() {
             log::debug!("下载批次无可下发文件 batch={}", batch_id);
             return download_error_response(req, StatusCode::GONE, updated_message);
         }
         let mut used: HashMap<String, usize> = HashMap::new();
-        let mut planned: Vec<(String, String, u64, Option<u64>, FileSource)> = Vec::new();
+        let mut planned: Vec<(String, String, u64, Option<u64>, bool)> = Vec::new();
         let mut batch_files: Vec<AdapterFileDto> = Vec::new();
         for item in offered.into_iter() {
             let entry_name = unique_zip_name(&item.file.file_name, &mut used);
-            let Some(source) = state.locate_source(&item.file_id, now) else {
-                log::debug!(
-                    "批次内容源已不可用 file={} batch={}",
-                    item.file_id,
-                    batch_id
-                );
-                return download_error_response(req, StatusCode::GONE, updated_message);
-            };
-            batch_files.push(adapter_file_dto(&item.file));
             planned.push((
                 item.file_id,
                 entry_name,
                 item.file.size,
                 item.last_modified_ms,
-                source,
+                item.file.size >= zip_plan::ZIP64_THRESHOLD,
             ));
+            batch_files.push(adapter_file_dto(&item.file));
         }
         let sizes: Vec<zip_plan::SizeEntry> = planned
             .iter()
@@ -2266,34 +2263,62 @@ async fn download_batch(
                 );
             }
         };
-        let entries: Vec<ZipBatchEntry> = planned
-            .into_iter()
-            .enumerate()
-            .map(
-                |(index, (file_id, entry_name, size, last_modified_ms, source))| ZipBatchEntry {
-                    file_id,
-                    entry_name,
-                    size,
-                    last_modified_ms,
-                    large: layout.entries[index].large,
-                    source,
-                },
-            )
-            .collect();
-        (
-            entries,
-            layout.total_len,
-            layout.force_zip64,
-            BatchEmit {
-                batch_id: batch_id.clone(),
-                ip: peer.ip().to_string(),
-                user_agent,
-                files: batch_files,
-            },
-        )
+        (planned, layout.total_len, layout.force_zip64, batch_files)
+    };
+    let range_header = req
+        .headers()
+        .get(hyper::header::RANGE)
+        .and_then(|value| value.to_str().ok());
+    if let Some(value) = range_header {
+        log::debug!(
+            "下载批次 Range batch={} range={} ip={}",
+            batch_id,
+            value,
+            peer.ip()
+        );
+    }
+    let range = parse_range(range_header, total_len);
+    // 下载预检：只请求 ZIP 开头几个字节时直接回应对应前导字节与完整长度，
+    // 不创建下载任务，也不消费批次（浏览器随后才发起真正的整包下载）。
+    if let RangeRequest::Partial { start, end } = range {
+        if end < ZIP_MAGIC_PREFIX.len() as u64 {
+            return zip_probe_response(start, end, total_len);
+        }
+    }
+    if matches!(range, RangeRequest::Unsatisfiable) {
+        return zip_range_error_response(total_len);
+    }
+    // `bytes=0-` 等价整包，按 206 下发；其余无法按偏移流式生成的 Range 忽略，
+    // 回 200 整包（符合 HTTP 允许服务端忽略 Range 的约定）。
+    let full_range: bool = matches!(
+        range,
+        RangeRequest::Partial { start: 0, end } if end + 1 == total_len
+    );
+    let mut entries: Vec<ZipBatchEntry> = Vec::with_capacity(planned.len());
+    for (file_id, entry_name, size, last_modified_ms, large) in planned {
+        let Some(source) = state.locate_source(&file_id, now) else {
+            log::debug!("批次内容源已不可用 file={} batch={}", file_id, batch_id);
+            return download_error_response(req, StatusCode::GONE, updated_message);
+        };
+        entries.push(ZipBatchEntry {
+            file_id,
+            entry_name,
+            size,
+            last_modified_ms,
+            large,
+            source,
+        });
+    }
+    let batch = BatchEmit {
+        batch_id: batch_id.clone(),
+        ip: peer.ip().to_string(),
+        user_agent,
+        files: batch_files,
     };
     let cancel = Arc::new(AtomicBool::new(false));
     lock(&state.active_batches).insert(batch_id.clone(), Arc::clone(&cancel));
+    // 同一批次可能因浏览器重试存在多个流；仅允许本流移除自己登记的取消入口。
+    let cancel_for_unregister = Arc::clone(&cancel);
     let progress_tx = state.progress_tx.clone();
     let (body_tx, body_rx) = mpsc::channel::<Bytes>(BODY_CHANNEL_CAPACITY);
     // 响应体流超时后丢弃接收端，让阻塞写线程的 blocking_send 失败退出。
@@ -2337,6 +2362,10 @@ async fn download_batch(
             ),
             DownloadOutcome::Succeeded => {}
         }
+        if outcome == DownloadOutcome::Succeeded {
+            // 只有成功下发才消费批次；预检/中断/失败保留到 TTL 结束供浏览器重试。
+            lock(&serve_state.pending_batches).remove(&batch_for_events.batch_id);
+        }
         let tx = serve_state.progress_tx.clone();
         if let Some(tx) = tx {
             let _ = tx
@@ -2347,10 +2376,22 @@ async fn download_batch(
                 })
                 .await;
         }
-        lock(&serve_state.active_batches).remove(&batch_for_events.batch_id);
+        let mut actives = lock(&serve_state.active_batches);
+        let owns_entry: bool = match actives.get(&batch_for_events.batch_id) {
+            Some(current) => Arc::ptr_eq(current, &cancel_for_unregister),
+            None => false,
+        };
+        if owns_entry {
+            actives.remove(&batch_for_events.batch_id);
+        }
     });
     let zip_name = zip_plan::zip_file_name();
     let mut response = Response::new(body.boxed());
+    *response.status_mut() = if full_range {
+        StatusCode::PARTIAL_CONTENT
+    } else {
+        StatusCode::OK
+    };
     let headers = response.headers_mut();
     headers.insert(
         CONTENT_TYPE,
@@ -2362,10 +2403,68 @@ async fn download_batch(
         headers.insert(CONTENT_DISPOSITION, value);
     }
     headers.insert(CONTENT_LENGTH, hyper::header::HeaderValue::from(total_len));
+    if full_range {
+        if let Ok(value) = hyper::header::HeaderValue::from_str(&format!(
+            "bytes 0-{}/{}",
+            total_len.saturating_sub(1),
+            total_len
+        )) {
+            headers.insert(hyper::header::CONTENT_RANGE, value);
+        }
+    }
     headers.insert(
         hyper::header::CACHE_CONTROL,
         hyper::header::HeaderValue::from_static("no-store"),
     );
+    response
+}
+
+/// ZIP 前导字节（首个本地文件头魔数），供浏览器下载预检的 Range 请求直接应答。
+const ZIP_MAGIC_PREFIX: &[u8] = b"PK\x03\x04";
+
+/// 下载预检响应：只返回 ZIP 开头请求范围内的字节与完整长度，不创建下载任务。
+fn zip_probe_response(start: u64, end: u64, total_len: u64) -> Response<BoxBody> {
+    let prefix = &ZIP_MAGIC_PREFIX[(start as usize)..=(end as usize)];
+    let body = Full::new(Bytes::copy_from_slice(prefix))
+        .map_err(|never| match never {})
+        .boxed();
+    let mut response = Response::new(body);
+    *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+    let headers = response.headers_mut();
+    headers.insert(
+        CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/zip"),
+    );
+    if let Ok(value) = hyper::header::HeaderValue::from_str(&format!(
+        "attachment; filename=\"{}\"",
+        zip_plan::zip_file_name()
+    )) {
+        headers.insert(CONTENT_DISPOSITION, value);
+    }
+    headers.insert(
+        CONTENT_LENGTH,
+        hyper::header::HeaderValue::from(prefix.len() as u64),
+    );
+    if let Ok(value) =
+        hyper::header::HeaderValue::from_str(&format!("bytes {start}-{end}/{total_len}"))
+    {
+        headers.insert(hyper::header::CONTENT_RANGE, value);
+    }
+    headers.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+/// 下载批次 Range 起点越界：回 416 并给出总长（与单文件下载一致）。
+fn zip_range_error_response(total_len: u64) -> Response<BoxBody> {
+    let mut response = text_response(StatusCode::RANGE_NOT_SATISFIABLE, "范围超出文件大小");
+    if let Ok(value) = hyper::header::HeaderValue::from_str(&format!("bytes */{total_len}")) {
+        response
+            .headers_mut()
+            .insert(hyper::header::CONTENT_RANGE, value);
+    }
     response
 }
 

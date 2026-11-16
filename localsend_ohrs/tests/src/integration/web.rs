@@ -145,11 +145,24 @@ async fn http_get(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, 
 
 /// 读取二进制响应（ZIP 等）：保留原始字节用于 Content-Length 断言。
 async fn http_get_bytes(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    http_get_bytes_with_headers(addr, path, &[]).await
+}
+
+/// 读取二进制响应并携带自定义请求头（Range 预检等）。
+async fn http_get_bytes_with_headers(
+    addr: SocketAddr,
+    path: &str,
+    extra_headers: &[(&str, &str)],
+) -> (u16, Vec<(String, String)>, Vec<u8>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(addr)
         .await
         .expect("回环连接失败");
-    let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let mut request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+    for (name, value) in extra_headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
     stream
         .write_all(request.as_bytes())
         .await
@@ -828,7 +841,181 @@ async fn test_download_batch_streams_zip() {
     handle.abort();
 }
 
-/// 访问密码门禁：未登录只给密码页，接口 401；窗口内错误过多 429；
+/// 浏览器下载前的 Range 预检不应消费批次，也不应创建下载任务。
+#[tokio::test]
+async fn test_download_batch_range_probe_keeps_batch() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (probe_status, probe_headers, probe_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=0-0")]).await;
+    assert_eq!(probe_status, 206, "预检应回 206");
+    assert_eq!(probe_body, b"P", "预检只需返回 ZIP 前导字节");
+    let total = header(&probe_headers, "content-range")
+        .and_then(|value| value.rsplit('/').next())
+        .and_then(|value| value.parse::<usize>().ok())
+        .expect("预检缺 Content-Range");
+    assert!(total > probe_body.len());
+    // 预检不应创建下载任务；渠道里只可能有建会话的 WebAccess。
+    while let Ok(event) = progress_rx.try_recv() {
+        if let ProgressEvent::DownloadStarted { batch_id: id, .. } = event {
+            panic!("Range 预检不应创建下载任务: {id}");
+        }
+    }
+    // 预检之后同一个 batchId 仍可正常下载。
+    let (zip_status, zip_headers, zip_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(zip_status, 200, "预检后整包下载失败");
+    assert_eq!(
+        header(&zip_headers, "content-length").and_then(|v| v.parse::<usize>().ok()),
+        Some(zip_body.len())
+    );
+    assert!(String::from_utf8_lossy(&zip_body).contains("a.txt"));
+    // 等待成功收口：成功后批次才被消费。
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert!(
+        state.pending_batches.lock().unwrap().is_empty(),
+        "成功下发后批次应被消费"
+    );
+    let (repeat_status, _, _) = http_get_bytes(addr, &path).await;
+    assert_eq!(repeat_status, 410, "成功下发后的重复请求应回 410");
+    handle.abort();
+}
+
+/// `Range: bytes=0-` 等价整包：回 206 与完整 Content-Range，成功后批次被消费。
+#[tokio::test]
+async fn test_download_batch_range_from_zero_is_partial() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (zip_status, zip_headers, zip_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=0-")]).await;
+    assert_eq!(zip_status, 206);
+    assert_eq!(
+        header(&zip_headers, "content-length").and_then(|v| v.parse::<usize>().ok()),
+        Some(zip_body.len())
+    );
+    assert_eq!(
+        header(&zip_headers, "content-range"),
+        Some(format!("bytes 0-{}/{}", zip_body.len() - 1, zip_body.len()).as_str())
+    );
+    assert!(String::from_utf8_lossy(&zip_body).contains("a.txt"));
+    assert!(String::from_utf8_lossy(&zip_body).contains("b.txt"));
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert!(state.pending_batches.lock().unwrap().is_empty());
+    handle.abort();
+}
+
+/// 下载管理器先探测后真正下载：首次连接中断不应消费批次，重试应成功。
+#[tokio::test]
+async fn test_download_batch_retry_after_client_abort() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let content = vec![b'x'; 32 * 1024 * 1024];
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "big.bin", &content)]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    // 首次连接：读到响应头就断开，模拟浏览器确认下载前的预检请求。
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("回环连接失败");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("请求写入失败");
+    let mut buf = vec![0u8; 4096];
+    let _ = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+        .await
+        .expect("读取响应超时")
+        .expect("读取响应失败");
+    drop(stream);
+    // 服务端应把这次中断收口为已取消，并保留批次。
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, error, .. } = event {
+            assert_ne!(
+                outcome.as_str(),
+                "succeeded",
+                "首次中断不应成功下发: {error:?}"
+            );
+            break;
+        }
+    }
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+    // 同一 batchId 重试应完整成功。
+    let (zip_status, _, zip_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(zip_status, 200, "中断后重试失败");
+    assert!(!zip_body.is_empty());
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert!(state.pending_batches.lock().unwrap().is_empty());
+    handle.abort();
+}
+
 /// 登录成功后 Cookie 放行 caps / 单页 / 建会话，且建会话不再需要 PIN 参数。
 #[tokio::test]
 async fn test_pin_gate() {
