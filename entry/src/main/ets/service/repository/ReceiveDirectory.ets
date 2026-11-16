@@ -238,11 +238,41 @@ async function ensureDefaultDirectory(): Promise<string> {
 }
 
 // 自定义目录：激活持久授权后校验目录是否仍可访问；失效返回空串，由调用方回退默认目录
+/**
+ * 目录写权限探测：激活接口在部分设备/场景会返回 Operation not permitted，
+ * 但实际写入仍可用；反过来授权被撤销时路径仍存在、写入会失败。
+ * 以真实创建/删除一个隐藏探针文件为准，避免误回退或把失败留到接收准备阶段。
+ */
+async function isDirectoryWritable(path: string): Promise<boolean> {
+  if (path.length === 0) {
+    return false;
+  }
+  let probe: string = path + '/.handysend_write_probe_' + Date.now().toString();
+  try {
+    let file: fs.File = fs.openSync(probe,
+      fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+    fs.closeSync(file);
+    fs.unlinkSync(probe);
+    return true;
+  } catch (_e) {
+    try {
+      fs.unlinkSync(probe);
+    } catch (_unlinkErr) {
+    }
+    return false;
+  }
+}
+
 async function resolveCustomDirectory(uri: string): Promise<string> {
   try {
+    // 尽力激活持久授权；激活失败不一定代表不可写（部分设备激活接口返回不支持）
     await ensureWritableUriAccess(uri);
     let path: string = receiveDirectoryPathOf(uri);
     if (path.length === 0 || !fs.accessSync(path)) {
+      return '';
+    }
+    if (!(await isDirectoryWritable(path))) {
+      logger.warn('自定义接收目录写入探测失败 uri=' + uri);
       return '';
     }
     return path;
@@ -274,9 +304,10 @@ async function resolveReceiveDirectoryUri(): Promise<string> {
 export async function ensureReceiveDirectory(): Promise<string> {
   let configuredUri: string = getReceiveDirectoryUri();
   if (configuredUri === cachedSettingUri && cachedPath.length > 0) {
-    // 运行中目录可能被删除：缓存命中也要校验，失效则重新解析
+    // 缓存命中也要校验：目录可能被删除，或自定义目录写授权已被撤销
     try {
-      if (fs.accessSync(cachedPath)) {
+      if (fs.accessSync(cachedPath) &&
+        (configuredUri.length === 0 || await isDirectoryWritable(cachedPath))) {
         return cachedPath;
       }
     } catch (_e) {
