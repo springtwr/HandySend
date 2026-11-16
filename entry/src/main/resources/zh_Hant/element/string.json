@@ -1145,6 +1145,10 @@
       "value": "%d 個檔案"
     },
     {
+      "name": "session_folder_failed_files",
+      "value": "檢視失敗檔案"
+    },
+    {
       "name": "history_delete_message_file",
       "value": "將刪除：%s"
     },

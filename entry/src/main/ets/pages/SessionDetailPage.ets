@@ -83,6 +83,8 @@ export struct SessionDetailPage {
   // 校验和弹窗：打开时写入的值与弹窗 ID（与页内其它弹窗同层管理）
   @Local checksumDialogValue: string = ''
   private checksumDialogId: number = -1
+  @Local failedFilesDialogValue: string = ''
+  private failedFilesDialogId: number = -1
   // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
   private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 本页是否已登记到会话详情栈（避免重复 aboutToAppear 造成重复记录）
@@ -91,6 +93,7 @@ export struct SessionDetailPage {
   private overlayCloseCallback: () => void = (): void => {
     this.closeFilePreviewDialog();
     this.closeChecksumDialog();
+    this.closeFailedFilesDialog();
     this.closeGallerySaveDialog();
   }
 
@@ -338,6 +341,63 @@ export struct SessionDetailPage {
       this.checksumDialogId = -1;
     }
     this.checksumDialogValue = '';
+  }
+
+  private openFailedFilesDialog(): void {
+    let names: Array<string> = [];
+    let failed = this.viewModel.failedFiles();
+    for (let i = 0; i < failed.length; i++) {
+      names.push(failed[i].reason.length > 0 ?
+        failed[i].fileName + '：' + failed[i].reason : failed[i].fileName);
+    }
+    if (names.length === 0) {
+      return;
+    }
+    this.failedFilesDialogValue = names.join('\n');
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.failedFilesDialog();
+      },
+      onDidDisappear: () => {
+        this.failedFilesDialogId = -1;
+        this.failedFilesDialogValue = '';
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.failedFilesDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeFailedFilesDialog(): void {
+    if (this.failedFilesDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.failedFilesDialogId);
+      this.failedFilesDialogId = -1;
+    }
+    this.failedFilesDialogValue = '';
+  }
+
+  @Builder
+  failedFilesDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.session_folder_failed_files'),
+      contentBuilder: () => {
+        SingleValueDialogContent({ value: this.failedFilesDialogValue })
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.close'),
+          action: () => {
+            this.closeFailedFilesDialog();
+          }
+        })
+      ]
+    })
+      .constraintSize({ maxWidth: 480 })
   }
 
   @Builder
@@ -846,6 +906,19 @@ export struct SessionDetailPage {
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.warning_orange'))
           .width('100%')
+        if (this.viewModel.failedFiles().length > 0) {
+          Button($r('app.string.session_folder_failed_files'))
+            .width('100%')
+            .height(DesignTokens.size.thumbSm)
+            .backgroundColor($r('app.color.card_background'))
+            .fontColor($r('app.color.text_primary'))
+            .borderRadius(DesignTokens.radius.max)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+            .onClick(() => {
+              this.openFailedFilesDialog();
+            })
+            .id('session_detail_folder_failed')
+        }
       }
 
       if (this.folderPath().length > 0) {

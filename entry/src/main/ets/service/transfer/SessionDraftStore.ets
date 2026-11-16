@@ -162,6 +162,7 @@ export function sessionDraftLogPath(sessionId: string): string {
  * 进程被强杀时页缓存仍保留；掉电最多丢最后几条，恢复时按最终路径兜底。
  */
 let draftAppendCount: number = 0;
+let draftFlushTimer: number = -1;
 
 /** 刷单会话完成日志（周期/退后台使用）。 */
 export function flushSessionDraftLog(sessionId: string): void {
@@ -213,6 +214,13 @@ export function appendSessionDraftRecord(sessionId: string, record: SessionDraft
   if (draftAppendCount >= 50) {
     draftAppendCount = 0;
     flushSessionDraftLog(sessionId);
+  }
+  // 1 秒合并刷盘：连续完成大量小文件时不逐条 fsync。
+  if (draftFlushTimer < 0) {
+    draftFlushTimer = setTimeout((): void => {
+      draftFlushTimer = -1;
+      flushAllSessionDraftLogs();
+    }, 1000);
   }
 }
 
