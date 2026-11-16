@@ -52,6 +52,9 @@ export struct SessionFileList {
   // 查看校验和（由详情页统一弹出完整值弹窗，与页内其它弹窗同一层管理）
   @Event onShowChecksum: (file: SessionFile) => void = (_file: SessionFile) => {
   }
+  // 文件夹聚合行的「查看失败文件」动作
+  @Event onShowFailedFiles: () => void = () => {
+  }
 
   private percentOf(file: SessionFile): number {
     if (file.totalBytes <= 0) {
@@ -63,7 +66,8 @@ export struct SessionFileList {
 
   /** 条目操作菜单选项：由「类型 + 定位 + 来源 + 大小」判定三项可用性，并给出超限说明。 */
   private menuOptionsFor(file: SessionFile): FileEntryMenuOptions {
-    let isText: boolean = isTextFile(file.fileType, file.fileName);
+    let isFolder: boolean = file.fileType === 'folder';
+    let isText: boolean = !isFolder && isTextFile(file.fileType, file.fileName);
     let hasLocation: boolean = file.path.length > 0;
     // 应用私有文本（沙箱落盘）无文件管理器可导航目录，「打开所在位置」置灰
     // （「用其他应用打开」走应用文件分享机制，不受影响；预览与复制不受影响）
@@ -81,8 +85,9 @@ export struct SessionFileList {
       canPreviewText: isTextPreviewable(isText, file.path, file.totalBytes) || overLimit,
       // 图库来源条目（媒体库图片 / 视频标识）与应用私有文本均无文件管理器可导航目录，该项置灰；
       // 「用其他应用打开」走应用文件分享机制，沙箱自有文件属可分享目录，不受影响
-      canOpenLocation: hasLocation && !isGalleryLocation(file.path) && !sandboxText,
-      canOpenWithApp: hasLocation,
+      canOpenLocation: hasLocation && !isGalleryLocation(file.path) && (!sandboxText || isFolder),
+      // 文件夹不适合交给单个应用打开，只保留「打开所在位置」
+      canOpenWithApp: hasLocation && !isFolder,
       // 复制为用户显式动作，不受预览阈值限制：超大文本同样可复制（读取上限截断，超限明确提示截断）
       showCopyItem: isText,
       canCopyText: isText && hasLocation,
@@ -104,9 +109,13 @@ export struct SessionFileList {
         this.onSaveToGallery(file);
       },
       // 校验和只在文件确有值时提供菜单项，不再占据条目内的固定展示位
-      showChecksum: file.checksum.length > 0,
+      showChecksum: !isFolder && file.checksum.length > 0,
       onShowChecksum: (): void => {
         this.onShowChecksum(file);
+      },
+      showFailedFiles: isFolder && this.viewModel.failedCount() > 0,
+      onShowFailedFiles: (): void => {
+        this.onShowFailedFiles();
       }
     };
   }
@@ -157,7 +166,8 @@ export struct SessionFileList {
 
               // 详情页以完整辨识文件为目标：文件名最多两行，超出省略；
               // 无空格长串按字符断行，避免整段被挤出可视区
-              Text(ri.item.fileName)
+              Text(ri.item.fileType === 'folder' && ri.item.fileName.length === 0 ?
+                $r('app.string.history_folder_multi_name') : ri.item.fileName)
                 .fontSize(DesignTokens.font.bodyM)
                 .fontColor($r('app.color.text_primary'))
                 .maxLines(2)
@@ -211,7 +221,7 @@ export struct SessionFileList {
           .width('100%')
           // 条目点击弹出统一操作菜单（不再按文件类型隐式绑定点击行为）
           .bindMenu(this.entryMenu(ri.item))
-          .id('session_detail_file_item')
+          .id(ri.item.fileType === 'folder' ? 'session_detail_folder_item' : 'session_detail_file_item')
         })
         .key((item: SessionFile) => item.fileId + '#' + item.occurrence)
 

@@ -64,6 +64,20 @@ export default function FolderSummaryTest() {
       }
     })
 
+    it('mixed_folder_and_loose_files_counted_separately', 0, () => {
+      let result: SessionFolderInfo | undefined =
+        summarizeInboundFolder([file('Photos/a.jpg', 10), file('Photos/b.jpg', 20),
+          file('loose1.txt', 6), file('loose2.txt', 6)]);
+      expect(result !== undefined).assertTrue();
+      if (result !== undefined) {
+        expect(result.name).assertEqual('Photos');
+        expect(result.fileCount).assertEqual(2);
+        expect(result.totalBytes).assertEqual(30);
+        expect(result.looseFileCount).assertEqual(2);
+        expect(result.looseBytes).assertEqual(12);
+      }
+    })
+
     it('multi_root_summary_has_no_name', 0, () => {
       let result: SessionFolderInfo | undefined =
         summarizeInboundFolder([file('A/a.txt', 1), file('B/b.txt', 2)]);

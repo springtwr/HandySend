@@ -40,8 +40,12 @@ export interface SessionFolderInfo {
   path: string
   // 根目录数量；单根为 1
   rootCount: number
+  // 文件夹内文件数/总字节（不含同批次的独立文件）
   fileCount: number
   totalBytes: number
+  // 同批次中不属于任何文件夹的独立文件数与总字节（旧条目缺省为 0）
+  looseFileCount?: number
+  looseBytes?: number
 }
 
 /** 发起方：本机发起（local）或对端发起（remote）。 */

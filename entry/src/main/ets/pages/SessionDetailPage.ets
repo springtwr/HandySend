@@ -860,94 +860,34 @@ export struct SessionDetailPage {
     .alignItems(HorizontalAlign.Start)
   }
 
-  private folderNameText(): ResourceStr {
-    let info = this.viewModel.folderInfo();
-    if (info !== undefined && info.name.length > 0) {
-      return info.name;
-    }
-    return $r('app.string.history_folder_multi_name');
-  }
-
-  private folderPath(): string {
-    let info = this.viewModel.folderInfo();
-    return info !== undefined ? info.path : '';
-  }
-
-  private handleOpenFolderSummary(): void {
-    let path: string = this.folderPath();
-    if (path.length === 0) {
-      return;
-    }
-    let file: SessionFile = new SessionFile();
-    file.path = path;
-    this.handleOpenLocation(file);
-  }
-
-  /** 文件夹摘要卡：逐文件操作交给系统文件管理器，应用内只展示聚合结果。 */
+  /** 逐文件清单卡片（普通批次与混合批次的独立文件共用）。 */
   @Builder
-  folderSummaryCard() {
-    Column({ space: DesignTokens.space.sm }) {
-      Row({ space: DesignTokens.space.sm }) {
-        SymbolGlyph($r('sys.symbol.folder'))
-          .fontSize(DesignTokens.size.iconLg)
-          .fontColor([$r('app.color.text_secondary')])
-          .width(DesignTokens.size.iconLg)
-          .height(DesignTokens.size.iconLg)
-        Text(this.folderNameText())
-          .fontSize(DesignTokens.font.subtitleM)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Text(getStringSync(this.getUIContext(),
-        $r('app.string.session_folder_file_count')).replace('%d', String(this.viewModel.fileCount())) +
-        ' · ' +
-        formatSizeDetailed(this.viewModel.session !== undefined ?
-          this.viewModel.session.totalBytes :
-          (this.viewModel.historyEntry !== undefined ? this.viewModel.historyEntry.totalBytes : 0)))
-        .fontSize(DesignTokens.font.bodyS)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-
-      if (this.viewModel.failedCount() > 0) {
-        Text(getStringSync(this.getUIContext(), $r('app.string.session_folder_progress'))
-          .replace('%d', String(this.viewModel.completedCount()))
-          .replace('%d', String(this.viewModel.failedCount())))
-          .fontSize(DesignTokens.font.bodyS)
-          .fontColor($r('app.color.warning_orange'))
-          .width('100%')
-        if (this.viewModel.failedFiles().length > 0) {
-          Button($r('app.string.session_folder_failed_files'))
-            .width('100%')
-            .height(DesignTokens.size.thumbSm)
-            .backgroundColor($r('app.color.card_background'))
-            .fontColor($r('app.color.text_primary'))
-            .borderRadius(DesignTokens.radius.max)
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-            .onClick(() => {
-              this.openFailedFilesDialog();
-            })
-            .id('session_detail_folder_failed')
+  fileListCard() {
+    Column() {
+      SessionFileList({
+        viewModel: this.viewModel,
+        onPreviewFile: (file: SessionFile) => {
+          this.openFilePreview(file);
+        },
+        onOpenLocation: (file: SessionFile) => {
+          this.handleOpenLocation(file);
+        },
+        onOpenWithApp: (file: SessionFile) => {
+          this.handleOpenWithApp(file);
+        },
+        onCopyText: (file: SessionFile) => {
+          this.copyFileText(file);
+        },
+        onSaveToGallery: (file: SessionFile) => {
+          this.handleSaveToGallery(file);
+        },
+        onShowChecksum: (file: SessionFile) => {
+          this.openChecksumDialog(file);
+        },
+        onShowFailedFiles: () => {
+          this.openFailedFilesDialog();
         }
-      }
-
-      if (this.folderPath().length > 0) {
-        Button($r('app.string.session_folder_open'))
-          .width('100%')
-          .height(DesignTokens.size.thumbSm)
-          .backgroundColor($r('app.color.accent_blue'))
-          .fontColor($r('app.color.text_on_color'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.handleOpenFolderSummary();
-          })
-          .id('session_detail_folder_open')
-      }
+      })
     }
     .width('100%')
     .padding(DesignTokens.space.md)
@@ -1007,11 +947,7 @@ export struct SessionDetailPage {
                   .id('session_detail_large_file_hint')
               }
 
-              if (this.viewModel.isFolderSession()) {
-                // ── 文件夹摘要：不展示逐文件清单，逐文件操作交给系统文件管理器 ──
-                this.sectionTitle($r('app.string.session_detail_files'))
-                this.folderSummaryCard()
-              } else if (this.viewModel.isInlinePreview()) {
+              if (this.viewModel.isInlinePreview()) {
                 // ── 会话仅一个文本类文件：内联预览卡片（不渲染文件清单与字节进度）；
                 //    内容不可用时明确提示 ──
                 this.sectionTitle($r('app.string.session_detail_files'))
@@ -1028,35 +964,7 @@ export struct SessionDetailPage {
 
                 // ── 文件区块：分区标题 + 文件清单卡片（文本类条目提供点击预览入口） ──
                 this.sectionTitle($r('app.string.session_detail_files'))
-                Column() {
-                  SessionFileList({
-                    viewModel: this.viewModel,
-                    onPreviewFile: (file: SessionFile) => {
-                      this.openFilePreview(file);
-                    },
-                    onOpenLocation: (file: SessionFile) => {
-                      this.handleOpenLocation(file);
-                    },
-                    onOpenWithApp: (file: SessionFile) => {
-                      this.handleOpenWithApp(file);
-                    },
-                    onCopyText: (file: SessionFile) => {
-                      this.copyFileText(file);
-                    },
-                    onSaveToGallery: (file: SessionFile) => {
-                      this.handleSaveToGallery(file);
-                    },
-                    onShowChecksum: (file: SessionFile) => {
-                      this.openChecksumDialog(file);
-                    }
-                  })
-                }
-                .width('100%')
-                .padding(DesignTokens.space.md)
-                .backgroundColor($r('app.color.card_background'))
-                .borderRadius(DesignTokens.radius.lg)
-                .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-                .alignItems(HorizontalAlign.Start)
+                this.fileListCard()
               }
 
               // ── 详情区块：分区标题 + 完整信息卡片（时间 / 性能 / 结果与错误 / 本机与标识） ──

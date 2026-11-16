@@ -298,6 +298,11 @@ export struct FileEntryThumb {
           .height(this.thumbSize)
           .borderRadius(this.cornerRadius)
           .backgroundColor($r('app.color.border_light'))
+      } else if (this.fileType === 'folder') {
+        // 文件夹聚合行与普通文件行同构：缩略区使用文件夹图标
+        SymbolGlyph($r('sys.symbol.folder'))
+          .fontSize(this.thumbSize)
+          .fontColor([$r('app.color.text_secondary')])
       } else {
         Image(getFileTypeIconResource(this.isMessage, this.fileName, this.fileType))
           .width(this.thumbSize)

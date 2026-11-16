@@ -25,6 +25,7 @@ import {
   createSession,
   finish,
   getSession,
+  markFileCompleted,
   setStage,
   updateFileProgress,
   updateSessionFileTargets,
@@ -167,6 +168,15 @@ export function updateReceiveProgress(protocolSessionId: string, fileId: string,
     return;
   }
   updateFileProgress(unifiedId, fileId, bytesSent, totalBytes);
+}
+
+/** 单文件完成：按会话内已知大小补齐字节与完成阶段（进度事件缺大小时兜底）。 */
+export function markReceiveFileCompleted(protocolSessionId: string, fileId: string): void {
+  let unifiedId = unifiedByProtocol.get(protocolSessionId);
+  if (unifiedId === undefined) {
+    return;
+  }
+  markFileCompleted(unifiedId, fileId);
 }
 
 /** 接收会话进入进行中（确认后）。 */

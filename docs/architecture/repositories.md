@@ -244,8 +244,9 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
   按 `SourceFileMeta.wireName/sourcePath` 生成相对名与本机路径；文档 Picker/文件夹条目走
   `fd = -1`，Rust 逐文件打开。接收侧 `summarizeInboundFolder` 识别相对路径会话。
   `buildHistoryEntry` 对文件夹与 >100 文件批次只写摘要（`contentKind`/`folder`/
-  `completedCount`/`failedCount`/`failedFiles`），`files` 为空；接收历史由
-  `buildFolderReceiveHistoryEntry` 只生成一条，删除时按 `isFolder` 递归删除。
+  `completedCount`/`failedCount`/`failedFiles`）；文件夹内逐文件不写入 `files`，
+  混合批次的独立文件仍保留。接收历史由 `buildFolderReceiveHistoryEntry` 生成文件夹一条，
+  混合批次的独立文件另逐条写入；删除文件夹记录时按 `isFolder` 递归删除。
 - **草稿完成日志**：`SessionDraftStore` 的会话头只在创建/快速保存时写一次，单文件完成
   `appendSessionDraftRecord` 追加 `.log`，恢复时回放；不再逐文件全量重写 JSON。
 - **文件级接收历史**：`ReceiveHistoryEntry` 只写入路径与元数据；读取旧数据时剥离其遗留的 `textContent` 字段并全量回写一次；

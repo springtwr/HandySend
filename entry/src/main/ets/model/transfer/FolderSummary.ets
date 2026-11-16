@@ -19,18 +19,28 @@ export function summarizeInboundFolder(files: Array<SessionFileDescriptor>): Ses
 /** 由文件名与大小汇总文件夹信息；供接收历史（已完成条目）复用。 */
 export function summarizeFolderNames(names: Array<string>, sizes: Array<number>): SessionFolderInfo | undefined {
   let roots: Set<string> = new Set();
-  let totalBytes: number = 0;
+  let folderBytes: number = 0;
+  let folderCount: number = 0;
+  let looseBytes: number = 0;
+  let looseCount: number = 0;
   let hasRelative: boolean = false;
   for (let i = 0; i < names.length; i++) {
     let fileName: string = names[i];
-    totalBytes += i < sizes.length ? sizes[i] : 0;
+    let size: number = i < sizes.length ? sizes[i] : 0;
     let slash: number = fileName.indexOf('/');
     if (slash > 0) {
       hasRelative = true;
       roots.add(fileName.substring(0, slash));
+      folderCount++;
+      folderBytes += size;
     } else if (slash === 0) {
       // 绝对路径/空首段由接收目标解析拒绝；摘要只标记为相对批次
       hasRelative = true;
+      folderCount++;
+      folderBytes += size;
+    } else {
+      looseCount++;
+      looseBytes += size;
     }
   }
   if (!hasRelative) {
@@ -46,8 +56,10 @@ export function summarizeFolderNames(names: Array<string>, sizes: Array<number>)
     name: roots.size === 1 ? firstName : '',
     path: '',
     rootCount: roots.size,
-    fileCount: names.length,
-    totalBytes: totalBytes
+    fileCount: folderCount,
+    totalBytes: folderBytes,
+    looseFileCount: looseCount,
+    looseBytes: looseBytes
   };
   return info;
 }

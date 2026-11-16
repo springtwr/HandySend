@@ -69,6 +69,7 @@ import {
   ensureReceiveSession,
   finishLocalReceiveSession,
   markReceiveActive,
+  markReceiveFileCompleted,
   setLocalReceiveInvokers,
   updateReceiveProgress,
   updateReceiveSessionFileTargets,
@@ -79,7 +80,7 @@ import {
   TEMP_SUBDIR_LOCAL_SEND,
   tempPathForFinal
 } from '../../model/transfer/TransferTempPaths';
-import { findByProtocol } from '../transfer/TransferSessionRegistry';
+import { findByProtocol, notifyProgressChange } from '../transfer/TransferSessionRegistry';
 import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
@@ -745,13 +746,18 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
   // 发送方向进度：转发给 SendRepository 处理
   if (event.direction === 'send') {
     handleSendProgressProgress(sessionId, fileId, progress);
-    notifyChange();
+    // 注册表进度入口已按 120ms 合并通知；此处不再逐条刷新全应用界面
+    notifyProgressChange();
     return;
   }
 
   // 接收方向：从会话文件大小映射补齐 totalBytes/bytesSent/filePath（新事件仅携带 progress）
   let key: string = sessionId + ':' + fileId;
   let size: number = sessionFileSizes[key] !== undefined ? sessionFileSizes[key] : 0;
+  if (size <= 0 && progressLogThrottle.shouldLog(sessionId + ':missing-size', Date.now())) {
+    // 诊断：进度事件到达但声明大小缺失，逐文件字节推算会退化为 0
+    logger.warn('接收进度缺少声明大小 会话=' + sessionId + ' 文件=' + fileId);
+  }
   let totalBytes: number = size;
   let bytesSent: number = Math.floor(progress * size);
   let filePath: string = sessionFilePaths[key] !== undefined ? sessionFilePaths[key] : '';
@@ -794,14 +800,18 @@ export function handleProgressUpdateTyped(event: NativeProgressEvent): void {
   if (totalBytes > 0) {
     let progressKey: string = sessionId + ':progress';
     if (progress >= 1) {
-      logger.debug('接收文件完成', { sessionId: sessionId, fileId: fileId, direction: 'recv' });
+      // 逐文件完成日志按会话节流：上千文件逐条写日志会长时间占用主线程
+      if (progressLogThrottle.shouldLog(sessionId + ':recv-completed', Date.now())) {
+        logger.debug('接收文件完成', { sessionId: sessionId, fileId: fileId, direction: 'recv' });
+      }
     } else if (progressLogThrottle.shouldLog(progressKey, Date.now())) {
       logger.debug('接收进度：' + bytesSent + '/' + totalBytes + ' 字节',
         { sessionId: sessionId, fileId: fileId, direction: 'recv' });
     }
   }
 
-  notifyChange();
+  // 进度通知合并：逐文件进度不再各刷一次全应用界面
+  notifyProgressChange();
 }
 
 /**
@@ -860,6 +870,9 @@ function handleRecvProgress(progress: TransferProgress, completed: boolean): voi
       }
     }
     updateLocalSendDraftDone(sessionId, fileId, filePath);
+    // 进度事件可能缺少声明大小（bytesSent 推算为 0）：完成信号到达时按会话内大小补齐，
+    // 确保任务详情/历史中的文件与文件夹行都进入完成态
+    markReceiveFileCompleted(sessionId, fileId);
 
     // 检查会话是否已完成（所有文件传输完毕）
     // 已取消/已失败的会话不再判定为完成——发送方取消时
@@ -1398,20 +1411,31 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
     sizes.push(declaredSize !== undefined ? declaredSize : files[i].filePath.length > 0 ?
       fileSizeOf(files[i].filePath) : 0);
   }
-  let firstPath: string = files.length > 0 ? realPathOf(files[0], pathMap) : '';
+  // 混合批次的第一个条目可能是独立文件：取首个真正的文件夹条目推算根路径
+  let firstFolderPath: string = '';
+  let firstFolderName: string = '';
+  for (let i = 0; i < files.length; i++) {
+    if (files[i].fileName.indexOf('/') > 0) {
+      firstFolderPath = realPathOf(files[i], pathMap);
+      firstFolderName = files[i].fileName;
+      break;
+    }
+  }
   let folderEntry: ReceiveHistoryEntry | undefined = buildFolderReceiveHistoryEntry(sessionId,
-    names, sizes, firstPath, files.length > 0 ? files[0].fileName : '', senderAlias);
+    names, sizes, firstFolderPath, firstFolderName, senderAlias);
+  // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史。
+  // 混合批次：文件夹一条摘要，其余独立文件仍逐条记录。
+  let entries: Array<ReceiveHistoryEntry> = [];
   if (folderEntry !== undefined) {
-    addHistoryEntries([folderEntry]);
+    entries.push(folderEntry);
     logger.debug('已添加文件夹接收历史 count=' + folderEntry.fileCount +
       ' root=' + folderEntry.fileName);
-    return;
   }
-
-  // 先构建全部条目再一次性落盘：逐条写入会让每次追加都全量序列化整个历史
-  let entries: Array<ReceiveHistoryEntry> = [];
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
+    if (folderEntry !== undefined && f.fileName.indexOf('/') >= 0) {
+      continue;
+    }
     // 优先使用导出后的真实路径（pathMap），导出失败或未导出的条目回退沙箱路径
     let realPath: string = f.filePath;
     if (pathMap !== undefined && pathMap[f.fileId] !== undefined) {

@@ -13,13 +13,17 @@ import { fileIo as fs } from '@kit.CoreFileKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import {
+  SessionContentKind,
   SessionDataFlow,
+  SessionEventKind,
   SessionFile,
   SessionFileStage,
   SessionStage,
+  SessionTimelineEvent,
   TransferSession,
   isTerminalStage
 } from '../../model/transfer/TransferSession';
+import { summarizeFolderNames, folderRootPathOf } from '../../model/transfer/FolderSummary';
 import { ReceiveHistoryEntry } from '../../model/Types';
 import {
   baseNameOf,
@@ -95,6 +99,60 @@ export function recoverSessionDrafts(): SessionRecoveryResult {
 }
 
 /**
+ * 草稿不保存文件夹摘要与时间线：恢复时按文件相对名补出摘要，
+ * 并按起止时刻补最小时间线，避免强杀后文件夹卡与时间线整块消失。
+ */
+function applyRecoveredSummary(session: TransferSession): void {
+  let names: Array<string> = [];
+  let sizes: Array<number> = [];
+  for (let i = 0; i < session.files.length; i++) {
+    names.push(session.files[i].fileName);
+    sizes.push(session.files[i].totalBytes);
+  }
+  let folder = summarizeFolderNames(names, sizes);
+  if (folder !== undefined) {
+    session.contentKind = SessionContentKind.folder;
+    if (folder.rootCount === 1 && folder.path.length === 0) {
+      for (let i = 0; i < session.files.length; i++) {
+        let file: SessionFile = session.files[i];
+        if (file.path.length > 0 && file.fileName.indexOf('/') > 0) {
+          folder.path = folderRootPathOf(file.path, file.fileName);
+          break;
+        }
+      }
+    }
+    session.folder = folder;
+  }
+  if (session.timeline.length > 0) {
+    return;
+  }
+  let timeline: Array<SessionTimelineEvent> = [];
+  let createdAt: number = session.startedAt > 0 ? session.startedAt : session.finishedAt;
+  if (createdAt > 0) {
+    timeline.push({ kind: SessionEventKind.created, timestamp: createdAt, sessionId: session.id });
+  }
+  if (session.transferStartedAt > 0) {
+    timeline.push({
+      kind: SessionEventKind.started,
+      timestamp: session.transferStartedAt,
+      sessionId: session.id
+    });
+  }
+  if (session.finishedAt > 0) {
+    let kind: SessionEventKind = SessionEventKind.failed;
+    if (session.stage === SessionStage.succeeded) {
+      kind = SessionEventKind.completed;
+    } else if (session.stage === SessionStage.cancelled) {
+      kind = SessionEventKind.cancelled;
+    } else if (session.stage === SessionStage.declined) {
+      kind = SessionEventKind.declined;
+    }
+    timeline.push({ kind: kind, timestamp: session.finishedAt, sessionId: session.id });
+  }
+  session.timeline = timeline;
+}
+
+/**
  * 仅在任务历史中不存在该会话时归档。
  * 草稿可能因协议终态漏删而残留，此时历史中的真实结果不能被恢复结果覆盖。
  */
@@ -155,6 +213,7 @@ function recoverOne(draft: SessionDraft): number {
     if (session.finishedAt <= 0) {
       session.finishedAt = Date.now();
     }
+    applyRecoveredSummary(session);
     archiveRecoveredSession(session);
     removeSessionDraft(draft.sessionId);
     return terminalCompleted;
@@ -240,6 +299,7 @@ function recoverOne(draft: SessionDraft): number {
     session.finishedAt = Date.now();
   }
 
+  applyRecoveredSummary(session);
   archiveRecoveredSession(session);
   if (receiveEntries.length > 0) {
     addEntriesIfAbsent(receiveEntries);

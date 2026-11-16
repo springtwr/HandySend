@@ -1133,18 +1133,6 @@
       "value": "多個資料夾"
     },
     {
-      "name": "session_folder_open",
-      "value": "開啟資料夾"
-    },
-    {
-      "name": "session_folder_progress",
-      "value": "成功 %d · 失敗 %d"
-    },
-    {
-      "name": "session_folder_file_count",
-      "value": "%d 個檔案"
-    },
-    {
       "name": "session_folder_failed_files",
       "value": "檢視失敗檔案"
     },

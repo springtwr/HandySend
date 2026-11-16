@@ -14,6 +14,7 @@ import {
   SessionFile,
   SessionFileStage,
   SessionFolderInfo,
+  SessionHistoryOutcome,
   SessionStage,
   SessionTimelineEvent,
   TransferSession,
@@ -348,6 +349,8 @@ export class SessionDetailViewModel {
   @Trace public sourceLabel: ResourceStr = ''
   @Trace public capabilities: SessionCapabilities = defaultCapabilities()
   @Trace public files: Array<SessionFile> = []
+  // 文件夹聚合行：在刷新阶段构建并整体替换，禁止在 build 中创建/修改可观察对象
+  @Trace public folderRow: SessionFile | undefined = undefined
   @Trace public timeline: Array<SessionTimelineEvent> = []
   // 详情完整信息（实时会话与历史条目统一取数）
   @Trace public meta: SessionDetailMeta = emptySessionDetailMeta()
@@ -391,6 +394,7 @@ export class SessionDetailViewModel {
     this.meta = emptySessionDetailMeta();
     this.historyFiles = [];
     this.historyTimeline = [];
+    this.folderRow = undefined;
     this.previewText = '';
     this.previewUnavailable = false;
     this.previewOverLimit = false;
@@ -508,6 +512,111 @@ export class SessionDetailViewModel {
     return this.historyEntry !== undefined ? this.historyEntry.folder : undefined;
   }
 
+  /** 同批次是否还包含不属于文件夹的独立文件。 */
+  folderHasLooseFiles(): boolean {
+    let info: SessionFolderInfo | undefined = this.folderInfo();
+    return info !== undefined && info.looseFileCount !== undefined && info.looseFileCount > 0;
+  }
+
+  /** 文件夹批次中的独立文件（文件名不含 '/'）；普通批次返回空数组。 */
+  private looseFolderFiles(): Array<SessionFile> {
+    let result: Array<SessionFile> = [];
+    if (!this.folderHasLooseFiles()) {
+      return result;
+    }
+    let files: Array<SessionFile> = this.detailFiles();
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].fileName.indexOf('/') < 0) {
+        result.push(files[i]);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 刷新文件夹聚合行：与普通文件行同一视觉结构，
+   * 名称/大小/状态/进度由摘要与逐文件状态汇总；操作走同一展开菜单。
+   * 只在刷新阶段原地更新已有行，不能在 build 中调用（会写 @Trace 字段并触发渲染重入）。
+   */
+  private updateFolderDisplayRow(): void {
+    let info: SessionFolderInfo | undefined = this.folderInfo();
+    if (info === undefined) {
+      this.folderRow = undefined;
+      return;
+    }
+    let key: string = 'folder:' + info.name + ':' + info.rootCount;
+    let file: SessionFile | undefined = this.folderRow;
+    if (file === undefined || file.fileId !== key) {
+      file = new SessionFile();
+      file.fileId = key;
+      this.folderRow = file;
+    }
+    file.fileName = info.name;
+    file.fileType = 'folder';
+    file.totalBytes = info.totalBytes;
+    file.path = info.path;
+    let completed: number = 0;
+    let failed: number = 0;
+    let sent: number = 0;
+    let folderFiles: number = 0;
+    let source: Array<SessionFile> = this.detailFiles();
+    for (let i = 0; i < source.length; i++) {
+      let item: SessionFile = source[i];
+      if (item.fileName.indexOf('/') < 0) {
+        continue;
+      }
+      folderFiles++;
+      sent += item.bytesSent;
+      if (item.stage === SessionFileStage.completed) {
+        completed++;
+      } else if (item.stage === SessionFileStage.failed) {
+        failed++;
+      }
+    }
+    if (folderFiles === 0) {
+      // 历史摘要不保留文件夹内逐文件：按归档计数与文件数折算
+      completed = Math.min(this.completedCount(), info.fileCount);
+      failed = Math.min(this.failedCount(), Math.max(0, info.fileCount - completed));
+      sent = info.fileCount > 0 ? (info.totalBytes * completed) / info.fileCount : 0;
+      if (this.historyEntry !== undefined && this.historyEntry.outcome === SessionHistoryOutcome.succeeded) {
+        sent = info.totalBytes;
+      }
+    }
+    file.bytesSent = Math.min(sent, info.totalBytes);
+    // 终态以会话结果为准：个别进度事件未回填逐文件阶段时，文件夹行仍应与任务结果一致
+    let overall: SessionStage = this.currentStage();
+    if (overall === SessionStage.succeeded) {
+      file.bytesSent = info.totalBytes;
+      file.stage = SessionFileStage.completed;
+    } else if (overall === SessionStage.cancelled || overall === SessionStage.declined) {
+      file.stage = SessionFileStage.cancelled;
+    } else if (overall === SessionStage.failed || overall === SessionStage.partiallyFailed) {
+      file.stage = SessionFileStage.failed;
+    } else if (info.fileCount > 0 && completed >= info.fileCount) {
+      file.stage = SessionFileStage.completed;
+    } else if (sent > 0) {
+      file.stage = SessionFileStage.transferring;
+    } else {
+      file.stage = SessionFileStage.waiting;
+    }
+  }
+
+  /** 文件清单实际展示的完整集合：文件夹聚合行 + 混合批次中的独立文件。 */
+  private displaySourceFiles(): Array<SessionFile> {
+    if (this.folderRow !== undefined) {
+      let result: Array<SessionFile> = [this.folderRow];
+      if (!this.folderHasLooseFiles()) {
+        return result;
+      }
+      let looseFiles: Array<SessionFile> = this.looseFolderFiles();
+      for (let i = 0; i < looseFiles.length; i++) {
+        result.push(looseFiles[i]);
+      }
+      return result;
+    }
+    return this.detailFiles();
+  }
+
   /** 摘要完成/失败数：历史优先读取归档值，实时从逐文件状态统计。 */
   completedCount(): number {
     if (this.historyEntry !== undefined && this.historyEntry.completedCount !== undefined) {
@@ -539,7 +648,15 @@ export class SessionDetailViewModel {
     if (this.historyEntry !== undefined && this.historyEntry.failedFiles !== undefined) {
       return this.historyEntry.failedFiles;
     }
-    return [];
+    // 实时会话：按逐文件失败状态构建，原因取会话级错误信息
+    let result: Array<SessionHistoryFailure> = [];
+    let reason: string = this.session !== undefined ? this.session.errorMessage : '';
+    for (let i = 0; i < this.files.length; i++) {
+      if (this.files[i].stage === SessionFileStage.failed) {
+        result.push({ fileName: this.files[i].fileName, reason: reason });
+      }
+    }
+    return result;
   }
 
   /**
@@ -547,7 +664,7 @@ export class SessionDetailViewModel {
    * 完整清单仍由 detailFiles() 提供（预览判定、总数统计等口径不受影响）。
    */
   detailFilesForDisplay(): Array<SessionFile> {
-    let files: Array<SessionFile> = this.detailFiles();
+    let files: Array<SessionFile> = this.displaySourceFiles();
     if (files.length <= this.visibleFileCount) {
       return files;
     }
@@ -556,18 +673,18 @@ export class SessionDetailViewModel {
 
   /** 是否还有未展示的文件行（供文件清单底部「加载更多」入口判定）。 */
   hasMoreDetailFiles(): boolean {
-    return this.visibleFileCount < this.detailFiles().length;
+    return this.visibleFileCount < this.displaySourceFiles().length;
   }
 
   /** 未展示的文件行数。 */
   remainingDetailFiles(): number {
-    let remaining: number = this.detailFiles().length - this.visibleFileCount;
+    let remaining: number = this.displaySourceFiles().length - this.visibleFileCount;
     return remaining > 0 ? remaining : 0;
   }
 
   /** 追加一批文件行（用户点击「加载更多」触发；一次只加一屏左右，控制建行与解码开销）。 */
   loadMoreDetailFiles(): void {
-    let total: number = this.detailFiles().length;
+    let total: number = this.displaySourceFiles().length;
     let next: number = this.visibleFileCount + DETAIL_FILES_BATCH;
     this.visibleFileCount = next > total ? total : next;
   }
@@ -602,8 +719,12 @@ export class SessionDetailViewModel {
     this.liveReleased = false;
     this.historyEntry = undefined;
     this.session = session;
-    this.files = session.files;
+    // 文件夹聚合行由逐文件状态即时汇总，必须让清单数据源随进度产生新引用；
+    // 普通会话沿用同一数组，由条目自身的 @Trace 字段驱动刷新。
+    this.files = session.contentKind === SessionContentKind.folder ?
+      session.files.slice() : session.files;
     this.timeline = session.timeline;
+    this.updateFolderDisplayRow();
     // 原地更新同一详情信息实例：子组件持有的对象不变，`@Trace` 字段变化即驱动界面刷新。
     // 实时平均速度与瞬时速度同为 1 秒显示节奏，避免进度事件密集时数值持续跳动
     let now: number = Date.now();
@@ -645,6 +766,7 @@ export class SessionDetailViewModel {
     }
     this.historyFiles = historyFiles;
     this.historyTimeline = entry.timeline;
+    this.updateFolderDisplayRow();
     let display: SessionDisplayDescriptor = emptyDisplayDescriptor();
     display.peerTitle = entry.peerName;
     display.peerSubtitle = '';
@@ -793,6 +915,9 @@ export class SessionDetailViewModel {
    * 避免被误标为「来自某设备的文本」。
    */
   previewMode(): SessionPreviewMode {
+    if (this.isFolderSession()) {
+      return SessionPreviewMode.list;
+    }
     let files = this.detailFiles();
     if (decidePreviewMode(files) !== SessionPreviewMode.inline) {
       return SessionPreviewMode.list;

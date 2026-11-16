@@ -709,6 +709,57 @@ export default function SessionHistoryStoreTest() {
       expect(sanitized[0].sessionId).assertEqual('s')
     })
 
+    it('build_entry_mixedFolderKeepsLooseFiles', 0, () => {
+      resetRegistry()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 2,
+        totalBytes: 30,
+        looseFileCount: 1,
+        looseBytes: 6
+      }
+      let input: SessionCreateInput = {
+        protocolKey: 'test',
+        protocolSessionId: 'mixed',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f1', fileName: 'Photos/a.txt', fileType: 'text/plain', totalBytes: 10
+        }, {
+          fileId: 'f2', fileName: 'Photos/b.txt', fileType: 'text/plain', totalBytes: 20
+        }, {
+          fileId: 'f3', fileName: 'loose.txt', fileType: 'text/plain', totalBytes: 6
+        }],
+        capabilities: defaultCapabilities(),
+        contentKind: SessionContentKind.folder,
+        folder: folder
+      }
+      let s = createSession(input)
+      finish(s.id, SessionStage.succeeded)
+      let current = getSession(s.id)
+      if (current !== undefined) {
+        let built = buildHistoryEntry(current)
+        expect(built !== undefined).assertTrue()
+        if (built !== undefined) {
+          expect(built.detailOmitted).assertTrue()
+          // 文件夹内逐文件省略，独立文件保留
+          expect(built.files.length).assertEqual(1)
+          expect(built.files[0].fileName).assertEqual('loose.txt')
+          expect(built.fileCount).assertEqual(3)
+          expect(built.completedCount).assertEqual(3)
+          expect(built.folder !== undefined).assertTrue()
+          if (built.folder !== undefined) {
+            expect(built.folder.fileCount).assertEqual(2)
+            expect(built.folder.looseFileCount).assertEqual(1)
+          }
+        }
+      }
+      resetRegistry()
+    })
+
     it('build_entry_folderUsesSummary', 0, () => {
       resetRegistry()
       let folder: SessionFolderInfo = {

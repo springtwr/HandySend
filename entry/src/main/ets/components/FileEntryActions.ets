@@ -40,6 +40,9 @@ export interface FileEntryMenuOptions {
   /** 是否展示「校验和」项（可选；会话详情文件清单仅在文件有校验和时展示） */
   showChecksum?: boolean
   onShowChecksum?: () => void
+  /** 是否展示「查看失败文件」项（可选；文件夹聚合行有失败时展示） */
+  showFailedFiles?: boolean
+  onShowFailedFiles?: () => void
 }
 
 /** 公共菜单项集合（须由调用方包在 `Menu()` 内使用）。 */
@@ -104,6 +107,17 @@ export function FileEntryMenuItems(options: FileEntryMenuOptions) {
       .onClick(() => {
         if (options.onShowChecksum !== undefined) {
           options.onShowChecksum();
+        }
+      })
+  }
+  if (options.showFailedFiles === true) {
+    MenuItem({
+      content: $r('app.string.session_folder_failed_files'),
+      startIcon: $r('sys.symbol.exclamationmark_triangle')
+    })
+      .onClick(() => {
+        if (options.onShowFailedFiles !== undefined) {
+          options.onShowFailedFiles();
         }
       })
   }

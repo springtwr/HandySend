@@ -46,6 +46,7 @@ import {
   SessionHistoryEntry, SessionHistoryQuery
 } from '../../model/transfer/SessionHistory';
 import { hasPreviewableTextPath } from '../../model/transfer/SessionArchiveRules';
+import { folderRootPathOf } from '../../model/transfer/FolderSummary';
 import {
   archiveSession,
   getSessionHistory as loadSessionHistory,
@@ -141,7 +142,7 @@ function fileIndexOf(session: TransferSession, fileId: string): number {
  * 合并进度变更通知：传输期间最多每 120ms 刷新一次界面。
  * 终态、文件清单与阶段变化仍走即时通知，保证关键状态不延迟。
  */
-function notifyProgressChange(): void {
+export function notifyProgressChange(): void {
   progressNotifyPending = true;
   if (progressNotifyTimer !== -1) {
     return;
@@ -579,6 +580,30 @@ export function updateSessionFileTargets(sessionId: string, paths: Record<string
       changed = true;
     }
   }
+  // 接收侧摘要创建时还不知道最终落盘根路径：accept 回填文件目标后补出根路径，
+  // 使详情页文件夹卡可直接打开系统文件管理器。
+  if (session.folder !== undefined && session.folder.path.length === 0 &&
+    session.folder.rootCount === 1) {
+    for (let i = 0; i < session.files.length; i++) {
+      let file: SessionFile = session.files[i];
+      if (file.path.length > 0 && file.fileName.indexOf('/') > 0) {
+        let root: string = folderRootPathOf(file.path, file.fileName);
+        if (root.length > 0) {
+          session.folder = {
+            name: session.folder.name,
+            path: root,
+            rootCount: session.folder.rootCount,
+            fileCount: session.folder.fileCount,
+            totalBytes: session.folder.totalBytes,
+            looseFileCount: session.folder.looseFileCount,
+            looseBytes: session.folder.looseBytes
+          };
+          changed = true;
+        }
+        break;
+      }
+    }
+  }
   if (changed) {
     // path/fileName 均非 @Trace：替换数组引用，驱动详情清单重建行
     session.files = session.files.slice();
@@ -662,6 +687,24 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
  * 供适配器在终结会话前收口个别文件：例如挂载清单里从未开始下载的条目
  * 按「已取消」记录，使随后的成功终态不会把它们误标为已完成。
  */
+/** 把文件标记为完成并按已知总大小补齐字节（进度事件缺大小时兜底）。 */
+export function markFileCompleted(sessionId: string, fileId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  let index: number = fileIndexOf(session, fileId);
+  if (index < 0) {
+    return;
+  }
+  let total: number = session.files[index].totalBytes;
+  if (total > 0) {
+    updateFileProgress(sessionId, fileId, total, total);
+    return;
+  }
+  markFileStage(sessionId, fileId, SessionFileStage.completed);
+}
+
 export function markFileStage(sessionId: string, fileId: string,
   stage: SessionFileStage): void {
   let session = getSession(sessionId);
