@@ -86,6 +86,8 @@ const MAX_NATIVE_HANDOFFS_PER_IP: usize = 1;
 const LEAVE_GRACE: Duration = Duration::from_secs(15);
 /// 被删文件保留宽限（供已建会话按快照下完）。
 const RETAIN_GRACE: Duration = Duration::from_secs(30);
+/// 待下载批次有效期：浏览器可能在确认/续传之间间隔较久；仅保存标识，不持有 fd。
+const PENDING_BATCH_TTL: Duration = Duration::from_secs(5 * 60);
 /// 内容下发读块（与旧 fd 内容源同量级）。
 const READ_BUF_SIZE: usize = 512 * 1024;
 /// 进度通道容量（块）。
@@ -133,7 +135,7 @@ pub enum ProgressEvent {
         user_agent: Option<String>,
         file_count: usize,
     },
-    /// 下载批次开始（每个下发流开始时发一次；同一批次重试会再次发）。
+    /// 整包下载流开始（无 Range 或 `bytes=0-` 时发；分片 Range 不建任务）。
     DownloadStarted {
         batch_id: String,
         ip: String,
@@ -153,7 +155,7 @@ pub enum ProgressEvent {
         file_id: String,
         total_bytes: u64,
     },
-    /// 下载批次结束（每个下发流结束发一次；同一批次重试会有新的一对开始/结束事件）。
+    /// 整包下载流结束（无 Range 或 `bytes=0-` 时发；分片 Range 不发任务事件）。
     DownloadEnded {
         batch_id: String,
         outcome: DownloadOutcome,
@@ -281,7 +283,7 @@ impl ShutdownSignal {
     }
 }
 
-/// 多选下载的待下载批次（POST 登记，GET 成功下发后才消费；不建应用任务）。
+/// 多选下载的待下载批次（POST 登记；GET 可重复下发，TTL 过期清理；不建应用任务）。
 #[derive(Clone, Debug)]
 pub struct PendingZipBatch {
     pub token: String,
@@ -332,7 +334,7 @@ pub struct WebServiceState {
     pub file_events: Option<tokio::sync::broadcast::Sender<FileTableChange>>,
     /// 上传会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
     pub session_events: Option<tokio::sync::broadcast::Sender<String>>,
-    /// 多选下载待下载批次（POST 登记，GET 成功下发后消费；60s 过期）。
+    /// 多选下载待下载批次（POST 登记；GET 可重复下发，TTL 过期清理）。
     pub pending_batches: Arc<Mutex<HashMap<String, PendingZipBatch>>>,
     /// 活动下载批次的取消标志（应用取消时置位）。
     pub active_batches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -1780,6 +1782,12 @@ struct BatchEmit {
 struct ZipResponseWriter {
     tx: mpsc::Sender<Bytes>,
     client_gone: Arc<AtomicBool>,
+    /// 需要跳过的 ZIP 前缀字节数（Range 续传起点）。
+    skip_bytes: u64,
+    /// 还需写出的 ZIP 字节数（Range 长度；整包为总长）。
+    limit_bytes: u64,
+    /// 请求的字节范围已全部写出。
+    range_done: Arc<AtomicBool>,
 }
 
 /// 一个待写出的 ZIP 条目：名称、声明大小、源与 Zip64 标记。
@@ -1800,12 +1808,30 @@ struct ZipWriteResult {
 
 impl Write for ZipResponseWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut data = buf;
+        if self.skip_bytes > 0 {
+            let skip = self.skip_bytes.min(data.len() as u64) as usize;
+            data = &data[skip..];
+            self.skip_bytes -= skip as u64;
+        }
+        if data.is_empty() {
+            return Ok(buf.len());
+        }
+        if self.limit_bytes == 0 {
+            self.range_done.store(true, Ordering::Relaxed);
+            return Ok(buf.len());
+        }
+        let send_len = self.limit_bytes.min(data.len() as u64) as usize;
         self.tx
-            .blocking_send(Bytes::copy_from_slice(buf))
+            .blocking_send(Bytes::copy_from_slice(&data[..send_len]))
             .map_err(|_| {
                 self.client_gone.store(true, Ordering::Relaxed);
                 std::io::Error::new(std::io::ErrorKind::BrokenPipe, "客户端已断开")
             })?;
+        self.limit_bytes -= send_len as u64;
+        if self.limit_bytes == 0 {
+            self.range_done.store(true, Ordering::Relaxed);
+        }
         Ok(buf.len())
     }
 
@@ -1869,6 +1895,24 @@ fn emit_blocking(tx: &Option<mpsc::Sender<ProgressEvent>>, event: ProgressEvent)
     }
 }
 
+/// 分片写出范围：跳过 ZIP 前缀 `skip` 字节，最多写出 `limit` 字节。
+#[derive(Clone, Copy, Debug)]
+struct ZipByteRange {
+    skip: u64,
+    limit: u64,
+}
+
+/// 持有尚未处理的 ZIP 条目：提前返回时关闭剩余内容源，避免 fd 泄漏。
+struct RemainingZipEntries(std::vec::IntoIter<ZipBatchEntry>);
+
+impl Drop for RemainingZipEntries {
+    fn drop(&mut self) {
+        for entry in self.0.by_ref() {
+            entry.source.close();
+        }
+    }
+}
+
 /// 阻塞写出流式 ZIP：数据边读边送响应体，不预打包、不落临时文件。
 ///
 /// 条目名称、大小与 `large` 标记由调用方预先布局；本函数只按布局写出，
@@ -1880,12 +1924,18 @@ fn write_zip_stream(
     batch: BatchEmit,
     progress_tx: Option<mpsc::Sender<ProgressEvent>>,
     cancel: Arc<AtomicBool>,
+    byte_range: ZipByteRange,
 ) -> ZipWriteResult {
     let client_gone = Arc::new(AtomicBool::new(false));
+    let range_done = Arc::new(AtomicBool::new(false));
     let mut zip = ZipWriter::new_stream(ZipResponseWriter {
         tx,
         client_gone: Arc::clone(&client_gone),
+        skip_bytes: byte_range.skip,
+        limit_bytes: byte_range.limit,
+        range_done: Arc::clone(&range_done),
     });
+    let mut remaining_entries = RemainingZipEntries(files.into_iter());
     if force_zip64 {
         // 恰好 4GB 边界时 zip crate 的 `>` 判断会漏掉 Zip64 EOCD；
         // 空 extensible data sector 会强制它写出完整 Zip64 尾部。
@@ -1906,8 +1956,9 @@ fn write_zip_stream(
         };
     }
     let mut buffer = vec![0u8; 64 * 1024];
-    for entry in files {
+    for mut entry in remaining_entries.0.by_ref() {
         if cancel.load(Ordering::Relaxed) || client_gone.load(Ordering::Relaxed) {
+            entry.source.close();
             return ZipWriteResult {
                 outcome: DownloadOutcome::Cancelled,
                 error: Some("下载已取消".to_string()),
@@ -1918,12 +1969,23 @@ fn write_zip_stream(
             .large_file(entry.large)
             .last_modified_time(zip_plan::entry_date_time(entry.last_modified_ms));
         if let Err(e) = zip.start_file(&entry.entry_name, options) {
+            entry.source.close();
             return ZipWriteResult {
                 outcome: DownloadOutcome::Failed,
                 error: Some(format!("创建 zip 条目失败: {e}")),
             };
         }
-        let mut file = match open_zip_source(entry.source) {
+        if range_done.load(Ordering::Relaxed) {
+            entry.source.close();
+            return ZipWriteResult {
+                outcome: DownloadOutcome::Succeeded,
+                error: None,
+            };
+        }
+        let mut file = match open_zip_source(std::mem::replace(
+            &mut entry.source,
+            FileSource::Path(String::new()),
+        )) {
             Ok(value) => value,
             Err(e) => {
                 return ZipWriteResult {
@@ -1971,6 +2033,12 @@ fn write_zip_stream(
                         DownloadOutcome::Failed
                     },
                     error: Some(format!("写出 zip 失败: {e}")),
+                };
+            }
+            if range_done.load(Ordering::Relaxed) {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Succeeded,
+                    error: None,
                 };
             }
             remaining -= read as u64;
@@ -2152,7 +2220,7 @@ async fn prepare_download_batch(
                 file_ids: file_ids.clone(),
                 all: request.all,
                 created_at: now,
-                expires_at: now + Duration::from_secs(60),
+                expires_at: now + PENDING_BATCH_TTL,
             },
         );
     }
@@ -2164,7 +2232,8 @@ async fn prepare_download_batch(
     json_response(StatusCode::OK, &response.to_string())
 }
 
-/// `GET /web/download-batch?batch=`：流式下发待下载批次，成功后才消费批次。
+/// `GET /web/download-batch?batch=`：流式下发待下载批次；批次保留到 TTL 结束，
+/// 浏览器可因探测/确认/续传重复请求。
 async fn download_batch(
     req: &Request<Incoming>,
     query: &HashMap<String, String>,
@@ -2182,7 +2251,8 @@ async fn download_batch(
     };
     // 批次在 TTL 内可重复取用：部分 Android 浏览器/下载管理器会在确认下载前先发一次
     // 探测 GET（读取少量字节后断开），确认后才发起真正的下载。首次 GET 即消费会让
-    // 第二次请求拿到 410；改为成功下发后才移除，中断/失败保留到 TTL 结束供重试。
+    // 第二次请求拿到 410；改为保留到 TTL 结束。注意小 ZIP 的探测请求可能一次性读完
+    // 整个响应而被服务端视为成功，因此成功下发后也不能立即移除批次。
     let pending = { lock(&state.pending_batches).get(batch_id).cloned() };
     let Some(pending) = pending else {
         log::debug!("下载批次不存在或已过期 batch={} ip={}", batch_id, peer.ip());
@@ -2288,12 +2358,21 @@ async fn download_batch(
     if matches!(range, RangeRequest::Unsatisfiable) {
         return zip_range_error_response(total_len);
     }
-    // `bytes=0-` 等价整包，按 206 下发；其余无法按偏移流式生成的 Range 忽略，
-    // 回 200 整包（符合 HTTP 允许服务端忽略 Range 的约定）。
-    let full_range: bool = matches!(
-        range,
-        RangeRequest::Partial { start: 0, end } if end + 1 == total_len
-    );
+    // 整包与 `bytes=0-` 视为一次完整下载：发任务事件；分片（浏览器探测或断点续传）
+    // 只回对应字节，不建任务。批次无论成败都保留到 TTL 结束，浏览器可重试。
+    let (status, range_start, range_end, emit_events) = match range {
+        RangeRequest::Full => (StatusCode::OK, 0u64, total_len.saturating_sub(1), true),
+        RangeRequest::Partial { start, end } => {
+            let full = start == 0 && end + 1 == total_len;
+            (StatusCode::PARTIAL_CONTENT, start, end, full)
+        }
+        RangeRequest::Unsatisfiable => unreachable!(),
+    };
+    let limit_bytes: u64 = if total_len == 0 {
+        0
+    } else {
+        range_end.saturating_sub(range_start) + 1
+    };
     let mut entries: Vec<ZipBatchEntry> = Vec::with_capacity(planned.len());
     for (file_id, entry_name, size, last_modified_ms, large) in planned {
         let Some(source) = state.locate_source(&file_id, now) else {
@@ -2319,7 +2398,11 @@ async fn download_batch(
     lock(&state.active_batches).insert(batch_id.clone(), Arc::clone(&cancel));
     // 同一批次可能因浏览器重试存在多个流；仅允许本流移除自己登记的取消入口。
     let cancel_for_unregister = Arc::clone(&cancel);
-    let progress_tx = state.progress_tx.clone();
+    let progress_tx = if emit_events {
+        state.progress_tx.clone()
+    } else {
+        None
+    };
     let (body_tx, body_rx) = mpsc::channel::<Bytes>(BODY_CHANNEL_CAPACITY);
     // 响应体流超时后丢弃接收端，让阻塞写线程的 blocking_send 失败退出。
     let body = http_body_util::StreamBody::new(futures_util::stream::unfold(
@@ -2342,6 +2425,10 @@ async fn download_batch(
                 batch,
                 progress_tx,
                 Arc::clone(&cancel),
+                ZipByteRange {
+                    skip: range_start,
+                    limit: limit_bytes,
+                },
             )
         })
         .await;
@@ -2362,19 +2449,17 @@ async fn download_batch(
             ),
             DownloadOutcome::Succeeded => {}
         }
-        if outcome == DownloadOutcome::Succeeded {
-            // 只有成功下发才消费批次；预检/中断/失败保留到 TTL 结束供浏览器重试。
-            lock(&serve_state.pending_batches).remove(&batch_for_events.batch_id);
-        }
-        let tx = serve_state.progress_tx.clone();
-        if let Some(tx) = tx {
-            let _ = tx
-                .send(ProgressEvent::DownloadEnded {
-                    batch_id: batch_for_events.batch_id.clone(),
-                    outcome,
-                    error,
-                })
-                .await;
+        if emit_events {
+            let tx = serve_state.progress_tx.clone();
+            if let Some(tx) = tx {
+                let _ = tx
+                    .send(ProgressEvent::DownloadEnded {
+                        batch_id: batch_for_events.batch_id.clone(),
+                        outcome,
+                        error,
+                    })
+                    .await;
+            }
         }
         let mut actives = lock(&serve_state.active_batches);
         let owns_entry: bool = match actives.get(&batch_for_events.batch_id) {
@@ -2387,11 +2472,7 @@ async fn download_batch(
     });
     let zip_name = zip_plan::zip_file_name();
     let mut response = Response::new(body.boxed());
-    *response.status_mut() = if full_range {
-        StatusCode::PARTIAL_CONTENT
-    } else {
-        StatusCode::OK
-    };
+    *response.status_mut() = status;
     let headers = response.headers_mut();
     headers.insert(
         CONTENT_TYPE,
@@ -2402,12 +2483,17 @@ async fn download_batch(
     {
         headers.insert(CONTENT_DISPOSITION, value);
     }
-    headers.insert(CONTENT_LENGTH, hyper::header::HeaderValue::from(total_len));
-    if full_range {
+    headers.insert(
+        CONTENT_LENGTH,
+        hyper::header::HeaderValue::from(limit_bytes),
+    );
+    headers.insert(
+        hyper::header::ACCEPT_RANGES,
+        hyper::header::HeaderValue::from_static("bytes"),
+    );
+    if status == StatusCode::PARTIAL_CONTENT {
         if let Ok(value) = hyper::header::HeaderValue::from_str(&format!(
-            "bytes 0-{}/{}",
-            total_len.saturating_sub(1),
-            total_len
+            "bytes {range_start}-{range_end}/{total_len}"
         )) {
             headers.insert(hyper::header::CONTENT_RANGE, value);
         }
@@ -2444,6 +2530,10 @@ fn zip_probe_response(start: u64, end: u64, total_len: u64) -> Response<BoxBody>
     headers.insert(
         CONTENT_LENGTH,
         hyper::header::HeaderValue::from(prefix.len() as u64),
+    );
+    headers.insert(
+        hyper::header::ACCEPT_RANGES,
+        hyper::header::HeaderValue::from_static("bytes"),
     );
     if let Ok(value) =
         hyper::header::HeaderValue::from_str(&format!("bytes {start}-{end}/{total_len}"))

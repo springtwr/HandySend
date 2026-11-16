@@ -1206,6 +1206,35 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('webDownload_probeSuccessThenRetryMergesRecords', 0, () => {
+      resetRegistry()
+      clearSessionHistory()
+      resetSessionHistoryCache()
+      let first = beginWebDownloadBatch('batch-merge', '192.168.1.60', [{
+        fileId: 'f1',
+        fileName: 'tiny.txt',
+        fileType: 'text/plain',
+        totalBytes: 10
+      }])
+      // 小 ZIP 的探测请求会读完整个响应，先按成功收口
+      handleWebDownloadEnded('batch-merge', 'succeeded')
+      expect(getHistory().some((entry) => entry.sessionId === first)).assertTrue()
+      // 真正的下载再次请求同一批次：旧的探测任务/历史应被合并掉
+      let second = beginWebDownloadBatch('batch-merge', '192.168.1.60', [{
+        fileId: 'f1',
+        fileName: 'tiny.txt',
+        fileType: 'text/plain',
+        totalBytes: 10
+      }])
+      expect(second === first).assertFalse()
+      expect(getSession(first) === undefined).assertTrue()
+      expect(getHistory().some((entry) => entry.sessionId === first)).assertFalse()
+      handleWebDownloadEnded('batch-merge', 'succeeded')
+      resetRegistry()
+      clearSessionHistory()
+      resetSessionHistoryCache()
+    })
+
     it('webDownload_textPreviewOnlyForDeclaredTextMessage', 0, () => {
       resetRegistry()
       // 普通 .txt 分享：文件表不带 preview → 不按文本消息展示

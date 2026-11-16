@@ -106,7 +106,7 @@ pub enum BridgeEvent {
         user_agent: Option<String>,
         file_count: usize,
     },
-    /// 下载批次开始（第一个 body chunk 入队后发；应用据此建任务）。
+    /// 整包下载流开始（分片 Range 不建任务）。
     WebDownloadStarted {
         batch_id: String,
         ip: String,
@@ -126,7 +126,7 @@ pub enum BridgeEvent {
         file_id: String,
         total_bytes: u64,
     },
-    /// 下载批次结束（成功/失败/取消，只发一次）。
+    /// 整包下载流结束（分片 Range 不发任务事件）。
     WebDownloadEnded {
         batch_id: String,
         outcome: String,

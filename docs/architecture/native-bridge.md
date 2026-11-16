@@ -247,14 +247,16 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 单文件 `GET /web/download`：按 token 查快照归属后下发；fd 内容源在换表时由保留区 `dup` 私有副本、
   请求定位时再复制一份消费（`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片。
 - 多文件 `POST /web/download-batch` 登记选中文件（或 `all=true`）→ `GET /web/download-batch?batch=` 流式 ZIP；
-  ZIP 条目以文件名去重、不预打包、不落临时文件。批次在 TTL 内可重复请求：
-  浏览器确认下载前的探测 GET 不消费批次（只取 ZIP 开头几个字节的 `Range` 请求直接回 206、不建任务），
-  成功下发后才移除，中断/失败保留供下载管理器重试；同一批次中断后重试会新建下载任务
-  （前一条按已取消收口），成功后的重复请求返回 410。
+  ZIP 条目以文件名去重、不预打包、不落临时文件。批次在 5 分钟 TTL 内可重复请求：
+  探测/断点续传等分片 `Range` 只回对应字节，不建任务；探测请求可能读完小 ZIP 而
+  看起来成功，因此无论整包/分片成败都保留批次到 TTL 过期，供下载管理器重试。
 - ZIP 使用 `Stored`，发响应头前按条目名/大小精确计算 `Content-Length`（含 Zip64），
   浏览器下载管理器因此能显示百分比；条目时间取源文件本地时间，单个文件 ≥4GB 使用 `large_file`。
 - 批次事件 `WebDownloadStarted` / `WebDownloadProgress` / `WebDownloadFileDone` / `WebDownloadEnded`
-  （`batchId` 为任务主键）；任务取消调用 `cancel_web_download`，响应在下个读块停止。
+  （`batchId` 为任务主键，仅整包下载流发；分片 `Range` 不发任务事件）；任务取消调用
+  `cancel_web_download`，响应在下个读块停止。
+- 同一批次后续再次 `Started` 时（探测后的正式下载或失败重试），前一次已终结任务的会话与
+  历史条目会被移除，任务历史只保留最新一次，避免探测成功与正式下载各留一条记录。
 - 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 感知变化并
   静默重拉完整文件表，短暂提示「文件列表已更新」；15 秒低频 `/caps` 轮询兜底。
 - 网页访问只在新建 token 时发 `WebAccess`（IP/UA/文件数），应用只记日志并续期有界保活；

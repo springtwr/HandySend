@@ -882,7 +882,7 @@ async fn test_download_batch_range_probe_keeps_batch() {
         Some(zip_body.len())
     );
     assert!(String::from_utf8_lossy(&zip_body).contains("a.txt"));
-    // 等待成功收口：成功后批次才被消费。
+    // 等待成功收口：小 ZIP 的探测可能读完整包，成功也不能消费批次。
     loop {
         let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
             .await
@@ -893,16 +893,18 @@ async fn test_download_batch_range_probe_keeps_batch() {
             break;
         }
     }
-    assert!(
-        state.pending_batches.lock().unwrap().is_empty(),
-        "成功下发后批次应被消费"
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "成功下发后批次仍应保留到 TTL"
     );
-    let (repeat_status, _, _) = http_get_bytes(addr, &path).await;
-    assert_eq!(repeat_status, 410, "成功下发后的重复请求应回 410");
+    let (repeat_status, _, repeat_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(repeat_status, 200, "成功后的重复请求仍应可下载");
+    assert!(!repeat_body.is_empty());
     handle.abort();
 }
 
-/// `Range: bytes=0-` 等价整包：回 206 与完整 Content-Range，成功后批次被消费。
+/// `Range: bytes=0-` 等价整包：回 206 与完整 Content-Range，成功后批次保留。
 #[tokio::test]
 async fn test_download_batch_range_from_zero_is_partial() {
     let (handle, addr, state, mut progress_rx, _ctx) =
@@ -943,7 +945,95 @@ async fn test_download_batch_range_from_zero_is_partial() {
             break;
         }
     }
-    assert!(state.pending_batches.lock().unwrap().is_empty());
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "整包成功也保留批次到 TTL"
+    );
+    handle.abort();
+}
+
+/// 非零起点 Range：只回剩余字节，不建任务、不消费批次；随后整包仍可下载。
+#[tokio::test]
+async fn test_download_batch_resume_range_keeps_batch() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (probe_status, probe_headers, _) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=0-0")]).await;
+    assert_eq!(probe_status, 206);
+    let total = header(&probe_headers, "content-range")
+        .and_then(|value| value.rsplit('/').next())
+        .and_then(|value| value.parse::<usize>().ok())
+        .expect("预检缺 Content-Range");
+    while progress_rx.try_recv().is_ok() {}
+
+    let (resume_status, resume_headers, resume_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=1-")]).await;
+    assert_eq!(resume_status, 206);
+    assert_eq!(resume_body.len(), total - 1);
+    assert_eq!(
+        header(&resume_headers, "content-length").and_then(|v| v.parse::<usize>().ok()),
+        Some(total - 1)
+    );
+    assert_eq!(
+        header(&resume_headers, "content-range"),
+        Some(format!("bytes 1-{}/{}", total - 1, total).as_str())
+    );
+    assert_eq!(
+        resume_body.first().copied(),
+        Some(b'K'),
+        "应从 ZIP 第二字节开始"
+    );
+    while let Ok(event) = progress_rx.try_recv() {
+        if let ProgressEvent::DownloadStarted { .. } = event {
+            panic!("非零起点 Range 不应创建下载任务");
+        }
+    }
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "非零起点 Range 不应消费批次"
+    );
+
+    // 落在首个本地头内的小分片：提前返回路径也要正确截断。
+    let (head_status, head_headers, head_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=4-9")]).await;
+    assert_eq!(head_status, 206);
+    assert_eq!(head_body.len(), 6);
+    assert_eq!(
+        header(&head_headers, "content-range"),
+        Some(format!("bytes 4-9/{total}").as_str())
+    );
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+
+    // 分片之后整包仍可下载，批次保留到 TTL。
+    let (full_status, _, full_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(full_status, 200);
+    assert_eq!(full_body.len(), total);
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
     handle.abort();
 }
 
@@ -1012,7 +1102,48 @@ async fn test_download_batch_retry_after_client_abort() {
             break;
         }
     }
-    assert!(state.pending_batches.lock().unwrap().is_empty());
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+    handle.abort();
+}
+
+/// 小 ZIP 的探测请求可能读完整个响应：成功后仍要允许真正的下载再次请求。
+#[tokio::test]
+async fn test_download_batch_repeat_after_success() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (first_status, _, first_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(first_status, 200);
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "成功后批次应保留到 TTL，供真正的下载请求重试"
+    );
+    let (second_status, _, second_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(second_status, 200, "成功后的重复请求不应回 410");
+    assert_eq!(second_body.len(), first_body.len());
     handle.abort();
 }
 

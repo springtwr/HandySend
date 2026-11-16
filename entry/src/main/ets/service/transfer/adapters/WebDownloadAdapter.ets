@@ -3,7 +3,8 @@
  *
  * 一个下载批次 = 一个统一会话：单文件是 1 文件批次，多文件是一个 zip 批次。
  * 服务端在真正开始下发时发 `webDownloadStarted`，应用才建任务；
- * 页面访问、文件列表刷新不产生任务。
+ * 页面访问、文件列表刷新不产生任务。浏览器探测/重试会在同一批次上产生新的下发流，
+ * 前一次已终结任务会被移除，只保留最新一次，避免历史出现重复记录。
  */
 
 import {
@@ -25,6 +26,7 @@ import {
   finish,
   getSession,
   markFileStage,
+  removeEntriesByIds,
   updateFileProgress
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
@@ -36,6 +38,16 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SessionAdapter', '协�
 
 // 批次标识 → 统一会话标识
 const batches: Map<string, string> = new Map();
+
+// 已终结批次 → 最近一次会话标识（用于合并探测/重试产生的重复任务）
+interface TerminalWebBatch {
+  sessionId: string
+  at: number
+}
+
+const terminalBatches: Map<string, TerminalWebBatch> = new Map();
+const TERMINAL_BATCH_TTL_MS: number = 5 * 60 * 1000;
+const MAX_TERMINAL_BATCHES: number = 64;
 
 // 会话文本预览缓存（统一会话标识 → 文本内容）
 const textPreviewCache: Map<string, string> = new Map();
@@ -57,6 +69,36 @@ function resolveTextPreview(session: TransferSession): string {
 }
 
 /**
+ * 清理过期的已终结批次记录，并限制条目数。
+ * 探测请求与真正下载通常只相隔数秒，保留期只需覆盖这一段。
+ */
+function pruneTerminalBatches(now: number): void {
+  let expired: Array<string> = [];
+  terminalBatches.forEach((record: TerminalWebBatch, batchId: string): void => {
+    if (now - record.at > TERMINAL_BATCH_TTL_MS) {
+      expired.push(batchId);
+    }
+  });
+  for (let i = 0; i < expired.length; i++) {
+    terminalBatches.delete(expired[i]);
+  }
+  while (terminalBatches.size > MAX_TERMINAL_BATCHES) {
+    let oldestKey: string = '';
+    let oldestAt: number = now;
+    terminalBatches.forEach((record: TerminalWebBatch, batchId: string): void => {
+      if (oldestKey.length === 0 || record.at < oldestAt) {
+        oldestKey = batchId;
+        oldestAt = record.at;
+      }
+    });
+    if (oldestKey.length === 0) {
+      break;
+    }
+    terminalBatches.delete(oldestKey);
+  }
+}
+
+/**
  * 批次开始：建（或幂等复用）统一任务。
  * 文件清单由 repository 补齐本地路径；`textPreview` 仅手动输入的文本消息携带，
  * 普通 .txt 文件为空串（不按文本消息展示）。
@@ -71,6 +113,15 @@ export function beginWebDownloadBatch(batchId: string, ip: string,
       return existingId;
     }
     batches.delete(batchId);
+  }
+  pruneTerminalBatches(Date.now());
+  let previous: TerminalWebBatch | undefined = terminalBatches.get(batchId);
+  if (previous !== undefined) {
+    // 同一批次再次下发，说明前一次是浏览器探测或失败重试：旧任务/历史并入本次，
+    // 避免任务历史中出现两条成功记录或一条已取消 + 一条成功记录。
+    terminalBatches.delete(batchId);
+    removeEntriesByIds([previous.sessionId]);
+    logger.debug('网页下载重试，合并前一次任务 batch=' + redactSessionToken(batchId));
   }
   let session = createSession({
     protocolKey: WEB_DOWNLOAD_KEY,
@@ -127,6 +178,11 @@ export function handleWebDownloadEnded(batchId: string, outcome: string,
     return;
   }
   batches.delete(batchId);
+  terminalBatches.set(batchId, {
+    sessionId: sessionId,
+    at: Date.now()
+  });
+  pruneTerminalBatches(Date.now());
   let session = getSession(sessionId);
   if (session === undefined || isTerminalStage(session.stage)) {
     return;

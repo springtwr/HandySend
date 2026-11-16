@@ -3052,8 +3052,8 @@ html[data-auth="open"] #gate {
 
   function triggerZip(batchId) {
     if (blockWechatDownload()) { return; }
-    // 触发后作废本地预准备，避免勾选变化后复用旧批次；服务端批次在成功下发后才消费，
-    // 浏览器确认下载前的探测/中断不会使其失效，下载管理器重试同一地址仍可完成。
+    // 触发后作废本地预准备，避免勾选变化后复用旧批次；服务端批次在 TTL 内可重复下载，
+    // 浏览器确认下载前的探测/分片续传不会使其失效，下载管理器重试同一地址仍可完成。
     preparedBatchId = '';
     preparedSignature = '';
     var a = document.createElement('a');

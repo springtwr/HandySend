@@ -75,6 +75,7 @@ export default function SendFolderStagingTest() {
       vm.stagedFiles = staged;
       vm.applyDroppedContent({
         uris: ['file://docs/storage/Users/currentUser/Download/extra.txt'],
+        folders: [],
         texts: []
       });
       expect(vm.batchNotice).assertEqual(BatchNoticeKind.overLimit);
