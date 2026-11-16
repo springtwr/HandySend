@@ -8,13 +8,16 @@
 
 import {
   SessionCapabilities,
+  SessionContentKind,
   SessionDataFlow,
   SessionDisplayDescriptor,
   SessionFileDescriptor,
+  SessionFolderInfo,
   SessionInitiator,
   SessionPeer,
   SessionStage
 } from '../../../model/transfer/TransferSession';
+import { summarizeOutboundFolder } from '../../../model/transfer/FolderSummary';
 import { DiscoveredDevice, SendFileItem, SendSessionStatus } from '../../../model/Types';
 import { isSingleTextMessageSend } from '../../../model/SendTextPreparation';
 import { nativeCancelTransfer, nativeCancelTransferLocal } from '../../NativeBridge';
@@ -143,6 +146,7 @@ export function beginLocalSendSession(businessSessionId: string, device: Discove
       path: files[i].filePath
     });
   }
+  let folder: SessionFolderInfo | undefined = summarizeOutboundFolder(files);
   let session = createSession({
     protocolKey: LOCAL_SEND_KEY,
     // 创建时协议标识（接收方标识）尚不可知：由 prepare-upload 握手返回后回填，此处置空；
@@ -152,6 +156,8 @@ export function beginLocalSendSession(businessSessionId: string, device: Discove
     initiatedBy: SessionInitiator.local,
     peer: buildPeer(device),
     files: descriptors,
+    contentKind: folder !== undefined ? SessionContentKind.folder : SessionContentKind.files,
+    folder: folder,
     capabilities: capabilitiesFor(files),
     textMessage: isSingleTextMessageSend(files)
   });

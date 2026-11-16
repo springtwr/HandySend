@@ -2,9 +2,10 @@
 import { describe, it, expect } from '@ohos/hypium'
 import {
   buildFolderReceiveHistoryEntry,
-  summarizeInboundFolder
+  summarizeInboundFolder,
+  summarizeOutboundFolder
 } from '../../../../main/ets/model/transfer/FolderSummary'
-import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
+import { ReceiveHistoryEntry, SendFileItem } from '../../../../main/ets/model/Types'
 import { SessionFileDescriptor, SessionFolderInfo } from '../../../../main/ets/model/transfer/TransferSession'
 
 function file(name: string, size: number): SessionFileDescriptor {
@@ -28,6 +29,24 @@ export default function FolderSummaryTest() {
         expect(result.rootCount).assertEqual(1);
         expect(result.fileCount).assertEqual(2);
         expect(result.totalBytes).assertEqual(30);
+      }
+    })
+
+    it('outbound_folder_summary_and_root_path', 0, () => {
+      let files: Array<SendFileItem> = [{
+        fileId: 'f1', filePath: '/storage/Users/currentUser/Download/Photos/a.txt',
+        fileName: 'Photos/a.txt', fileType: 'text/plain', size: 10, pathSource: true
+      }, {
+        fileId: 'f2', filePath: '/storage/Users/currentUser/Download/Photos/sub/b.txt',
+        fileName: 'Photos/sub/b.txt', fileType: 'text/plain', size: 20, pathSource: true
+      }];
+      let info = summarizeOutboundFolder(files);
+      expect(info !== undefined).assertTrue();
+      if (info !== undefined) {
+        expect(info.name).assertEqual('Photos');
+        expect(info.fileCount).assertEqual(2);
+        expect(info.totalBytes).assertEqual(30);
+        expect(info.path).assertEqual('/storage/Users/currentUser/Download/Photos');
       }
     })
 

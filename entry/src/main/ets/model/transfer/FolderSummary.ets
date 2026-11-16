@@ -1,5 +1,5 @@
 // 入站文件夹摘要：协议没有目录对象，任一条 fileName 含 '/' 即视为文件夹批次。
-import { ReceiveHistoryEntry } from '../Types';
+import { ReceiveHistoryEntry, SendFileItem } from '../Types';
 import { SessionFileDescriptor, SessionFolderInfo } from './TransferSession';
 
 /**
@@ -50,6 +50,29 @@ export function summarizeFolderNames(names: Array<string>, sizes: Array<number>)
     totalBytes: totalBytes
   };
   return info;
+}
+
+/** 由出站发送条目汇总文件夹信息；文件名为相对路径即视为文件夹批次。 */
+export function summarizeOutboundFolder(files: Array<SendFileItem>): SessionFolderInfo | undefined {
+  let names: Array<string> = [];
+  let sizes: Array<number> = [];
+  for (let i = 0; i < files.length; i++) {
+    names.push(files[i].fileName);
+    sizes.push(files[i].size);
+  }
+  let folder: SessionFolderInfo | undefined = summarizeFolderNames(names, sizes);
+  if (folder === undefined) {
+    return undefined;
+  }
+  if (folder.rootCount === 1) {
+    for (let i = 0; i < files.length; i++) {
+      if (files[i].fileName.indexOf('/') > 0) {
+        folder.path = folderRootPathOf(files[i].filePath, files[i].fileName);
+        break;
+      }
+    }
+  }
+  return folder;
 }
 
 /** 构造文件夹接收历史摘要条目；普通文件批次返回 undefined。 */
