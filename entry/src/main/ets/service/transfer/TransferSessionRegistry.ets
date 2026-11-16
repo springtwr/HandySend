@@ -581,16 +581,26 @@ export function updateSessionFileTargets(sessionId: string, paths: Record<string
     }
   }
   // 接收侧摘要创建时还不知道最终落盘根路径：accept 回填文件目标后补出根路径，
-  // 使详情页文件夹卡可直接打开系统文件管理器。
-  if (session.folder !== undefined && session.folder.path.length === 0 &&
-    session.folder.rootCount === 1) {
+  // 使详情页文件夹卡可直接打开系统文件管理器；根目录因同名冲突整体改名时，
+  // 摘要名称同步改为磁盘上的实际目录名。
+  if (session.folder !== undefined && session.folder.rootCount === 1) {
     for (let i = 0; i < session.files.length; i++) {
       let file: SessionFile = session.files[i];
-      if (file.path.length > 0 && file.fileName.indexOf('/') > 0) {
-        let root: string = folderRootPathOf(file.path, file.fileName);
-        if (root.length > 0) {
+      if (file.fileName.indexOf('/') > 0) {
+        let slash: number = file.fileName.indexOf('/');
+        let rootName: string = file.fileName.substring(0, slash);
+        let root: string = session.folder.path;
+        if (file.path.length > 0) {
+          let derivedRoot: string = folderRootPathOf(file.path, file.fileName);
+          if (derivedRoot.length > 0) {
+            root = derivedRoot;
+          }
+        }
+        let nameChanged: boolean = rootName.length > 0 && session.folder.name !== rootName;
+        let pathChanged: boolean = root.length > 0 && session.folder.path !== root;
+        if (nameChanged || pathChanged) {
           session.folder = {
-            name: session.folder.name,
+            name: nameChanged ? rootName : session.folder.name,
             path: root,
             rootCount: session.folder.rootCount,
             fileCount: session.folder.fileCount,

@@ -11,6 +11,7 @@ import {
   prepareRecvTargets,
   removeDirectoryIfEmpty,
   removeRecvTargetPaths,
+  uniqueDirectoryName,
   uniquePath
 } from '../../../../main/ets/service/repository/ReceiveTargets'
 import {
@@ -88,6 +89,51 @@ export default function ReceiveTargetsTest() {
       // 预留文件存在时，带序号的名字也不能重复占用
       writeFile(tempDir, 'reserved (1).jpg')
       expect(uniquePath(dir, 'reserved.jpg')).assertEqual('reserved (2).jpg')
+    })
+
+    it('uniqueDirectoryName_no_conflict_returns_original', 0, () => {
+      expect(uniqueDirectoryName(dir, 'folder_new', (): boolean => false))
+        .assertEqual('folder_new')
+    })
+
+    it('uniqueDirectoryName_existing_dir_appends_suffix', 0, () => {
+      // 已有同名文件夹：新文件夹整体改名，而不是把内容并入已有目录
+      ensureDir(dir + '/folder_dup')
+      expect(uniqueDirectoryName(dir, 'folder_dup', (): boolean => false))
+        .assertEqual('folder_dup (1)')
+      ensureDir(dir + '/folder_dup (1)')
+      expect(uniqueDirectoryName(dir, 'folder_dup', (): boolean => false))
+        .assertEqual('folder_dup (2)')
+    })
+
+    it('uniqueDirectoryName_existing_file_also_conflicts', 0, () => {
+      // 同名普通文件同样不能让目录复用该路径
+      writeFile(dir, 'folder_file_clash')
+      expect(uniqueDirectoryName(dir, 'folder_file_clash', (): boolean => false))
+        .assertEqual('folder_file_clash (1)')
+    })
+
+    it('uniqueDirectoryName_keeps_dots_in_name', 0, () => {
+      // 目录名不拆分扩展名：点号属于名称本身
+      ensureDir(dir + '/archive.tar.gz')
+      expect(uniqueDirectoryName(dir, 'archive.tar.gz', (): boolean => false))
+        .assertEqual('archive.tar.gz (1)')
+    })
+
+    it('uniqueDirectoryName_respects_batch_reservation', 0, () => {
+      // 本批次已给其他根目录占用该名称时继续递增
+      expect(uniqueDirectoryName(dir, 'folder_batch',
+        (path: string): boolean => path === dir + '/folder_batch'))
+        .assertEqual('folder_batch (1)')
+    })
+
+    it('uniqueDirectoryName_respects_temp_reservation', 0, () => {
+      // 其他协议已在临时区预留同名文件时，目录不能占用该最终路径
+      let tempDir = dir + '/' + TEMP_DIR_NAME + '/' + TEMP_SUBDIR_WEB
+      ensureDir(tempDir)
+      writeFile(tempDir, 'folder_reserved')
+      expect(uniqueDirectoryName(dir, 'folder_reserved', (): boolean => false))
+        .assertEqual('folder_reserved (1)')
     })
 
     it('removeRecvTargetPaths_removes_empty_temp_root', 0, () => {

@@ -156,6 +156,24 @@ export function uniquePath(dir: string, fileName: string): string {
   return renamed;
 }
 
+/**
+ * 返回不冲突的目录名：目标位置已有同名文件/目录，或其他协议已在临时区预留同名文件时，
+ * 在完整名称后追加 " (N)"。目录名不拆分扩展名（点号属于目录名本身）；
+ * isReserved 供调用方避开本批次已占用的路径。
+ * 接收文件夹时根目录整体改名，避免新内容与已有同名文件夹混在一起。
+ */
+export function uniqueDirectoryName(dir: string, name: string,
+  isReserved: (path: string) => boolean): string {
+  let candidate: string = name;
+  let n: number = 1;
+  while (fileExistsAtPath(dir + '/' + candidate) || tempNameReserved(dir, candidate) ||
+    isReserved(dir + '/' + candidate)) {
+    candidate = name + ' (' + n + ')';
+    n++;
+  }
+  return candidate;
+}
+
 /** 确保接收文本目录存在并返回其路径；应用上下文缺失时返回空串。 */
 export function ensureRecvTextDir(): string {
   let dir: string = recvTextDir();
@@ -209,12 +227,13 @@ function needsTextDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>)
 }
 
 // 同一批内同名文件（来自不同目录）各自落盘：在 uniquePath 的基础上再避开本批
-// 已占用的路径，避免两遍式准备中临时文件尚未创建时选中同一最终路径。
+// 已占用的路径与已规划的目录，避免两遍式准备中临时文件尚未创建时选中同一最终路径，
+// 或与同批次新建的目录（含根目录改名后的路径）重名。
 function uniqueBatchPath(dir: string, fileName: string,
-  reserved: Record<string, boolean>): string {
+  reserved: Record<string, boolean>, plannedDirs: Record<string, boolean>): string {
   let candidate: string = uniquePath(dir, fileName);
   let serial: number = 1;
-  while (reserved[dir + '/' + candidate] === true) {
+  while (reserved[dir + '/' + candidate] === true || plannedDirs[dir + '/' + candidate] === true) {
     let dot: number = fileName.lastIndexOf('.');
     let stem: string = dot > 0 ? fileName.substring(0, dot) : fileName;
     let ext: string = dot > 0 ? fileName.substring(dot) : '';
@@ -297,8 +316,9 @@ interface RecvTargetPlan {
   dirs: Array<string>
 }
 
-// 预注册某会话待接收文件的落盘目标：解析/净化相对路径 → 每个目录内唯一命名 →
-// 先把路径写回条目并由调用方落草稿 → 创建最终目录与空临时文件 → 注册路径目标。
+// 预注册某会话待接收文件的落盘目标：解析/净化相对路径 → 根目录同名整体改名 →
+// 每个目录内唯一命名 → 先把路径写回条目并由调用方落草稿 → 创建最终目录与空临时文件
+// → 注册路径目标。
 //
 // 路径目标模式：临时文件创建后立即关闭，不保留 fd；Rust 在对应文件上传到达时
 // 用 O_NOFOLLOW 打开临时路径，拿到 fd 后仍走 FileUploadTarget::Fd。
@@ -330,6 +350,11 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
   let reserved: Record<string, boolean> = {};
   let plannedDirs: Record<string, boolean> = {};
   let plannedFinals: Record<string, boolean> = {};
+  // 本批次根目录映射：<目标基目录>/<原始根名> → 实际根名。
+  // 目标中已有同名文件/目录时整体改名（如 Photos → Photos (1)），避免把新文件夹的
+  // 内容并入已有目录；同批次同根名的条目共用同一映射，不逐个文件改名。
+  let rootDirs: Record<string, string> = {};
+  let reservedRootDirs: Record<string, boolean> = {};
   // 第一遍：只计算路径，不创建目录/临时文件；先把路径写回条目，
   // 使调用方能在任何字节写入前把最终/临时路径落进草稿。
   for (let i = 0; i < fileIds.length; i++) {
@@ -350,21 +375,32 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
     }
     let relative: ParsedRelativePath = sanitized.path;
     let baseDir: string = isRecvTextEntry(entry) ? textDir : downloadDir;
+    // 根目录整体消歧：目标中已有同名文件/目录时整体改名，避免两个文件夹的内容混在一起。
+    let dirs: Array<string> = relative.dirs.slice();
+    if (dirs.length > 0) {
+      let rootKey: string = baseDir + '/' + dirs[0];
+      let mappedRoot: string | undefined = rootDirs[rootKey];
+      if (mappedRoot === undefined) {
+        mappedRoot = uniqueDirectoryName(baseDir, dirs[0], (path: string): boolean => {
+          return reservedRootDirs[path] === true || plannedFinals[path] === true;
+        });
+        rootDirs[rootKey] = mappedRoot;
+        reservedRootDirs[baseDir + '/' + mappedRoot] = true;
+      }
+      dirs[0] = mappedRoot;
+    }
     // 逐级登记目录，并检测“某个最终文件恰好是另一个文件的目录”这种恶意/异常构造。
     let dirPath: string = baseDir;
-    for (let d = 0; d < relative.dirs.length; d++) {
-      dirPath = dirPath + '/' + relative.dirs[d];
+    for (let d = 0; d < dirs.length; d++) {
+      dirPath = dirPath + '/' + dirs[d];
       if (plannedFinals[dirPath] === true) {
         return new RecvPrepareOutcome(undefined, RecvPrepareError.invalidPath);
       }
       plannedDirs[dirPath] = true;
     }
-    let uniqueName: string = uniqueBatchPath(dirPath, relative.name, reserved);
+    let uniqueName: string = uniqueBatchPath(dirPath, relative.name, reserved, plannedDirs);
     let destPath: string = dirPath + '/' + uniqueName;
-    if (plannedDirs[destPath] === true) {
-      return new RecvPrepareOutcome(undefined, RecvPrepareError.invalidPath);
-    }
-    let nameParts: Array<string> = relative.dirs.slice();
+    let nameParts: Array<string> = dirs.slice();
     nameParts.push(uniqueName);
     let relativeName: string = nameParts.join('/');
     plans.push({
@@ -372,7 +408,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       destPath: destPath,
       tempPath: tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND),
       baseDir: baseDir,
-      dirs: relative.dirs
+      dirs: dirs
     });
     reserved[destPath] = true;
     plannedFinals[destPath] = true;

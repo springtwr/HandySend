@@ -12,8 +12,10 @@ import {
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
   SessionCapabilities,
+  SessionContentKind,
   SessionCreateInput,
   SessionDataFlow,
+  SessionFolderInfo,
   SessionInitiator,
   SessionStage
 } from '../../../../main/ets/model/transfer/TransferSession'
@@ -108,6 +110,58 @@ export default function ReceiveSessionNameTest() {
       }
       finish(session.id, SessionStage.succeeded)
       expect(updateSessionFileTargets(session.id, paths, names)).assertFalse()
+      resetRegistry()
+    })
+    it('renamed_root_updates_folder_summary', 0, () => {
+      resetRegistry()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '',
+        rootCount: 1,
+        fileCount: 2,
+        totalBytes: 2,
+        looseFileCount: 0,
+        looseBytes: 0
+      }
+      let input: SessionCreateInput = {
+        protocolKey: LOCAL_RECEIVE_KEY,
+        protocolSessionId: 'name-test-3',
+        dataFlow: SessionDataFlow.inbound,
+        initiatedBy: SessionInitiator.remote,
+        peer: { displayName: 'NameTest', badges: [] },
+        files: [{
+          fileId: 'f1',
+          fileName: 'Photos/a.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 1
+        }, {
+          fileId: 'f2',
+          fileName: 'Photos/b.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 1
+        }],
+        capabilities: testCapabilities(),
+        stage: SessionStage.active,
+        contentKind: SessionContentKind.folder,
+        folder: folder
+      }
+      let session = createSession(input)
+      // 目标已有同名文件夹：根目录整体改名，摘要名称与路径同步为实际落盘位置
+      let paths: Record<string, string> = {
+        'f1': '/tmp/Photos (1)/a.jpg',
+        'f2': '/tmp/Photos (1)/b.jpg'
+      }
+      let names: Record<string, string> = {
+        'f1': 'Photos (1)/a.jpg',
+        'f2': 'Photos (1)/b.jpg'
+      }
+      expect(updateSessionFileTargets(session.id, paths, names)).assertTrue()
+      let updated = getSession(session.id)
+      expect(updated !== undefined).assertTrue()
+      if (updated !== undefined && updated.folder !== undefined) {
+        expect(updated.folder.name).assertEqual('Photos (1)')
+        expect(updated.folder.path).assertEqual('/tmp/Photos (1)')
+      }
       resetRegistry()
     })
   })

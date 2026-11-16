@@ -223,8 +223,9 @@ LocalSend 协议以条目中的 `preview` 字段承载文本消息内容：接�
 - **接收（LocalSend）**：`ReceiveTargets.prepareRecvTargets` 先解析 `fileName` 的相对路径并逐段净化，
   再按条目是否文本消息分流目标目录——普通文件落 `ReceiveDirectory.ensureReceiveDirectory` 提供的
   接收目录（默认 `Download/<包名>/`，用户可在设置中自定义），文本消息落应用私有接收文本目录
-  （`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供）；每个最终目录内用 `uniquePath`
-  消歧（同名自动加序号、不覆盖），嵌套目录按相对路径逐级创建；单次请求上限 2000 个文件。
+  （`filesDir/text_recv/`，由 `ReceiveTargets.recvTextDir` 提供）；根目录已有同名文件/目录时
+  整体改名（`Photos` → `Photos (1)`），目录内的文件再用 `uniquePath` 消歧（同名自动加序号、
+  不覆盖），嵌套目录按相对路径逐级创建；单次请求上限 2000 个文件。
   目标注册使用路径目标模式：accept 前只创建空临时文件并注册 `fd = -1`，Rust 上传到达时打开，
   不预持有 N 个 fd。接收完成处理不读取全文、不删除文本文件，文件长期保留在接收文本目录。
 - **接收（MTA）**：`MtaReceiveService.acceptTextRequest` 在回执**之前**先做存储预留检查、再把文本写入接收文本目录（同上重名规则），写入失败按既有失败语义（`failAndReset`）处理，不谎报接收成功。

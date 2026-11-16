@@ -303,7 +303,8 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
   `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
   DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→
-  解析相对路径并逐段净化 → 每个最终目录内用 `uniquePath` 消歧 → 先把最终/临时路径写入会话草稿 →
+  解析相对路径并逐段净化 → 接收根目录与目标已有文件/目录同名时整体改名 →
+  每个最终目录内用 `uniquePath` 消歧 → 先把最终/临时路径写入会话草稿 →
   创建最终目录与 `.handysend-temp/localsend/` 下的空临时文件后立即关闭 →
   `registerRecvFileFd(sessionId, fileId, -1, 最终路径)` 预注册路径目标 → 再发送 accept。
   Rust `handle_file_upload` 在上传到达时用 `O_NOFOLLOW` 打开临时路径，取得 fd 后仍构造
