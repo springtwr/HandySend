@@ -1941,6 +1941,10 @@
       "value": "Content too long, showing first 128 KB only"
     },
     {
+      "name": "session_file_full_name",
+      "value": "Full file name"
+    },
+    {
       "name": "session_file_open_with_app",
       "value": "Open with another app"
     },

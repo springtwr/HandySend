@@ -85,15 +85,19 @@ export struct SessionDetailPage {
   private checksumDialogId: number = -1
   @Local failedFilesDialogValue: string = ''
   private failedFilesDialogId: number = -1
+  // 完整文件名弹窗：打开时写入的值与弹窗 ID（与页内其它弹窗同层管理）
+  @Local fullNameDialogValue: string = ''
+  private fullNameDialogId: number = -1
   // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
   private galleryContentNode: ComponentContent<GallerySaveDialogParams> | null = null
   // 本页是否已登记到会话详情栈（避免重复 aboutToAppear 造成重复记录）
   private detailMarkedOpen: boolean = false
-  // 新传输直达详情前的弹层收起：关闭本页自己打开的文件预览/校验和/相册保存弹窗
+  // 新传输直达详情前的弹层收起：关闭本页自己打开的文件预览/校验和/失败文件/完整文件名/相册保存弹窗
   private overlayCloseCallback: () => void = (): void => {
     this.closeFilePreviewDialog();
     this.closeChecksumDialog();
     this.closeFailedFilesDialog();
+    this.closeFullNameDialog();
     this.closeGallerySaveDialog();
   }
 
@@ -380,12 +384,48 @@ export struct SessionDetailPage {
       });
   }
 
+  /**
+   * 文件条目菜单「完整文件名」：弹出完整值弹窗。
+   * 条目点击保持弹操作菜单（菜单优先），完整名称由菜单项进入，可看全（弹窗内可长按选择复制）。
+   */
+  private openFullNameDialog(file: SessionFile): void {
+    if (file.fileName.length === 0) {
+      return;
+    }
+    this.fullNameDialogValue = file.fileName;
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.fullNameDialog();
+      },
+      onDidDisappear: () => {
+        this.fullNameDialogId = -1;
+        this.fullNameDialogValue = '';
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.fullNameDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
   private closeFailedFilesDialog(): void {
     if (this.failedFilesDialogId >= 0) {
       this.getUIContext().getPromptAction().closeCustomDialog(this.failedFilesDialogId);
       this.failedFilesDialogId = -1;
     }
     this.failedFilesDialogValue = '';
+  }
+
+  private closeFullNameDialog(): void {
+    if (this.fullNameDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.fullNameDialogId);
+      this.fullNameDialogId = -1;
+    }
+    this.fullNameDialogValue = '';
   }
 
   /** 弹窗内容区必须在 @Builder 上下文创建，不能在普通回调中直接实例化组件。 */
@@ -411,6 +451,31 @@ export struct SessionDetailPage {
       ]
     })
       .constraintSize({ maxWidth: 480 })
+  }
+
+  @Builder
+  fullNameDialog() {
+    CustomContentDialogV2({
+      primaryTitle: $r('app.string.session_file_full_name'),
+      contentBuilder: () => {
+        this.fullNameDialogContent();
+      },
+      buttons: [
+        new AdvancedDialogV2Button({
+          content: $r('app.string.close'),
+          action: () => {
+            this.closeFullNameDialog();
+          }
+        })
+      ]
+    })
+      .constraintSize({ maxWidth: 480 })
+  }
+
+  /** 弹窗内容区：组件实例必须在 @Builder 上下文中创建（不能在普通回调里直接调用）。 */
+  @Builder
+  fullNameDialogContent() {
+    SingleValueDialogContent({ value: this.fullNameDialogValue })
   }
 
   @Builder
@@ -883,6 +948,9 @@ export struct SessionDetailPage {
         },
         onShowChecksum: (file: SessionFile) => {
           this.openChecksumDialog(file);
+        },
+        onShowFullName: (file: SessionFile) => {
+          this.openFullNameDialog(file);
         },
         onShowFailedFiles: () => {
           this.openFailedFilesDialog();

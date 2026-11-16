@@ -1941,6 +1941,10 @@
       "value": "内容过长，仅显示前 128KB"
     },
     {
+      "name": "session_file_full_name",
+      "value": "完整文件名"
+    },
+    {
       "name": "session_file_open_with_app",
       "value": "用其他应用打开"
     },
