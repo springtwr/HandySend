@@ -1,10 +1,11 @@
-// SendFolderStagingTest：文件夹聚合条目的计数、移除与清空。
+// SendFolderStagingTest：文件夹聚合条目的计数、移除与清空，以及批量上限提示。
 import { describe, it, expect } from '@ohos/hypium'
 import {
   BatchNoticeKind,
   SendViewModel,
   countNewStagedUris
 } from '../../../../main/ets/viewmodel/SendViewModel'
+import { MAX_BATCH_FILES } from '../../../../main/ets/model/TransferLimits'
 import { DiscoveredDevice, StagedFile } from '../../../../main/ets/model/Types'
 
 function folderItem(name: string, count: number): StagedFile {
@@ -63,6 +64,22 @@ export default function SendFolderStagingTest() {
       let request = vm.buildMtaSendParams(device);
       expect(request === undefined).assertTrue();
       expect(vm.batchNotice).assertEqual(BatchNoticeKind.mtaFolderUnsupported);
+    })
+
+    it('over_limit_notice_shows_limit_not_total', 0, () => {
+      let vm: SendViewModel = new SendViewModel();
+      let staged: Array<StagedFile> = [];
+      for (let i = 0; i < MAX_BATCH_FILES; i++) {
+        staged.push(normalItem('f' + i + '.txt'));
+      }
+      vm.stagedFiles = staged;
+      vm.applyDroppedContent({
+        uris: ['file://docs/storage/Users/currentUser/Download/extra.txt'],
+        texts: []
+      });
+      expect(vm.batchNotice).assertEqual(BatchNoticeKind.overLimit);
+      // 文案中的数字是单次上限，不是本次尝试发送的总数
+      expect(vm.batchNoticeCount).assertEqual(MAX_BATCH_FILES);
     })
 
     it('remove_and_clear_update_count', 0, () => {
