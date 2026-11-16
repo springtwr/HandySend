@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { picker, fileIo as fs } from '@kit.CoreFileKit';
+import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { formatSizeDetailed } from '../utils/FormatUtil';
@@ -2060,6 +2060,20 @@ export class SendViewModel {
    * （复用方式是 dup，避免同一文件被再次 open）。超过上限或失败时同样返回元数据。
    */
   private async openStagedHandle(uri: string): Promise<StagedHandleSnapshot | undefined> {
+    // 文档 Picker 来源走路径模式发送，不需要保留 fd；直接按路径 stat，
+    // 避免为 500 个文件逐一 open 后占住句柄，也减少文件服务往返。
+    if (uri.startsWith('file://docs/')) {
+      try {
+        let path: string = new fileUri.FileUri(uri).path;
+        let stat: fs.Stat = await fs.stat(path);
+        return {
+          size: stat.size,
+          lastModified: Math.floor(stat.mtime * 1000)
+        };
+      } catch (_e) {
+        // 路径不可读时回退通用 open 流程，保留已有的错误降级行为
+      }
+    }
     let file: fs.File | undefined = undefined;
     try {
       file = await fs.open(uri, fs.OpenMode.READ_ONLY);
