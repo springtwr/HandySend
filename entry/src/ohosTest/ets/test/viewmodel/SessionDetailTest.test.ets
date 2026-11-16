@@ -262,6 +262,7 @@ export default function SessionDetailTest() {
       if (rows.length === 1) {
         expect(rows[0].fileType).assertEqual('folder');
         expect(rows[0].fileName).assertEqual('Photos');
+        expect(rows[0].folderFileCount).assertEqual(2);
         expect(rows[0].totalBytes).assertEqual(30);
         expect(rows[0].bytesSent).assertEqual(0);
       }
@@ -319,6 +320,7 @@ export default function SessionDetailTest() {
       if (rows.length === 3) {
         expect(rows[0].fileType).assertEqual('folder');
         expect(rows[0].fileName).assertEqual('Photos');
+        expect(rows[0].folderFileCount).assertEqual(2);
         expect(rows[1].fileName).assertEqual('loose1.txt');
         expect(rows[2].fileName).assertEqual('loose2.txt');
       }

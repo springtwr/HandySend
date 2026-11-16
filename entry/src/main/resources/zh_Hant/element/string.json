@@ -1133,6 +1133,10 @@
       "value": "多個資料夾"
     },
     {
+      "name": "session_folder_file_count",
+      "value": "%d 個檔案"
+    },
+    {
       "name": "session_folder_failed_files",
       "value": "檢視失敗檔案"
     },

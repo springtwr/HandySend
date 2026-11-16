@@ -1133,6 +1133,10 @@
       "value": "Folders"
     },
     {
+      "name": "session_folder_file_count",
+      "value": "%d files"
+    },
+    {
       "name": "session_folder_failed_files",
       "value": "View failed files"
     },

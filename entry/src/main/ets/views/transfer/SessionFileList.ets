@@ -15,6 +15,7 @@ import { DesignTokens } from '../../common/DesignTokens';
 import { SessionFile, SessionFileStage } from '../../model/transfer/TransferSession';
 import { SessionDetailViewModel } from '../../viewmodel/SessionDetailViewModel';
 import { formatSizeDetailed } from '../../utils/FormatUtil';
+import { getStringSync } from '../../utils/ResourceUtil';
 import { isTextFile } from '../../utils/MimeUtils';
 import { isGalleryLocation } from '../../utils/FileLocationUtil';
 import { isSaveToGalleryCandidate } from '../../utils/GallerySavePolicy';
@@ -175,9 +176,12 @@ export struct SessionFileList {
                 .wordBreak(WordBreak.BREAK_ALL)
                 .layoutWeight(1)
 
-              // 大小与状态列：同列右对齐，整体垂直居中（不要求与文件名首行对齐）
+              // 属性与状态列：文件夹显示文件数量，普通文件显示大小；同列右对齐
               Column({ space: DesignTokens.space.tiny }) {
-                Text(formatSizeDetailed(ri.item.totalBytes))
+                Text(ri.item.fileType === 'folder' ?
+                  getStringSync(this.getUIContext(), $r('app.string.session_folder_file_count'))
+                    .replace('%d', String(ri.item.folderFileCount ?? 0)) :
+                  formatSizeDetailed(ri.item.totalBytes))
                   .fontSize(DesignTokens.font.bodyS)
                   .fontColor($r('app.color.text_tertiary'))
                 Text(sessionFileStageLabel(ri.item.stage))

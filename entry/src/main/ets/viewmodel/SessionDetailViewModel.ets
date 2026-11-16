@@ -554,6 +554,7 @@ export class SessionDetailViewModel {
     file.fileName = info.name;
     file.fileType = 'folder';
     file.totalBytes = info.totalBytes;
+    file.folderFileCount = info.fileCount;
     file.path = info.path;
     let completed: number = 0;
     let failed: number = 0;

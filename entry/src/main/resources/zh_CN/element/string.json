@@ -1133,6 +1133,10 @@
       "value": "多个文件夹"
     },
     {
+      "name": "session_folder_file_count",
+      "value": "%d 个文件"
+    },
+    {
       "name": "session_folder_failed_files",
       "value": "查看失败文件"
     },
