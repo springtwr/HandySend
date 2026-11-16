@@ -755,6 +755,21 @@ export class SendViewModel {
     return formatSizeDetailed(staged.size);
   }
 
+  /**
+   * 选择器返回后先让出一次事件循环，让系统 Picker 窗口完成关闭动画，
+   * 再处理数百个 URI 的去重/暂存；否则主线程在 Picker 退场期间继续工作，
+   * 用户会感觉 Picker 停在原地没有响应。
+   */
+  private enqueuePickedUris(uris: Array<string>, source: string): void {
+    setTimeout((): void => {
+      let startMs: number = Date.now();
+      if (this.acceptFileCount(countNewStagedUris(uris, this.stagedFiles))) {
+        this.stageUris(uris);
+      }
+      logger.debug(source + '结果暂存耗时=' + (Date.now() - startMs) + 'ms 数量=' + uris.length);
+    }, 0);
+  }
+
   async pickFiles(defaultDirectoryUri: string = ''): Promise<void> {
     if (this.context === undefined) {
       return;
@@ -767,10 +782,10 @@ export class SendViewModel {
       options.defaultFilePathUri = defaultDirectoryUri;
     }
     try {
+      let startMs: number = Date.now();
       let uris: Array<string> = await documentPicker.select(options);
-      if (this.acceptFileCount(countNewStagedUris(uris, this.stagedFiles))) {
-        this.stageUris(uris);
-      }
+      logger.debug('文件选择器返回耗时=' + (Date.now() - startMs) + 'ms 数量=' + uris.length);
+      this.enqueuePickedUris(uris, '文件选择器');
     } catch (e) {
       logger.warn('选择文件失败：' + JSON.stringify(e));
     }
@@ -810,12 +825,12 @@ export class SendViewModel {
     let options = new photoAccessHelper.PhotoSelectOptions();
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     try {
+      let startMs: number = Date.now();
       let result = await photoPicker.select(options);
       let uris: Array<string> = result.photoUris;
+      logger.debug('图库选择器返回耗时=' + (Date.now() - startMs) + 'ms 数量=' + uris.length);
       // 不强制标记为图片：按扩展名区分图片与视频，视频条目由暂存列表懒生成缩略图
-      if (this.acceptFileCount(countNewStagedUris(uris, this.stagedFiles))) {
-        this.stageUris(uris);
-      }
+      this.enqueuePickedUris(uris, '图库选择器');
     } catch (e) {
       logger.warn('选择图片或视频失败：' + JSON.stringify(e));
     }
