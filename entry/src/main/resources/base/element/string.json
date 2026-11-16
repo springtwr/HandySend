@@ -838,7 +838,7 @@
     },
     {
       "name": "send_preparing_files",
-      "value": "Preparing files, please wait"
+      "value": "Preparing files, please try again shortly"
     },
     {
       "name": "send_add_files",

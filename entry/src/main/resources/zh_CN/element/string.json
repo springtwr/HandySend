@@ -838,7 +838,7 @@
     },
     {
       "name": "send_preparing_files",
-      "value": "文件准备中，请稍候"
+      "value": "文件准备中，请稍后再点击发送"
     },
     {
       "name": "send_add_files",

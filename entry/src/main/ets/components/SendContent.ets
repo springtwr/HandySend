@@ -534,6 +534,13 @@ export struct SendContent {
   }
 
   sendToSelectedDevice(device: DiscoveredDevice): void {
+    // 暂存元数据仍在补全：不发起/不排队，只给即时提示，避免无任务却占用发送状态
+    if (this.viewModel.isFillingStagedMeta) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_preparing_files'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
     // 未暂存内容时提示并中断发送（点击设备即发送的统一拦截）
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
@@ -584,15 +591,8 @@ export struct SendContent {
     // 已进入详情时不再弹失败浮卡（失败原因在详情页可见）
     let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
     let autoOpened: boolean = false;
-    // 暂存元数据仍在补全时先明确告知“准备中”，准备完成后自动发起发送
-    let preparingAtClick: boolean = this.viewModel.isFillingStagedMeta;
-    this.showSendToast(preparingAtClick ?
-      $r('app.string.send_preparing_files') : $r('app.string.send_started_toast'), device.alias);
+    this.showSendToast($r('app.string.send_started_toast'), device.alias);
     this.viewModel.sendToMultipleDeviceInline(device, (sessionId: string) => {
-      // 排队发送终于建立任务：补一条“已开始发送”，避免用户以为还需要再点一次
-      if (preparingAtClick && !autoEnterDetail && !this.isDetached) {
-        this.showSendToast($r('app.string.send_started_toast'), device.alias);
-      }
       if (autoEnterDetail && !this.isDetached) {
         autoOpened = true;
         // 离开发送页前收起既有失败浮卡：浮卡挂在 UIContext 层，切页签不会自动消失，
@@ -631,10 +631,6 @@ export struct SendContent {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.send_device_busy'), duration: 2000, alignment: Alignment.Center });
-    } else if (result === SendInitiateResult.preparing) {
-      this.getUIContext()
-        .getPromptAction()
-        .showToast({ message: $r('app.string.send_preparing_files'), duration: 2000, alignment: Alignment.Center });
     } else if (result === SendInitiateResult.noContent) {
       this.getUIContext()
         .getPromptAction()

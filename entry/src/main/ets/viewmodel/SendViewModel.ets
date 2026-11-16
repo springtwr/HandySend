@@ -141,8 +141,6 @@ export enum SendInitiateResult {
   initiated = 'initiated',
   /** 该目标已有进行中的发送，本次被拒绝执行 */
   blocked = 'blocked',
-  /** 暂存元数据仍在补全，点击已排队，准备完成后自动发起 */
-  preparing = 'preparing',
   /** 无暂存内容可发送 */
   noContent = 'no_content'
 }
@@ -412,8 +410,6 @@ export class SendViewModel {
   private context: common.UIAbilityContext | undefined = undefined
   // 在途发送目标 IP 集合：点击后立即置位、发送收口后清除，弥补注册表会话创建前的空窗
   private inFlightSendIps: Set<string> = new Set()
-  // 等待暂存元数据补全的发送目标：点击已排队，准备完成后自动进入发送
-  private preparingSendIps: Set<string> = new Set()
   // 暂存项大小缓存（uri → 字节数）：异步补全后写入，避免重复系统调用
   private stagedSizeCache: Map<string, number> = new Map()
   // 已补全元数据（大小 / 源修改时间）的暂存 uri：含 stat 失败项，避免对同一文件反复尝试
@@ -1609,28 +1605,19 @@ export class SendViewModel {
   // `onSessionCreated` 在会话登记后立即回调（发送仍在继续），供「自动进入任务详情」使用。
   async sendToMultipleDeviceInline(device: DiscoveredDevice,
     onSessionCreated?: (sessionId: string) => void): Promise<SendInitiateResult> {
-    // 暂存元数据未补全时先排队等待，准备完成后再发起；重复点击返回 preparing 提示。
-    // preparing 状态持续到统一会话真正登记，避免准备阶段再次点击被误报为“已有任务”。
-    if (this.preparingSendIps.has(device.ip)) {
-      return SendInitiateResult.preparing;
+    // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
+    let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
+    let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
+    // 该目标已有非终态发送会话或在途即拒绝重复点击；在途集合弥补「点击→会话创建」之间的空窗
+    let result: SendInitiateResult = decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
+      this.hasActiveSendTo(device.ip), hasContent);
+    if (result !== SendInitiateResult.initiated) {
+      return result;
     }
-    this.preparingSendIps.add(device.ip);
+    // 本次发送已发起：手输文本的持久文件此后不随暂存列表清理而删除
+    this.markManualTextPersisted();
+    this.inFlightSendIps.add(device.ip);
     try {
-      if (this.isFillingStagedMeta) {
-        await this.ensureStagedMeta();
-      }
-      // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
-      let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
-      let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
-      // 该目标已有非终态发送会话或在途即拒绝重复点击；在途集合弥补「点击→会话创建」之间的空窗
-      let result: SendInitiateResult = decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
-        this.hasActiveSendTo(device.ip), hasContent);
-      if (result !== SendInitiateResult.initiated) {
-        return result;
-      }
-      // 本次发送已发起：手输文本的持久文件此后不随暂存列表清理而删除
-      this.markManualTextPersisted();
-      this.inFlightSendIps.add(device.ip);
       // 复用缓存的预准备文件（快速准备产物），避免每点一台设备就重新 prepare
       let items: Array<SendFileItem> | undefined = cached;
       if (items === undefined || items.length === 0) {
@@ -1644,8 +1631,6 @@ export class SendViewModel {
       let beforeIds: Array<string> = this.sendSessionIdsForIp(device.ip);
       // 使用 sendToDeviceMulti 发送单设备——它会创建会话并驱动进度（点击即发送，无模式差异）
       await sendToDeviceMulti([device], items, (unifiedIds: Array<string>) => {
-        // 会话已登记：结束 preparing 状态，任务从此可见；后续点击按正常忙判定处理
-        this.preparingSendIps.delete(device.ip);
         if (onSessionCreated !== undefined && unifiedIds.length > 0) {
           onSessionCreated(unifiedIds[0]);
         }
@@ -1657,7 +1642,6 @@ export class SendViewModel {
       }
       return SendInitiateResult.initiated;
     } finally {
-      this.preparingSendIps.delete(device.ip);
       this.inFlightSendIps.delete(device.ip);
       // 发送期间跳过的分享表同步在此补一次（保证网页面板与暂存内容一致）
       this.scheduleShareSync();
@@ -1762,9 +1746,6 @@ export class SendViewModel {
    * 视图据此决定先给「已开始发送」确认还是直接给拦截提示，避免两条提示互相打架。
    */
   precheckSend(device: DiscoveredDevice): SendInitiateResult {
-    if (this.preparingSendIps.has(device.ip)) {
-      return SendInitiateResult.preparing;
-    }
     let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
     let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
     return decideSendInitiateResult(this.inFlightSendIps.has(device.ip),
@@ -1857,12 +1838,6 @@ export class SendViewModel {
   // 确有条目新增时使既有预准备结果失效（未新增则保持复用）。
   // 图片与视频按扩展名区分：图片直显缩略图，视频由暂存列表懒生成缩略图。
   private stageUris(uris: Array<string>): void {
-    // 选择返回的临时授权转成持久授权可能耗时：延后到暂存列表首次渲染之后，
-    // 避免 500 个 URI 的持久化调用阻塞选择器返回/页面切换。
-    setTimeout((): void => {
-      persistPickedUris(uris).catch((): void => {
-      });
-    }, 0);
     // 一次性构建新数组再赋值：逐条 push @Trace 数组会触发数百次观察通知，
     // 大选择量下会拖慢选择器关闭后的首帧。
     let next: Array<StagedFile> = this.stagedFiles.slice();
@@ -1905,7 +1880,32 @@ export class SendViewModel {
       this.scheduleShareSync();
       this.prefetchStagedMeta();
     }
+    this.persistPickedUrisAfterMeta(uris);
     this.updateTotalSizeCache();
+  }
+
+  /**
+   * URI 持久化会占用文件服务，与元数据补全同时执行会抢主线程、推迟 Toast：
+   * 等元数据补全结束后再持久化；补全失败/被跳过时也照常执行一次。
+   */
+  private persistPickedUrisAfterMeta(uris: Array<string>): void {
+    let done: boolean = false;
+    let run: () => void = (): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      setTimeout((): void => {
+        persistPickedUris(uris).catch((): void => {
+        });
+      }, 0);
+    };
+    let meta: Promise<void> | undefined = this.metaPrefetchPromise;
+    if (meta === undefined) {
+      run();
+      return;
+    }
+    meta.then(run).catch(run);
   }
 
   /** 暂存内容指纹：文件夹带上扫描标识，扫描结果更换时缓存失效。 */
@@ -2037,6 +2037,7 @@ export class SendViewModel {
       }
     }
     let filled: number = 0;
+    let processed: number = 0;
     let startMs: number = Date.now();
     try {
       await forEachConcurrently(pending.length, async (index: number): Promise<void> => {
@@ -2061,6 +2062,13 @@ export class SendViewModel {
         this.stagedSizeCache.set(uri, opened.size);
         this.applyStagedMeta(uri, opened.size, opened.lastModified);
         filled++;
+        processed++;
+        // 每 20 个文件让出一次事件循环：用户此时点击设备/页面按钮能及时得到 Toast 反馈
+        if (processed % 20 === 0) {
+          await new Promise<void>((resolve: () => void) => {
+            setTimeout(resolve, 0);
+          });
+        }
       });
       logger.debug('补全暂存元数据耗时=' + (Date.now() - startMs) + 'ms 文件数=' + pending.length);
     } finally {
