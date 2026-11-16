@@ -328,6 +328,14 @@ export struct SendContentZone {
   stagedSection() {
     // 操作行：统计 + 添加 + 清空
     Row({ space: DesignTokens.space.sm }) {
+      if (this.viewModel.isFillingStagedMeta) {
+        // 大量文件选中后大小等属性异步补全，避免用户误以为页面卡住
+        LoadingProgress()
+          .width(DesignTokens.size.iconXs)
+          .height(DesignTokens.size.iconXs)
+          .color($r('app.color.accent_blue'))
+          .id('send_staging_loading')
+      }
       Text(this.viewModel.stagedFolderCount() > 0 ?
         $r('app.string.send_staged_folder_summary', this.viewModel.stagedFolderCount(),
           this.viewModel.stagedFileCount(), this.viewModel.getTotalSizeText()) :

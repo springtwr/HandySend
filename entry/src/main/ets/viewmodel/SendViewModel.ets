@@ -116,9 +116,10 @@ interface StagedHandleSnapshot {
   lastModified: number
 }
 
-// 暂存项句柄缓存上限：只缓存普通文件（文档/图库）；文件夹与文档路径模式不占缓存。
-// 这是空闲句柄优化，不是发送数量上限。
-const MAX_CACHED_STAGED_HANDLES: number = 400;
+// 暂存项句柄缓存上限：只保留普通文件句柄；文件夹不占缓存。
+// 文档 Picker 来源的发送走路径模式，不依赖该缓存；缓存主要服务图库、校验和、
+// 网页挂载与元数据复用。这是空闲句柄优化，不是发送数量上限。
+const MAX_CACHED_STAGED_HANDLES: number = 500;
 
 // ── 点击设备即发送的发起结果 ──
 
@@ -384,6 +385,8 @@ export class SendViewModel {
   @Trace public mtaEnabled: boolean = true
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
+  // 暂存元数据补全中：选择大量文件后列表先出现，大小等属性异步补齐，界面显示等待动画
+  @Trace public isFillingStagedMeta: boolean = false
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
@@ -1820,19 +1823,31 @@ export class SendViewModel {
   // 确有条目新增时使既有预准备结果失效（未新增则保持复用）。
   // 图片与视频按扩展名区分：图片直显缩略图，视频由暂存列表懒生成缩略图。
   private stageUris(uris: Array<string>): void {
-    // 选择返回的临时授权尽快转成持久授权：过期或进程重启后仍可读取（不复制文件、不占应用存储）
-    persistPickedUris(uris).catch((): void => {
-    });
+    // 选择返回的临时授权转成持久授权可能耗时：延后到暂存列表首次渲染之后，
+    // 避免 500 个 URI 的持久化调用阻塞选择器返回/页面切换。
+    setTimeout((): void => {
+      persistPickedUris(uris).catch((): void => {
+      });
+    }, 0);
+    // 一次性构建新数组再赋值：逐条 push @Trace 数组会触发数百次观察通知，
+    // 大选择量下会拖慢选择器关闭后的首帧。
+    let next: Array<StagedFile> = this.stagedFiles.slice();
+    let seen: Set<string> = new Set<string>();
+    for (let i = 0; i < next.length; i++) {
+      seen.add(next[i].uri);
+    }
+    let totalFiles: number = this.stagedFileCount();
     let addedCount: number = 0;
     for (let i = 0; i < uris.length; i++) {
-      if (isOverBatchLimit(this.stagedFileCount() + 1)) {
-        this.setBatchNotice(BatchNoticeKind.overLimit, this.stagedFileCount() + 1);
-        break;
-      }
       let uri = uris[i];
-      if (this.isAlreadyStaged(uri)) {
+      if (uri.length === 0 || seen.has(uri)) {
         continue;
       }
+      if (isOverBatchLimit(totalFiles + 1)) {
+        this.setBatchNotice(BatchNoticeKind.overLimit, totalFiles + 1);
+        break;
+      }
+      seen.add(uri);
       let name = this.extractFileNameFromUri(uri);
       let ext = this.getExtension(name);
       let isImg: boolean = isImageExtension(ext);
@@ -1846,12 +1861,12 @@ export class SendViewModel {
         fileType: mime,
         isImage: isImg
       };
-      this.stagedFiles.push(staged);
+      next.push(staged);
+      totalFiles++;
       addedCount++;
     }
-    // 仅在有实际新增时失效：暂存内容未变化时保持复用既有准备结果
-    // （多目标模式连续向多台设备发送依赖该复用，不得每次无条件重新准备）
     if (addedCount > 0) {
+      this.stagedFiles = next;
       invalidatePrePreparedItems();
       this.scheduleShareSync();
       this.prefetchStagedMeta();
@@ -1938,6 +1953,7 @@ export class SendViewModel {
     if (this.metaPrefetchPromise !== undefined) {
       return;
     }
+    this.isFillingStagedMeta = true;
     this.metaPrefetchPromise = this.runStagedMetaPrefetch();
   }
 
@@ -2015,6 +2031,7 @@ export class SendViewModel {
       logger.debug('补全暂存元数据耗时=' + (Date.now() - startMs) + 'ms 文件数=' + pending.length);
     } finally {
       this.metaPrefetchPromise = undefined;
+      this.isFillingStagedMeta = false;
       if (filled > 0) {
         // 整表替换：Repeat 的键包含已知大小，替换后行内文案与总大小同步刷新
         this.stagedFiles = this.stagedFiles.slice();
@@ -2031,7 +2048,8 @@ export class SendViewModel {
     let file: fs.File | undefined = undefined;
     try {
       file = await fs.open(uri, fs.OpenMode.READ_ONLY);
-      let stat: fs.Stat = fs.statSync(file.fd);
+      // 异步 stat：500 个文件同步 stat 会连续占用主线程，选择器关闭后首帧明显卡顿
+      let stat: fs.Stat = await fs.stat(file.fd);
       let snapshot: StagedHandleSnapshot = {
         size: stat.size,
         lastModified: Math.floor(stat.mtime * 1000)
