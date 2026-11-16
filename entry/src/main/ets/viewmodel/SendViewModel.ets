@@ -357,7 +357,8 @@ export class SendViewModel {
   @Trace public isScanningFolder: boolean = false
   // 最近一次批量/文件夹提示（由视图消费后清除；none 表示无提示）
   @Trace public batchNotice: BatchNoticeKind = BatchNoticeKind.none
-  // 提示附带的文件数（仅 overLimit/softHint/folderTooMany 使用）
+  // 提示文案中 %d 的取值（仅 overLimit/softHint/folderTooMany 使用）：
+  // 超上限类提示传上限值，softHint 传当前文件总数
   @Trace public batchNoticeCount: number = 0
   // 文件夹扫描结果缓存：StagedFile.folderScanId → 扫描结果
   private folderScans: Map<string, FolderScanResult> = new Map()
@@ -806,7 +807,8 @@ export class SendViewModel {
   private acceptFileCount(count: number): boolean {
     let total: number = this.stagedFileCount() + count;
     if (isOverBatchLimit(total)) {
-      this.setBatchNotice(BatchNoticeKind.overLimit, total);
+      // 超限文案展示单次上限，而不是本次尝试发送的总数
+      this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
       return false;
     }
     if (needsCompressHint(total)) {
@@ -836,7 +838,7 @@ export class SendViewModel {
     }
   }
 
-  /** 设备是否支持文件夹选择（发送页入口显隐）。 */
+  /** 设备是否支持文件夹选择（入口始终展示，仅点击时据此拦截并提示）。 */
   isFolderPickSupported(): boolean {
     return isFolderSelectionSupported();
   }
@@ -944,7 +946,7 @@ export class SendViewModel {
       return;
     }
     if (isOverBatchLimit(this.stagedFileCount() + result.entries.length)) {
-      this.setBatchNotice(BatchNoticeKind.overLimit, this.stagedFileCount() + result.entries.length);
+      this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
       return;
     }
     this.folderScanSeq++;
@@ -1868,7 +1870,7 @@ export class SendViewModel {
         continue;
       }
       if (isOverBatchLimit(totalFiles + 1)) {
-        this.setBatchNotice(BatchNoticeKind.overLimit, totalFiles + 1);
+        this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
         break;
       }
       seen.add(uri);
@@ -2223,7 +2225,7 @@ export class SendViewModel {
     await this.ensureStagedMeta();
     let inputs: PreparedSendInputs = this.buildPreparedInputs();
     if (isOverBatchLimit(inputs.uris.length)) {
-      this.setBatchNotice(BatchNoticeKind.overLimit, inputs.uris.length);
+      this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
       return [];
     }
     let items: Array<SendFileItem> = await prepareSendFiles(inputs.uris, inputs.manualTextUris,

@@ -62,8 +62,9 @@ MTA 三条接收链路共用，禁止各自解析路径。
   模式选择，随后调用 `persistWritableUri` 持久化 `READ_MODE | WRITE_MODE` 授权；
   接收前经 `ensureWritableUriAccess` 激活。URI 存入设置项 `receiveDirectoryUri`，
   空串表示默认目录。
-- **设备限制**：`FOLDER` 选择在手机/平板需 API 26+（2in1 13+），设置项按产品要求
-  统一以 API 26 为界置灰；低版本设备只能使用默认目录。
+- **设备限制**：`FOLDER` 选择在手机/平板需 API 26+、2in1 需 API 13+，设置项与发送页
+  共用 `isFolderSelectionSupported()`（系统能力 `FolderSelection` + 设备类型对应的最低 API）；
+  不满足时设置项置灰、发送页文件夹磁贴点击只提示不支持，设备只能使用默认目录。
 - **重启后激活**：应用启动时 `activateConfiguredReceiveDirectory` 激活当前自定义目录的持久授权；
   接收历史/详情页按路径读取文件时，`FileLocationUtil` 在无权限时会尝试激活文件所在目录 URI。
 - **路径展示**：相对路径中的特殊目录段按当前语言映射为文件管理器显示名
@@ -112,9 +113,11 @@ MTA 接收、网页上传仍按平铺文件名落盘；本次改动只作用于 
 
 ## 2.3 文件夹发送（LocalSend 出站）
 
-- 入口：发送页“文件夹”磁贴，仅 `isFolderSelectionSupported()`（API 26+ 且
-  `FolderSelection` syscap）可用；系统文件管理器的 `general.folder` 分享记录进入同一
-  扫描/暂存链路。发送页空态为三列两行六个入口（文件/文件夹/下载/图库/粘贴/文本），
+- 入口：发送页“文件夹”磁贴始终展示，保证空态六个入口与气泡六个入口的栅格完整；点击时按
+  `isFolderSelectionSupported()`（系统能力 `FolderSelection`，手机/平板需 API 26+、2in1 需
+  API 13+）判定，不具备能力只 Toast 提示“鸿蒙7.0以下设备不支持选择文件夹”，不拉起选择器。
+  系统文件管理器的 `general.folder` 分享记录进入同一扫描/暂存链路。
+  发送页空态为三列两行六个入口（文件/文件夹/下载/图库/粘贴/文本），
   添加文件气泡为两列三行；“下载”入口用文件选择器直接定位到 `Download` 目录。
   公共存储 URI 前缀与 Download 目录统一由 `utils/UserStoragePaths.ets` 提供，
   接收默认目录与发送“下载”入口共用同一常量，不各自硬编码。

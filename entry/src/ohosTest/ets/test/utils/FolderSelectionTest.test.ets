@@ -1,5 +1,5 @@
 // FolderSelectionTest：文件夹选择能力的统一判定
-// 发送页与接收目录设置必须使用同一门槛；同时验证判定结果与系统能力一致。
+// 发送页与接收目录设置必须使用同一门槛；同时验证判定结果与系统能力、设备类型门槛一致。
 import { describe, it, expect } from '@ohos/hypium'
 import { deviceInfo } from '@kit.BasicServicesKit'
 import { isFolderSelectionSupported } from '../../../../main/ets/utils/FolderSelection'
@@ -16,7 +16,8 @@ export default function FolderSelectionTest() {
     it('capability_matches_api_and_syscap', 0, () => {
       let expected: boolean = false;
       try {
-        expected = deviceInfo.sdkApiVersion >= 26 &&
+        let minApi: number = deviceInfo.deviceType === '2in1' ? 13 : 26;
+        expected = deviceInfo.sdkApiVersion >= minApi &&
           canIUse('SystemCapability.FileManagement.UserFileService.FolderSelection');
       } catch (_e) {
         expected = false;

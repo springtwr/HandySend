@@ -53,7 +53,7 @@ function normalizeDirectoryPath(path: string): string {
   return result;
 }
 
-/** 设备是否具备目录选择能力（API 26+ 且系统声明 FolderSelection） */
+/** 设备是否具备目录选择能力（系统声明 FolderSelection，且满足设备类型对应的最低 API） */
 export function isReceiveDirectorySelectionSupported(): boolean {
   return isFolderSelectionSupported();
 }
