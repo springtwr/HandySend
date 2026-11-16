@@ -661,8 +661,11 @@ MainTabFloating（@Entry，页面根容器为 HdsNavigation，仅首页栏内容
   互传联盟（MTA）设备不纳入收藏——其对端身份取自对端广播的发送者 ID，是否跨会话稳定由对端实现决定，
   不能作为收藏所需的持久身份保证
 
-发送页整体作为跨应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`，拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后由
-`SendViewModel.applyDroppedContent` 复用既有暂存链路，与系统分享链路行为一致。解析分流规则、暂存去重、容错反馈与授权可靠性提示详见 [architecture/drag-drop.md](architecture/drag-drop.md)。
+应用主页根容器作为全应用拖放目标接收统一拖拽数据（统一数据管理框架 UDMF）：根容器声明 `allowDrop`，
+任意页签与子页面拖入均可生效，放下后回到发送页并展示新加入的暂存内容；拖入文件夹经与文件夹选择、
+系统分享同源的扫描链路聚合为单个暂存条目；拖入记录经 `model/DragDropParser.ets` 纯函数按 UTD 分流后
+由 `SendViewModel.applyDroppedContent` 复用既有暂存链路，与系统分享链路行为一致。解析分流规则、暂存去重、
+容错反馈与授权可靠性提示详见 [architecture/drag-drop.md](architecture/drag-drop.md)。
 
 MTA（互传联盟）主流程接入复用上述统一列表：发现的互传联盟设备经 `DiscoveredDevice` 统一形状（`protocol = 'mta'`）合并进统一设备集，发送经 `MtaSendAdapter`、接收经 `MtaReceiveAdapter`
 登记到统一注册表，对外身份品牌取自设置项「模拟品牌」。发现扫描策略、来源标签与警告横幅、收发编排、模拟品牌与文件信息保真详见 [architecture/mta.md](architecture/mta.md)。
@@ -990,7 +993,7 @@ LocalSend 分组收敛为单卡片，卡内顺序为服务器状态 → 自动�
   相册保存（SaveButton 安全控件 + MediaAssetChangeRequest，无需 WRITE_IMAGEVIDEO 权限）、
   接收历史（含 savedToGallery 标记）、指纹验证（Material Icons 图标体系 + SHA-256 哈希对齐 LocalSend v1.18）
 - **互传联盟（MTA）**：基础收发（发送页按设备来源标签发现并单目标发送互传联盟设备，含原生文本；应用前台按「允许接收」开关自动接收互传联盟设备传输，落盘并按真实类型写入接收历史）
-- **系统集成**：深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/图片/文本/链接）、PC 关闭二次确认（2in1 有传输点 X 弹出继续/退出确认，无传输直接退出，见 §4.1）
+- **系统集成**：深色模式、外部分享、文件中转站拖入（跨应用统一拖拽 UDMF，文件/文件夹/图片/文本/链接）、PC 关闭二次确认（2in1 有传输点 X 弹出继续/退出确认，无传输直接退出，见 §4.1）
 
 统一会话详情页向对端会话展示（接收显示发送方/来自、发送显示接收方/发送到），列出文件清单与逐文件独立进度条及状态（等待/传输中/已完成）；发送页设备条目只承担发现与选择、
 不内联展示进度（进度与状态只在任务与详情页呈现）；接收端因 LocalSend v2 协议单活动上传会话限制，向并发发送方呈现"对方忙，请稍后重试"的可操作反馈。

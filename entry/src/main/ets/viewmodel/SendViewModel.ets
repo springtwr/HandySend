@@ -913,9 +913,16 @@ export class SendViewModel {
     if (!Array.isArray(parsed)) {
       return;
     }
-    let uris: Array<string> = parsed as Array<string>;
-    for (let i = 0; i < uris.length; i++) {
-      let uri: string = uris[i];
+    await this.stageFolderUris(parsed as Array<string>);
+  }
+
+  /**
+   * 消费文件夹 URI（拖入或系统分享）：逐个扫描，成功则以聚合条目暂存；
+   * 已暂存的同一目录跳过，扫描为空/超限/失败经既有批量提示通道反馈。
+   */
+  private async stageFolderUris(folderUris: Array<string>): Promise<void> {
+    for (let i = 0; i < folderUris.length; i++) {
+      let uri: string = folderUris[i];
       if (uri.length === 0 || this.isAlreadyStaged(uri)) {
         continue;
       }
@@ -988,10 +995,12 @@ export class SendViewModel {
     return true;
   }
 
-  // 拖拽内容入口：解析结果 → 暂存列表（内部复用 stageUris / stageTextFile，不复制实现）。
-  // uris 非空 → 按扩展名判定图片走 stageUris；texts 逐条以 drop_ 前缀走 stageTextFile
+  // 拖拽内容入口：解析结果 → 暂存列表（内部复用 stageUris / stageFolderUris / stageTextFile，不复制实现）。
+  // uris 非空 → 按扩展名判定图片走 stageUris；folders 逐项异步扫描后以单个聚合条目暂存
+  // （与文件夹选择、系统分享同源）；texts 逐条以 drop_ 前缀走 stageTextFile
   // （空内容跳过、内容与既有文本条目重复则静默跳过）。
-  // 返回 true 表示至少新增一条暂存，false 表示全部为重复或为空（供视图决定 Toast 与拖拽结果）。
+  // 返回 true 表示至少新增一条文件/文本暂存；文件夹扫描异步进行，新增与否在扫描完成后体现
+  // （供视图决定 Toast 与拖拽结果）。
   applyDroppedContent(result: DragDropParseResult): boolean {
     let added: boolean = false;
     if (result.uris.length > 0) {
@@ -1000,6 +1009,12 @@ export class SendViewModel {
       if (this.stagedFiles.length > beforeCount) {
         added = true;
       }
+    }
+    if (result.folders.length > 0) {
+      // 目录遍历与逐文件 stat 耗时可能较长：放下后异步扫描，结果经既有批量提示通道反馈
+      this.stageFolderUris(result.folders).catch((e: Error) => {
+        logger.warn('拖入文件夹扫描异常：' + String(e));
+      });
     }
     for (let i = 0; i < result.texts.length; i++) {
       let item = result.texts[i];
@@ -1048,7 +1063,7 @@ export class SendViewModel {
   private static dropReliabilityHintShown: boolean = false;
 
   // 判定是否需要弹出拖入可靠性提示：仅移动端（非 2in1，电脑上直接拖拽不涉及中转站）、
-  // 本次拖入含文件类记录（文本已写入沙箱、不受来源关闭影响）、且本会话尚未提示过；
+  // 本次拖入含文件或文件夹类记录（文本已写入沙箱、不受来源关闭影响）、且本会话尚未提示过；
   // 命中时置位会话标志（保证同一会话仅弹一次），返回是否需要弹窗。
   shouldShowDropReliabilityHint(hasFileRecords: boolean): boolean {
     if (!hasFileRecords) {

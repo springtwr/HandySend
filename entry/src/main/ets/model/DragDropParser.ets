@@ -8,9 +8,11 @@ export interface DroppedTextItem {
 }
 
 // 拖入内容解析结果：uris 为文件类记录提取的 URI 列表（去重由 stageUris 承担），
+// folders 为文件夹记录提取的 URI 列表（扫描与去重由 stageFolderUris 承担），
 // texts 为文本类记录提取的内容列表
 export interface DragDropParseResult {
   uris: Array<string>;
+  folders: Array<string>;
   texts: Array<DroppedTextItem>;
 }
 
@@ -59,16 +61,43 @@ function extractFileUri(record: unifiedDataChannel.UnifiedRecord, type: string):
   return file.uri;
 }
 
+// 提取文件夹类记录的目录 URI。
+// Folder 继承 File，但目录 URI 由独立属性 folderUri 承载（基类 uri 通常为空）；
+// 读取异常或为空时回退基类 File.uri，兼容以通用文件记录携带目录 URI 的拖出方。
+function extractFolderUri(record: unifiedDataChannel.UnifiedRecord): string {
+  try {
+    let folder: unifiedDataChannel.Folder = record as unifiedDataChannel.Folder;
+    let folderUri: string = folder.folderUri;
+    if (folderUri.length > 0) {
+      return folderUri;
+    }
+  } catch (_e) {
+  }
+  try {
+    let file: unifiedDataChannel.File = record as unifiedDataChannel.File;
+    return file.uri ?? '';
+  } catch (_e) {
+    return '';
+  }
+}
+
 // 纯函数：UDMF 拖拽记录 → 可暂存内容分流（禁止 I/O 与副作用，空数组返回空结果）。
+// 文件夹类（general.folder/general.directory）读目录 URI 入 folders；
 // 文件类读 uri 入 uris；general.plain-text 读 textContent 入 texts(isLink=false)；
 // general.hyperlink 按「描述+URL」组合规则入 texts(isLink=true)；
-// 其余类型（含 general.folder、openharmony.app-item 等）暂不支持，静默跳过。
+// 其余类型（openharmony.app-item 等）暂不支持，静默跳过。
 export function parseDroppedRecords(records: Array<unifiedDataChannel.UnifiedRecord>): DragDropParseResult {
-  let result: DragDropParseResult = { uris: [], texts: [] };
+  let result: DragDropParseResult = { uris: [], folders: [], texts: [] };
   for (let i = 0; i < records.length; i++) {
     let record: unifiedDataChannel.UnifiedRecord = records[i];
     let type: string = record.getType();
-    if (isFileType(type)) {
+    if (type === uniformTypeDescriptor.UniformDataType.FOLDER ||
+      type === uniformTypeDescriptor.UniformDataType.DIRECTORY) {
+      let folderUri: string = extractFolderUri(record);
+      if (folderUri.length > 0) {
+        result.folders.push(folderUri);
+      }
+    } else if (isFileType(type)) {
       let uri: string = '';
       try {
         uri = extractFileUri(record, type);
@@ -104,7 +133,7 @@ export function parseDroppedRecords(records: Array<unifiedDataChannel.UnifiedRec
         result.texts.push({ content: content, isLink: true });
       }
     }
-    // 其余类型跳过（Folder 等不支持类型不进入结果）
+    // 其余类型跳过（openharmony.app-item 等不支持类型不进入结果）
   }
   return result;
 }

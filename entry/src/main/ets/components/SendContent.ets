@@ -1,6 +1,5 @@
 import { pasteboard, deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import {
   curves,
   CustomContentDialogV2,
@@ -38,7 +37,6 @@ import { isValidIpAddress } from '../utils/IPValidator';
 import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
-import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice, MtaSendRequest } from '../model/mta/MtaMainModels';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
@@ -53,8 +51,6 @@ export struct SendContent {
   @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
   @Local isRestarting: boolean = false
-  // 拖拽悬停状态：驱动发送页高亮遮罩显隐（onDragEnter 置真 / onDragLeave 复位 / onDrop 处理完毕复位）
-  @Local isDragOver: boolean = false
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
@@ -303,79 +299,6 @@ export struct SendContent {
     } catch (e) {
       logger.error('粘贴数据处理失败：' + JSON.stringify(e));
     }
-  }
-
-  // 拖放目标处理：获取 UDMF 数据（首次失败 1500ms 重试一次）→ 解析分流 → 暂存 → 反馈拖拽结果。
-  // 结果语义：数据获取失败或整批类型均不支持时反馈失败（不支持时同时提示）；
-  // 存在可处理内容即反馈成功，包括内容因重复去重而未新增的拖入（操作已接受、仅未新增条目）。
-  private handleDropContent(event: DragEvent): void {
-    fetchDroppedUnifiedData(event, (data: unifiedDataChannel.UnifiedData | undefined) => {
-      if (data === undefined) {
-        this.isDragOver = false;
-        event.setResult(DragResult.DRAG_FAILED);
-        logger.warn('拖放已拒绝：获取 UDMF 数据失败');
-        return;
-      }
-      let records: Array<unifiedDataChannel.UnifiedRecord> = data.getRecords();
-      // 来源类型诊断：输出每条记录的 UTD 类型，便于确认中转站等来源实际拖出的数据类型
-      // （如拖出图片是 general.image 还是 general.file）
-      let types: Array<string> = [];
-      for (let i = 0; i < records.length; i++) {
-        types.push(records[i].getType());
-      }
-      logger.debug('拖放记录：count=' + records.length + ' types=' + types.join(','));
-      let result: DragDropParseResult = parseDroppedRecords(records);
-      let added: boolean = this.viewModel.applyDroppedContent(result);
-      // 整批均无任何可处理内容（不支持类型）才算失败；重复内容已走暂存去重、语义上仍是已接受
-      let unsupported: boolean = result.uris.length === 0 && result.texts.length === 0;
-      this.isDragOver = false;
-      event.setResult(unsupported ? DragResult.DRAG_FAILED : DragResult.DRAG_SUCCESSFUL);
-      logger.debug('拖放已处理：uris=' + result.uris.length + ' texts=' + result.texts.length +
-        ' added=' + added + ' unsupported=' + unsupported);
-      if (unsupported) {
-        this.getUIContext()
-          .getPromptAction()
-          .showToast({ message: $r('app.string.drag_drop_unsupported'), duration: 2000 });
-      }
-      // 移动端会话首次拖入含文件类内容：弹出可靠性提示（须手动关闭）
-      if (this.viewModel.shouldShowDropReliabilityHint(result.uris.length > 0)) {
-        this.openDropReliabilityNotice();
-      }
-    });
-  }
-
-  // 拖入文件类内容的可靠性提示：移动端会话首次拖入文件类内容时弹出。
-  // autoCancel:false 禁止点击外部关闭，必须点击「知道了」手动关闭。
-  // 提示缘由：拖入文件的 URI 由来源应用/中转站托管，关闭后可能不可读（文本已写入沙箱不受影响）。
-  private openDropReliabilityNotice(): void {
-    let dialogOptions: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.dropReliabilityNoticeDialog();
-      },
-      autoCancel: false
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(dialogOptions)
-      .then((id: number) => {
-        this.activeDialogId = id;
-      })
-      .catch(() => {
-      });
-  }
-
-  @Builder
-  dropReliabilityNoticeDialog() {
-    AlertDialogV2({
-      primaryTitle: $r('app.string.drag_drop_reliability_title'),
-      content: $r('app.string.drag_drop_reliability_message'),
-      primaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.drag_drop_reliability_ok'),
-        action: () => {
-          this.closeActiveDialog();
-        }
-      })
-    })
   }
 
   // 大文件发送二次确认：暂存总量达到阈值时先弹确认（取消/发送两键），否则直接执行
@@ -1352,8 +1275,7 @@ export struct SendContent {
   }
 
   build() {
-    // 根容器：Stack 包裹既有 Scroll，作为发送页整体拖放目标（allowDrop 声明支持的 UTD 类型），
-    // 悬停时叠加高亮遮罩提示；遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击
+    // 根容器：Stack 包裹既有 Scroll，作为收藏设备半模态等页内弹层的常驻宿主
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll(this.scroller) {
         Column() {
@@ -1609,45 +1531,11 @@ export struct SendContent {
           this.onScrollDelta(-999, 0);
         }
       })
-
-      // 拖拽悬停高亮遮罩：半透明遮罩（DesignTokens 色板中的既有遮罩色）+ 居中提示文案
-      if (this.isDragOver) {
-        Column({ space: DesignTokens.space.sm }) {
-          Text($r('app.string.drag_drop_hint'))
-            .fontSize(DesignTokens.font.bodyL)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_on_color'))
-            .textAlign(TextAlign.Center)
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .backgroundColor($r('app.color.overlay_mask'))
-        .hitTestBehavior(HitTestMode.None)
-      }
     }
     .width('100%')
     .height('100%')
     // 内容根节点延伸至系统状态栏与导航条区域：页面背景铺满屏幕，正文保持在安全区内
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .allowDrop([
-      uniformTypeDescriptor.UniformDataType.FILE,
-      uniformTypeDescriptor.UniformDataType.IMAGE,
-      uniformTypeDescriptor.UniformDataType.VIDEO,
-      uniformTypeDescriptor.UniformDataType.AUDIO,
-      uniformTypeDescriptor.UniformDataType.PLAIN_TEXT,
-      uniformTypeDescriptor.UniformDataType.HYPERLINK
-    ])
-    .onDragEnter(() => {
-      this.isDragOver = true;
-    })
-    .onDragLeave(() => {
-      this.isDragOver = false;
-    })
-    .onDrop((event: DragEvent) => {
-      this.handleDropContent(event);
-    })
     // 收藏设备半模态面板：以发送页根 Stack 为常驻宿主，双向绑定显隐
     .bindSheet($$this.isShowFavoritesSheet, this.favoritesSheetBuilder(), {
       height: SheetSize.MEDIUM,
