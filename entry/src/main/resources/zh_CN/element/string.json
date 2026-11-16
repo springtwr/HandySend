@@ -29,6 +29,10 @@
       "value": "文件夹"
     },
     {
+      "name": "send_download",
+      "value": "下载"
+    },
+    {
       "name": "send_batch_unsupported",
       "value": "当前设备不支持选择文件夹"
     },
@@ -827,6 +831,10 @@
     {
       "name": "send_file_count_total",
       "value": "共%d个文件，%s"
+    },
+    {
+      "name": "send_staged_folder_summary",
+      "value": "%d个文件夹，%d个文件，%s"
     },
     {
       "name": "send_add_files",

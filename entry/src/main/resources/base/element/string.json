@@ -29,6 +29,10 @@
       "value": "Folder"
     },
     {
+      "name": "send_download",
+      "value": "Download"
+    },
+    {
       "name": "send_batch_unsupported",
       "value": "This device does not support folder selection"
     },
@@ -827,6 +831,10 @@
     {
       "name": "send_file_count_total",
       "value": "%d file(s), %s"
+    },
+    {
+      "name": "send_staged_folder_summary",
+      "value": "%d folder(s), %d file(s), %s"
     },
     {
       "name": "send_add_files",

@@ -3,6 +3,7 @@ import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { formatSizeDetailed } from '../utils/FormatUtil';
+import { USER_DOWNLOAD_URI } from '../utils/UserStoragePaths';
 import {
   MAX_BATCH_FILES,
   MAX_PICK_SELECT_NUMBER,
@@ -104,6 +105,7 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送
 // 设备来源键（与 DeviceSourceRegistry 中注册的来源描述符 key 一一对应）
 const SOURCE_KEY_LOCAL_SEND: string = 'localsend';
 const SOURCE_KEY_MTA: string = 'mta';
+
 
 /** 统一刷新按钮的最短加载显示时间（毫秒）：避免两个来源瞬间完成导致按钮闪烁 */
 const REFRESH_MIN_DISPLAY_MS: number = 500;
@@ -750,13 +752,17 @@ export class SendViewModel {
     return formatSizeDetailed(staged.size);
   }
 
-  async pickFiles(): Promise<void> {
+  async pickFiles(defaultDirectoryUri: string = ''): Promise<void> {
     if (this.context === undefined) {
       return;
     }
     let documentPicker = new picker.DocumentViewPicker(this.context);
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
+    if (defaultDirectoryUri.length > 0) {
+      // 仅作为选择器起始位置，不改变用户的默认目录设置
+      options.defaultFilePathUri = defaultDirectoryUri;
+    }
     try {
       let uris: Array<string> = await documentPicker.select(options);
       if (this.acceptFileCount(countNewStagedUris(uris, this.stagedFiles))) {
@@ -765,6 +771,12 @@ export class SendViewModel {
     } catch (e) {
       logger.warn('选择文件失败：' + JSON.stringify(e));
     }
+  }
+
+  /** 「下载」入口：文件选择器直接定位到 Download 目录。 */
+  async pickDownload(): Promise<void> {
+    // “下载”入口的起始目录：DocumentViewPicker 以此目录打开，选择其中的文件
+    await this.pickFiles(USER_DOWNLOAD_URI);
   }
 
   private setBatchNotice(kind: BatchNoticeKind, count: number = 0): void {
@@ -829,6 +841,17 @@ export class SendViewModel {
       if (staged.isFolder === true) {
         count += staged.folderFileCount !== undefined ? staged.folderFileCount : 0;
       } else {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /** 暂存内容中的文件夹条目数（一条聚合文件夹算一个）。 */
+  stagedFolderCount(): number {
+    let count: number = 0;
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (this.stagedFiles[i].isFolder === true) {
         count += 1;
       }
     }

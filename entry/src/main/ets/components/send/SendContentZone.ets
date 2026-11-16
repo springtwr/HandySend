@@ -71,13 +71,23 @@ export struct SendContentZone {
       // 文件夹：聚合为一个暂存条目，发送时展开为逐文件
       if (this.viewModel.isFolderPickSupported()) {
         GridItem() {
-          this.pickAction($r('sys.symbol.folder'), $r('app.string.send_folder'), 'send_pick_folder',
+          this.pickAction($r('sys.symbol.folder_fill'), $r('app.string.send_folder'), 'send_pick_folder',
             compact, () => {
               this.dispatchPick(() => {
                 this.viewModel.pickFolder();
               });
             })
         }
+      }
+
+      // 下载：文件选择器直接定位到 Download 目录
+      GridItem() {
+        this.pickAction($r('sys.symbol.arrowshape_down_to_line_fill'), $r('app.string.send_download'),
+          'send_pick_download', compact, () => {
+            this.dispatchPick(() => {
+              this.viewModel.pickDownload();
+            });
+          })
       }
 
       // 图库：图库选择器不设 MIMEType 即同时展示图片与视频并可混选
@@ -131,14 +141,14 @@ export struct SendContentZone {
           })
       }
     }
-    // 空态一行五格铺满卡片；气泡内 2 列紧凑排布，第五项落在第二行
-    .columnsTemplate(compact ? '1fr 1fr' : '1fr 1fr 1fr 1fr 1fr')
-    .rowsTemplate(compact ? '1fr 1fr 1fr' : '1fr')
+    // 空态三列两行铺满卡片；气泡内两列三行，六个入口无空缺
+    .columnsTemplate(compact ? '1fr 1fr' : '1fr 1fr 1fr')
+    .rowsTemplate(compact ? '1fr 1fr 1fr' : '1fr 1fr')
     .columnsGap(DesignTokens.space.inner)
     .rowsGap(DesignTokens.space.inner)
     .width('100%')
     .height(compact ? ACTION_TILE_HEIGHT_COMPACT * 3 + DesignTokens.space.inner * 2 :
-      ACTION_TILE_HEIGHT.getValue(this.breakpointInfo.widthBreakpoint))
+      ACTION_TILE_HEIGHT.getValue(this.breakpointInfo.widthBreakpoint) * 2 + DesignTokens.space.inner)
     .id(compact ? 'send_type_picker_compact' : 'send_type_picker')
   }
 
@@ -207,7 +217,7 @@ export struct SendContentZone {
       // 缩略图 40vp（行高 48）：文件夹用目录图标；图片源直显，视频用异步生成的缩略图，
       // 其余回退类型图标
       if (ri.item.isFolder === true) {
-        SymbolGlyph($r('sys.symbol.folder'))
+        SymbolGlyph($r('sys.symbol.folder_fill'))
           .fontSize(DesignTokens.size.iconLg)
           .fontColor([$r('app.color.text_secondary')])
           .width(DesignTokens.size.iconLg)
@@ -318,8 +328,11 @@ export struct SendContentZone {
   stagedSection() {
     // 操作行：统计 + 添加 + 清空
     Row({ space: DesignTokens.space.sm }) {
-      Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
-        this.viewModel.getTotalSizeText()))
+      Text(this.viewModel.stagedFolderCount() > 0 ?
+        $r('app.string.send_staged_folder_summary', this.viewModel.stagedFolderCount(),
+          this.viewModel.stagedFileCount(), this.viewModel.getTotalSizeText()) :
+        $r('app.string.send_file_count_total', this.viewModel.stagedFileCount(),
+          this.viewModel.getTotalSizeText()))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_secondary'))
         .layoutWeight(1)

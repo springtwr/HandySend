@@ -37,6 +37,7 @@ export default function SendFolderStagingTest() {
       vm.stagedFiles = [folderItem('Photos', 3), normalItem('a.txt')];
       expect(vm.hasFolderBatch()).assertTrue();
       expect(vm.stagedFileCount()).assertEqual(4);
+      expect(vm.stagedFolderCount()).assertEqual(1);
     })
 
     it('new_uri_count_excludes_existing_and_duplicates', 0, () => {
@@ -69,6 +70,7 @@ export default function SendFolderStagingTest() {
       vm.stagedFiles = [folderItem('Photos', 3), normalItem('a.txt')];
       vm.removeStagedFile(0);
       expect(vm.stagedFileCount()).assertEqual(1);
+      expect(vm.stagedFolderCount()).assertEqual(0);
       expect(vm.hasFolderBatch()).assertFalse();
       vm.clearStagedFiles();
       expect(vm.stagedFileCount()).assertEqual(0);

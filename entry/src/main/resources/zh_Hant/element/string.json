@@ -29,6 +29,10 @@
       "value": "資料夾"
     },
     {
+      "name": "send_download",
+      "value": "下載"
+    },
+    {
       "name": "send_batch_unsupported",
       "value": "目前裝置不支援選擇資料夾"
     },
@@ -827,6 +831,10 @@
     {
       "name": "send_file_count_total",
       "value": "共%d個檔案，%s"
+    },
+    {
+      "name": "send_staged_folder_summary",
+      "value": "%d個資料夾，%d個檔案，%s"
     },
     {
       "name": "send_add_files",

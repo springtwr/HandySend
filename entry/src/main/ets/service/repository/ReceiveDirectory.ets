@@ -14,14 +14,13 @@ import { getReceiveDirectoryUri, setReceiveDirectoryUri } from './SettingsReposi
 import { getAppContext } from './AppCore';
 import { ensureWritableUriAccess, persistWritableUri } from '../../utils/UriPermission';
 import { isFolderSelectionSupported } from '../../utils/FolderSelection';
+import { DOC_STORAGE_ROOT_URI, DOC_USER_ROOT_URI, USER_DOWNLOAD_URI } from '../../utils/UserStoragePaths';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:ReceiveDirectory', '接收目录');
 
-// 文档类 URI 前缀：文件管理器以 currentUser 根目录为视角展示相对路径
-const DOC_USER_ROOT: string = 'file://docs/storage/Users/currentUser/';
-const DOC_STORAGE_ROOT: string = 'file://docs/storage/';
+
 
 /** 目录选择结果：success 带回 URI，default 表示用户选中了默认目录，cancelled 为用户取消，failed 为调用失败 */
 export type ReceiveDirectoryPickStatus = 'cancelled' | 'default' | 'failed' | 'success';
@@ -103,10 +102,10 @@ export function receiveDirectoryUserPath(uri: string): string {
     return '';
   }
   let raw: string = uri;
-  if (raw.startsWith(DOC_USER_ROOT)) {
-    raw = raw.substring(DOC_USER_ROOT.length);
-  } else if (raw.startsWith(DOC_STORAGE_ROOT)) {
-    raw = raw.substring(DOC_STORAGE_ROOT.length);
+  if (raw.startsWith(DOC_USER_ROOT_URI)) {
+    raw = raw.substring(DOC_USER_ROOT_URI.length);
+  } else if (raw.startsWith(DOC_STORAGE_ROOT_URI)) {
+    raw = raw.substring(DOC_STORAGE_ROOT_URI.length);
   } else {
     return '';
   }
@@ -214,7 +213,7 @@ async function ensureDefaultDirectory(): Promise<string> {
     try {
       let bundleFlags: number = bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION;
       let info: bundleManager.BundleInfo = bundleManager.getBundleInfoForSelfSync(bundleFlags);
-      dirUri = `file://docs/storage/Users/currentUser/Download/${info.name}`;
+      dirUri = `${USER_DOWNLOAD_URI}/${info.name}`;
       path = receiveDirectoryPathOf(dirUri);
     } catch (e) {
       logger.warn('构造默认接收目录失败：' + String(e));
