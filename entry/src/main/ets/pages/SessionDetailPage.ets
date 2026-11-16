@@ -892,7 +892,8 @@ export struct SessionDetailPage {
       .alignItems(VerticalAlign.Center)
 
       Text(getStringSync(this.getUIContext(),
-        $r('app.string.session_folder_file_count', this.viewModel.fileCount())) + ' · ' +
+        $r('app.string.session_folder_file_count')).replace('%d', String(this.viewModel.fileCount())) +
+        ' · ' +
         formatSizeDetailed(this.viewModel.session !== undefined ?
           this.viewModel.session.totalBytes :
           (this.viewModel.historyEntry !== undefined ? this.viewModel.historyEntry.totalBytes : 0)))
@@ -901,8 +902,9 @@ export struct SessionDetailPage {
         .width('100%')
 
       if (this.viewModel.failedCount() > 0) {
-        Text($r('app.string.session_folder_progress', this.viewModel.completedCount(),
-          this.viewModel.failedCount()))
+        Text(getStringSync(this.getUIContext(), $r('app.string.session_folder_progress'))
+          .replace('%d', String(this.viewModel.completedCount()))
+          .replace('%d', String(this.viewModel.failedCount())))
           .fontSize(DesignTokens.font.bodyS)
           .fontColor($r('app.color.warning_orange'))
           .width('100%')
