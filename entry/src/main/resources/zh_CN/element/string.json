@@ -837,6 +837,10 @@
       "value": "%d个文件夹，%d个文件，%s"
     },
     {
+      "name": "send_preparing_files",
+      "value": "文件准备中，请稍候"
+    },
+    {
       "name": "send_add_files",
       "value": "添加文件"
     },

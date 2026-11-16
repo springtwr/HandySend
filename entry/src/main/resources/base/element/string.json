@@ -837,6 +837,10 @@
       "value": "%d folder(s), %d file(s), %s"
     },
     {
+      "name": "send_preparing_files",
+      "value": "Preparing files, please wait"
+    },
+    {
       "name": "send_add_files",
       "value": "Add"
     },

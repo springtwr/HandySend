@@ -141,6 +141,8 @@ export enum SendInitiateResult {
   initiated = 'initiated',
   /** 该目标已有进行中的发送，本次被拒绝执行 */
   blocked = 'blocked',
+  /** 暂存元数据仍在补全，点击已排队，准备完成后自动发起 */
+  preparing = 'preparing',
   /** 无暂存内容可发送 */
   noContent = 'no_content'
 }
@@ -410,6 +412,8 @@ export class SendViewModel {
   private context: common.UIAbilityContext | undefined = undefined
   // 在途发送目标 IP 集合：点击后立即置位、发送收口后清除，弥补注册表会话创建前的空窗
   private inFlightSendIps: Set<string> = new Set()
+  // 等待暂存元数据补全的发送目标：点击已排队，准备完成后自动进入发送
+  private preparingSendIps: Set<string> = new Set()
   // 暂存项大小缓存（uri → 字节数）：异步补全后写入，避免重复系统调用
   private stagedSizeCache: Map<string, number> = new Map()
   // 已补全元数据（大小 / 源修改时间）的暂存 uri：含 stat 失败项，避免对同一文件反复尝试
@@ -1605,6 +1609,18 @@ export class SendViewModel {
   // `onSessionCreated` 在会话登记后立即回调（发送仍在继续），供「自动进入任务详情」使用。
   async sendToMultipleDeviceInline(device: DiscoveredDevice,
     onSessionCreated?: (sessionId: string) => void): Promise<SendInitiateResult> {
+    // 暂存元数据未补全时先排队等待，准备完成后再发起；重复点击返回 preparing 提示
+    if (this.preparingSendIps.has(device.ip)) {
+      return SendInitiateResult.preparing;
+    }
+    if (this.isFillingStagedMeta) {
+      this.preparingSendIps.add(device.ip);
+      try {
+        await this.ensureStagedMeta();
+      } finally {
+        this.preparingSendIps.delete(device.ip);
+      }
+    }
     // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
     let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
     let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
@@ -1746,6 +1762,9 @@ export class SendViewModel {
    * 视图据此决定先给「已开始发送」确认还是直接给拦截提示，避免两条提示互相打架。
    */
   precheckSend(device: DiscoveredDevice): SendInitiateResult {
+    if (this.preparingSendIps.has(device.ip)) {
+      return SendInitiateResult.preparing;
+    }
     let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
     let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
     return decideSendInitiateResult(this.inFlightSendIps.has(device.ip),

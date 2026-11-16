@@ -837,6 +837,10 @@
       "value": "%d個資料夾，%d個檔案，%s"
     },
     {
+      "name": "send_preparing_files",
+      "value": "檔案準備中，請稍候"
+    },
+    {
       "name": "send_add_files",
       "value": "新增檔案"
     },

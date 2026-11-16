@@ -584,7 +584,9 @@ export struct SendContent {
     // 已进入详情时不再弹失败浮卡（失败原因在详情页可见）
     let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
     let autoOpened: boolean = false;
-    this.showSendToast($r('app.string.send_started_toast'), device.alias);
+    // 暂存元数据仍在补全时先明确告知“准备中”，准备完成后自动发起发送
+    this.showSendToast(this.viewModel.isFillingStagedMeta ?
+      $r('app.string.send_preparing_files') : $r('app.string.send_started_toast'), device.alias);
     this.viewModel.sendToMultipleDeviceInline(device, (sessionId: string) => {
       if (autoEnterDetail && !this.isDetached) {
         autoOpened = true;
@@ -624,6 +626,10 @@ export struct SendContent {
       this.getUIContext()
         .getPromptAction()
         .showToast({ message: $r('app.string.send_device_busy'), duration: 2000, alignment: Alignment.Center });
+    } else if (result === SendInitiateResult.preparing) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_preparing_files'), duration: 2000, alignment: Alignment.Center });
     } else if (result === SendInitiateResult.noContent) {
       this.getUIContext()
         .getPromptAction()
