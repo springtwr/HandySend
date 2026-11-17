@@ -257,6 +257,10 @@ export function flushAllSessionDraftLogs(): void {
     return;
   }
   try {
+    // 目录尚未创建时没有完成日志可刷新，按无操作处理
+    if (!fs.accessSync(dir)) {
+      return;
+    }
     let names: Array<string> = fs.listFileSync(dir);
     for (let i = 0; i < names.length; i++) {
       if (!names[i].endsWith(DRAFT_LOG_SUFFIX)) {
@@ -484,15 +488,18 @@ export function loadAllSessionDrafts(): Array<SessionDraft> {
   }
   let drafts: Array<SessionDraft> = [];
   try {
-    let names: Array<string> = fs.listFileSync(dir);
-    for (let i = 0; i < names.length; i++) {
-      let name: string = names[i];
-      if (!name.endsWith(DRAFT_SUFFIX)) {
-        continue;
-      }
-      let draft: SessionDraft | undefined = loadDraftFile(dir + '/' + name);
-      if (draft !== undefined) {
-        drafts.push(draft);
+    // 草稿目录只在首次写草稿时创建：从未写过草稿时目录不存在，按“没有草稿”处理
+    if (fs.accessSync(dir)) {
+      let names: Array<string> = fs.listFileSync(dir);
+      for (let i = 0; i < names.length; i++) {
+        let name: string = names[i];
+        if (!name.endsWith(DRAFT_SUFFIX)) {
+          continue;
+        }
+        let draft: SessionDraft | undefined = loadDraftFile(dir + '/' + name);
+        if (draft !== undefined) {
+          drafts.push(draft);
+        }
       }
     }
   } catch (e) {
@@ -521,6 +528,10 @@ export function cleanupSessionDraftTmp(): void {
     return;
   }
   try {
+    // 目录尚未创建时没有遗留临时文件，按无操作处理
+    if (!fs.accessSync(dir)) {
+      return;
+    }
     let names: Array<string> = fs.listFileSync(dir);
     for (let i = 0; i < names.length; i++) {
       if (names[i].endsWith(DRAFT_TMP_SUFFIX)) {
