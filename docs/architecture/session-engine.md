@@ -269,6 +269,7 @@
 - `TransferMethodRegistry`：方式（网页传输/指定 IP，按「网页」与「其它方式」分组）
 - `SettingsGroupRegistry`：设置分组（通用组与协议组按同一 `order` 序列混排，新增协议只需注册自己的分组）
 - 来源空态描述支持可选 `dynamicText()` 动态文案（设置后优先于静态 `text`），如 MTA 蓝牙关闭时切换为开启蓝牙提示
+- 来源空态描述支持可选 `links`/`linksHint`（地址入口），如引导对方设备下载对应协议客户端
 
 ## 8. Web 分享链路
 

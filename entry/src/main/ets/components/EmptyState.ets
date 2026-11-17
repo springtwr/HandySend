@@ -3,7 +3,7 @@
  *
  * 统一承载「列表/内容为空」的提示：主标题与副提示的字号、颜色、间距与水平居中由本组件固定，
  * 调用点只传文案、开关（是否套卡片、是否占满可用高度并垂直居中）
- * 与可选的操作入口，样式统一由本组件维护。
+ * 与可选的操作入口、地址入口，样式统一由本组件维护。
  *
  * 卡片按该页条目形态跟随：条目是卡片的页面由调用点开启 useCard，条目非卡片的页面、页面背景上的整段
  * 空态与已被卡片包裹的空态保持关闭，避免出现第二层卡片与双重内边距。卡片左右内边距与条目文字对齐（16vp），
@@ -12,6 +12,7 @@
  */
 
 import { DesignTokens } from '../common/DesignTokens';
+import { EmptyStateLink } from '../model/Types';
 
 @ComponentV2
 export struct EmptyState {
@@ -28,10 +29,22 @@ export struct EmptyState {
   /** 操作入口点击回调 */
   @Event onAction: () => void = () => {
   }
+  /** 可点击地址列表（可缺省，缺省时不渲染地址区） */
+  @Param links: Array<EmptyStateLink> | undefined = undefined
+  /** 地址区上方的说明文案（可缺省） */
+  @Param linksHint: ResourceStr | undefined = undefined
+  /** 地址点击回调（携带被点击的 url，由调用点决定打开方式） */
+  @Event onLinkClick: (url: string) => void = (_url: string) => {
+  }
   /** 是否套用与同页条目同款的卡片（同页条目是卡片的空态开启） */
   @Param useCard: boolean = false
   /** 是否占满可用高度并垂直居中（整页空态开启） */
   @Param fillHeight: boolean = false
+
+  /** 地址列表（缺省时为空数组，便于渲染条件判断）。 */
+  private linkItems(): Array<EmptyStateLink> {
+    return this.links ?? [];
+  }
 
   build() {
     // 外层只负责占位与居中：卡片装饰落在内层，避免 fillHeight 开启时卡片被拉伸成整页高的面板
@@ -82,6 +95,46 @@ export struct EmptyState {
           .onClick(() => {
             this.onAction();
           })
+        }
+
+        // 可选地址区：说明文案在上，每条地址以名称在上、完整地址在下两行展示，整块可点击；
+        // 说明与地址之间取极小间距，使安装提示与下载地址紧邻；长地址允许在任意字符处折行，窄屏不溢出
+        if (this.linkItems().length > 0) {
+          Column({ space: DesignTokens.space.mini }) {
+            if (this.linksHint !== undefined) {
+              Text(this.linksHint)
+                .fontSize(DesignTokens.font.bodyS)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .textAlign(TextAlign.Center)
+            }
+
+            ForEach(this.linkItems(), (link: EmptyStateLink, index: number) => {
+              Column({ space: DesignTokens.space.mini }) {
+                Text(link.label)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_tertiary'))
+                  .width('100%')
+                  .textAlign(TextAlign.Center)
+                Text(link.url)
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.ip_blue_text'))
+                  .width('100%')
+                  .textAlign(TextAlign.Center)
+                  .wordBreak(WordBreak.BREAK_ALL)
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Center)
+              // 上下留出内边距，扩大点击范围
+              .padding({ top: DesignTokens.space.xxs, bottom: DesignTokens.space.xxs })
+              .onClick(() => {
+                this.onLinkClick(link.url);
+              })
+              .id('empty_state_link_' + index)
+            }, (link: EmptyStateLink) => link.url)
+          }
+          .width('100%')
+          .margin({ top: DesignTokens.space.tiny })
         }
       }
       .width('100%')

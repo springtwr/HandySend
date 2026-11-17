@@ -1757,6 +1757,18 @@
       "value": "请确认设备处于同一网络"
     },
     {
+      "name": "localsend_client_install_hint",
+      "value": "其他系统设备如需使用客户端，可安装 LocalSend"
+    },
+    {
+      "name": "localsend_download_address",
+      "value": "下载地址"
+    },
+    {
+      "name": "send_no_source_links_hint",
+      "value": "若目标手机支持互传联盟，可打开手机的互传功能\n\n其他系统设备如需使用客户端，可安装 LocalSend"
+    },
+    {
       "name": "settings_source_localsend",
       "value": "LocalSend"
     },

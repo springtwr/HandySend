@@ -1757,6 +1757,18 @@
       "value": "請確認裝置位於同一網路"
     },
     {
+      "name": "localsend_client_install_hint",
+      "value": "其他系統裝置如需使用用戶端，可安裝 LocalSend"
+    },
+    {
+      "name": "localsend_download_address",
+      "value": "下載位址"
+    },
+    {
+      "name": "send_no_source_links_hint",
+      "value": "若目標手機支援互傳聯盟，可開啟手機的互傳功能\n\n其他系統裝置如需使用用戶端，可安裝 LocalSend"
+    },
+    {
       "name": "settings_source_localsend",
       "value": "LocalSend"
     },

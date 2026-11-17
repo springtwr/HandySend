@@ -134,6 +134,8 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
 | `adapters/WebDownloadAdapter.ets` | Web 下载批次：一个批次一个任务（单文件/zip），服务端批次事件驱动进度与终态，支持按 batchId 取消；匿名对端描述符兜底 |
 | `adapters/StubAdapter.ets` | 最小桩协议：验证「仅注册适配器与描述符即可被中心/详情页渲染并可取消」的扩展点；仅测试期由用例显式调用 `registerStubProtocol()`，不进入生产注册流程 |
 
+> 来源空态支持可选 `links`/`linksHint`，用于在空态中提供地址入口（如引导对方设备下载客户端）。
+
 > **注 7**：`TransferSessionRegistry` 提供创建/追加文件/进度/状态/终结/取消/重试/查询、
 > 终态可见窗口与有界回收（同标识重建取消挂起定时器）、同设备取代与发送侧无进展看门狗、
 > 协议无关聚合快照、清除历史语义与可清除计数、历史读写入口、生命周期诊断。

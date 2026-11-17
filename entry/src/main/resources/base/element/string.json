@@ -1757,6 +1757,18 @@
       "value": "Make sure devices are on the same network"
     },
     {
+      "name": "localsend_client_install_hint",
+      "value": "If devices on other systems need a client, install LocalSend"
+    },
+    {
+      "name": "localsend_download_address",
+      "value": "Download address"
+    },
+    {
+      "name": "send_no_source_links_hint",
+      "value": "If the target phone supports MTA (Mutual Transfer Alliance), turn on its share feature\n\nIf devices on other systems need a client, install LocalSend"
+    },
+    {
       "name": "settings_source_localsend",
       "value": "LocalSend"
     },

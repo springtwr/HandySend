@@ -7,15 +7,22 @@
  */
 
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2ItemOptions } from '@kit.ArkUI';
+import { Want } from '@kit.AbilityKit';
 import { DesignTokens } from '../../common/DesignTokens';
+import { LogDomains } from '../../common/LogDomains';
 import { EmptyState } from '../EmptyState';
 import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
-import { DiscoveredDevice } from '../../model/Types';
+import { DiscoveredDevice, EmptyStateLink } from '../../model/Types';
 import { filterEnabledDeviceSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
+import { LOCALSEND_DOWNLOAD_LINKS } from '../../service/transfer/DefaultRegistrations';
+import { getAppContext } from '../../service/repository/AppCore';
+import { getLogger } from '../../utils/Logger';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../../views/DeviceListItem';
 import { SendMethodZone } from './SendMethodZone';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendTargetZone', '发送目标');
 
 @ComponentV2
 export struct SendTargetZone {
@@ -195,6 +202,40 @@ export struct SendTargetZone {
     return descriptor !== undefined ? descriptor.emptyState.hint : '';
   }
 
+  /** 空态附带的地址入口：总空态固定给 LocalSend 下载地址，来源空态取描述符配置。 */
+  private emptyLinks(): Array<EmptyStateLink> | undefined {
+    if (this.showCombinedEmptyState()) {
+      return LOCALSEND_DOWNLOAD_LINKS;
+    }
+    let descriptor = this.currentSource();
+    return descriptor !== undefined ? descriptor.emptyState.links : undefined;
+  }
+
+  /** 地址区上方的说明文案（与 emptyLinks 同口径）：总空态先提示互传联盟，再提示安装 LocalSend。 */
+  private emptyLinksHint(): ResourceStr | undefined {
+    if (this.showCombinedEmptyState()) {
+      return $r('app.string.send_no_source_links_hint');
+    }
+    let descriptor = this.currentSource();
+    return descriptor !== undefined ? descriptor.emptyState.linksHint : undefined;
+  }
+
+  /** 交给系统浏览器打开地址。 */
+  private openEmptyStateLink(url: string): void {
+    let context = getAppContext();
+    if (context === undefined) {
+      logger.warn('打开空态地址失败：应用上下文不可用');
+      return;
+    }
+    let want: Want = {
+      action: 'ohos.want.action.viewData',
+      uri: url
+    };
+    context.startAbility(want).catch((e: Error): void => {
+      logger.warn('打开空态地址失败：' + String(e));
+    });
+  }
+
   private openDeviceDetails(device: DiscoveredDevice): void {
     this.onInfo(device);
   }
@@ -270,6 +311,11 @@ export struct SendTargetZone {
         onAction: () => {
           this.onOpenWeb();
         },
+        links: this.emptyLinks(),
+        linksHint: this.emptyLinksHint(),
+        onLinkClick: (url: string) => {
+          this.openEmptyStateLink(url);
+        },
         useCard: true
       })
         .id('send_no_source')
@@ -279,6 +325,11 @@ export struct SendTargetZone {
         mainText: this.emptyText(),
         hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
         hintColor: $r('app.color.warning_orange'),
+        links: this.emptyLinks(),
+        linksHint: this.emptyLinksHint(),
+        onLinkClick: (url: string) => {
+          this.openEmptyStateLink(url);
+        },
         useCard: true
       })
         .id('send_no_devices')

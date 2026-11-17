@@ -4,7 +4,7 @@
  * 发送页与设置页对协议零硬编码：由协议注册描述符，页面通用渲染。
  */
 
-import { DiscoveredDevice } from '../Types';
+import { DiscoveredDevice, EmptyStateLink } from '../Types';
 
 // ── 设备来源注册表 ──
 
@@ -16,6 +16,10 @@ export interface SourceEmptyStateDescriptor {
   hint: ResourceStr
   // 引导是否展示（条件化：如蓝牙未开启时才提示）
   hintVisible: () => boolean
+  // 空态附带地址入口（可选，如引导对方设备下载对应协议客户端）
+  links?: Array<EmptyStateLink>
+  // 地址区上方的说明文案（可选，仅 links 非空时展示）
+  linksHint?: ResourceStr
 }
 
 /** 设备来源描述符（每个协议注册一份）。 */

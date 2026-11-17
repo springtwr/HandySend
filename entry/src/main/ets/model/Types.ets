@@ -23,6 +23,12 @@ export enum SendSessionStatus {
 
 // ── 数据类型 ──
 
+/** 空态内的可点击地址：名称作展示，url 同时作为可见地址与打开目标。 */
+export interface EmptyStateLink {
+  label: ResourceStr
+  url: string
+}
+
 export interface DeviceChannel {
   host: string
   port: number
