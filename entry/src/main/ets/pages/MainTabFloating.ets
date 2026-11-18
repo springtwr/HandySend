@@ -7,6 +7,7 @@ import {
   window
 } from '@kit.ArkUI';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
+import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import {
   HdsAnimationMode,
   HdsNavigation,
@@ -80,6 +81,7 @@ import {
 } from '../viewmodel/SessionDetailViewModel';
 import { GallerySaveDialogParams, buildGallerySaveDialog } from '../views/SaveToGalleryDialog';
 import { GallerySaveResult, MediaFileInfo } from '../model/Types';
+import { DragDropParseResult, fetchDroppedUnifiedData, parseDroppedRecords } from '../model/DragDropParser';
 import { DesignTokens } from '../common/DesignTokens';
 import { MainTabViewModel } from '../viewmodel/MainTabViewModel';
 import { TransferCenterViewModel } from '../viewmodel/TransferCenterViewModel';
@@ -129,6 +131,8 @@ struct MainTabFloating {
   @Local private isTabHidden: boolean = false
   // 当前激活的主页 Tab 索引（默认发送页 0）：驱动标题栏文案与结束端菜单
   @Local currentTabIndex: number = 0
+  // 拖拽悬停状态：驱动全应用高亮遮罩显隐（根容器为拖放目标，onDragEnter 置真 / onDragLeave 复位 / onDrop 处理完毕复位）
+  @Local private isDragOver: boolean = false
   // 「部分/全部传输方式已关闭」提示卡的关闭状态：本次会话内有效、不持久化（协议开关变化后复位）
   @Local protocolHintDismissed: boolean = false
   // 本次启动是否允许显示「部分传输方式已关闭」提示：同一关闭状态只提示一次（见启动评估方法）
@@ -145,6 +149,8 @@ struct MainTabFloating {
   @Local private deleteSelectedDialogMessage: string = ''
   // 当前打开的批量删除确认弹窗 id（关闭时使用）
   private deleteSelectedDialogId: number = -1
+  // 当前打开的拖入可靠性提示弹窗 id（关闭时使用）
+  private dropNoticeDialogId: number = -1
   // 点击通知进入前台时已存在的待确认会话：通知已承担提醒，本次前台不再补开详情页
   private suppressedTransferPromptSessionIds: Array<string> = []
   // Navigation 首页栏（Tab 区域）是否可见：推入子页面后为 false
@@ -457,6 +463,118 @@ struct MainTabFloating {
     this.closeClearHistoryDialog();
     this.closeDeleteSelectedDialog();
     this.closeGallerySaveDialog();
+    this.closeDropNoticeDialog();
+  }
+
+  // ── 全局拖放 ──
+
+  // 全局拖放处理：任意页签与子页面拖入的内容统一解析后暂存，放下即回到发送页。
+  // 结果语义：数据获取失败或整批类型均不支持时反馈失败（不支持时同时提示）；
+  // 存在可处理内容即反馈成功，包括内容因重复去重而未新增的拖入（操作已接受、仅未新增条目）。
+  private handleDropContent(event: DragEvent): void {
+    fetchDroppedUnifiedData(event, (data: unifiedDataChannel.UnifiedData | undefined) => {
+      if (data === undefined) {
+        this.isDragOver = false;
+        event.setResult(DragResult.DRAG_FAILED);
+        logger.warn('拖放已拒绝：获取 UDMF 数据失败');
+        return;
+      }
+      let records: Array<unifiedDataChannel.UnifiedRecord> = data.getRecords();
+      // 来源类型诊断：输出每条记录的 UTD 类型，便于确认中转站等来源实际拖出的数据类型
+      // （如拖出图片是 general.image 还是 general.file）
+      let types: Array<string> = [];
+      for (let i = 0; i < records.length; i++) {
+        types.push(records[i].getType());
+      }
+      logger.debug('拖放记录：count=' + records.length + ' types=' + types.join(','));
+      let result: DragDropParseResult = parseDroppedRecords(records);
+      let added: boolean = this.sendViewModel.applyDroppedContent(result);
+      // 整批均无任何可处理内容（不支持类型）才算失败；重复内容已走暂存去重、语义上仍是已接受
+      let unsupported: boolean = result.uris.length === 0 && result.folders.length === 0 &&
+        result.texts.length === 0;
+      this.isDragOver = false;
+      event.setResult(unsupported ? DragResult.DRAG_FAILED : DragResult.DRAG_SUCCESSFUL);
+      logger.debug('拖放已处理：uris=' + result.uris.length + ' folders=' + result.folders.length +
+        ' texts=' + result.texts.length + ' addedSync=' + added + ' unsupported=' + unsupported);
+      if (unsupported) {
+        this.getUIContext()
+          .getPromptAction()
+          .showToast({ message: $r('app.string.drag_drop_unsupported'), duration: 2000 });
+        return;
+      }
+      // 放下即跳转发送页：回到主页根并切到发送页签，让用户看到刚加入的内容
+      this.focusSendTabTop();
+      // 移动端会话首次拖入含文件或文件夹类内容：弹出可靠性提示（须手动关闭）
+      let hasFileRecords: boolean = result.uris.length > 0 || result.folders.length > 0;
+      if (this.sendViewModel.shouldShowDropReliabilityHint(hasFileRecords)) {
+        this.openDropReliabilityNotice();
+      }
+    });
+  }
+
+  /**
+   * 回到发送页并把滚动位置归零：先收起主页自持弹层并广播给子组件，再清空路由栈退出所有子页面，
+   * 然后切到发送页签（已在该页签时直接滚到顶部）。新拖入的条目位于内容区顶部，归零后可立即看到。
+   */
+  private focusSendTabTop(): void {
+    try {
+      this.closeRootOverlays();
+    } catch (e) {
+      logger.warn('收起主页弹层异常：' + String(e));
+    }
+    requestCloseOverlays();
+    // 子页面全部退出（与通知深链一致：先收弹层再清栈，避免残留弹层失去宿主）
+    this.pathStack.clear(false);
+    this.tabScrollOffsets[0] = 0;
+    this.switchToTab(0);
+    if (this.currentTabIndex === 0) {
+      this.tabScrollerAt(0).scrollTo({ xOffset: 0, yOffset: 0 });
+    }
+  }
+
+  // 拖入文件或文件夹类内容的可靠性提示：移动端会话首次拖入时弹出。
+  // autoCancel:false 禁止点击外部关闭，必须点击「知道了」手动关闭。
+  // 提示缘由：拖入内容的 URI 由来源应用/中转站托管，关闭后可能不可读（文本已写入沙箱不受影响）。
+  private openDropReliabilityNotice(): void {
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.dropReliabilityNoticeDialog();
+      },
+      autoCancel: false,
+      // 系统返回键等外部关闭路径同样复位 id，避免后续关闭命中已销毁的弹窗
+      onDidDisappear: () => {
+        this.dropNoticeDialogId = -1;
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.dropNoticeDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeDropNoticeDialog(): void {
+    if (this.dropNoticeDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.dropNoticeDialogId);
+      this.dropNoticeDialogId = -1;
+    }
+  }
+
+  @Builder
+  dropReliabilityNoticeDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.drag_drop_reliability_title'),
+      content: $r('app.string.drag_drop_reliability_message'),
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.drag_drop_reliability_ok'),
+        action: () => {
+          this.closeDropNoticeDialog();
+        }
+      })
+    })
   }
 
   // ── 相册保存自动提示（由设置项驱动） ──
@@ -1391,45 +1509,93 @@ struct MainTabFloating {
   }
 
   build() {
-    // 导航容器始终为页面根容器；两种形态仅内容区不同。
-    // 宽屏（平板横屏 / 折叠屏展开 / PC）时内容区为「常驻宽侧边栏 + 单栏内容」两段式布局，
-    // 其余情况（手机、平板竖屏、套件能力缺失）沿用底部浮动页签栏形态
-    HdsNavigation(this.pathStack) {
-      this.navigationContent()
+    // 根 Stack 作为全应用拖放目标：任意页签与子页面均可拖入内容；
+    // 悬停时叠加高亮遮罩提示，遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击
+    Stack({ alignContent: Alignment.TopStart }) {
+      // 导航容器始终为页面根容器；两种形态仅内容区不同。
+      // 宽屏（平板横屏 / 折叠屏展开 / PC）时内容区为「常驻宽侧边栏 + 单栏内容」两段式布局，
+      // 其余情况（手机、平板竖屏、套件能力缺失）沿用底部浮动页签栏形态
+      HdsNavigation(this.pathStack) {
+        this.navigationContent()
+      }
+      .width('100%')
+      .height('100%')
+      // 导航根容器使用绘制级安全区扩展：背景/分割线绘制到系统安全区，布局仍避让系统安全区，
+      // 底部悬浮页签的间距（barFloatingStyle.barBottomMargin）条件化：有系统导航条时安全区
+      // 自动提供导航条间距、该间距补 4vp；无导航条时安全区不提供、回退固定 12vp。
+      // 导航条高度经 avoidAreaChange 监听动态更新（全屏/小窗/分屏/旋转/折叠），
+      // 若根容器改用布局级忽略安全区，安全区不再提供该间距、页签会贴住系统小白条
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      // 导航根容器设置与页面一致的背景色：冷启动首帧窗口内容未覆盖顶部区域时不透出壁纸
+      .backgroundColor($r('app.color.page_background'))
+      // 主页面为根页面无返回语义：隐藏返回入口；工具栏不使用
+      .titleMode(HdsNavigationTitleMode.MINI)
+      .titleBar(this.mainTitleBarOptions())
+      .hideBackButton(true)
+      .hideToolBar(true)
+      // 只绑定当前页签的滚动控制器：嵌套底部页签时逐页签绑定才能保留标题栏滚动模糊
+      .bindToScrollable([this.currentTabScroller()])
+      // 强制单栏：避免宽屏（≥600vp，平板/PC/折叠屏展开态）下 Navigation Auto 自动分栏，
+      // 导致主页面被限制在左侧 navBar 区域、右侧内容区空白（本功能不做宽屏分栏，子页面全屏推入）
+      .mode(NavigationMode.Stack)
+      .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(),
+        buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint, (): boolean => {
+          // 接口页时系统返回键先退回信息页，不关闭半模态
+          if (!this.localDeviceShowInterfaces) {
+            return false;
+          }
+          this.switchLocalDevicePage(false);
+          return true;
+        }))
+      // 首页栏可见性联动互传发现扫描：推入子页面即停止扫描，返回时恢复
+      .onNavBarStateChange((visible: boolean) => {
+        this.navBarVisible = visible;
+        this.updateMtaScanByVisibility();
+      })
+
+      // 拖拽悬停高亮遮罩：半透明遮罩（DesignTokens 色板中的既有遮罩色）+ 居中提示文案
+      if (this.isDragOver) {
+        Column({ space: DesignTokens.space.sm }) {
+          Text($r('app.string.drag_drop_hint'))
+            .fontSize(DesignTokens.font.bodyL)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_on_color'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor($r('app.color.overlay_mask'))
+        .hitTestBehavior(HitTestMode.None)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      }
     }
     .width('100%')
     .height('100%')
-    // 导航根容器使用绘制级安全区扩展：背景/分割线绘制到系统安全区，布局仍避让系统安全区，
-    // 底部悬浮页签的间距（barFloatingStyle.barBottomMargin）条件化：有系统导航条时安全区
-    // 自动提供导航条间距、该间距补 4vp；无导航条时安全区不提供、回退固定 12vp。
-    // 导航条高度经 avoidAreaChange 监听动态更新（全屏/小窗/分屏/旋转/折叠），
-    // 若根容器改用布局级忽略安全区，安全区不再提供该间距、页签会贴住系统小白条
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    // 导航根容器设置与页面一致的背景色：冷启动首帧窗口内容未覆盖顶部区域时不透出壁纸
+    // 拖放目标根容器同步铺满系统栏区域：整窗任意位置拖入均可用
     .backgroundColor($r('app.color.page_background'))
-    // 主页面为根页面无返回语义：隐藏返回入口；工具栏不使用
-    .titleMode(HdsNavigationTitleMode.MINI)
-    .titleBar(this.mainTitleBarOptions())
-    .hideBackButton(true)
-    .hideToolBar(true)
-    // 只绑定当前页签的滚动控制器：嵌套底部页签时逐页签绑定才能保留标题栏滚动模糊
-    .bindToScrollable([this.currentTabScroller()])
-    // 强制单栏：避免宽屏（≥600vp，平板/PC/折叠屏展开态）下 Navigation Auto 自动分栏，
-    // 导致主页面被限制在左侧 navBar 区域、右侧内容区空白（本功能不做宽屏分栏，子页面全屏推入）
-    .mode(NavigationMode.Stack)
-    .bindSheet($$this.isShowLocalDeviceSheet, this.localDeviceSheet(),
-      buildLocalDeviceSheetOptions(this.breakpointInfo.widthBreakpoint, (): boolean => {
-        // 接口页时系统返回键先退回信息页，不关闭半模态
-        if (!this.localDeviceShowInterfaces) {
-          return false;
-        }
-        this.switchLocalDevicePage(false);
-        return true;
-      }))
-    // 首页栏可见性联动互传发现扫描：推入子页面即停止扫描，返回时恢复
-    .onNavBarStateChange((visible: boolean) => {
-      this.navBarVisible = visible;
-      this.updateMtaScanByVisibility();
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .allowDrop([
+      uniformTypeDescriptor.UniformDataType.FILE,
+      uniformTypeDescriptor.UniformDataType.FOLDER,
+      uniformTypeDescriptor.UniformDataType.DIRECTORY,
+      uniformTypeDescriptor.UniformDataType.IMAGE,
+      uniformTypeDescriptor.UniformDataType.VIDEO,
+      uniformTypeDescriptor.UniformDataType.AUDIO,
+      uniformTypeDescriptor.UniformDataType.PLAIN_TEXT,
+      uniformTypeDescriptor.UniformDataType.HYPERLINK
+    ])
+    .onDragEnter(() => {
+      this.isDragOver = true;
+    })
+    .onDragLeave(() => {
+      this.isDragOver = false;
+    })
+    .onDrop((event: DragEvent) => {
+      // 放开即收起高亮遮罩：数据获取失败时会有 1500ms 重试，遮罩不应在放下后继续停留
+      this.isDragOver = false;
+      this.handleDropContent(event);
     })
   }
 }

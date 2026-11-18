@@ -21,6 +21,8 @@ import {
   triggerRefresh,
   setPendingSharedUris,
   consumePendingSharedUris,
+  setPendingSharedFolders,
+  consumePendingSharedFolders,
   setPendingSharedTexts,
   consumePendingSharedTexts,
   setPendingNavigation,
@@ -69,6 +71,7 @@ import { readJsonString } from '../utils/JsonGuard';
 import { initDemoModule } from '../service/demo/DemoScenarioService';
 import { LogDomains } from '../common/LogDomains';
 import { initAllPreferences, flushAllPreferences } from '../utils/PreferencesUtil';
+import { flushAllSessionDraftLogs } from '../service/transfer/SessionDraftStore';
 
 const logger = getLogger(LogDomains.GENERAL, 'HandySend:EntryAbility', '启动');
 
@@ -308,6 +311,7 @@ export default class EntryAbility extends UIAbility {
   private handleShareWant(want: Want): void {
     systemShare.getSharedData(want).then((data: systemShare.SharedData) => {
       let uris: Array<string> = [];
+      let folders: Array<string> = [];
       let texts: Array<Record<string, string>> = [];
       let records: Array<systemShare.SharedRecord> = data.getRecords();
       for (let i = 0; i < records.length; i++) {
@@ -319,8 +323,12 @@ export default class EntryAbility extends UIAbility {
         logger.debug('分享意图记录[' + i + ']：utd=' + utd +
           ' uri_empty=' + (uri.length === 0) + ' content_empty=' + (content.length === 0));
         if (uri.length > 0) {
-          // URI 非空 → 文件 URI 通道
-          uris.push(uri);
+          // 文件夹与文件使用不同 UTD：文件夹单独收件，复用发送页扫描链路。
+          if (utd === 'general.folder') {
+            folders.push(uri);
+          } else {
+            uris.push(uri);
+          }
         } else if (content.length > 0 || title.length > 0) {
           // URI 为空但有内容 → 文本/链接通道
           let textRecord: Record<string, string> = {
@@ -337,15 +345,20 @@ export default class EntryAbility extends UIAbility {
         }
       }
       uris = uris.slice(0, SHARE_MAX_URIS);
+      folders = folders.slice(0, SHARE_MAX_URIS);
       texts = truncateShareTexts(texts);
       // 与尚未消费的 pending 合并（多次分享连续到达时不覆盖），合并后再按上限截断
       if (uris.length > 0) {
         setPendingSharedUris(mergeShareUriJson(consumePendingSharedUris(), JSON.stringify(uris)));
       }
+      if (folders.length > 0) {
+        setPendingSharedFolders(mergeShareUriJson(consumePendingSharedFolders(),
+          JSON.stringify(folders)));
+      }
       if (texts.length > 0) {
         setPendingSharedTexts(mergeShareTextJson(consumePendingSharedTexts(), JSON.stringify(texts)));
       }
-      if (uris.length > 0 || texts.length > 0) {
+      if (uris.length > 0 || folders.length > 0 || texts.length > 0) {
         triggerRefresh();
       }
     }).catch(() => {
@@ -686,6 +699,8 @@ export default class EntryAbility extends UIAbility {
     logger.info('Ability 退到后台（onBackground）');
     // 偏好写入为防抖刷盘，退后台时全部立即落盘，防止进程在后台被杀导致 pending 写入丢失
     flushAllPreferences();
+    // 完成日志只 append 不逐条 fsync；退后台统一刷盘，进程强杀时页缓存仍可保底。
+    flushAllSessionDraftLogs();
     // MTA 接收进行中（建链/下载/落盘）时跳过停止，由长时任务保活继续接收；
     // 其余情况（含等待本端确认）维持现状停止服务——后台无法完成确认操作
     if (!isMtaReceivingActive()) {

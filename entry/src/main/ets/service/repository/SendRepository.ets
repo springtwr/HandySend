@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { fileIo as fs } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import {
   DiscoveredDevice,
   TransferProgress,
@@ -19,11 +19,11 @@ import {
 } from '../../model/NativeTypes';
 import {
   nativeSendFiles,
+  nativeClientInfo,
   nativeSanitizeFileName,
   nativeFlushRustLogs,
   nativeCancelTransfer,
-  nativeCancelHash,
-  nativeGetCurrentSendSessionId
+  nativeCancelHash
 } from '../NativeBridge';
 import {
   getMimeForExt as mimeGetMimeForExt,
@@ -44,6 +44,7 @@ import {
   beginLocalSendSession,
   endLocalSendPrep,
   finishLocalSend,
+  getLocalSendNativeKey,
   updateLocalSendProgress,
   setLocalSendRetryInvoker
 } from '../transfer/adapters/LocalSendSendAdapter';
@@ -57,7 +58,7 @@ import {
   setStageProgress,
   updateProtocolSessionId
 } from '../transfer/TransferSessionRegistry';
-import { isTerminalStage, SessionFileDescriptor } from '../../model/transfer/TransferSession';
+import { isTerminalStage, SessionFileDescriptor, SessionStage } from '../../model/transfer/TransferSession';
 import {
   calculateChecksumsForFiles,
   ChecksumRunOptions
@@ -88,6 +89,8 @@ let activeProgress: Array<TransferProgress> = [];
 // 共享 URI 收件箱：
 // EntryAbility 在此写入共享 URI；SendViewModel 消费它们。
 let pendingSharedUrisJson: string = '';
+// 共享文件夹收件箱：系统分享的 general.folder 单独存放，避免被当成普通文件。
+let pendingSharedFoldersJson: string = '';
 // 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
 let pendingSharedTextsJson: string = '';
 
@@ -158,6 +161,16 @@ export function setPendingSharedUris(json: string): void {
 export function consumePendingSharedUris(): string {
   let json: string = pendingSharedUrisJson;
   pendingSharedUrisJson = '';
+  return json;
+}
+
+export function setPendingSharedFolders(json: string): void {
+  pendingSharedFoldersJson = json;
+}
+
+export function consumePendingSharedFolders(): string {
+  let json: string = pendingSharedFoldersJson;
+  pendingSharedFoldersJson = '';
   return json;
 }
 
@@ -260,7 +273,9 @@ export function sendResultErrorMessage(err: NativeHttpError | undefined): string
     }
     if (err.kind === 'reqwest') {
       if (isTimeoutOrConnectionMessage(err.message)) {
-        return localizedText($r('app.string.send_error_timeout'), 'Receiver did not respond');
+        return localizedText($r('app.string.send_error_timeout'),
+          'Receiver did not respond. Make sure the other device is open; if its network changed, ' +
+          'refresh the device list and retry');
       }
       // 其他 reqwest 错误（协议不匹配等）保留其原始消息。
       return err.message;
@@ -305,10 +320,79 @@ export function resolveSendProtocol(localHttps: boolean, remoteHttps: boolean): 
   return 'http';
 }
 
+/**
+ * 发送前发现会话已终态时的结果：用户取消映射为取消终态，
+ * 其他原因（看门狗失败等）按普通失败返回，避免改写既有终态语义。
+ */
+function sendAbortedResult(unifiedSessionId: string): SendResult {
+  let session = getRegistrySession(unifiedSessionId);
+  if (session !== undefined && session.stage === SessionStage.cancelled) {
+    return { success: false, error: { kind: 'cancelled', message: 'Send cancelled' } };
+  }
+  return { success: false, error: { kind: 'other', message: 'Send session already ended' } };
+}
+
+/**
+ * 发送前轻量探活：/info 使用 5 秒超时。
+ * prepare-upload 的总超时为 30 秒（包含接收方确认），对端换网/IP 后旧地址不可达时，
+ * 用户会长时间看不到失败原因；先探活可把不可达场景收敛到 5 秒内。
+ * 返回错误文本，探活成功返回 undefined。
+ */
+async function probeDeviceReachable(device: DiscoveredDevice, protocol: string): Promise<string | undefined> {
+  try {
+    await nativeClientInfo(protocol, device.ip, device.port);
+    return undefined;
+  } catch (e) {
+    return String(e);
+  }
+}
+
+/**
+ * 从本次失败的条目中挑出可回退句柄重试的路径模式文件。
+ * 返回副本（pathSource=false，保留暂存句柄供 dup）；未命中项不返回。
+ */
+export function buildPathFallbackItems(files: Array<SendFileItem>,
+  failedFiles: Array<string>): Array<SendFileItem> {
+  if (failedFiles.length === 0) {
+    return [];
+  }
+  let failedSet: Set<string> = new Set<string>();
+  for (let i = 0; i < failedFiles.length; i++) {
+    failedSet.add(failedFiles[i]);
+  }
+  let items: Array<SendFileItem> = [];
+  for (let i = 0; i < files.length; i++) {
+    let f: SendFileItem = files[i];
+    if (f.pathSource === true && failedSet.has(f.fileId)) {
+      items.push({
+        fileId: f.fileId,
+        filePath: f.filePath,
+        fileName: f.fileName,
+        fileType: f.fileType,
+        size: f.size,
+        preview: f.preview,
+        hash: f.hash,
+        lastModified: f.lastModified,
+        sourceFd: f.sourceFd,
+        pathSource: false
+      });
+    }
+  }
+  return items;
+}
+
 export async function sendToDevice(
   device: DiscoveredDevice,
-  files: Array<SendFileItem>
+  files: Array<SendFileItem>,
+  nativeSendKey: string,
+  unifiedSessionId: string
 ): Promise<SendResult> {
+  // 会话可能在文件打开/PIN 弹窗期间被取消：终态后不再启动发送，
+  // 否则取消只落到注册表，后端仍会把文件发出去
+  if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+    logger.debug('发送前会话已终态，跳过：对端=' + device.alias);
+    return sendAbortedResult(unifiedSessionId);
+  }
   // 若存在待应用的配置变更（如 HTTPS 开关）且服务器正在运行，自动重启服务器，
   // 确保运行中的服务器协议与当前设置一致。
   // 服务器未运行时不拉起：发送为纯客户端操作，静默开启监听端口超出用户预期，
@@ -338,6 +422,22 @@ export async function sendToDevice(
   };
 
   logger.debug('协议协商结果：' + actualProtocol, sendCtx);
+
+  // 发送前先做一次 /info 探活：对端换网后旧 IP 不可达时，prepare-upload 会等满
+  // 30 秒总超时才报错；探活 5 秒超时可让失败浮卡尽快出现。
+  let probeError: string | undefined = await probeDeviceReachable(device, actualProtocol);
+  // 探活期间用户可能已取消：优先按取消收口，不再打开文件、不进入发送
+  if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+    logger.debug('探活期间会话已终态，跳过发送', sendCtx);
+    return sendAbortedResult(unifiedSessionId);
+  }
+  if (probeError !== undefined) {
+    logger.warn('发送前探活失败，按连接失败处理：' + probeError, sendCtx);
+    return {
+      success: false,
+      error: { kind: 'reqwest', message: 'connection failed: ' + probeError }
+    };
+  }
 
   let target: NativeTargetDevice = {
     ip: device.ip,
@@ -373,18 +473,32 @@ export async function sendToDevice(
   let pinAttempts = 0;
   let busyRetries = 0;
   let result: NativeSendResult | undefined = undefined;
+  // 本次尝试实际发送的条目：路径模式失败后只把失败条目改为句柄模式重试
+  let attemptFiles: Array<SendFileItem> = files;
+  // 路径模式已回退句柄重试过：只回退一次，避免反复建立接收方会话
+  let pathFallbackApplied: boolean = false;
+  // 未参与回退重试的失败文件：回退成功时仍需按部分失败收口
+  let failedElsewhere: Array<string> = [];
   // 当前迭代已打开、尚未交由 Rust 接管的文件句柄（nativeSendFiles 正常返回后
   // Rust 对所有传入 fd 全权负责并关闭；仅当调用抛异常时才由本层关闭避免泄漏）
   let pendingFileHandles: Array<fs.File> = [];
   try {
     while (true) {
+      if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+        logger.debug('发送前会话已终态，跳过本次尝试', sendCtx);
+        return sendAbortedResult(unifiedSessionId);
+      }
       // 每次发送前重新打开源文件 fd：上一次 nativeSendFiles（无论成功/失败/可重试错误）
       // 返回后，Rust 已关闭全部传入 fd，重试必须重新打开
       let nativeFiles: Array<NativeFileToSend> = [];
       let opened: Array<fs.File> = [];
       let handles: Array<fs.File | undefined> = [];
-      for (let i = 0; i < files.length; i++) {
+      // 回退重试阶段按句柄打开失败的条目：只剔除该文件，不中止其余文件
+      let openFailed: Array<boolean> = [];
+      let attemptFailedIds: Array<string> = [];
+      for (let i = 0; i < attemptFiles.length; i++) {
         handles.push(undefined);
+        openFailed.push(false);
       }
       try {
         // 受限并发打开：串行打开数百个选择器/媒体库来源的文件会让对端迟迟收不到发送请求
@@ -393,8 +507,14 @@ export async function sendToDevice(
         let openedCount: number = 0;
         let dupFailedCount: number = 0;
         let noFdCount: number = 0;
-        await forEachConcurrently(files.length, async (index: number): Promise<void> => {
-          let f: SendFileItem = files[index];
+        let pathSourceCount: number = 0;
+        await forEachConcurrently(attemptFiles.length, async (index: number): Promise<void> => {
+          let f: SendFileItem = attemptFiles[index];
+          // 路径模式：不打开 fd，prepare 先发，Rust 在上传时逐文件打开。
+          if (f.pathSource === true) {
+            pathSourceCount++;
+            return;
+          }
           let sourceFd: number | undefined = f.sourceFd;
           // 优先 dup 暂存阶段已打开的句柄：同一文件不重复 open（失效时回退为普通打开）。
           // dup 副本与暂存句柄共享文件偏移，但 Rust 侧以 pread 从文件头读取、不推进偏移，
@@ -422,14 +542,44 @@ export async function sendToDevice(
           } else {
             noFdCount++;
           }
-          handles[index] = await fs.open(f.filePath, fs.OpenMode.READ_ONLY);
-          openedCount++;
+          try {
+            handles[index] = await fs.open(f.filePath, fs.OpenMode.READ_ONLY);
+            openedCount++;
+          } catch (openOneErr) {
+            // 首次发送沿用整体失败语义；回退重试阶段只把该文件计入失败，
+            // 其余文件继续发送（单文件失败不拖垮整个会话）
+            if (!pathFallbackApplied) {
+              throw new Error(String(openOneErr));
+            }
+            openFailed[index] = true;
+            logger.warn('句柄回退打开失败，按单文件失败处理：' + f.filePath);
+          }
         });
-        logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' + files.length +
-          ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount + ' dup失败=' + dupFailedCount +
-          ' 无句柄=' + noFdCount, sendCtx);
-        for (let i = 0; i < files.length; i++) {
-          let f = files[i];
+        logger.debug('打开发送文件句柄耗时=' + (Date.now() - openStartMs) + 'ms 文件数=' +
+          attemptFiles.length + ' 复用句柄=' + reusedCount + ' 新打开=' + openedCount +
+          ' dup失败=' + dupFailedCount + ' 无句柄=' + noFdCount + ' 路径模式=' + pathSourceCount +
+          ' 回退重试=' + pathFallbackApplied, sendCtx);
+        for (let i = 0; i < attemptFiles.length; i++) {
+          let f = attemptFiles[i];
+          // 回退阶段打不开句柄的文件不进入本次协议会话，避免拖垮其余文件
+          if (openFailed[i]) {
+            attemptFailedIds.push(f.fileId);
+            continue;
+          }
+          if (f.pathSource === true) {
+            nativeFiles.push({
+              fileId: f.fileId,
+              filePath: f.filePath,
+              fileName: f.fileName,
+              fileType: f.fileType,
+              size: f.size,
+              fd: -1,
+              preview: f.preview,
+              sha256: f.hash,
+              lastModified: f.lastModified
+            });
+            continue;
+          }
           let file: fs.File | undefined = handles[i];
           if (file === undefined) {
             throw new Error('源文件句柄缺失：' + f.filePath);
@@ -446,6 +596,29 @@ export async function sendToDevice(
             sha256: f.hash,
             lastModified: f.lastModified
           });
+        }
+        for (let i = 0; i < attemptFailedIds.length; i++) {
+          if (failedElsewhere.indexOf(attemptFailedIds[i]) < 0) {
+            failedElsewhere.push(attemptFailedIds[i]);
+          }
+        }
+        if (nativeFiles.length === 0) {
+          // 回退重试阶段全部句柄都打不开：不再建协议会话，按整体失败收口
+          for (let k = 0; k < opened.length; k++) {
+            try {
+              fs.closeSync(opened[k]);
+            } catch (_ce) {
+            }
+          }
+          opened = [];
+          logger.error('回退重试无可用源文件句柄', sendCtx);
+          result = {
+            sessionId: '',
+            success: false,
+            failedFiles: attemptFailedIds,
+            error: { kind: 'other', message: '源文件句柄打开失败' }
+          };
+          break;
         }
       } catch (openErr) {
         // 任一源文件打开失败（如授权失效）：关闭已打开句柄，按整体失败返回。
@@ -466,18 +639,83 @@ export async function sendToDevice(
         notifyChange();
         return { success: false, error: { kind: 'other', message: String(openErr) } };
       }
+      // 句柄打开期间用户可能已取消：取消已落到注册表，后端尚未接管句柄，
+      // 此时必须关闭本次打开的句柄并停止发送，否则对端仍会收到文件
+      if (unifiedSessionId.length > 0 && isUnifiedSessionTerminal(unifiedSessionId)) {
+        for (let k = 0; k < opened.length; k++) {
+          try {
+            fs.closeSync(opened[k]);
+          } catch (_ce) {
+          }
+        }
+        opened = [];
+        logger.debug('打开文件后发现会话已终态，跳过发送', sendCtx);
+        return sendAbortedResult(unifiedSessionId);
+      }
       pendingFileHandles = opened;
       let roundTripStartMs: number = Date.now();
-      result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles);
+      result = await nativeSendFiles(target, getDeviceAlias(), nativeFiles, nativeSendKey);
       logger.debug('发送请求往返耗时=' + (Date.now() - roundTripStartMs) + 'ms success=' + result.success, sendCtx);
       // Rust 已接管全部 fd 并负责关闭；本层不再关闭，避免 double-close
       pendingFileHandles = [];
       if (result.success) {
-        logger.debug('发送成功', { sessionId: result.sessionId, direction: 'send' });
-        notifyChange();
-        return { success: true, sessionId: result.sessionId };
+        if (failedElsewhere.length === 0) {
+          logger.debug('发送成功', { sessionId: result.sessionId, direction: 'send' });
+          notifyChange();
+          return { success: true, sessionId: result.sessionId };
+        }
+        // 回退重试成功，但首次尝试还有未参与回退的失败文件：按部分失败收口
+        result = {
+          sessionId: result.sessionId,
+          success: false,
+          failedFiles: failedElsewhere.slice(),
+          error: {
+            kind: 'partialFailure',
+            message: failedElsewhere.length + ' of ' + files.length + ' files failed'
+          }
+        };
+        break;
       }
       let err = result.error;
+      // 路径模式在原生侧打不开时，该文件计入 failedFiles，其余文件仍会正常上传；
+      // 这里只把失败路径条目改为句柄模式重发一次，避免一个文件失败拖垮整批
+      if (err !== undefined && err.kind === 'partialFailure' && !pathFallbackApplied &&
+        result.failedFiles.length > 0) {
+        let retryItems: Array<SendFileItem> = buildPathFallbackItems(attemptFiles, result.failedFiles);
+        if (retryItems.length > 0) {
+          // 未参与回退的失败文件保留到最终结果
+          let retriedSet: Set<string> = new Set<string>();
+          for (let i = 0; i < retryItems.length; i++) {
+            retriedSet.add(retryItems[i].fileId);
+          }
+          for (let i = 0; i < result.failedFiles.length; i++) {
+            let failedId: string = result.failedFiles[i];
+            if (!retriedSet.has(failedId) && failedElsewhere.indexOf(failedId) < 0) {
+              failedElsewhere.push(failedId);
+            }
+          }
+          // 首次会话仍有接收方待结束状态：先取消，避免回退重试被 409 忙拒绝。
+          // 已成功上传的文件不会因取消而撤销（接收方已落盘）。
+          if (result.sessionId.length > 0) {
+            let retryCancelTarget: NativeCancelTarget = {
+              ip: device.ip,
+              port: device.port,
+              fingerprint: device.fingerprint,
+              protocol: actualProtocol
+            };
+            try {
+              await nativeCancelTransfer(retryCancelTarget, result.sessionId);
+              logger.debug('回退前已取消首次会话 sessionId=' + result.sessionId, sendCtx);
+            } catch (_ce) {
+              logger.warn('回退前取消首次会话失败（继续重试）：' + String(_ce), sendCtx);
+            }
+          }
+          attemptFiles = retryItems;
+          pathFallbackApplied = true;
+          logger.warn('路径模式发送失败，回退句柄重试 文件数=' + retryItems.length, sendCtx);
+          continue;
+        }
+      }
       if (err !== undefined && err.kind === 'statusCode' && err.status === 401 && pinAttempts < MAX_PIN_ATTEMPTS) {
         // 用户取消（askForPin 返回 undefined）时跳出循环，按 401 错误结束
         let pin: string | undefined = await askForPin(device.alias, pinAttempts > 0);
@@ -489,40 +727,33 @@ export async function sendToDevice(
         logger.debug('使用 PIN 重试发送', { targetAlias: device.alias, direction: 'send' });
         continue;
       }
-      // 409 = 接收方正忙（有残留 session），尝试发送 cancel 清理后重试
+      // 409 = 接收方正忙（有残留 session）：等待后重试。
+      // 协议响应不携带对方的 sessionId，无法定向清理；不猜测进程级「当前发送会话」，
+      // 避免并发发送时把其他会话的标识发给本接收方
       if (err !== undefined && err.kind === 'statusCode' && err.status === 409 && busyRetries < MAX_BUSY_RETRIES) {
         busyRetries++;
-        // 用上一次发送的 sessionId cancel（能清除 Active session）
-        let lastSessionId: string = nativeGetCurrentSendSessionId();
-        if (lastSessionId.length > 0) {
-          logger.debug('接收方忙碌（409），发送取消以清理会话 sessionId=' +
-            lastSessionId + '… 重试 ' + busyRetries, sendCtx);
-          let cancelTarget: NativeCancelTarget = {
-            ip: device.ip,
-            port: device.port,
-            fingerprint: device.fingerprint,
-            protocol: actualProtocol
-          };
-          try {
-            await nativeCancelTransfer(cancelTarget, lastSessionId);
-          } catch (_ce) {
-            logger.warn('取消请求失败（非致命）：' + String(_ce), sendCtx);
-          }
-          // 等待接收端处理 cancel 并释放 session slot
-          await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
-        } else {
-          logger.debug('接收方忙碌（409）但无已知 sessionId，重试 ' + busyRetries, sendCtx);
-        }
+        logger.debug('接收方忙碌（409），等待后重试 ' + busyRetries, sendCtx);
+        // 等待接收端处理上一会话并释放 session slot
+        await new Promise<void>((resolve: (value: void) => void) => setTimeout(() => resolve(), 800));
         continue;
       }
       break;
     }
     if (result !== undefined) {
-      // 发送失败后向接收端发送 cancel，清理可能残留的 session
-      let cancelSessionId: string = result.sessionId.length > 0 ? result.sessionId : '';
-      if (cancelSessionId.length === 0) {
-        cancelSessionId = nativeGetCurrentSendSessionId();
+      // 回退重试的失败文件并回最终结果（去重），供会话历史与失败明细使用
+      if (!result.success && failedElsewhere.length > 0) {
+        let merged: Array<string> = failedElsewhere.slice();
+        for (let i = 0; i < result.failedFiles.length; i++) {
+          if (merged.indexOf(result.failedFiles[i]) < 0) {
+            merged.push(result.failedFiles[i]);
+          }
+        }
+        result.failedFiles = merged;
       }
+      // 发送失败后向接收端发送 cancel，清理可能残留的 session。
+      // 只用本会话发送结果携带的接收方会话标识：prepare 阶段失败时尚无该标识，
+      // 不能回退到进程级「当前发送会话」（并发发送下会指向其他设备/会话）
+      let cancelSessionId: string = result.sessionId.length > 0 ? result.sessionId : '';
       // 只在有 sessionId 时发送 cancel（空 sessionId 对上游无意义）
       if (cancelSessionId.length > 0) {
         let cancelTarget: NativeCancelTarget = {
@@ -637,7 +868,10 @@ export function handleSendProgress(progress: TransferProgress): void {
   let completed: boolean = bytesSent >= totalBytes && totalBytes > 0;
 
   if (completed) {
-    logger.debug('文件上传完成', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+    // 逐文件完成日志按会话节流：上千文件逐条写日志会长时间占用主线程
+    if (progressLogThrottle.shouldLog(sessionId + ':completed', Date.now())) {
+      logger.debug('文件上传完成', { sessionId: sessionId, fileId: fileId, direction: 'send' });
+    }
   } else if (progressLogThrottle.shouldLog(key, Date.now())) {
     logger.debug('传输进度：' + bytesSent + '/' + totalBytes + ' 字节',
       { sessionId: sessionId, fileId: fileId, direction: 'send' });
@@ -718,15 +952,37 @@ export async function prepareSendFiles(
 async function buildSendFileItem(uri: string, index: number,
   manualTextSourceUris: Set<string>, knownMeta?: Map<string, SourceFileMeta>,
   knownFds?: Map<string, number>): Promise<SendFileItem> {
-  let rawName = extractFileName(uri);
-  if (rawName === '' || rawName.length > 200) {
-    rawName = 'file_' + Date.now();
+  let known: SourceFileMeta | undefined = knownMeta !== undefined ? knownMeta.get(uri) : undefined;
+  // 文件夹条目的 wireName 已由扫描阶段逐段净化；不要再对整段调用 sanitize，
+  // 否则会把 '/' 替换掉。普通文件仍按 URI 末段净化。
+  let rawName: string = known !== undefined && known.wireName !== undefined ?
+    known.wireName : extractFileName(uri);
+  if (known === undefined || known.wireName === undefined) {
+    if (rawName === '' || rawName.length > 200) {
+      rawName = 'file_' + Date.now();
+    }
+    rawName = nativeSanitizeFileName(rawName);
   }
-  // 净化文件名，确保其符合当前平台规范
-  rawName = nativeSanitizeFileName(rawName);
+  let filePath: string = known !== undefined && known.sourcePath !== undefined ? known.sourcePath : uri;
+  let pathSource: boolean = known !== undefined && known.sourcePath !== undefined;
+  // 文档 Picker 的 file://docs/... 与沙箱路径可直接交给 Rust 按路径打开；
+  // 图库 file://media/... 仍用 fd，避免媒体库授权只对 URI 生效。
+  if ((known === undefined || known.sourcePath === undefined) && !uri.startsWith('file://media/')) {
+    if (uri.startsWith('file://docs/')) {
+      try {
+        let converted: string = new fileUri.FileUri(uri).path;
+        if (converted.length > 0) {
+          filePath = converted;
+          pathSource = true;
+        }
+      } catch (_e) {
+      }
+    } else if (!uri.startsWith('file://')) {
+      pathSource = true;
+    }
+  }
   let size: number;
   let lastModified: number;
-  let known: SourceFileMeta | undefined = knownMeta !== undefined ? knownMeta.get(uri) : undefined;
   if (known !== undefined) {
     // 暂存阶段已按同一来源（已打开句柄）读过：直接复用，省掉一次 open/stat 往返
     size = known.size;
@@ -735,7 +991,7 @@ async function buildSendFileItem(uri: string, index: number,
     // filePath 直接承载源定位（picker URI 或沙箱路径），不复制文件到沙箱；
     // 发送时由 sendToDevice 复用暂存句柄（或按需打开）直读源文件；
     // 此处仅在缺少已知元数据时 open+stat 取真实大小/修改时间后立即关闭
-    let file = await fs.open(uri, fs.OpenMode.READ_ONLY);
+    let file = await fs.open(filePath, fs.OpenMode.READ_ONLY);
     try {
       let stat = fs.statSync(file.fd);
       size = stat.size;
@@ -759,12 +1015,13 @@ async function buildSendFileItem(uri: string, index: number,
   }
   let item: SendFileItem = {
     fileId: 'send_' + index + '_' + Date.now(),
-    filePath: uri,
+    filePath: filePath,
     fileName: rawName,
     fileType: mimeGetMimeForFileName(rawName),
     size: size,
     preview: preview,
-    lastModified: lastModified
+    lastModified: lastModified,
+    pathSource: pathSource
   };
   // 暂存阶段已打开过的句柄：随条目下传，发送 dup 复用（Rust 以 pread 读取）、校验和归位后读、网页分享借用
   let knownFd: number | undefined = knownFds !== undefined ? knownFds.get(uri) : undefined;
@@ -784,13 +1041,36 @@ function legacySendDirOf(context: common.Context): string {
   return context.filesDir + '/send/';
 }
 
+/** 旧版发送临时目录当前字节数（目录已不再写入，供设置页展示缓存大小）。 */
+export function legacySendDirBytes(): number {
+  let appContext = getAppContext();
+  if (appContext === undefined) {
+    return 0;
+  }
+  let dir: string = legacySendDirOf(appContext);
+  let total: number = 0;
+  try {
+    let entries: Array<string> = fs.listFileSync(dir);
+    for (let i = 0; i < entries.length; i++) {
+      try {
+        let stat = fs.lstatSync(dir + entries[i]);
+        if (!stat.isDirectory()) {
+          total += stat.size;
+        }
+      } catch (_e) {
+      }
+    }
+  } catch (_e) {
+  }
+  return total;
+}
+
 // 带 context 的清理变体：供冷启动（EntryAbility.onCreate）清扫
 // {cacheDir}/send/（发送缩略图缓存）与旧版本遗留的 {filesDir}/send/
 // （手动文本暂存，已不再写入，全量删除安全）使用——此时 AppCore 尚未保存
-// 应用 context，无法在仓库层自行取 context。
-export function cleanupSendDirWithContext(context: common.UIAbilityContext): void {
-  clearDirContents(sendThumbnailDirOf(context));
-  clearDirContents(legacySendDirOf(context));
+// 应用 context，无法在仓库层自行取 context。返回实际释放的字节数。
+export function cleanupSendDirWithContext(context: common.UIAbilityContext): number {
+  return clearDirContents(sendThumbnailDirOf(context)) + clearDirContents(legacySendDirOf(context));
 }
 
 // 「发送文本」目录：发送产物（sharedText_*.txt）与手动暂存文本的统一落盘目录，
@@ -817,17 +1097,23 @@ export function sendThumbnailDir(): string {
 }
 
 // 清空目录内全部文件（目录不存在时静默跳过），best-effort：单文件删除失败不阻塞。
-function clearDirContents(dirPath: string): void {
+// 返回实际释放的字节数，供「清除缓存」提示使用。
+function clearDirContents(dirPath: string): number {
+  let removedBytes: number = 0;
   try {
     let entries = fs.listFileSync(dirPath);
     for (let i = 0; i < entries.length; i++) {
+      let path: string = dirPath + entries[i];
       try {
-        fs.unlinkSync(dirPath + entries[i]);
+        let size: number = fs.lstatSync(path).size;
+        fs.unlinkSync(path);
+        removedBytes += size;
       } catch (_e) {
       }
     }
   } catch (_e) {
   }
+  return removedBytes;
 }
 
 /**
@@ -925,7 +1211,9 @@ function filesForSession(files: Array<SendFileItem>): Array<SendFileItem> {
       hash: f.hash,
       lastModified: f.lastModified,
       // 透传暂存阶段保留的源句柄：发送时 dup 复用，由 Rust 以 pread 从文件头读取
-      sourceFd: f.sourceFd
+      sourceFd: f.sourceFd,
+      // 透传路径模式：文件夹/文档条目发送时由 Rust 按 filePath 打开
+      pathSource: f.pathSource
     });
   }
   return result;
@@ -953,10 +1241,20 @@ function findSendSessionByFile(fileId: string): SendSessionState | undefined {
  * 进度只经统一标识更新，不再按逻辑会话标识做首匹配查找。
  * 首个发送方向进度事件同时作为「对端已开始接收（推断）」的诊断来源。
  */
-export function updateSendProgressForFile(fileId: string, bytesSent: number, totalBytes: number): void {
+export function updateSendProgressForFile(fileId: string, bytesSent: number, totalBytes: number,
+  receiverSessionId: string): void {
   let state = findSendSessionByFile(fileId);
   if (state === undefined) {
     return;
+  }
+  // 首个进度事件携带接收方会话标识：提前回填协议标识，供取消时向对端下发 /cancel
+  // （发送结果的回填要等整批上传结束，取消窗口内将不可用）
+  if (receiverSessionId.length > 0 &&
+    (state.receiverSessionId === undefined || state.receiverSessionId.length === 0)) {
+    updateSendSessionReceiverId(state.sessionId, receiverSessionId);
+    updateProtocolSessionId(state.unifiedSessionId, receiverSessionId);
+    logger.debug('协议会话标识提前回填 协议标识=' + receiverSessionId +
+      ' 统一会话=' + state.unifiedSessionId);
   }
   updateLocalSendProgress(state.unifiedSessionId, fileId, bytesSent, totalBytes);
   notePeerStartedReceiving(state.unifiedSessionId, bytesSent, totalBytes);
@@ -1242,9 +1540,19 @@ interface ChecksumBatch {
 
 let checksumBatches: Map<Array<SendFileItem>, ChecksumBatch> = new Map();
 
-/** 为某会话登记准备期取消回调（经 nativeCancelHash 立即中止哈希）。 */
-function registerPrepCancel(unifiedId: string, cancelId: string): void {
+/**
+ * 为某会话登记准备期取消回调（经 nativeCancelHash 立即中止哈希）。
+ *
+ * 哈希批次由同批多个发送会话共享：单个会话取消时若仍有其他会话在准备，
+ * 不能中止共享哈希，否则其余会话的当前文件会被判为哈希失败并整体剔除。
+ * 仅当本批已无任何活跃参与者时才真正中止原生哈希。
+ */
+function registerPrepCancel(batch: ChecksumBatch, unifiedId: string, cancelId: string): void {
   beginLocalSendPrep(unifiedId, (): void => {
+    if (hasActiveBatchParticipant(batch)) {
+      logger.debug('准备期取消：同批仍有活跃会话，保留共享哈希 统一会话=' + unifiedId);
+      return;
+    }
     nativeCancelHash(cancelId).catch((_e: Object): void => {
     });
   });
@@ -1272,7 +1580,7 @@ export function joinChecksumBatch(items: Array<SendFileItem>,
     // 即时获得当前进度，不重复计算
     setPrepProgress(participant.unifiedSessionId, existing.aggregateBytes, existing.totalBytes);
     if (existing.currentCancelId.length > 0) {
-      registerPrepCancel(participant.unifiedSessionId, existing.currentCancelId);
+      registerPrepCancel(existing, participant.unifiedSessionId, existing.currentCancelId);
     }
     return existing.promise;
   }
@@ -1309,7 +1617,7 @@ async function runChecksumBatch(batch: ChecksumBatch): Promise<void> {
       for (let i = 0; i < batch.participants.length; i++) {
         let unifiedId = batch.participants[i].unifiedSessionId;
         if (cancelId.length > 0) {
-          registerPrepCancel(unifiedId, cancelId);
+          registerPrepCancel(batch, unifiedId, cancelId);
         } else {
           endLocalSendPrep(unifiedId);
         }
@@ -1372,7 +1680,8 @@ function backfillSessionHashes(items: Array<SendFileItem>, unifiedIds: Array<str
 
 export async function sendToDeviceMulti(
   devices: Array<DiscoveredDevice>,
-  files: Array<SendFileItem>
+  files: Array<SendFileItem>,
+  onSessionsCreated?: (unifiedIds: Array<string>) => void
 ): Promise<void> {
   // 为每台设备创建独立的会话（唯一会话标识 + 独立文件标识），使用一致的 sessionId 映射
   let sessionIds: Array<string> = [];
@@ -1386,6 +1695,15 @@ export async function sendToDeviceMulti(
     sessionFilesList.push(sessionFiles);
     let unifiedId: string = createSendSession(sessionId, device.ip, device.alias, sessionFiles, device);
     unifiedIds.push(unifiedId);
+  }
+  // 会话已登记到统一注册表：立即通知调用方（供「自动进入任务详情」在发送开始前拿到新会话标识）。
+  // 回调属于视图侧导航，异常不得中断已登记会话的发送，故在此兜底。
+  if (onSessionsCreated !== undefined) {
+    try {
+      onSessionsCreated(unifiedIds);
+    } catch (e) {
+      logger.warn('发送会话创建回调异常：' + String(e));
+    }
   }
 
   // 准备阶段：开关开启且存在缺失 hash 的文件时，会话立即置准备态并展示字节级进度。
@@ -1477,7 +1795,10 @@ async function sendToDeviceWithSession(
   // 发送异常也必须落到终态：异常路径按失败终态收口，不让会话悬挂在 active
   let result: SendResult = { success: false, error: { kind: 'other', message: 'Send failed' } };
   try {
-    result = await sendToDevice(device, files);
+    let state = sendSessions.get(sessionId);
+    let unifiedSessionId: string = state !== undefined ? state.unifiedSessionId : '';
+    let nativeSendKey: string = state !== undefined ? getLocalSendNativeKey(state.unifiedSessionId) : '';
+    result = await sendToDevice(device, files, nativeSendKey, unifiedSessionId);
   } catch (e) {
     logger.error('发送已中止：' + String(e));
     updateSendSessionStatus(sessionId, SendSessionStatus.finishedWithErrors, String(e));

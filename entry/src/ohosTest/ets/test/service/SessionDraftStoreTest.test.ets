@@ -2,17 +2,22 @@ import { describe, it, beforeAll, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { getTestAppContext } from '../helper/TestContext'
 import { setAppContext } from '../../../../main/ets/service/repository/AppCore'
+import { registerAddLog, isDebugEnabled, setDebugEnabled } from '../../../../main/ets/utils/Logger'
 import {
   SESSION_DRAFT_SCHEMA_VERSION,
   SessionDraft,
   SessionDraftFile,
+  appendSessionDraftRecord,
   cleanupSessionDraftTmp,
+  flushAllSessionDraftLogs,
   loadAllSessionDrafts,
   loadSessionDraft,
+  loadSessionDraftRecords,
   removeSessionDraft,
   sanitizeDraftId,
   saveSessionDraft,
   sessionDraftDir,
+  sessionDraftLogPath,
   sessionDraftPath
 } from '../../../../main/ets/service/transfer/SessionDraftStore'
 import {
@@ -104,6 +109,30 @@ export default function SessionDraftStoreTest() {
       expect(loadSessionDraft(id) === undefined).assertTrue()
     })
 
+    it('completion_log_replays_into_header', 0, () => {
+      let id = 'draft-journal-' + Date.now().toString()
+      let draft = makeDraft(id, [makeFile('f1', '/tmp/a.txt'), makeFile('f2', '/tmp/b.txt')])
+      expect(saveSessionDraft(draft)).assertTrue()
+      appendSessionDraftRecord(id, {
+        fileId: 'f1',
+        stage: SessionFileStage.completed,
+        bytes: 3,
+        at: 1234,
+        path: '/tmp/a.txt'
+      })
+      expect(loadSessionDraftRecords(id).length).assertEqual(1)
+      let loaded = loadSessionDraft(id)
+      expect(loaded !== undefined).assertTrue()
+      if (loaded !== undefined) {
+        expect(loaded.files[0].stage).assertEqual(SessionFileStage.completed)
+        expect(loaded.files[0].completedAt).assertEqual(1234)
+        expect(loaded.files[1].stage).assertEqual(SessionFileStage.waiting)
+      }
+      removeSessionDraft(id)
+      expect(loadSessionDraft(id) === undefined).assertTrue()
+      expect(fs.accessSync(sessionDraftLogPath(id))).assertFalse()
+    })
+
     it('cleanup_removes_tmp_file', 0, () => {
       let dir = sessionDraftDir()
       expect(dir.length > 0).assertTrue()
@@ -190,6 +219,52 @@ export default function SessionDraftStoreTest() {
       expect(foundB).assertTrue()
       removeSessionDraft(idA)
       removeSessionDraft(idB)
+    })
+
+    it('missing_dir_is_not_an_error', 0, () => {
+      let dir = sessionDraftDir()
+      expect(dir.length > 0).assertTrue()
+      if (dir.length === 0) {
+        return
+      }
+      // 草稿目录可能已被其他用例创建：先改名保留，模拟从未写过草稿的安装
+      let backup = dir + '.bak-' + Date.now().toString()
+      let hadDir: boolean = fs.accessSync(dir)
+      if (hadDir) {
+        fs.renameSync(dir, backup)
+      }
+      // 打开 debug 才能捕获「刷新会话完成日志失败」这类 debug 日志
+      let prevDebug: boolean = isDebugEnabled()
+      setDebugEnabled(true)
+      let logMessages: Array<string> = []
+      registerAddLog((level: string, msg: string, tag: string): void => {
+        logMessages.push(msg)
+      })
+      try {
+        expect(loadAllSessionDrafts().length).assertEqual(0)
+        cleanupSessionDraftTmp()
+        flushAllSessionDraftLogs()
+        // 读取路径不得隐式创建目录
+        expect(fs.accessSync(dir)).assertFalse()
+        // debug 通道必须确实捕获到日志，否则下面的关键字断言会因空数组而失效
+        let sawCountLog: boolean = false
+        for (let i = 0; i < logMessages.length; i++) {
+          if (logMessages[i].indexOf('读取会话草稿 count=0') >= 0) {
+            sawCountLog = true
+          }
+          expect(logMessages[i].indexOf('枚举会话草稿失败') < 0).assertTrue()
+          expect(logMessages[i].indexOf('刷新会话完成日志失败') < 0).assertTrue()
+        }
+        expect(sawCountLog).assertTrue()
+      } finally {
+        setDebugEnabled(prevDebug)
+        // 日志回调无读取接口；测试进程未初始化应用日志，注册空回调复位即可
+        registerAddLog((level: string, msg: string, tag: string): void => {
+        })
+        if (hadDir && fs.accessSync(backup)) {
+          fs.renameSync(backup, dir)
+        }
+      }
     })
   })
 }

@@ -1,8 +1,8 @@
 /**
- * PortalPage.ets — 在线服务入口页。
+ * PortalPage.ets — 远程传输入口页。
  *
- * 卡片网格：每个预设或用户添加的站点一张卡片，最后一张卡片为添加入口。
- * 点击卡片进入站点浏览页；长按卡片删除；标题栏菜单可恢复默认站点。
+ * 卡片列表：每个预设或用户添加的站点一张卡片，最后一张卡片为添加入口。
+ * 点击卡片经确认后由系统浏览器打开站点；长按或鼠标右键卡片弹出编辑/删除菜单；标题栏菜单可恢复默认站点。
  *
  * 页面不承载下载进度与浏览内容，站点数据由 PortalSiteRepository 维护。
  */
@@ -179,7 +179,7 @@ export struct PortalPage {
     });
   }
 
-  /** 恢复默认确认：会重新拉取远程配置并复活已删除的预设，保留用户站点。 */
+  /** 恢复默认确认：会重新读取内置站点配置并复活已删除的预设，保留用户站点。 */
   private confirmRestore(): void {
     this.getUIContext().getPromptAction().showDialog({
       title: $r('app.string.portal_restore_title'),
@@ -260,7 +260,7 @@ export struct PortalPage {
     this.errorText = '';
   }
 
-  /** 长按卡片：打开编辑表单，预填当前站点。 */
+  /** 长按或右键卡片菜单「编辑」：打开编辑表单，预填当前站点。 */
   private openEdit(site: PortalSite): void {
     this.sheetType = 'edit';
     this.editingSiteId = site.id;
@@ -603,7 +603,7 @@ export struct PortalPage {
                   }
                 })
               }
-            }, (site: PortalSite) => site.id + '|' + site.url + '|' + site.badges.join(','))
+            }, (site: PortalSite) => site.id + '|' + site.name + '|' + site.url + '|' + site.badges.join(','))
             ListItem() {
               this.addCard()
             }

@@ -23,6 +23,12 @@ export enum SendSessionStatus {
 
 // ── 数据类型 ──
 
+/** 空态内的可点击地址：名称作展示，url 同时作为可见地址与打开目标。 */
+export interface EmptyStateLink {
+  label: ResourceStr
+  url: string
+}
+
 export interface DeviceChannel {
   host: string
   port: number
@@ -68,6 +74,7 @@ export interface NetworkInterface {
   prefixLength: number
   type: NetworkType
   isDefault: boolean // 是否为默认网络
+  isHotspot: boolean // 是否为热点（SoftAP）接口
   name: string // 接口名（如 "wlan0"、"eth0"）
 }
 
@@ -136,15 +143,23 @@ export interface SendFileItem {
   // 暂存阶段已打开的只读源句柄：发送据此 dup（Rust 以 pread 从文件头读取），
   // 校验和 dup 后归位偏移，网页分享直接借用
   sourceFd?: number
+  // 走路径模式：不打开 fd，发送时把 filePath 交给 Rust 逐文件打开。
+  // 文件夹条目与文档 Picker 条目使用；图库来源仍用 fd。
+  pathSource?: boolean
 }
 
 /**
  * 已读到的源文件元数据（大小 + 修改时间）：
  * 暂存阶段补全后随发送准备一并传入，避免准备层为同一批文件再次逐项 open/stat。
+ * wireName/sourcePath 仅文件夹与文档路径模式使用：
+ * - wireName 是发送给对端的相对路径（优先于 URI 末段）；
+ * - sourcePath 是本机读取路径（优先于 URI）。
  */
 export interface SourceFileMeta {
   size: number
   lastModified: number
+  wireName?: string
+  sourcePath?: string
 }
 
 export interface LogEntry {
@@ -164,6 +179,12 @@ export interface StagedFile {
   fileName: string
   fileType: string
   isImage: boolean
+  // 文件夹聚合条目：uri 为目录 URI，fileName 为目录名；
+  // 发送时通过 ViewModel 的扫描缓存展开，不逐文件进入暂存列表。
+  isFolder?: boolean
+  folderFileCount?: number
+  folderTotalBytes?: number
+  folderScanId?: string
   isManualText?: boolean
   // 手输文本是否已随某次发送发起（已发起 = 其持久文件不再随暂存列表清理删除）
   persisted?: boolean
@@ -223,6 +244,12 @@ export interface ReceiveHistoryEntry {
   fileSize: number
   senderAlias: string
   timestamp: number
+  // 文件夹条目：一个接收会话只记一条摘要；旧条目缺省按普通文件处理。
+  isFolder?: boolean
+  // 文件夹内文件总数（普通文件条目缺省为 1）
+  fileCount?: number
+  // 文件夹内失败文件数（普通文件条目缺省为 0）
+  failedCount?: number
   // 旧版 Web 上传文本消息曾把正文写入此字段；新数据不再写入。
   // 消费方一律按 path 读取文件本身，该字段仅保留供读取旧历史时识别并清理。
   textContent?: string

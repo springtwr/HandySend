@@ -37,14 +37,14 @@
 | `nativeSetWebUploadTargets(token, targetsJson)` | 预置浏览器上传的落盘目标，返回生效条目数 |
 | `nativeCancelWebDownload(batchId)` | 取消指定网页下载批次 |
 | `nativeAcceptWebSession(token)` / `nativeDeclineWebSession(token)` / `nativeExpireWebSession(token)` | 接受 / 拒绝 / 令待确认浏览器会话过期 |
-| `nativeRespondTransfer(sessionId, accept, acceptedFileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册直写目标） |
-| `nativeSendFiles(target, senderAlias, files)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath） |
-| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收直写 fd（respondTransfer 前逐文件；`path` 为最终路径，fd 打开在 `.handysend-temp/localsend/`；终态由 Rust 关闭） |
-| `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用） |
+| `nativeRespondTransfer(sessionId, accept, acceptedFileIds)` | 响应传输请求（同步 void；accept 前需先经 `nativeRegisterRecvFileFd` 逐文件预注册接收目标） |
+| `nativeSendFiles(target, senderAlias, files, sendKey)` | 发送文件（files 携带 `fd` 内容源描述符；fd≥0 由 Rust 直读源文件，否则回退 filePath；`sendKey` 见注 5） |
+| `nativeRegisterRecvFileFd(sessionId, fileId, fd, path)` | 预注册接收目标（respondTransfer 前逐文件；`path` 为最终路径）。`fd >= 0` 为直写句柄；`fd = -1` 为路径目标模式：ArkTS 预创建 `.handysend-temp/localsend/` 临时文件后立即关闭，Rust 在上传到达时用 `O_NOFOLLOW` 打开，仍构造 `FileUploadTarget::Fd`；终态只清理未消费句柄 |
+| `nativeDiscardRecvFileFds(sessionId)` | 丢弃某会话已注册但未开始上传的接收目标（fd 或路径；respond 失败/回滚时调用） |
 | `nativeCancelTransfer(target, sessionId)` | 向对端设备发送取消传输请求 |
-| `nativeCancelTransferLocal(sessionId)` | 取消本地传输 |
+| `nativeCancelTransferLocal(cancelKey)` | 按取消键取消本地传输（局域网发送传会话专属 `sendKey`；对端取消回调传接收方会话标识，二者指向同一令牌；其他场景传对应会话标识） |
 | `nativeCancelLocalSession(sessionId)` | 取消本地会话 |
-| `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID |
+| `nativeGetCurrentSendSessionId()` | 获取当前发送会话 ID（进程级、最后写入者优先；仅用于诊断/兼容查询，并发发送下可能不是目标会话，不可作为按会话取消的依据） |
 | `nativeFlushRustLogs()` | 轮询 Rust 日志缓冲并按原始级别输出到 hilog（`level\|target\|message` 前缀分割） |
 | `nativePollDebugLogWithLevels()` | 带级别的 Rust 日志轮询（返回原始 `level\|target\|message` 元素，供 MTA 链路按级别还原展示） |
 | `nativeSetRustLogLevel(level)` | 同步 Rust 日志级别，供诊断日志开关联动 |
@@ -95,6 +95,11 @@
 > ArkTS 按对端声明值与容差计算）、`maxEntryBytes` 为单条目解压上限（0 表示不限制）；
 > `connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待
 > 响应头超时（缺省用 Rust 侧默认值）。
+>
+> **注 5**：`nativeSendFiles` 的 `sendKey` 为调用方生成的本会话原生发送键：Rust 以它为键登记
+> 取消令牌，并在 prepare 与上传阶段全程复用；`nativeCancelTransferLocal(sendKey)` 因而只中止
+> 本会话，不会波及其他并发发送。prepare 成功后另以接收方会话标识登记同一令牌的别名，供对端
+> 发起取消时（ArkTS 收到 `cancelReceived` 后按该标识调用本地取消）仍能命中本会话。
 
 > 完整封装清单以 `entry/src/main/ets/service/NativeBridge.ets` 为准。
 
@@ -242,12 +247,16 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - 单文件 `GET /web/download`：按 token 查快照归属后下发；fd 内容源在换表时由保留区 `dup` 私有副本、
   请求定位时再复制一份消费（`pread` 显式偏移直读，同一文件可重复/并发下载），路径内容源走文件流式读；支持 Range 分片。
 - 多文件 `POST /web/download-batch` 登记选中文件（或 `all=true`）→ `GET /web/download-batch?batch=` 流式 ZIP；
-  一个批次一个任务，ZIP 条目以文件名去重、不预打包、不落临时文件；批次在首次 `GET` 时消费，
-  重复请求返回 410，页面每次点击需重新登记。
+  ZIP 条目以文件名去重、不预打包、不落临时文件。批次在 5 分钟 TTL 内可重复请求：
+  探测/断点续传等分片 `Range` 只回对应字节，不建任务；探测请求可能读完小 ZIP 而
+  看起来成功，因此无论整包/分片成败都保留批次到 TTL 过期，供下载管理器重试。
 - ZIP 使用 `Stored`，发响应头前按条目名/大小精确计算 `Content-Length`（含 Zip64），
   浏览器下载管理器因此能显示百分比；条目时间取源文件本地时间，单个文件 ≥4GB 使用 `large_file`。
 - 批次事件 `WebDownloadStarted` / `WebDownloadProgress` / `WebDownloadFileDone` / `WebDownloadEnded`
-  （`batchId` 为任务主键）；任务取消调用 `cancel_web_download`，响应在下个读块停止。
+  （`batchId` 为任务主键，仅整包下载流发；分片 `Range` 不发任务事件）；任务取消调用
+  `cancel_web_download`，响应在下个读块停止。
+- 同一批次后续再次 `Started` 时（探测后的正式下载或失败重试），前一次已终结任务的会话与
+  历史条目会被移除，任务历史只保留最新一次，避免探测成功与正式下载各留一条记录。
 - 文件表热换仍版本号单调增，被删文件保留宽限；页面通过 `/web/events` SSE 感知变化并
   静默重拉完整文件表，短暂提示「文件列表已更新」；15 秒低频 `/caps` 轮询兜底。
 - 网页访问只在新建 token 时发 `WebAccess`（IP/UA/文件数），应用只记日志并续期有界保活；
@@ -298,13 +307,16 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
   `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
   DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→
-  `uniquePath` 消歧计算最终路径 → 先把最终/临时路径写入会话草稿 → 在 `.handysend-temp/localsend/`
-  下创建临时文件并 `openSync` 写 fd →
-  `registerRecvFileFd` 预注册（携带最终路径）→ 再发送 accept。Rust `handle_file_upload` 只消费预注册 fd
-  构造 `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱），写入完成后由结果任务 `rename` 到最终路径；
-  会话终态（SessionEnd/Aborted/Cancel/本地取消）由 `close_unconsumed_recv_fds` 关闭未消费 fd。
-  `finishReceiveSession` 直接用登记路径写历史；取消/失败时 ArkTS 只删除临时区未完成文件，
-  已提交文件保留并补记接收历史
+  解析相对路径并逐段净化 → 接收根目录与目标已有文件/目录同名时整体改名 →
+  每个最终目录内用 `uniquePath` 消歧 → 先把最终/临时路径写入会话草稿 →
+  创建最终目录与 `.handysend-temp/localsend/` 下的空临时文件后立即关闭 →
+  `registerRecvFileFd(sessionId, fileId, -1, 最终路径)` 预注册路径目标 → 再发送 accept。
+  Rust `handle_file_upload` 在上传到达时用 `O_NOFOLLOW` 打开临时路径，取得 fd 后仍构造
+  `FileUploadTarget::Fd`（无注册按失败处理，不落沙箱），写入完成后由结果任务 `rename` 到最终路径。
+  这样 accept 前不持有 N 个 fd，accept 后写入仍由 Rust 自主完成，不依赖 ArkTS 逐文件回调；
+  会话终态（SessionEnd/Aborted/Cancel/本地取消）只清理未消费的 fd 目标，路径目标无句柄可关。
+  `finishReceiveSession` 直接用登记路径写历史；取消/失败时 ArkTS 删除临时区未完成文件、
+  本次新建的空目录，已提交文件保留并补记接收历史
 - **文本消息**：与普通文件走同一目标准备入口、按条目分流目录（普通文件落接收目录、
   文本消息 `filesDir/text_recv/`，同重名规则，文本即文件、长期保留）；进度兜底显示与取消清理仍尝试
   `{cacheDir}/receive/` 旧路径，冷启动清扫该目录残留。哈希（创建校验和）对源文件 openSync 后经 `hashFileStreamFd` 计算

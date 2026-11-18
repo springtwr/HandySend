@@ -1,5 +1,5 @@
 /**
- * PortalSiteRepository.ets — 在线服务站点数据访问层。
+ * PortalSiteRepository.ets — 远程传输站点数据访问层。
  *
  * 站点全部本地化：预设来自随包内置的 rawfile 配置，用户站点与编辑覆盖存于偏好存储。
  * 不发起网络请求，也不提供网页内容服务；点击卡片由页面交给系统浏览器打开。
@@ -28,7 +28,7 @@ import {
   sanitizePortalName
 } from '../../model/PortalSite';
 
-const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PortalSite', '在线服务');
+const logger = getLogger(LogDomains.SETTINGS, 'HandySend:PortalSite', '远程传输');
 
 /** 随包内置的推荐站点配置。 */
 const BUILTIN_CONFIG_FILE: string = 'portal_sites.json';

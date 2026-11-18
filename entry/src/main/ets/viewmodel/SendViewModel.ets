@@ -1,8 +1,23 @@
 import { common } from '@kit.AbilityKit';
-import { picker, fileIo as fs } from '@kit.CoreFileKit';
+import { picker, fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { deviceInfo } from '@kit.BasicServicesKit';
 import { formatSizeDetailed } from '../utils/FormatUtil';
+import { USER_DOWNLOAD_URI } from '../utils/UserStoragePaths';
+import {
+  MAX_BATCH_FILES,
+  MAX_PICK_SELECT_NUMBER,
+  isOverBatchLimit,
+  needsCompressHint
+} from '../model/TransferLimits';
+import {
+  FolderScanPickResult,
+  FolderScanResult,
+  FolderScanStatus,
+  pickAndScanFolder,
+  scanFolderUri
+} from '../service/repository/FolderScan';
+import { isFolderSelectionSupported } from '../utils/FolderSelection';
 import { DeviceItemViewModel } from './DeviceItemViewModel';
 import {
   getDiscoveredDevices,
@@ -20,6 +35,7 @@ import {
   getNoWifiWarning,
   getAllInterfacesDisabled,
   consumePendingSharedUris,
+  consumePendingSharedFolders,
   consumePendingSharedTexts,
   sendToDeviceMulti,
   startServer,
@@ -53,7 +69,8 @@ import {
   SourceFileMeta,
   StagedFile,
   FavoriteDevice,
-  TransferFileDescriptor
+  TransferFileDescriptor,
+  SendSessionStatus
 } from '../model/Types';
 import { TransferSession, SessionFilter, SessionStage, isTerminalStage } from '../model/transfer/TransferSession';
 import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
@@ -90,14 +107,9 @@ const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendViewModel', '发送
 const SOURCE_KEY_LOCAL_SEND: string = 'localsend';
 const SOURCE_KEY_MTA: string = 'mta';
 
+
 /** 统一刷新按钮的最短加载显示时间（毫秒）：避免两个来源瞬间完成导致按钮闪烁 */
 const REFRESH_MIN_DISPLAY_MS: number = 500;
-
-/**
- * 暂存项保留句柄的数量上限：覆盖「多次选择累计 400 个文件」的常见场景，
- * 使发送时直接复用而不再逐项打开；上限本身用于避免文件描述符耗尽。
- */
-const MAX_CACHED_STAGED_HANDLES: number = 400;
 
 /** 暂存项保留句柄 + 元数据的快照（打开一次即取得两者） */
 interface StagedHandleSnapshot {
@@ -105,11 +117,24 @@ interface StagedHandleSnapshot {
   lastModified: number
 }
 
-// 两个 Picker 入口的单次可选数量上限：选择器自身上限为 500（API 21 起文档选择器不再限制），
-// 这里统一收敛到 100，避免单次选入的文件数把后续准备、建行与统计开销推到不可控
-const MAX_PICK_SELECT_NUMBER: number = 100;
+// 暂存项句柄缓存上限：只保留普通文件句柄；文件夹不占缓存。
+// 文档 Picker 来源的发送走路径模式，不依赖该缓存；缓存主要服务图库、校验和、
+// 网页挂载与元数据复用。这是空闲句柄优化，不是发送数量上限。
+const MAX_CACHED_STAGED_HANDLES: number = 500;
 
 // ── 点击设备即发送的发起结果 ──
+
+/** 批量/文件夹提示的种类：视图层据类型取本地化文案，避免 ViewModel 持有界面文案。 */
+export enum BatchNoticeKind {
+  none = 'none',
+  unsupported = 'unsupported',
+  emptyFolder = 'emptyFolder',
+  folderTooMany = 'folderTooMany',
+  scanFailed = 'scanFailed',
+  overLimit = 'overLimit',
+  softHint = 'softHint',
+  mtaFolderUnsupported = 'mtaFolderUnsupported'
+}
 
 /** 「点击设备即发送」的发起结果。 */
 export enum SendInitiateResult {
@@ -131,14 +156,18 @@ export interface SendFailureNotice {
   alias: string
   /** 失败原因（会话记录的本地化错误信息；可能为空，此时浮卡只展示标题） */
   message: string
+  /** 是否建议刷新设备列表（仅超时/连接类失败：对端可能已更换网络或 IP） */
+  suggestRefresh: boolean
 }
 
-/** 一次 MTA 发起的结局：是否已结算，以及失败时的展示摘要。 */
+/** 一次 MTA 发起的结局：是否已结算、新建会话标识，以及失败时的展示摘要。 */
 export class MtaSendOutcome {
   /** 本次发起是否已有结论（会话全部终态，或确认未产生会话） */
   settled: boolean = false
   /** 失败摘要（成功/取消/未产生会话时为空） */
   failure: SendFailureNotice | undefined = undefined
+  /** 本次发起新建的会话标识（尚未出现新会话时为空串） */
+  sessionId: string = ''
 }
 
 /** 需要向用户提示的失败终态：失败、部分失败与对方拒收；取消由用户主动发起，不提示。 */
@@ -179,7 +208,10 @@ export function pickNewSendFailure(beforeIds: Array<string>, sessions: Array<Tra
   return {
     sessionId: latest.id,
     alias: latest.peer.displayName,
-    message: latest.errorMessage
+    message: latest.errorMessage,
+    // 仅超时/连接类失败提示刷新设备列表：对端可能已更换网络或 IP；
+    // 拒收、取消、PIN 错误等失败刷新列表无意义
+    suggestRefresh: latest.errorCode === SendSessionStatus.timeout
   };
 }
 
@@ -197,6 +229,27 @@ export enum FavoriteSendResult {
   busy = 'busy',
   /** LocalSend 协议总开关关闭（防御分支） */
   disabled = 'disabled'
+}
+
+/**
+ * 统计本次选择中真正会新增的 URI 数：排除已在暂存列表的项，并去掉本次选择内部的重复。
+ * 上限/软提示按该数计算，避免“选择 500、暂存去重后只有 480”造成提示数量与实际列表不一致。
+ */
+export function countNewStagedUris(uris: Array<string>, staged: Array<StagedFile>): number {
+  let seen: Set<string> = new Set();
+  for (let i = 0; i < staged.length; i++) {
+    seen.add(staged[i].uri);
+  }
+  let count: number = 0;
+  for (let i = 0; i < uris.length; i++) {
+    let uri: string = uris[i];
+    if (uri.length === 0 || seen.has(uri)) {
+      continue;
+    }
+    seen.add(uri);
+    count++;
+  }
+  return count;
 }
 
 /**
@@ -288,11 +341,29 @@ export function shouldShowProtocolDisabledHint(localSendEnabled: boolean, mtaEna
   return !localSendEnabled && !mtaEnabled && !webSendEnabled && !dismissed;
 }
 
+/** 展开后的发送输入：普通文件与文件夹内文件统一成一次 prepare 的入参。 */
+interface PreparedSendInputs {
+  uris: Array<string>
+  manualTextUris: Array<string>
+  meta: Map<string, SourceFileMeta>
+  fds: Map<string, number>
+}
+
 // 发送页签业务状态 + 命令，从 SendContent 抽出。
 // 持有服务器状态镜像 + 收藏快照，无需 AppStorage 即可响应式渲染。
 @ObservedV2
 export class SendViewModel {
   @Trace public stagedFiles: Array<StagedFile> = []
+  // 文件夹扫描中：入口置灰并显示加载态
+  @Trace public isScanningFolder: boolean = false
+  // 最近一次批量/文件夹提示（由视图消费后清除；none 表示无提示）
+  @Trace public batchNotice: BatchNoticeKind = BatchNoticeKind.none
+  // 提示文案中 %d 的取值（仅 overLimit/softHint/folderTooMany 使用）：
+  // 超上限类提示传上限值，softHint 传当前文件总数
+  @Trace public batchNoticeCount: number = 0
+  // 文件夹扫描结果缓存：StagedFile.folderScanId → 扫描结果
+  private folderScans: Map<string, FolderScanResult> = new Map()
+  private folderScanSeq: number = 0
   // 暂存区变化后同步已挂载网页分享的防抖定时器（-1 表示无待处理同步）
   private shareSyncTimer: number = -1
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
@@ -316,6 +387,8 @@ export class SendViewModel {
   @Trace public mtaEnabled: boolean = true
   @Trace public cachedTotalSizeText: string = ''
   @Trace public isCreatingShareLink: boolean = false
+  // 暂存元数据补全中：选择大量文件后列表先出现，大小等属性异步补齐，界面显示等待动画
+  @Trace public isFillingStagedMeta: boolean = false
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
   @Trace public serverNeedsRestart: boolean = false
@@ -423,6 +496,13 @@ export class SendViewModel {
         this.updateTotalSizeCache();
         this.scheduleShareSync();
       }
+    }
+    // 消费系统分享的文件夹：逐个扫描后以聚合条目暂存（扫描是异步的，失败只提示）
+    let pendingFoldersJson: string = consumePendingSharedFolders();
+    if (pendingFoldersJson.length > 0) {
+      this.stageSharedFolders(pendingFoldersJson).catch((e: Object): void => {
+        logger.warn('消费分享文件夹失败：' + String(e));
+      });
     }
     // 消费分享的文本/链接数据，写入文件后暂存
     let pendingTextsJson: string = consumePendingSharedTexts();
@@ -696,19 +776,65 @@ export class SendViewModel {
     return formatSizeDetailed(staged.size);
   }
 
-  async pickFiles(): Promise<void> {
+  /**
+   * 选择器返回后先让出一次事件循环，让系统 Picker 窗口完成关闭动画，
+   * 再处理数百个 URI 的去重/暂存；否则主线程在 Picker 退场期间继续工作，
+   * 用户会感觉 Picker 停在原地没有响应。
+   */
+  private enqueuePickedUris(uris: Array<string>, source: string): void {
+    setTimeout((): void => {
+      let startMs: number = Date.now();
+      if (this.acceptFileCount(countNewStagedUris(uris, this.stagedFiles))) {
+        this.stageUris(uris);
+      }
+      logger.debug(source + '结果暂存耗时=' + (Date.now() - startMs) + 'ms 数量=' + uris.length);
+    }, 0);
+  }
+
+  async pickFiles(defaultDirectoryUri: string = ''): Promise<void> {
     if (this.context === undefined) {
       return;
     }
     let documentPicker = new picker.DocumentViewPicker(this.context);
     let options = new picker.DocumentSelectOptions();
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
+    if (defaultDirectoryUri.length > 0) {
+      // 仅作为选择器起始位置，不改变用户的默认目录设置
+      options.defaultFilePathUri = defaultDirectoryUri;
+    }
     try {
+      let startMs: number = Date.now();
       let uris: Array<string> = await documentPicker.select(options);
-      this.stageUris(uris);
+      logger.debug('文件选择器返回耗时=' + (Date.now() - startMs) + 'ms 数量=' + uris.length);
+      this.enqueuePickedUris(uris, '文件选择器');
     } catch (e) {
       logger.warn('选择文件失败：' + JSON.stringify(e));
     }
+  }
+
+  /** 「下载」入口：文件选择器直接定位到 Download 目录。 */
+  async pickDownload(): Promise<void> {
+    // “下载”入口的起始目录：DocumentViewPicker 以此目录打开，选择其中的文件
+    await this.pickFiles(USER_DOWNLOAD_URI);
+  }
+
+  private setBatchNotice(kind: BatchNoticeKind, count: number = 0): void {
+    this.batchNoticeCount = count;
+    this.batchNotice = kind;
+  }
+
+  /** 批量上限检查；超过软阈值只提示，不阻断。 */
+  private acceptFileCount(count: number): boolean {
+    let total: number = this.stagedFileCount() + count;
+    if (isOverBatchLimit(total)) {
+      // 超限文案展示单次上限，而不是本次尝试发送的总数
+      this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
+      return false;
+    }
+    if (needsCompressHint(total)) {
+      this.setBatchNotice(BatchNoticeKind.softHint, total);
+    }
+    return true;
   }
 
   // 图片与视频选择：图库选择器不设 MIMEType 即同时展示图片与视频（可混选）。
@@ -721,12 +847,164 @@ export class SendViewModel {
     let options = new photoAccessHelper.PhotoSelectOptions();
     options.maxSelectNumber = MAX_PICK_SELECT_NUMBER;
     try {
+      let startMs: number = Date.now();
       let result = await photoPicker.select(options);
       let uris: Array<string> = result.photoUris;
+      logger.debug('图库选择器返回耗时=' + (Date.now() - startMs) + 'ms 数量=' + uris.length);
       // 不强制标记为图片：按扩展名区分图片与视频，视频条目由暂存列表懒生成缩略图
-      this.stageUris(uris);
+      this.enqueuePickedUris(uris, '图库选择器');
     } catch (e) {
       logger.warn('选择图片或视频失败：' + JSON.stringify(e));
+    }
+  }
+
+  /** 设备是否支持文件夹选择（入口始终展示，仅点击时据此拦截并提示）。 */
+  isFolderPickSupported(): boolean {
+    return isFolderSelectionSupported();
+  }
+
+  /** 是否包含文件夹批次（MTA 守卫/网页路径共用）。 */
+  hasFolderBatch(): boolean {
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (this.stagedFiles[i].isFolder === true) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 暂存内容折算后的文件总数：文件夹按扫描到的文件数计。 */
+  stagedFileCount(): number {
+    let count: number = 0;
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let staged: StagedFile = this.stagedFiles[i];
+      if (staged.isFolder === true) {
+        count += staged.folderFileCount !== undefined ? staged.folderFileCount : 0;
+      } else {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /** 暂存内容中的文件夹条目数（一条聚合文件夹算一个）。 */
+  stagedFolderCount(): number {
+    let count: number = 0;
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      if (this.stagedFiles[i].isFolder === true) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * 选择并扫描一个文件夹；成功后以单个聚合条目进入暂存列表。
+   * 扫描/上限失败只记录提示，不产生部分暂存。
+   */
+  async pickFolder(): Promise<void> {
+    if (this.context === undefined || this.isScanningFolder) {
+      return;
+    }
+    if (!this.isFolderPickSupported()) {
+      this.setBatchNotice(BatchNoticeKind.unsupported);
+      return;
+    }
+    this.isScanningFolder = true;
+    try {
+      let picked: FolderScanPickResult = await pickAndScanFolder(this.context);
+      if (picked.status === FolderScanStatus.success && picked.result !== undefined) {
+        this.stageFolderResult(picked.result);
+      } else if (picked.status === FolderScanStatus.empty) {
+        this.setBatchNotice(BatchNoticeKind.emptyFolder);
+      } else if (picked.status === FolderScanStatus.tooMany) {
+        this.setBatchNotice(BatchNoticeKind.folderTooMany, MAX_BATCH_FILES);
+      } else if (picked.status === FolderScanStatus.unsupported) {
+        this.setBatchNotice(BatchNoticeKind.unsupported);
+      } else if (picked.status === FolderScanStatus.failed) {
+        this.setBatchNotice(BatchNoticeKind.scanFailed);
+      }
+    } finally {
+      this.isScanningFolder = false;
+    }
+  }
+
+  /** 消费系统分享的文件夹 URI：扫描成功则以聚合条目暂存。 */
+  private async stageSharedFolders(json: string): Promise<void> {
+    let parsed: Object = JSON.parse(json);
+    if (!Array.isArray(parsed)) {
+      return;
+    }
+    await this.stageFolderUris(parsed as Array<string>);
+  }
+
+  /**
+   * 消费文件夹 URI（拖入或系统分享）：逐个扫描，成功则以聚合条目暂存；
+   * 已暂存的同一目录跳过，扫描为空/超限/失败经既有批量提示通道反馈。
+   */
+  private async stageFolderUris(folderUris: Array<string>): Promise<void> {
+    for (let i = 0; i < folderUris.length; i++) {
+      let uri: string = folderUris[i];
+      if (uri.length === 0 || this.isAlreadyStaged(uri)) {
+        continue;
+      }
+      let picked: FolderScanPickResult = await scanFolderUri(uri);
+      if (picked.status === FolderScanStatus.success && picked.result !== undefined) {
+        this.stageFolderResult(picked.result);
+      } else if (picked.status === FolderScanStatus.tooMany) {
+        this.setBatchNotice(BatchNoticeKind.folderTooMany, MAX_BATCH_FILES);
+      } else if (picked.status === FolderScanStatus.failed) {
+        this.setBatchNotice(BatchNoticeKind.scanFailed);
+      } else if (picked.status === FolderScanStatus.empty) {
+        this.setBatchNotice(BatchNoticeKind.emptyFolder);
+      }
+    }
+  }
+
+  private stageFolderResult(result: FolderScanResult): void {
+    if (this.isAlreadyStaged(result.rootUri)) {
+      return;
+    }
+    if (isOverBatchLimit(this.stagedFileCount() + result.entries.length)) {
+      this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
+      return;
+    }
+    this.folderScanSeq++;
+    let scanId: string = 'folder_' + this.folderScanSeq + '_' + Date.now();
+    this.folderScans.set(scanId, result);
+    let staged: StagedFile = {
+      uri: result.rootUri,
+      fileName: result.rootName,
+      fileType: 'folder',
+      isImage: false,
+      isFolder: true,
+      folderFileCount: result.entries.length,
+      folderTotalBytes: result.totalBytes,
+      folderScanId: scanId,
+      size: result.totalBytes
+    };
+    this.stagedFiles.push(staged);
+    this.metaFilledUris.add(result.rootUri);
+    this.stagedSizeCache.set(result.rootUri, result.totalBytes);
+    invalidatePrePreparedItems();
+    this.updateTotalSizeCache();
+    this.scheduleShareSync();
+    if (result.skipped > 0) {
+      logger.warn('文件夹扫描跳过 ' + result.skipped + ' 个文件');
+    }
+  }
+
+  private folderScanOf(staged: StagedFile): FolderScanResult | undefined {
+    let scanId: string | undefined = staged.folderScanId;
+    if (scanId === undefined) {
+      return undefined;
+    }
+    return this.folderScans.get(scanId);
+  }
+
+  private dropFolderScan(staged: StagedFile): void {
+    if (staged.folderScanId !== undefined) {
+      this.folderScans.delete(staged.folderScanId);
     }
   }
 
@@ -739,10 +1017,12 @@ export class SendViewModel {
     return true;
   }
 
-  // 拖拽内容入口：解析结果 → 暂存列表（内部复用 stageUris / stageTextFile，不复制实现）。
-  // uris 非空 → 按扩展名判定图片走 stageUris；texts 逐条以 drop_ 前缀走 stageTextFile
+  // 拖拽内容入口：解析结果 → 暂存列表（内部复用 stageUris / stageFolderUris / stageTextFile，不复制实现）。
+  // uris 非空 → 按扩展名判定图片走 stageUris；folders 逐项异步扫描后以单个聚合条目暂存
+  // （与文件夹选择、系统分享同源）；texts 逐条以 drop_ 前缀走 stageTextFile
   // （空内容跳过、内容与既有文本条目重复则静默跳过）。
-  // 返回 true 表示至少新增一条暂存，false 表示全部为重复或为空（供视图决定 Toast 与拖拽结果）。
+  // 返回 true 表示至少新增一条文件/文本暂存；文件夹扫描异步进行，新增与否在扫描完成后体现
+  // （供视图决定 Toast 与拖拽结果）。
   applyDroppedContent(result: DragDropParseResult): boolean {
     let added: boolean = false;
     if (result.uris.length > 0) {
@@ -751,6 +1031,12 @@ export class SendViewModel {
       if (this.stagedFiles.length > beforeCount) {
         added = true;
       }
+    }
+    if (result.folders.length > 0) {
+      // 目录遍历与逐文件 stat 耗时可能较长：放下后异步扫描，结果经既有批量提示通道反馈
+      this.stageFolderUris(result.folders).catch((e: Error) => {
+        logger.warn('拖入文件夹扫描异常：' + String(e));
+      });
     }
     for (let i = 0; i < result.texts.length; i++) {
       let item = result.texts[i];
@@ -799,7 +1085,7 @@ export class SendViewModel {
   private static dropReliabilityHintShown: boolean = false;
 
   // 判定是否需要弹出拖入可靠性提示：仅移动端（非 2in1，电脑上直接拖拽不涉及中转站）、
-  // 本次拖入含文件类记录（文本已写入沙箱、不受来源关闭影响）、且本会话尚未提示过；
+  // 本次拖入含文件或文件夹类记录（文本已写入沙箱、不受来源关闭影响）、且本会话尚未提示过；
   // 命中时置位会话标志（保证同一会话仅弹一次），返回是否需要弹窗。
   shouldShowDropReliabilityHint(hasFileRecords: boolean): boolean {
     if (!hasFileRecords) {
@@ -957,6 +1243,7 @@ export class SendViewModel {
       cancelVideoThumbnail(removed.uri);
       this.stagedSizeCache.delete(removed.uri);
       this.metaFilledUris.delete(removed.uri);
+      this.dropFolderScan(removed);
       this.closeStagedHandle(removed.uri);
       // 释放缩略图请求标记：同一文件再次被选中时（URI 稳定）需重新生成缩略图
       this.videoPreviewRequestedUris.delete(removed.uri);
@@ -1051,6 +1338,7 @@ export class SendViewModel {
     for (let i = 0; i < this.stagedFiles.length; i++) {
       this.deleteStagedTextFile(this.stagedFiles[i]);
       this.releaseStagedPreview(this.stagedFiles[i]);
+      this.dropFolderScan(this.stagedFiles[i]);
     }
     // 清空时全部解码过期，无条件取消在途解码
     cancelVideoThumbnail();
@@ -1180,6 +1468,11 @@ export class SendViewModel {
     if (this.stagedFiles.length === 0) {
       return undefined;
     }
+    if (this.hasFolderBatch()) {
+      // MTA 没有文件夹语义，且接收端会把 zip 条目压成末段名；首版直接阻止。
+      this.setBatchNotice(BatchNoticeKind.mtaFolderUnsupported);
+      return undefined;
+    }
     // 文本发送：全部暂存项均为手动文本时以 MTA 原生文本方式发送
     // 判定由共享纯函数提供，不再自行遍历暂存项构建布尔数组
     if (isAllManualText(this.stagedFiles)) {
@@ -1286,15 +1579,11 @@ export class SendViewModel {
       return;
     }
     try {
-      let uris: Array<string> = [];
-      for (let i = 0; i < this.stagedFiles.length; i++) {
-        uris.push(this.stagedFiles[i].uri);
-      }
-      let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
-      // 先等元数据补全：命中后准备层无需为同一批文件再次 open/stat
+      // 先等普通文件元数据补全；文件夹扫描结果在暂存时已就绪
       await this.ensureStagedMeta();
-      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris,
-        this.stagedSourceMeta(), this.stagedSourceFds());
+      let inputs: PreparedSendInputs = this.buildPreparedInputs();
+      let items: Array<SendFileItem> = await prepareSendFiles(inputs.uris, inputs.manualTextUris,
+        inputs.meta, inputs.fds);
       await updateShareFiles(items);
     } catch (_e) {
       // 同步失败：保留原有挂载，不打断进行中的下载
@@ -1324,17 +1613,11 @@ export class SendViewModel {
     }
     this.isCreatingShareLink = true;
     try {
-      let uris: Array<string> = [];
-      for (let i = 0; i < this.stagedFiles.length; i++) {
-        uris.push(this.stagedFiles[i].uri);
-      }
-      // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并交由共享准备层
-      // 统一补设文本内容信息，网页分享不再单独维护筛选与补设循环
-      let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
-      // 先等元数据补全：命中后准备层无需为同一批文件再次 open/stat
+      // 先等普通文件元数据补全；文件夹扫描结果在暂存时已就绪
       await this.ensureStagedMeta();
-      let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris,
-        this.stagedSourceMeta(), this.stagedSourceFds());
+      let inputs: PreparedSendInputs = this.buildPreparedInputs();
+      let items: Array<SendFileItem> = await prepareSendFiles(inputs.uris, inputs.manualTextUris,
+        inputs.meta, inputs.fds);
       if (items.length > 0) {
         await createShareLink(items);
         let shareUrl = getShareLink();
@@ -1351,11 +1634,14 @@ export class SendViewModel {
     return '';
   }
 
-  // 点击设备即发送（无单/多目标模式差异）：发送后停留发送页，进度经任务/详情页呈现。
+  // 点击设备即发送（无单/多目标模式差异）：默认发送后停留发送页，进度经任务/详情页呈现；
+  // 「自动进入任务详情」开启时由视图层按新会话回调跳转详情。
   // 目标是否已有活跃发送取自统一会话注册表，另以在途 IP 集合弥补「点击→会话创建」的空窗；
   // 不再维护以 IP 为键的发送状态/进度/错误映射。
   // 返回明确发起结果：被拦截不再静默返回，由视图层据结果给出可见提示。
-  async sendToMultipleDeviceInline(device: DiscoveredDevice): Promise<SendInitiateResult> {
+  // `onSessionCreated` 在会话登记后立即回调（发送仍在继续），供「自动进入任务详情」使用。
+  async sendToMultipleDeviceInline(device: DiscoveredDevice,
+    onSessionCreated?: (sessionId: string) => void): Promise<SendInitiateResult> {
     // 已有缓存的预准备文件（已含校验和）即视为有内容；否则以暂存内容为准
     let cached: Array<SendFileItem> | undefined = peekPrePreparedItems();
     let hasContent: boolean = (cached !== undefined && cached.length > 0) || this.stagedFiles.length > 0;
@@ -1381,7 +1667,11 @@ export class SendViewModel {
       // 发送前该目标已有会话标识：用于识别本次新建的会话
       let beforeIds: Array<string> = this.sendSessionIdsForIp(device.ip);
       // 使用 sendToDeviceMulti 发送单设备——它会创建会话并驱动进度（点击即发送，无模式差异）
-      await sendToDeviceMulti([device], items);
+      await sendToDeviceMulti([device], items, (unifiedIds: Array<string>) => {
+        if (onSessionCreated !== undefined && unifiedIds.length > 0) {
+          onSessionCreated(unifiedIds[0]);
+        }
+      });
       // 暂存内容默认保留以支持连续发送；仅在「发送成功后自动清空暂存」开启且本次成功时清空
       if (isAutoClearStagedAfterSend() && this.hasNewSucceededSendTo(device.ip, beforeIds)) {
         this.clearStagedFiles();
@@ -1399,7 +1689,8 @@ export class SendViewModel {
    * 收藏设备发送编排：在线（发现快照命中）直接发送；离线按已保存地址与端口定向探测，
    * 探测成功后再发送。返回结果枚举供视图层给出提示。
    */
-  async sendToFavorite(favorite: FavoriteDevice): Promise<FavoriteSendResult> {
+  async sendToFavorite(favorite: FavoriteDevice,
+    onSessionCreated?: (sessionId: string) => void): Promise<FavoriteSendResult> {
     // LocalSend 总开关关闭时不允许发送（入口已置灰，此处为防御纵深）
     if (!this.localSendEnabled) {
       return FavoriteSendResult.disabled;
@@ -1420,7 +1711,7 @@ export class SendViewModel {
       }
       device = probed;
     }
-    let result: SendInitiateResult = await this.sendToMultipleDeviceInline(device);
+    let result: SendInitiateResult = await this.sendToMultipleDeviceInline(device, onSessionCreated);
     if (result === SendInitiateResult.blocked) {
       return FavoriteSendResult.busy;
     }
@@ -1458,6 +1749,7 @@ export class SendViewModel {
     let filter: SessionFilter = { protocolKey: MTA_SEND_KEY };
     let sessions: Array<TransferSession> = querySessions(filter);
     let freshCount: number = 0;
+    let freshId: string = '';
     let pending: boolean = false;
     for (let i = 0; i < sessions.length; i++) {
       let session: TransferSession = sessions[i];
@@ -1465,11 +1757,15 @@ export class SendViewModel {
         continue;
       }
       freshCount++;
+      if (freshId.length === 0) {
+        freshId = session.id;
+      }
       if (!isTerminalStage(session.stage)) {
         pending = true;
       }
     }
     let outcome = new MtaSendOutcome();
+    outcome.sessionId = freshId;
     if (freshCount === 0) {
       outcome.settled = !isMtaSendSessionActive();
       return outcome;
@@ -1579,15 +1875,25 @@ export class SendViewModel {
   // 确有条目新增时使既有预准备结果失效（未新增则保持复用）。
   // 图片与视频按扩展名区分：图片直显缩略图，视频由暂存列表懒生成缩略图。
   private stageUris(uris: Array<string>): void {
-    // 选择返回的临时授权尽快转成持久授权：过期或进程重启后仍可读取（不复制文件、不占应用存储）
-    persistPickedUris(uris).catch((): void => {
-    });
+    // 一次性构建新数组再赋值：逐条 push @Trace 数组会触发数百次观察通知，
+    // 大选择量下会拖慢选择器关闭后的首帧。
+    let next: Array<StagedFile> = this.stagedFiles.slice();
+    let seen: Set<string> = new Set<string>();
+    for (let i = 0; i < next.length; i++) {
+      seen.add(next[i].uri);
+    }
+    let totalFiles: number = this.stagedFileCount();
     let addedCount: number = 0;
     for (let i = 0; i < uris.length; i++) {
       let uri = uris[i];
-      if (this.isAlreadyStaged(uri)) {
+      if (uri.length === 0 || seen.has(uri)) {
         continue;
       }
+      if (isOverBatchLimit(totalFiles + 1)) {
+        this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
+        break;
+      }
+      seen.add(uri);
       let name = this.extractFileNameFromUri(uri);
       let ext = this.getExtension(name);
       let isImg: boolean = isImageExtension(ext);
@@ -1601,32 +1907,101 @@ export class SendViewModel {
         fileType: mime,
         isImage: isImg
       };
-      this.stagedFiles.push(staged);
+      next.push(staged);
+      totalFiles++;
       addedCount++;
     }
-    // 仅在有实际新增时失效：暂存内容未变化时保持复用既有准备结果
-    // （多目标模式连续向多台设备发送依赖该复用，不得每次无条件重新准备）
     if (addedCount > 0) {
+      this.stagedFiles = next;
       invalidatePrePreparedItems();
       this.scheduleShareSync();
       this.prefetchStagedMeta();
     }
+    this.persistPickedUrisAfterMeta(uris);
     this.updateTotalSizeCache();
   }
 
-  // 暂存项已补全的源文件元数据（uri → 大小与修改时间）：随准备请求一并下传，
-  // 使准备层不必为同一批文件再次逐项 open/stat（元数据缺失的条目仍由准备层自行读取）
-  private stagedSourceMeta(): Map<string, SourceFileMeta> {
-    let meta: Map<string, SourceFileMeta> = new Map();
+  /**
+   * URI 持久化会占用文件服务，与元数据补全同时执行会抢主线程、推迟 Toast：
+   * 等元数据补全结束后再持久化；补全失败/被跳过时也照常执行一次。
+   */
+  private persistPickedUrisAfterMeta(uris: Array<string>): void {
+    let done: boolean = false;
+    let run: () => void = (): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      setTimeout((): void => {
+        persistPickedUris(uris).catch((): void => {
+        });
+      }, 0);
+    };
+    let meta: Promise<void> | undefined = this.metaPrefetchPromise;
+    if (meta === undefined) {
+      run();
+      return;
+    }
+    meta.then(run).catch(run);
+  }
+
+  /** 暂存内容指纹：文件夹带上扫描标识，扫描结果更换时缓存失效。 */
+  private stagedFingerprint(): string {
+    let parts: Array<string> = [];
     for (let i = 0; i < this.stagedFiles.length; i++) {
       let staged: StagedFile = this.stagedFiles[i];
-      if (staged.size === undefined || staged.lastModified === undefined) {
+      let part: string = staged.uri;
+      if (staged.isFolder === true && staged.folderScanId !== undefined) {
+        part += '#' + staged.folderScanId;
+      }
+      parts.push(part);
+    }
+    return parts.join('\n');
+  }
+
+  /**
+   * 展开暂存内容：普通文件按原 URI，文件夹按扫描结果逐文件展开；
+   * 文件夹文件的 wireName/sourcePath 随元数据下传，发送时走路径模式。
+   */
+  private buildPreparedInputs(): PreparedSendInputs {
+    let uris: Array<string> = [];
+    let meta: Map<string, SourceFileMeta> = new Map();
+    let fds: Map<string, number> = new Map();
+    for (let i = 0; i < this.stagedFiles.length; i++) {
+      let staged: StagedFile = this.stagedFiles[i];
+      if (staged.isFolder === true) {
+        let scan: FolderScanResult | undefined = this.folderScanOf(staged);
+        if (scan === undefined) {
+          logger.warn('文件夹扫描结果缺失，跳过：' + staged.fileName);
+          continue;
+        }
+        for (let k = 0; k < scan.entries.length; k++) {
+          let entry = scan.entries[k];
+          uris.push(entry.uri);
+          meta.set(entry.uri, {
+            size: entry.size,
+            lastModified: entry.lastModified,
+            wireName: entry.relativeName,
+            sourcePath: entry.path
+          });
+        }
         continue;
       }
-      let entry: SourceFileMeta = { size: staged.size, lastModified: staged.lastModified };
-      meta.set(staged.uri, entry);
+      uris.push(staged.uri);
+      if (staged.size !== undefined && staged.lastModified !== undefined) {
+        meta.set(staged.uri, { size: staged.size, lastModified: staged.lastModified });
+      }
+      let handle: fs.File | undefined = this.stagedHandles.get(staged.uri);
+      if (handle !== undefined) {
+        fds.set(staged.uri, handle.fd);
+      }
     }
-    return meta;
+    return {
+      uris: uris,
+      manualTextUris: collectManualTextUris(this.stagedFiles),
+      meta: meta,
+      fds: fds
+    };
   }
 
   // 暂存文件总字节数：仅累计已补全的大小（不做同步 IO）；
@@ -1649,6 +2024,7 @@ export class SendViewModel {
     if (this.metaPrefetchPromise !== undefined) {
       return;
     }
+    this.isFillingStagedMeta = true;
     this.metaPrefetchPromise = this.runStagedMetaPrefetch();
   }
 
@@ -1698,6 +2074,7 @@ export class SendViewModel {
       }
     }
     let filled: number = 0;
+    let processed: number = 0;
     let startMs: number = Date.now();
     try {
       await forEachConcurrently(pending.length, async (index: number): Promise<void> => {
@@ -1722,10 +2099,18 @@ export class SendViewModel {
         this.stagedSizeCache.set(uri, opened.size);
         this.applyStagedMeta(uri, opened.size, opened.lastModified);
         filled++;
+        processed++;
+        // 每 20 个文件让出一次事件循环：用户此时点击设备/页面按钮能及时得到 Toast 反馈
+        if (processed % 20 === 0) {
+          await new Promise<void>((resolve: () => void) => {
+            setTimeout(resolve, 0);
+          });
+        }
       });
       logger.debug('补全暂存元数据耗时=' + (Date.now() - startMs) + 'ms 文件数=' + pending.length);
     } finally {
       this.metaPrefetchPromise = undefined;
+      this.isFillingStagedMeta = false;
       if (filled > 0) {
         // 整表替换：Repeat 的键包含已知大小，替换后行内文案与总大小同步刷新
         this.stagedFiles = this.stagedFiles.slice();
@@ -1739,10 +2124,25 @@ export class SendViewModel {
    * （复用方式是 dup，避免同一文件被再次 open）。超过上限或失败时同样返回元数据。
    */
   private async openStagedHandle(uri: string): Promise<StagedHandleSnapshot | undefined> {
+    // 文档 Picker 来源走路径模式发送，不需要保留 fd；直接按路径 stat，
+    // 避免为 500 个文件逐一 open 后占住句柄，也减少文件服务往返。
+    if (uri.startsWith('file://docs/')) {
+      try {
+        let path: string = new fileUri.FileUri(uri).path;
+        let stat: fs.Stat = await fs.stat(path);
+        return {
+          size: stat.size,
+          lastModified: Math.floor(stat.mtime * 1000)
+        };
+      } catch (_e) {
+        // 路径不可读时回退通用 open 流程，保留已有的错误降级行为
+      }
+    }
     let file: fs.File | undefined = undefined;
     try {
       file = await fs.open(uri, fs.OpenMode.READ_ONLY);
-      let stat: fs.Stat = fs.statSync(file.fd);
+      // 异步 stat：500 个文件同步 stat 会连续占用主线程，选择器关闭后首帧明显卡顿
+      let stat: fs.Stat = await fs.stat(file.fd);
       let snapshot: StagedHandleSnapshot = {
         size: stat.size,
         lastModified: Math.floor(stat.mtime * 1000)
@@ -1821,16 +2221,6 @@ export class SendViewModel {
     }
   }
 
-  // 暂存项已保留的源文件句柄（uri → fd）：发送据此 dup（Rust 以 pread 读取），
-  // 校验和 dup 后归位偏移，网页分享直接借用
-  private stagedSourceFds(): Map<string, number> {
-    let fds: Map<string, number> = new Map();
-    this.stagedHandles.forEach((handle: fs.File, uri: string): void => {
-      fds.set(uri, handle.fd);
-    });
-    return fds;
-  }
-
   // 回填某暂存项的大小与源修改时间（按 uri 定位，避免补全期间增删导致下标漂移）
   private applyStagedMeta(uri: string, size: number, lastModified: number): void {
     for (let i = 0; i < this.stagedFiles.length; i++) {
@@ -1849,19 +2239,17 @@ export class SendViewModel {
   // 手动文本条目的 preview 补设随 uris 一并交由共享准备层统一完成。
   // 返回准备结果；无文件/失败时返回空数组。
   private async prepareAndCacheItems(): Promise<Array<SendFileItem>> {
-    let uris: Array<string> = [];
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      uris.push(this.stagedFiles[i].uri);
-    }
     // await 前的暂存指纹：准备期间用户增删暂存会使 await 前后指纹不一致
-    let fingerprintBefore: string = uris.join('\n');
-    // 手动文本条目的源定位经共享筛选纯函数产出，随 uris 一并传入共享准备层，
-    // 由 prepareSendFiles 统一补设 preview（单目标、多目标、指定 IP 共用此路径）
-    let manualTextUris: Array<string> = collectManualTextUris(this.stagedFiles);
-    // 先等元数据补全：命中后准备层无需为同一批文件再次 open/stat
+    let fingerprintBefore: string = this.stagedFingerprint();
+    // 先等普通文件的元数据补全；文件夹扫描结果在暂存时已就绪
     await this.ensureStagedMeta();
-    let items: Array<SendFileItem> = await prepareSendFiles(uris, manualTextUris,
-      this.stagedSourceMeta(), this.stagedSourceFds());
+    let inputs: PreparedSendInputs = this.buildPreparedInputs();
+    if (isOverBatchLimit(inputs.uris.length)) {
+      this.setBatchNotice(BatchNoticeKind.overLimit, MAX_BATCH_FILES);
+      return [];
+    }
+    let items: Array<SendFileItem> = await prepareSendFiles(inputs.uris, inputs.manualTextUris,
+      inputs.meta, inputs.fds);
     if (items.length === 0) {
       return items;
     }
@@ -1881,14 +2269,7 @@ export class SendViewModel {
     }
     // 暂存指纹未变才缓存预准备结果：await 期间暂存被增删/清空时跳过缓存，
     // 避免旧快照污染后续点击发送（本次仍按点击时刻的内容发送）
-    let fingerprintAfter: string = '';
-    for (let i = 0; i < this.stagedFiles.length; i++) {
-      if (i > 0) {
-        fingerprintAfter += '\n';
-      }
-      fingerprintAfter += this.stagedFiles[i].uri;
-    }
-    if (fingerprintAfter === fingerprintBefore) {
+    if (this.stagedFingerprint() === fingerprintBefore) {
       setPrePreparedItems(items);
     }
     return items;

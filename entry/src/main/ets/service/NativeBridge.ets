@@ -335,21 +335,22 @@ export function nativeRespondTransfer(sessionId: string, accept: boolean,
   respondTransfer(sessionId, accept, acceptedFileIds);
 }
 
-// 预注册接收文件的直写目标 fd（ArkTS 侧在 respondTransfer 前逐文件调用；
-// 注册后 fd 所有权移交 Rust，写入完成或会话终态时由 Rust 关闭）
+// 预注册接收文件的落盘目标（respondTransfer 前逐文件调用）。
+// fd >= 0：ArkTS 已打开的临时文件写句柄，所有权移交 Rust；
+// fd = -1：路径目标模式，ArkTS 只预创建空临时文件并关闭，Rust 在上传到达时打开。
 export function nativeRegisterRecvFileFd(sessionId: string, fileId: string, fd: number,
   path: string): void {
   registerRecvFileFd(sessionId, fileId, fd, path);
 }
 
-// 丢弃某会话已注册但未开始上传的直写 fd（respond 失败/回滚时调用，由 Rust 关闭）
+// 丢弃某会话已注册但未开始上传的接收目标（respond 失败/回滚时调用；路径目标无句柄）
 export function nativeDiscardRecvFileFds(sessionId: string): void {
   discardRecvFileFds(sessionId);
 }
 
 export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: string,
-  files: Array<NativeFileToSend>): Promise<NativeSendResult> {
-  let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files));
+  files: Array<NativeFileToSend>, sendKey: string): Promise<NativeSendResult> {
+  let result: SendResult = await sendFiles(JSON.stringify(target), senderAlias, JSON.stringify(files), sendKey);
   let httpError: NativeHttpError | undefined = undefined;
   if (result.error !== undefined && result.error !== null) {
     let e = result.error;
@@ -373,8 +374,8 @@ export async function nativeCancelTransfer(target: NativeCancelTarget, sessionId
 }
 
 // 触发本地 CancellationToken 取消，中断进行中的上传（不向远端发请求）。
-export function nativeCancelTransferLocal(sessionId: string): void {
-  cancelTransfer(sessionId);
+export function nativeCancelTransferLocal(cancelKey: string): void {
+  cancelTransfer(cancelKey);
 }
 
 export async function nativeCancelLocalSession(sessionId: string): Promise<void> {

@@ -15,6 +15,7 @@ import { notifyChange } from '../repository/AppCore';
 import {
   SESSION_HISTORY_SCHEMA_VERSION,
   SessionHistoryEntry,
+  SessionHistoryFailure,
   SessionHistoryFile,
   SessionHistoryFileEntry,
   SessionHistoryQuery,
@@ -29,7 +30,15 @@ import {
   trimHistory,
   upsertHistory
 } from '../../model/transfer/SessionHistory';
-import { TransferSession, outcomeForStage, displayDurationMs } from '../../model/transfer/TransferSession';
+import {
+  SessionContentKind,
+  SessionFileStage,
+  SessionHistoryOutcome,
+  TransferSession,
+  displayDurationMs,
+  outcomeForStage
+} from '../../model/transfer/TransferSession';
+import { SUMMARY_DETAIL_THRESHOLD } from '../../model/TransferLimits';
 import {
   SESSION_HISTORY_CAPACITY,
   SESSION_HISTORY_MAX_ENTRIES,
@@ -103,18 +112,43 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
   // 归档耗时即传输耗时：从首个字节进度到结束（秒级截断，不足 1 秒记 1 秒）；
   // 从未开始传输时为 0，由展示层降级为占位符（任务耗时由 startedAt → finishedAt 另行推导）
   let durationMs: number = displayDurationMs(session.transferStartedAt, finishedAt);
+  // 文件夹与超过阈值的大批次只保留摘要；≤100 文件的普通批次保留逐文件明细。
+  // 摘要条目不要再构建上千个逐文件对象，归档时只统计计数与失败名单。
+  let detailOmitted: boolean = session.contentKind === SessionContentKind.folder ||
+    session.files.length > SUMMARY_DETAIL_THRESHOLD;
   let files: Array<SessionHistoryFileEntry> = [];
+  let completedCount: number = 0;
+  let failedCount: number = 0;
+  let failedFiles: Array<SessionHistoryFailure> = [];
   for (let i = 0; i < session.files.length; i++) {
     let f = session.files[i];
-    files.push({
-      fileId: f.fileId,
-      fileName: f.fileName,
-      fileType: f.fileType,
-      size: f.totalBytes,
-      stage: f.stage,
-      checksum: f.checksum,
-      path: f.path
-    });
+    if (f.stage === SessionFileStage.completed) {
+      completedCount++;
+    } else if (f.stage === SessionFileStage.failed) {
+      failedCount++;
+      if (failedFiles.length < 100) {
+        failedFiles.push({ fileName: f.fileName, reason: '' });
+      }
+    }
+    // 文件夹会话仍保留同批次的独立文件（文件名不含 '/'），恢复后可与文件夹行一起展示；
+    // 文件夹内逐文件明细与 >100 普通批次一样只留摘要。
+    if (!detailOmitted || (session.contentKind === SessionContentKind.folder &&
+      f.fileName.indexOf('/') < 0)) {
+      files.push({
+        fileId: f.fileId,
+        fileName: f.fileName,
+        fileType: f.fileType,
+        size: f.totalBytes,
+        stage: f.stage,
+        checksum: f.checksum,
+        path: f.path
+      });
+    }
+  }
+  // 成功终态是权威结果：文件夹批次即使个别进度事件未回填阶段，也按全部完成归档
+  if (session.contentKind === SessionContentKind.folder && outcome === SessionHistoryOutcome.succeeded) {
+    completedCount = session.files.length;
+    failedCount = 0;
   }
   let entry: SessionHistoryEntry = {
     sessionId: session.id,
@@ -130,6 +164,12 @@ export function buildHistoryEntry(session: TransferSession): SessionHistoryEntry
     files: files,
     fileCount: session.files.length,
     totalBytes: session.totalBytes,
+    contentKind: session.contentKind,
+    folder: session.folder,
+    completedCount: completedCount,
+    failedCount: failedCount,
+    failedFiles: failedFiles,
+    detailOmitted: detailOmitted,
     textMessage: session.textMessage,
     outcome: outcome,
     errorMessage: session.errorMessage,

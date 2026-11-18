@@ -12,9 +12,8 @@ import { sendTextDir } from '../service/repository/SendRepository';
 import { recvTextDir } from '../service/repository/ReceiveTargets';
 
 // 包装单个接收历史条目的条目级 ViewModel。
-// 依据基于场景的列表策略（方案 B）选择：条目为
-// 可修改（可删除），因此每个条目被包装而不是暴露
-// 将原始 DTO 暴露给视图。
+// 条目可变（可删除），因此对每个条目单独包装，
+// 不把原始 DTO 直接暴露给视图。
 // 文本预览策略（可预览性判定、读取上限）与会话详情页共用同一套公共能力，
 // 两页口径不分叉；类型图标与媒体缩略由公共组件 FileEntryThumb 承载。
 @ObservedV2
@@ -28,6 +27,10 @@ export class ReceiveHistoryItemViewModel {
   @Trace public isMessage: boolean = false
   @Trace public timestamp: number = 0
   @Trace public path: string = ''
+  // 文件夹摘要条目：一条记录代表一个接收会话；逐文件操作交给系统文件管理器
+  @Trace public isFolder: boolean = false
+  @Trace public fileCount: number = 1
+  @Trace public failedCount: number = 0
   // 多选模式下的勾选状态：长按条目进入多选时勾选，逐条点击切换
   @Trace public selected: boolean = false
   // 文本缩略预览内容：文本类条目按需读取文件本身，超阈值时为前 128KB 截断内容；
@@ -49,6 +52,9 @@ export class ReceiveHistoryItemViewModel {
     this.isMessage = entry.isMessage;
     this.timestamp = entry.timestamp;
     this.path = entry.path;
+    this.isFolder = entry.isFolder === true;
+    this.fileCount = entry.fileCount !== undefined && entry.fileCount > 0 ? entry.fileCount : 1;
+    this.failedCount = entry.failedCount !== undefined ? entry.failedCount : 0;
   }
 
   get formattedTime(): string {
@@ -59,9 +65,9 @@ export class ReceiveHistoryItemViewModel {
     return formatSizeDetailed(this.fileSize);
   }
 
-  /** 是否为文本类条目（可读取内容按文本处理）。 */
+  /** 是否为文本类条目（可读取内容按文本处理）；文件夹摘要不参与文本预览。 */
   get isTextEntry(): boolean {
-    return isTextFile(this.fileType, this.fileName);
+    return !this.isFolder && isTextFile(this.fileType, this.fileName);
   }
 
   /** 是否可查看完整文本：文本类 + 定位非空 + 未超预览阈值（公共判定，与详情页同口径）。 */

@@ -1,0 +1,92 @@
+// FolderSummaryTest：入站相对路径 → 文件夹摘要。
+import { describe, it, expect } from '@ohos/hypium'
+import {
+  buildFolderReceiveHistoryEntry,
+  summarizeInboundFolder,
+  summarizeOutboundFolder
+} from '../../../../main/ets/model/transfer/FolderSummary'
+import { ReceiveHistoryEntry, SendFileItem } from '../../../../main/ets/model/Types'
+import { SessionFileDescriptor, SessionFolderInfo } from '../../../../main/ets/model/transfer/TransferSession'
+
+function file(name: string, size: number): SessionFileDescriptor {
+  return { fileId: name, fileName: name, fileType: 'text/plain', totalBytes: size }
+}
+
+export default function FolderSummaryTest() {
+  describe('FolderSummaryTest', () => {
+    it('plain_files_return_undefined', 0, () => {
+      let result: SessionFolderInfo | undefined =
+        summarizeInboundFolder([file('a.txt', 1), file('b.txt', 2)]);
+      expect(result === undefined).assertTrue();
+    })
+
+    it('single_root_summary', 0, () => {
+      let result: SessionFolderInfo | undefined =
+        summarizeInboundFolder([file('Photos/a.jpg', 10), file('Photos/sub/b.jpg', 20)]);
+      expect(result !== undefined).assertTrue();
+      if (result !== undefined) {
+        expect(result.name).assertEqual('Photos');
+        expect(result.rootCount).assertEqual(1);
+        expect(result.fileCount).assertEqual(2);
+        expect(result.totalBytes).assertEqual(30);
+      }
+    })
+
+    it('outbound_folder_summary_and_root_path', 0, () => {
+      let files: Array<SendFileItem> = [{
+        fileId: 'f1', filePath: '/storage/Users/currentUser/Download/Photos/a.txt',
+        fileName: 'Photos/a.txt', fileType: 'text/plain', size: 10, pathSource: true
+      }, {
+        fileId: 'f2', filePath: '/storage/Users/currentUser/Download/Photos/sub/b.txt',
+        fileName: 'Photos/sub/b.txt', fileType: 'text/plain', size: 20, pathSource: true
+      }];
+      let info = summarizeOutboundFolder(files);
+      expect(info !== undefined).assertTrue();
+      if (info !== undefined) {
+        expect(info.name).assertEqual('Photos');
+        expect(info.fileCount).assertEqual(2);
+        expect(info.totalBytes).assertEqual(30);
+        expect(info.path).assertEqual('/storage/Users/currentUser/Download/Photos');
+      }
+    })
+
+    it('folder_receive_history_is_one_entry', 0, () => {
+      let entry: ReceiveHistoryEntry | undefined = buildFolderReceiveHistoryEntry('sess',
+        ['Photos/a.txt', 'Photos/sub/b.txt'], [10, 20],
+        '/storage/Users/currentUser/Download/Photos/sub/b.txt', 'Photos/sub/b.txt', 'peer', 100);
+      expect(entry !== undefined).assertTrue();
+      if (entry !== undefined) {
+        expect(entry.isFolder).assertTrue();
+        expect(entry.fileCount).assertEqual(2);
+        expect(entry.fileSize).assertEqual(30);
+        expect(entry.fileName).assertEqual('Photos');
+        expect(entry.path).assertEqual('/storage/Users/currentUser/Download/Photos');
+      }
+    })
+
+    it('mixed_folder_and_loose_files_counted_separately', 0, () => {
+      let result: SessionFolderInfo | undefined =
+        summarizeInboundFolder([file('Photos/a.jpg', 10), file('Photos/b.jpg', 20),
+          file('loose1.txt', 6), file('loose2.txt', 6)]);
+      expect(result !== undefined).assertTrue();
+      if (result !== undefined) {
+        expect(result.name).assertEqual('Photos');
+        expect(result.fileCount).assertEqual(2);
+        expect(result.totalBytes).assertEqual(30);
+        expect(result.looseFileCount).assertEqual(2);
+        expect(result.looseBytes).assertEqual(12);
+      }
+    })
+
+    it('multi_root_summary_has_no_name', 0, () => {
+      let result: SessionFolderInfo | undefined =
+        summarizeInboundFolder([file('A/a.txt', 1), file('B/b.txt', 2)]);
+      expect(result !== undefined).assertTrue();
+      if (result !== undefined) {
+        expect(result.name).assertEqual('');
+        expect(result.rootCount).assertEqual(2);
+        expect(result.fileCount).assertEqual(2);
+      }
+    })
+  })
+}

@@ -10,6 +10,7 @@ function makeInterface(name: string, type: NetworkType, ip: string = '192.168.1.
     prefixLength: 24,
     type: type,
     isDefault: false,
+    isHotspot: false,
     name: name
   }
 }

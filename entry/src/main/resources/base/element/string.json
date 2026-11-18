@@ -25,6 +25,42 @@
       "value": "Files"
     },
     {
+      "name": "send_folder",
+      "value": "Folder"
+    },
+    {
+      "name": "send_download",
+      "value": "Download"
+    },
+    {
+      "name": "send_batch_unsupported",
+      "value": "Folder selection is not supported below HarmonyOS 7.0"
+    },
+    {
+      "name": "send_folder_empty",
+      "value": "No files to send in this folder"
+    },
+    {
+      "name": "send_folder_too_many",
+      "value": "Folder has more than %d files; compress it before sending"
+    },
+    {
+      "name": "send_folder_scan_failed",
+      "value": "Failed to scan the folder; try again"
+    },
+    {
+      "name": "send_batch_over_limit",
+      "value": "At most %d files per send; compress the folder first"
+    },
+    {
+      "name": "send_batch_soft_hint",
+      "value": "%d files selected; compressing the folder is recommended"
+    },
+    {
+      "name": "send_mta_folder_unsupported",
+      "value": "MTA does not support folders; send to a LocalSend device"
+    },
+    {
       "name": "send_media",
       "value": "Gallery"
     },
@@ -103,6 +139,34 @@
     {
       "name": "restore_defaults_confirm",
       "value": "Are you sure you want to restore all settings to their defaults? This cannot be undone"
+    },
+    {
+      "name": "cache_label",
+      "value": "Cache"
+    },
+    {
+      "name": "clear_cache_title",
+      "value": "Clear cache"
+    },
+    {
+      "name": "clear_cache_confirm",
+      "value": "The following cached files will be cleared: send thumbnails, receive temp/fallback files, MTA preview thumbnails, web upload staging files, diagnostic log export temp files, and legacy send temp leftovers"
+    },
+    {
+      "name": "clear_cache_success",
+      "value": "Cleared %s of cache"
+    },
+    {
+      "name": "clear_cache_empty",
+      "value": "There is no cache to clear"
+    },
+    {
+      "name": "clear_cache_busy",
+      "value": "A transfer or save operation is in progress. Please try again later"
+    },
+    {
+      "name": "clear_cache_failed",
+      "value": "Failed to clear the cache. Please try again later"
     },
     {
       "name": "dialog_confirm",
@@ -307,6 +371,14 @@
     {
       "name": "save_to_gallery_desc",
       "value": "Prompt to save to gallery when received files contain images"
+    },
+    {
+      "name": "auto_open_session_detail_label",
+      "value": "Open task detail after sending"
+    },
+    {
+      "name": "auto_open_session_detail_desc",
+      "value": "Open the task detail page automatically after sending to a device"
     },
     {
       "name": "advanced_settings_label",
@@ -605,6 +677,10 @@
       "value": "Wi-Fi"
     },
     {
+      "name": "network_type_hotspot",
+      "value": "Hotspot"
+    },
+    {
       "name": "network_type_cellular",
       "value": "Cellular"
     },
@@ -757,6 +833,14 @@
       "value": "%d file(s), %s"
     },
     {
+      "name": "send_staged_folder_summary",
+      "value": "%d folder(s), %d file(s), %s"
+    },
+    {
+      "name": "send_preparing_files",
+      "value": "Preparing files, please try again shortly"
+    },
+    {
       "name": "send_add_files",
       "value": "Add"
     },
@@ -874,7 +958,7 @@
     },
     {
       "name": "send_error_timeout",
-      "value": "Receiver did not respond. Make sure the other device is ready and try again"
+      "value": "Receiver did not respond. Make sure the other device is open; if its network changed, refresh the device list and retry"
     },
     {
       "name": "send_error_cancelled",
@@ -907,6 +991,14 @@
     {
       "name": "send_failure_card_action_detail",
       "value": "View details"
+    },
+    {
+      "name": "send_failure_card_action_refresh",
+      "value": "Refresh devices"
+    },
+    {
+      "name": "send_refreshing_devices_toast",
+      "value": "Refreshing device list…"
     },
     {
       "name": "send_protocol_block_title",
@@ -1039,6 +1131,30 @@
     {
       "name": "history_delete_files_label",
       "value": "Also delete files"
+    },
+    {
+      "name": "history_delete_folder_label",
+      "value": "Also delete folder"
+    },
+    {
+      "name": "history_folder_file_count",
+      "value": "%d files"
+    },
+    {
+      "name": "history_folder_multi_name",
+      "value": "Folders"
+    },
+    {
+      "name": "session_folder_file_count",
+      "value": "%d files"
+    },
+    {
+      "name": "session_folder_failed_files",
+      "value": "View failed files"
+    },
+    {
+      "name": "session_folder_failed_more",
+      "value": "%d more failed files"
     },
     {
       "name": "history_delete_message_file",
@@ -1641,6 +1757,18 @@
       "value": "Make sure devices are on the same network"
     },
     {
+      "name": "localsend_client_install_hint",
+      "value": "If devices on other systems need a client, install LocalSend"
+    },
+    {
+      "name": "localsend_download_address",
+      "value": "Download address"
+    },
+    {
+      "name": "send_no_source_links_hint",
+      "value": "If the target phone supports MTA (Mutual Transfer Alliance), turn on its share feature\n\nIf devices on other systems need a client, install LocalSend"
+    },
+    {
       "name": "settings_source_localsend",
       "value": "LocalSend"
     },
@@ -1825,6 +1953,10 @@
       "value": "Content too long, showing first 128 KB only"
     },
     {
+      "name": "session_file_full_name",
+      "value": "Full file name"
+    },
+    {
       "name": "session_file_open_with_app",
       "value": "Open with another app"
     },
@@ -1902,7 +2034,7 @@
     },
     {
       "name": "favorites_probe_failed",
-      "value": "Device unreachable. Please check the network."
+      "value": "Device unreachable. Check the network; if the device changed networks or IP, refresh the device list and try again."
     },
     {
       "name": "multi_select_cancel",
@@ -2011,6 +2143,10 @@
     {
       "name": "web_address_switch",
       "value": "Switch web address"
+    },
+    {
+      "name": "web_address_multi_hint",
+      "value": "Multiple network interfaces detected. Make sure the selected network interface is on the same network as the other device."
     },
     {
       "name": "web_service_restart_title",
@@ -2174,7 +2310,7 @@
     },
     {
       "name": "portal_restore_failed",
-      "value": "Could not restore defaults. Check your network."
+      "value": "Could not restore defaults. Please try again later."
     },
     {
       "name": "portal_delete_title",
@@ -2327,6 +2463,18 @@
     {
       "name": "portal_open_confirm_action",
       "value": "Open"
+    },
+    {
+      "name": "receive_folder_too_many_files",
+      "value": "The incoming folder has more than %s files and was rejected"
+    },
+    {
+      "name": "receive_folder_invalid_path",
+      "value": "The sender provided an invalid file path; the transfer was rejected"
+    },
+    {
+      "name": "receive_folder_reserved_name",
+      "value": "The sender folder contains a reserved temporary directory name; the transfer was rejected"
     }
   ]
 }

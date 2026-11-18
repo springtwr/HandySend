@@ -25,6 +25,42 @@
       "value": "檔案"
     },
     {
+      "name": "send_folder",
+      "value": "資料夾"
+    },
+    {
+      "name": "send_download",
+      "value": "下載"
+    },
+    {
+      "name": "send_batch_unsupported",
+      "value": "鴻蒙7.0以下裝置不支援選擇資料夾"
+    },
+    {
+      "name": "send_folder_empty",
+      "value": "資料夾中沒有可傳送的檔案"
+    },
+    {
+      "name": "send_folder_too_many",
+      "value": "資料夾檔案數超過單次上限 %d，建議壓縮後傳送"
+    },
+    {
+      "name": "send_folder_scan_failed",
+      "value": "掃描資料夾失敗，請重試"
+    },
+    {
+      "name": "send_batch_over_limit",
+      "value": "單次最多傳送 %d 個檔案，建議壓縮後傳送"
+    },
+    {
+      "name": "send_batch_soft_hint",
+      "value": "檔案較多（%d 個），建議壓縮資料夾後傳送"
+    },
+    {
+      "name": "send_mta_folder_unsupported",
+      "value": "互傳暫不支援資料夾，請傳送到區域網路裝置"
+    },
+    {
       "name": "send_media",
       "value": "圖庫"
     },
@@ -103,6 +139,34 @@
     {
       "name": "restore_defaults_confirm",
       "value": "確定要將所有設定恢復為預設值嗎？此操作不可撤銷"
+    },
+    {
+      "name": "cache_label",
+      "value": "快取"
+    },
+    {
+      "name": "clear_cache_title",
+      "value": "清除快取"
+    },
+    {
+      "name": "clear_cache_confirm",
+      "value": "將清除下列快取檔案：傳送縮圖、接收暫存/回退檔案、MTA 預覽縮圖、網頁上傳暫存檔案、診斷日誌匯出暫存檔案，以及舊版本傳送暫存殘留"
+    },
+    {
+      "name": "clear_cache_success",
+      "value": "已清除 %s 快取"
+    },
+    {
+      "name": "clear_cache_empty",
+      "value": "沒有需要清理的快取"
+    },
+    {
+      "name": "clear_cache_busy",
+      "value": "有傳輸或儲存操作正在進行，請稍後再試"
+    },
+    {
+      "name": "clear_cache_failed",
+      "value": "清除快取失敗，請稍後再試"
     },
     {
       "name": "dialog_confirm",
@@ -307,6 +371,14 @@
     {
       "name": "save_to_gallery_desc",
       "value": "接收的檔案包含圖片時會提示儲存到相簿"
+    },
+    {
+      "name": "auto_open_session_detail_label",
+      "value": "自動進入任務詳情"
+    },
+    {
+      "name": "auto_open_session_detail_desc",
+      "value": "點擊裝置傳送後自動進入該任務的詳情頁"
     },
     {
       "name": "advanced_settings_label",
@@ -605,6 +677,10 @@
       "value": "Wi-Fi"
     },
     {
+      "name": "network_type_hotspot",
+      "value": "熱點"
+    },
+    {
       "name": "network_type_cellular",
       "value": "蜂窩網路"
     },
@@ -757,6 +833,14 @@
       "value": "共%d個檔案，%s"
     },
     {
+      "name": "send_staged_folder_summary",
+      "value": "%d個資料夾，%d個檔案，%s"
+    },
+    {
+      "name": "send_preparing_files",
+      "value": "檔案準備中，請稍後再點擊傳送"
+    },
+    {
       "name": "send_add_files",
       "value": "新增檔案"
     },
@@ -874,7 +958,7 @@
     },
     {
       "name": "send_error_timeout",
-      "value": "接收方未回應，請確認對方已開啟應用後重試"
+      "value": "接收方未回應，請確認對方已開啟應用；若對方更換過網路，請重新整理裝置列表後再試"
     },
     {
       "name": "send_error_cancelled",
@@ -907,6 +991,14 @@
     {
       "name": "send_failure_card_action_detail",
       "value": "查看詳情"
+    },
+    {
+      "name": "send_failure_card_action_refresh",
+      "value": "重新整理裝置列表"
+    },
+    {
+      "name": "send_refreshing_devices_toast",
+      "value": "正在重新整理裝置列表…"
     },
     {
       "name": "send_protocol_block_title",
@@ -1039,6 +1131,30 @@
     {
       "name": "history_delete_files_label",
       "value": "同時刪除檔案"
+    },
+    {
+      "name": "history_delete_folder_label",
+      "value": "同時刪除資料夾"
+    },
+    {
+      "name": "history_folder_file_count",
+      "value": "%d 個檔案"
+    },
+    {
+      "name": "history_folder_multi_name",
+      "value": "多個資料夾"
+    },
+    {
+      "name": "session_folder_file_count",
+      "value": "%d 個檔案"
+    },
+    {
+      "name": "session_folder_failed_files",
+      "value": "檢視失敗檔案"
+    },
+    {
+      "name": "session_folder_failed_more",
+      "value": "另有 %d 個失敗檔案"
     },
     {
       "name": "history_delete_message_file",
@@ -1641,6 +1757,18 @@
       "value": "請確認裝置位於同一網路"
     },
     {
+      "name": "localsend_client_install_hint",
+      "value": "其他系統裝置如需使用用戶端，可安裝 LocalSend"
+    },
+    {
+      "name": "localsend_download_address",
+      "value": "下載位址"
+    },
+    {
+      "name": "send_no_source_links_hint",
+      "value": "若目標手機支援互傳聯盟，可開啟手機的互傳功能\n\n其他系統裝置如需使用用戶端，可安裝 LocalSend"
+    },
+    {
       "name": "settings_source_localsend",
       "value": "LocalSend"
     },
@@ -1825,6 +1953,10 @@
       "value": "內容過長，僅顯示前 128KB"
     },
     {
+      "name": "session_file_full_name",
+      "value": "完整檔案名稱"
+    },
+    {
       "name": "session_file_open_with_app",
       "value": "用其他應用程式開啟"
     },
@@ -1902,7 +2034,7 @@
     },
     {
       "name": "favorites_probe_failed",
-      "value": "無法連線到該裝置，請檢查網路"
+      "value": "無法連線到該裝置，請檢查網路；若對方更換過網路或 IP，請重新整理裝置列表後再試"
     },
     {
       "name": "multi_select_cancel",
@@ -2011,6 +2143,10 @@
     {
       "name": "web_address_switch",
       "value": "切換網頁位址"
+    },
+    {
+      "name": "web_address_multi_hint",
+      "value": "偵測到多個網路介面，請確保所選網路介面與其他人處於同一網路"
     },
     {
       "name": "web_service_restart_title",
@@ -2174,7 +2310,7 @@
     },
     {
       "name": "portal_restore_failed",
-      "value": "恢復失敗，請檢查網路"
+      "value": "恢復失敗，請稍後重試"
     },
     {
       "name": "portal_delete_title",
@@ -2327,6 +2463,18 @@
     {
       "name": "portal_open_confirm_action",
       "value": "開啟"
+    },
+    {
+      "name": "receive_folder_too_many_files",
+      "value": "傳送方資料夾超過 %s 個檔案，已拒絕接收"
+    },
+    {
+      "name": "receive_folder_invalid_path",
+      "value": "傳送方提供的檔案路徑不合法，已拒絕接收"
+    },
+    {
+      "name": "receive_folder_reserved_name",
+      "value": "傳送方資料夾包含應用保留的暫存目錄名稱，已拒絕接收"
     }
   ]
 }

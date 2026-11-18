@@ -42,6 +42,9 @@ export const DEFAULT_VERIFY_CHECKSUMS: boolean = false;
 // ── 发送设置 ──
 export const DEFAULT_AUTO_CLEAR_STAGED: boolean = false;
 
+// 点击设备发送后自动进入任务详情（默认关闭：保持停留发送页的既有行为）
+export const DEFAULT_AUTO_OPEN_SESSION_DETAIL: boolean = false;
+
 // ── 高级 / 网络设置 ──
 export const DEFAULT_ADVANCED_SETTINGS: boolean = false;
 

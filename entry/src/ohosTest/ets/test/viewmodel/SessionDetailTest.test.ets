@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeAll } from '@ohos/hypium'
 import {
+  SessionContentKind,
   SessionCreateInput,
   SessionCapabilities,
   SessionDataFlow,
+  SessionFolderInfo,
   SessionDisplayDescriptor,
   SessionEventKind,
   SessionFile,
+  SessionFileStage,
   SessionInitiator,
   SessionStage,
   emptyPeer
@@ -216,6 +219,123 @@ export default function SessionDetailTest() {
       vm.refresh()
       expect(vm.fileCount()).assertEqual(2)
       vm.unload()
+      resetRegistry()
+    })
+
+    it('folderSession_exposesSummaryAndHidesPerFileMode', 0, () => {
+      resetRegistry()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 2,
+        totalBytes: 30
+      }
+      let input: SessionCreateInput = {
+        protocolKey: 'test-folder-detail',
+        protocolSessionId: 'folder-detail',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f1', fileName: 'Photos/a.txt', fileType: 'text/plain', totalBytes: 10
+        }, {
+          fileId: 'f2', fileName: 'Photos/b.txt', fileType: 'text/plain', totalBytes: 20
+        }],
+        capabilities: { canCancel: true, canRetry: false, needsConfirm: false, hasByteProgress: true,
+          canSaveToGallery: false, hasVerify: false },
+        contentKind: SessionContentKind.folder,
+        folder: folder
+      }
+      let s = createSession(input)
+      let vm: SessionDetailViewModel = new SessionDetailViewModel();
+      vm.load(s.id);
+      expect(vm.isFolderSession()).assertTrue();
+      expect(vm.fileCount()).assertEqual(2);
+      expect(vm.folderInfo() !== undefined).assertTrue();
+      if (vm.folderInfo() !== undefined) {
+        expect(vm.folderInfo()?.name).assertEqual('Photos');
+      }
+      // 文件夹在清单中是一条普通样式行，带聚合大小与进度
+      let rows: Array<SessionFile> = vm.detailFilesForDisplay();
+      expect(rows.length).assertEqual(1);
+      if (rows.length === 1) {
+        expect(rows[0].fileType).assertEqual('folder');
+        expect(rows[0].fileName).assertEqual('Photos');
+        expect(rows[0].folderFileCount).assertEqual(2);
+        expect(rows[0].totalBytes).assertEqual(30);
+        expect(rows[0].bytesSent).assertEqual(0);
+      }
+      updateFileProgress(s.id, 'f1', 10, 10);
+      updateFileProgress(s.id, 'f2', 20, 20);
+      vm.refresh();
+      let progressed: Array<SessionFile> = vm.detailFilesForDisplay();
+      expect(progressed.length).assertEqual(1);
+      if (progressed.length === 1) {
+        expect(progressed[0].bytesSent).assertEqual(30);
+        expect(progressed[0].stage).assertEqual(SessionFileStage.completed);
+      }
+      vm.unload();
+      resetRegistry()
+    })
+
+    it('mixedFolder_displaysFolderRowAndLooseFiles', 0, () => {
+      resetRegistry()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 2,
+        totalBytes: 30,
+        looseFileCount: 2,
+        looseBytes: 12
+      }
+      let input: SessionCreateInput = {
+        protocolKey: 'test-folder-detail',
+        protocolSessionId: 'mixed-detail',
+        dataFlow: SessionDataFlow.outbound,
+        initiatedBy: SessionInitiator.local,
+        peer: emptyPeer(),
+        files: [{
+          fileId: 'f1', fileName: 'Photos/a.txt', fileType: 'text/plain', totalBytes: 10
+        }, {
+          fileId: 'f2', fileName: 'Photos/b.txt', fileType: 'text/plain', totalBytes: 20
+        }, {
+          fileId: 'f3', fileName: 'loose1.txt', fileType: 'text/plain', totalBytes: 6
+        }, {
+          fileId: 'f4', fileName: 'loose2.txt', fileType: 'text/plain', totalBytes: 6
+        }],
+        capabilities: { canCancel: true, canRetry: false, needsConfirm: false, hasByteProgress: true,
+          canSaveToGallery: false, hasVerify: false },
+        contentKind: SessionContentKind.folder,
+        folder: folder
+      }
+      let s = createSession(input)
+      let vm: SessionDetailViewModel = new SessionDetailViewModel();
+      vm.load(s.id);
+      expect(vm.folderHasLooseFiles()).assertTrue();
+      let rows: Array<SessionFile> = vm.detailFilesForDisplay();
+      // 一行文件夹聚合 + 两个独立文件
+      expect(rows.length).assertEqual(3);
+      if (rows.length === 3) {
+        expect(rows[0].fileType).assertEqual('folder');
+        expect(rows[0].fileName).assertEqual('Photos');
+        expect(rows[0].folderFileCount).assertEqual(2);
+        expect(rows[1].fileName).assertEqual('loose1.txt');
+        expect(rows[2].fileName).assertEqual('loose2.txt');
+      }
+      updateFileProgress(s.id, 'f1', 10, 10);
+      updateFileProgress(s.id, 'f2', 20, 20);
+      updateFileProgress(s.id, 'f3', 6, 6);
+      updateFileProgress(s.id, 'f4', 6, 6);
+      vm.refresh();
+      let doneRows: Array<SessionFile> = vm.detailFilesForDisplay();
+      expect(doneRows.length).assertEqual(3);
+      if (doneRows.length === 3) {
+        expect(doneRows[0].bytesSent).assertEqual(30);
+        expect(doneRows[0].stage).assertEqual(SessionFileStage.completed);
+      }
+      vm.unload();
       resetRegistry()
     })
 

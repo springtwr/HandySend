@@ -27,6 +27,16 @@ export const SESSION_DRAFT_SCHEMA_VERSION: number = 1;
 export const SESSION_DRAFT_DIR_NAME: string = 'session_drafts';
 const DRAFT_SUFFIX: string = '.json';
 const DRAFT_TMP_SUFFIX: string = '.json.tmp';
+const DRAFT_LOG_SUFFIX: string = '.log';
+
+/** 完成日志：每个文件完成/失败时追加一条，不再全量重写会话头。 */
+export interface SessionDraftRecord {
+  fileId: string
+  stage: SessionFileStage
+  bytes: number
+  at: number
+  path?: string
+}
 
 /** 草稿中的单个文件。 */
 export interface SessionDraftFile {
@@ -138,6 +148,201 @@ export function sessionDraftPath(sessionId: string): string {
   return dir + '/' + sanitizeDraftId(sessionId) + DRAFT_SUFFIX;
 }
 
+/** 会话完成日志路径。 */
+export function sessionDraftLogPath(sessionId: string): string {
+  let dir: string = sessionDraftDir();
+  if (dir.length === 0) {
+    return '';
+  }
+  return dir + '/' + sanitizeDraftId(sessionId) + DRAFT_LOG_SUFFIX;
+}
+
+/**
+ * 完成记录先写内存，再按 50 条或 1 秒批量落盘：
+ * 上千文件逐条 open/write/close 会长时间占用主线程；批量写保持 append-only，
+ * 最坏只丢最后约 1 秒的完成记录，恢复时按最终路径兜底。
+ */
+let draftAppendCount: number = 0;
+let draftFlushTimer: number = -1;
+const pendingDraftLines: Map<string, Array<string>> = new Map<string, Array<string>>();
+
+/** 把某会话暂存的完成记录一次性追加到日志文件（不 fsync）。 */
+function writePendingDraftLines(sessionId: string): void {
+  let lines: Array<string> | undefined = pendingDraftLines.get(sessionId);
+  if (lines === undefined || lines.length === 0) {
+    pendingDraftLines.delete(sessionId);
+    return;
+  }
+  pendingDraftLines.delete(sessionId);
+  let path: string = sessionDraftLogPath(sessionId);
+  if (path.length === 0) {
+    return;
+  }
+  let file: fs.File | undefined = undefined;
+  try {
+    file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.APPEND | fs.OpenMode.WRITE_ONLY);
+    fs.writeSync(file.fd, lines.join(''));
+  } catch (e) {
+    logger.warn('追加会话完成日志失败 session=' + sanitizeDraftId(sessionId) + '：' + String(e));
+  } finally {
+    if (file !== undefined) {
+      try {
+        fs.closeSync(file);
+      } catch (_closeErr) {
+      }
+    }
+  }
+}
+
+/** 刷单会话完成日志：先落暂存记录，再 fsync（周期/退后台使用）。 */
+export function flushSessionDraftLog(sessionId: string): void {
+  writePendingDraftLines(sessionId);
+  let path: string = sessionDraftLogPath(sessionId);
+  if (path.length === 0) {
+    return;
+  }
+  let file: fs.File | undefined = undefined;
+  try {
+    if (!fs.accessSync(path)) {
+      return;
+    }
+    file = fs.openSync(path, fs.OpenMode.READ_WRITE);
+    fs.fsyncSync(file.fd);
+  } catch (_e) {
+  } finally {
+    if (file !== undefined) {
+      try {
+        fs.closeSync(file);
+      } catch (_closeErr) {
+      }
+    }
+  }
+}
+
+export function appendSessionDraftRecord(sessionId: string, record: SessionDraftRecord): void {
+  let dir: string = ensureSessionDraftDir();
+  if (dir.length === 0) {
+    return;
+  }
+  let lines: Array<string> | undefined = pendingDraftLines.get(sessionId);
+  if (lines === undefined) {
+    lines = [];
+    pendingDraftLines.set(sessionId, lines);
+  }
+  lines.push(JSON.stringify(record) + '\n');
+  // 每 50 条落盘并 fsync，兼顾掉电窗口与写入放大；进程强杀不依赖此调用。
+  draftAppendCount++;
+  if (draftAppendCount >= 50) {
+    draftAppendCount = 0;
+    flushSessionDraftLog(sessionId);
+  }
+  // 1 秒合并刷盘：连续完成大量小文件时不逐条 open/fsync。
+  if (draftFlushTimer < 0) {
+    draftFlushTimer = setTimeout((): void => {
+      draftFlushTimer = -1;
+      flushAllSessionDraftLogs();
+    }, 1000);
+  }
+}
+
+/** 退后台/退出前把全部完成日志刷到磁盘；进程强杀不依赖此调用。 */
+export function flushAllSessionDraftLogs(): void {
+  let pendingIds: Array<string> = Array.from(pendingDraftLines.keys());
+  for (let i = 0; i < pendingIds.length; i++) {
+    writePendingDraftLines(pendingIds[i]);
+  }
+  draftAppendCount = 0;
+  let dir: string = sessionDraftDir();
+  if (dir.length === 0) {
+    return;
+  }
+  try {
+    // 目录尚未创建时没有完成日志可刷新，按无操作处理
+    if (!fs.accessSync(dir)) {
+      return;
+    }
+    let names: Array<string> = fs.listFileSync(dir);
+    for (let i = 0; i < names.length; i++) {
+      if (!names[i].endsWith(DRAFT_LOG_SUFFIX)) {
+        continue;
+      }
+      let file: fs.File | undefined = undefined;
+      try {
+        file = fs.openSync(dir + '/' + names[i], fs.OpenMode.READ_WRITE);
+        fs.fsyncSync(file.fd);
+      } catch (_e) {
+      } finally {
+        if (file !== undefined) {
+          try {
+            fs.closeSync(file);
+          } catch (_closeErr) {
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logger.debug('刷新会话完成日志失败：' + String(e));
+  }
+}
+
+/** 读取并解析完成日志；坏行跳过，不影响会话头恢复。 */
+export function loadSessionDraftRecords(sessionId: string): Array<SessionDraftRecord> {
+  // 内存暂存记录先落盘，读取结果才与最近一次 append 一致
+  writePendingDraftLines(sessionId);
+  let path: string = sessionDraftLogPath(sessionId);
+  if (path.length === 0) {
+    return [];
+  }
+  let records: Array<SessionDraftRecord> = [];
+  try {
+    if (!fs.accessSync(path)) {
+      return records;
+    }
+    let text: string = fs.readTextSync(path);
+    let lines: Array<string> = text.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      let line: string = lines[i].trim();
+      if (line.length === 0) {
+        continue;
+      }
+      try {
+        let record: SessionDraftRecord = JSON.parse(line) as SessionDraftRecord;
+        if (record.fileId !== undefined && record.stage !== undefined && record.at !== undefined) {
+          records.push(record);
+        }
+      } catch (_e) {
+        // 半行/损坏行跳过
+      }
+    }
+  } catch (e) {
+    logger.debug('读取会话完成日志失败 session=' + sanitizeDraftId(sessionId) + '：' + String(e));
+  }
+  return records;
+}
+
+/** 把完成日志应用到会话头（同文件后写覆盖先写）。 */
+export function applySessionDraftRecords(draft: SessionDraft, records: Array<SessionDraftRecord>): void {
+  for (let i = 0; i < records.length; i++) {
+    let record: SessionDraftRecord = records[i];
+    for (let k = 0; k < draft.files.length; k++) {
+      let file: SessionDraftFile = draft.files[k];
+      if (file.fileId !== record.fileId) {
+        continue;
+      }
+      file.stage = record.stage;
+      file.bytesSent = record.bytes;
+      if (record.path !== undefined && record.path.length > 0) {
+        file.finalPath = record.path;
+      }
+      if (record.stage === SessionFileStage.completed && file.completedAt === 0) {
+        file.completedAt = record.at;
+      }
+      draft.updatedAt = record.at;
+      break;
+    }
+  }
+}
+
 /** 保存草稿：写临时文件后原子 rename；失败返回 false。 */
 export function saveSessionDraft(draft: SessionDraft): boolean {
   let dir: string = ensureSessionDraftDir();
@@ -201,6 +406,8 @@ function loadDraftFile(path: string): SessionDraft | undefined {
       removeFileIfExists(path);
       return undefined;
     }
+    // 会话头是创建时的快照；逐文件完成状态从追加日志回放。
+    applySessionDraftRecords(draft, loadSessionDraftRecords(draft.sessionId));
     return draft;
   } catch (e) {
     logger.warn('读取会话草稿失败，已清理：' + path + '：' + String(e));
@@ -281,15 +488,18 @@ export function loadAllSessionDrafts(): Array<SessionDraft> {
   }
   let drafts: Array<SessionDraft> = [];
   try {
-    let names: Array<string> = fs.listFileSync(dir);
-    for (let i = 0; i < names.length; i++) {
-      let name: string = names[i];
-      if (!name.endsWith(DRAFT_SUFFIX)) {
-        continue;
-      }
-      let draft: SessionDraft | undefined = loadDraftFile(dir + '/' + name);
-      if (draft !== undefined) {
-        drafts.push(draft);
+    // 草稿目录只在首次写草稿时创建：从未写过草稿时目录不存在，按“没有草稿”处理
+    if (fs.accessSync(dir)) {
+      let names: Array<string> = fs.listFileSync(dir);
+      for (let i = 0; i < names.length; i++) {
+        let name: string = names[i];
+        if (!name.endsWith(DRAFT_SUFFIX)) {
+          continue;
+        }
+        let draft: SessionDraft | undefined = loadDraftFile(dir + '/' + name);
+        if (draft !== undefined) {
+          drafts.push(draft);
+        }
       }
     }
   } catch (e) {
@@ -301,12 +511,14 @@ export function loadAllSessionDrafts(): Array<SessionDraft> {
 
 /** 删除指定会话的草稿与临时文件。 */
 export function removeSessionDraft(sessionId: string): void {
+  pendingDraftLines.delete(sessionId);
   let path: string = sessionDraftPath(sessionId);
   if (path.length === 0) {
     return;
   }
   removeFileIfExists(path);
   removeFileIfExists(path + '.tmp');
+  removeFileIfExists(sessionDraftLogPath(sessionId));
 }
 
 /** 清理原子写遗留的临时文件。 */
@@ -316,6 +528,10 @@ export function cleanupSessionDraftTmp(): void {
     return;
   }
   try {
+    // 目录尚未创建时没有遗留临时文件，按无操作处理
+    if (!fs.accessSync(dir)) {
+      return;
+    }
     let names: Array<string> = fs.listFileSync(dir);
     for (let i = 0; i < names.length; i++) {
       if (names[i].endsWith(DRAFT_TMP_SUFFIX)) {

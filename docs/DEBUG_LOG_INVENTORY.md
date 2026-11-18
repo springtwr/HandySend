@@ -179,7 +179,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:EventBus` | `[事件总线]` | utils/EventBus.ets | 事件回调异常 |
 | `HandySend:HttpLogsViewModel` | `[日志页]` | HttpLogsViewModel.ets | 文件尾部读取、全量日志导出保存失败 |
 | `HandySend:MainTab` | `[主页]` | MainTabViewModel.ets | 角标刷新、新待确认任务感知 |
-| `HandySend:MainTabFloating` | `[主页]` | MainTabFloating.ets | 首页悬浮壳层、启动门禁与页面收尾 |
+| `HandySend:MainTabFloating` | `[主页]` | MainTabFloating.ets | 首页悬浮壳层、启动门禁、全局拖放接收与页面收尾 |
 | `HandySend:BackgroundTransferService` | `[后台传输]` | BackgroundTransferService.ets | 后台长时任务启停、实况进度与终态通知 |
 | `HandySend:BackgroundAttentionNotifier` | `[后台关注]` | BackgroundAttentionNotifier.ets | 待确认请求的后台关注通知 |
 | `HandySend:PermissionService` | `[权限]` | PermissionService.ets | 通知/蓝牙权限查询、申请与设置引导 |
@@ -194,7 +194,8 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:ReceiveRepository` | `[接收]` | ReceiveRepository.ets | 接收流程（pending requests、auto-accept、会话完成/取消） |
 | `HandySend:ReceiveTargets` | `[接收目标]` | service/repository/ReceiveTargets.ets | 接收目录获取失败、直写目标准备失败 |
 | `HandySend:SendViewModel` | `[发送页]` | SendViewModel.ets | 发送状态管理 |
-| `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板、拖放接收） |
+| `HandySend:SendContent` | `[发送内容]` | SendContent.ets | 发送内容组件（文件选择、剪贴板） |
+| `HandySend:FolderScan` | `[文件夹扫描]` | service/repository/FolderScan.ets | 文件夹选择/分享/拖入的目录扫描与跳过统计 |
 | `HandySend:WebShareRepository` | `[网页传输]` | WebShareRepository.ets | 网页传输链接创建/停止、上传/下载事件、Rust 日志轮询（服务运行期每 2 秒排空） |
 | `HandySend:ShareLinkViewModel` | `[网页传输]` | ShareLinkViewModel.ets | 网页传输面板状态与开关联动 |
 | `HandySend:TransferRegistry` | `[会话注册表]` | service/transfer/TransferSessionRegistry.ets | 会话创建/状态迁移/终结/回收与聚合（统一会话事实源） |

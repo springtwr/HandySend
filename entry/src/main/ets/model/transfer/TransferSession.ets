@@ -26,6 +26,28 @@ export enum SessionDataFlow {
   inbound = 'inbound'
 }
 
+/** 内容类型：普通文件批次或文件夹批次；协议层仍按文件传输。 */
+export enum SessionContentKind {
+  files = 'files',
+  folder = 'folder'
+}
+
+/** 文件夹批次的摘要信息（发送源目录或接收落盘根目录）。 */
+export interface SessionFolderInfo {
+  // 单根时为根目录名；多根时为空
+  name: string
+  // 单根时为根目录路径；多根时为空
+  path: string
+  // 根目录数量；单根为 1
+  rootCount: number
+  // 文件夹内文件数/总字节（不含同批次的独立文件）
+  fileCount: number
+  totalBytes: number
+  // 同批次中不属于任何文件夹的独立文件数与总字节（旧条目缺省为 0）
+  looseFileCount?: number
+  looseBytes?: number
+}
+
 /** 发起方：本机发起（local）或对端发起（remote）。 */
 export enum SessionInitiator {
   local = 'local',
@@ -147,6 +169,10 @@ export interface SessionCreateInput {
   // 协议在逐文件清单可用前声明的文件总数（0 或缺省表示未知）：仅用于实时展示，
   // 真实清单回填后由注册表清零，避免与已落盘条数混淆
   declaredFileCount?: number
+  // 内容类型；缺省按普通文件批次处理
+  contentKind?: SessionContentKind
+  // 文件夹摘要；contentKind 为 folder 时提供
+  folder?: SessionFolderInfo
 }
 
 /**
@@ -179,6 +205,8 @@ export class SessionFile {
   fileName: string = ''
   fileType: string = ''
   totalBytes: number = 0
+  // 文件夹聚合行显示的文件数（普通文件条目为空）
+  folderFileCount?: number
   // 同一文件在一次会话内的第几次出现（Web 下载由访问会话按 token 区分，通常为 1）
   occurrence: number = 1
   // 校验和/哈希（协议或链路提供时记录，未提供为空串）
@@ -202,6 +230,9 @@ export class TransferSession {
   @Trace stage: SessionStage = SessionStage.active
   // 是否为手动输入的文本消息会话（非文本文件）；创建后不变，不参与进度刷新
   textMessage: boolean = false
+  // 内容类型与文件夹摘要：创建后不变；历史归档据此决定摘要/逐文件明细
+  contentKind: SessionContentKind = SessionContentKind.files
+  folder?: SessionFolderInfo = undefined
   // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示，
   // 真实清单回填后清零；终态展示与归档历史一律以 files.length 为准
   @Trace declaredFileCount: number = 0
@@ -218,7 +249,8 @@ export class TransferSession {
   @Trace errorMessage: string = ''
   // 协议/链路错误码（无法取得时为空串）
   @Trace errorCode: string = ''
-  // 本机设备标识（昵称 / 默认 IP / 网卡接口名）：创建会话时采集，写入历史以支撑详情展示
+  // 本机设备标识（昵称 / 承载会话的 IP / 网卡接口名）：创建会话时按对端 IP 选择承载接口
+  // （发送方向跨网段时取默认路由接口；对端 IP 缺失/非法时留空）；写入历史以支撑详情展示
   localAlias: string = ''
   localIp: string = ''
   localInterfaceName: string = ''

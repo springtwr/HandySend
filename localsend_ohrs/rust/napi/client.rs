@@ -14,25 +14,33 @@ use crate::napi::SendResult;
 
 /// 发送文件到目标设备。
 #[napi]
-pub async fn send_files(target: String, sender_alias: String, files: String) -> Result<SendResult> {
+pub async fn send_files(
+    target: String,
+    sender_alias: String,
+    files: String,
+    send_key: String,
+) -> Result<SendResult> {
     let env = NapiEnv::global();
     // 确保事件通道存在（幂等）——发送进度事件（UploadProgress）依赖它
     env.ensure_event_channel();
     let state = env.state;
-    let json_str = client::send_files(state, &target, &sender_alias, &files)
+    let json_str = client::send_files(state, &target, &sender_alias, &files, &send_key)
         .await
         .map_err(|e| Error::from_reason(format!("Send files failed: {e:#}")))?;
     serde_json::from_str(&json_str)
         .map_err(|e| Error::from_reason(format!("Parse SendResult failed: {e:#}")))
 }
 
-/// 本地取消：触发 CancellationToken。
+/// 本地取消：按取消键触发 CancellationToken。
+///
+/// 局域网发送传会话专属 sendKey（与 `send_files` 下传的键一致），
+/// 其他场景传对应的会话标识。
 #[napi]
-pub fn cancel_transfer(session_id: String) -> Result<()> {
-    log::debug!("本地取消已调用 session_id={}", session_id);
+pub fn cancel_transfer(cancel_key: String) -> Result<()> {
+    log::debug!("本地取消已调用 取消键={}", cancel_key);
     let state = NapiEnv::global().state;
     let s = lock(state);
-    client::cancel_transfer(&s, &session_id);
+    client::cancel_transfer(&s, &cancel_key);
     Ok(())
 }
 

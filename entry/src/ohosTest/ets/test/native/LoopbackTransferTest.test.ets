@@ -37,6 +37,13 @@ import {
   getTestCacheDir,
   sleep
 } from '../helper/TestHelper'
+import { sendToDevice } from '../../../../main/ets/service/repository/SendRepository'
+import { DiscoveredDevice, SendFileItem } from '../../../../main/ets/model/Types'
+import {
+  clearServerNeedsRestart,
+  getHttpsEnabled,
+  setHttpsEnabled
+} from '../../../../main/ets/service/repository/SettingsRepository'
 import {
   TEMP_DIR_NAME,
   TEMP_SUBDIR_LOCAL_SEND,
@@ -68,9 +75,9 @@ function dumpRustLogs(): string {
   return lines.join(' | ')
 }
 
-// 预注册接收目标 fd 并接受会话：fd-direct 接收路径要求 respondTransfer 前
-// 在临时区创建文件并注册最终路径（对齐生产流程 ReceiveRepository.prepareRecvTargets），
-// Rust 写入完成后负责 rename 到最终路径；否则服务器无落盘目标，上传以 500 失败。
+// 预注册接收目标并接受会话：路径目标模式要求 accept 前创建最终目录与空临时文件，
+// 然后注册 fd = -1（最终路径）；Rust 在上传到达时用 O_NOFOLLOW 打开临时文件，
+// 写入完成后 rename 到最终路径，否则服务器无落盘目标，上传以 500 失败。
 function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
   if (e.type !== 'prepareUpload') {
     return
@@ -79,12 +86,15 @@ function acceptWithRecvTargets(e: NativeEvent, recvDir: string): void {
   let ids: Array<string> = []
   for (let i = 0; i < pe.files.length; i++) {
     let destPath: string = recvDir + pe.files[i].fileName
+    let finalDir: string = destPath.substring(0, destPath.lastIndexOf('/'))
+    ensureDir(finalDir)
     let tempPath: string = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
     let tempDir: string = tempPath.substring(0, tempPath.lastIndexOf('/'))
     ensureDir(tempDir)
     let file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
       fs.OpenMode.TRUNC)
-    nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, file.fd, destPath)
+    fs.closeSync(file)
+    nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, -1, destPath)
     ids.push(pe.files[i].fileId)
   }
   nativeRespondTransfer(pe.sessionId, true, ids)
@@ -130,7 +140,7 @@ async function sendLoopbackAndVerify(
     preview: undefined,
     sha256: hash
   }]
-  let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+  let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_1')
 
   // 轮询落盘（最多 10s）
   let recvPath: string = recvDir + fileName
@@ -241,7 +251,7 @@ export default function LoopbackTransferTest() {
         preview: undefined,
         sha256: hash
       }]
-      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_2')
 
       // 4. 等待接收文件落盘（轮询，最多 10s）
       let recvPath: string = getRecvDir() + SEND_FILE_NAME
@@ -289,6 +299,170 @@ export default function LoopbackTransferTest() {
       done()
     })
 
+    it('loopback_path_failure_keeps_other_files', 0, async (done: Function) => {
+      // 路径模式：一个文件路径不可读不应拖垮整批；其余文件照常上传，
+      // 结果以 partialFailure 收口并只报告失败文件。
+      let fileName: string = 'e2e_path_ok_' + Date.now().toString() + '.txt'
+      let content: string = 'PATH-OK-' + Date.now().toString()
+      let sendPath: string = writeTestFileToSandbox(fileName, content)
+      let missingPath: string = getTestCacheDir() + '/missing_' + Date.now().toString() + '.txt'
+      let okId: string = 'e2e_path_ok'
+      let missingId: string = 'e2e_path_missing'
+      let prepareHandler = (e: NativeEvent): void => {
+        if (e.type !== 'prepareUpload') {
+          return
+        }
+        let pe = e as NativePrepareUploadEvent
+        let ids: Array<string> = []
+        for (let i = 0; i < pe.files.length; i++) {
+          if (pe.files[i].fileId !== okId) {
+            continue
+          }
+          let destPath: string = getRecvDir() + pe.files[i].fileName
+          let finalDir: string = destPath.substring(0, destPath.lastIndexOf('/'))
+          ensureDir(finalDir)
+          let tempPath: string = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
+          let tempDir: string = tempPath.substring(0, tempPath.lastIndexOf('/'))
+          ensureDir(tempDir)
+          let file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
+            fs.OpenMode.TRUNC)
+          fs.closeSync(file)
+          nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, -1, destPath)
+          ids.push(pe.files[i].fileId)
+        }
+        nativeRespondTransfer(pe.sessionId, true, ids)
+      }
+      onBridgeEvent('prepareUpload', prepareHandler)
+      try {
+        let hash: string = await nativeHashFileStream(sendPath, undefined)
+        let target: NativeTargetDevice = {
+          ip: '127.0.0.1',
+          port: suitePort,
+          fingerprint: 'test_fp',
+          protocol: 'http'
+        }
+        let files: Array<NativeFileToSend> = [{
+          fileId: okId,
+          filePath: sendPath,
+          fileName: fileName,
+          fileType: 'text/plain',
+          size: content.length,
+          preview: undefined,
+          sha256: hash
+        }, {
+          fileId: missingId,
+          filePath: missingPath,
+          fileName: 'missing.txt',
+          fileType: 'text/plain',
+          size: 5,
+          preview: undefined,
+          sha256: undefined
+        }]
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files,
+          'loopback_transfer_path_failure')
+        expect(result.success).assertFalse()
+        if (result.error !== undefined) {
+          expect(result.error.kind).assertEqual('partialFailure')
+        }
+        expect(result.failedFiles.length).assertEqual(1)
+        if (result.failedFiles.length === 1) {
+          expect(result.failedFiles[0]).assertEqual(missingId)
+        }
+        let recvPath: string = getRecvDir() + fileName
+        let saved: boolean = false
+        let deadline: number = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (fileExists(recvPath)) {
+            saved = true
+            break
+          }
+          await sleep(200)
+        }
+        if (!saved) {
+          throw new Error('[E2E] 正常文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+        }
+        expect(readFileContent(recvPath) === content).assertTrue()
+      } finally {
+        offBridgeEvent('prepareUpload', prepareHandler)
+      }
+      done()
+    })
+
+    it('loopback_path_failure_falls_back_to_fd', 0, async (done: Function) => {
+      // 端到端回退：路径模式发送前源路径已失效，但暂存句柄仍有效。
+      // 首次会话按路径失败 → 取消 → 用句柄副本重发，内容仍应完整送达。
+      let fileName: string = 'e2e_fallback_' + Date.now().toString() + '.txt'
+      let content: string = 'FALLBACK-' + Date.now().toString() + '-0123456789abcdef'
+      let sendPath: string = writeTestFileToSandbox(fileName, content)
+      let hash: string = await nativeHashFileStream(sendPath, undefined)
+      let source: fs.File = await fs.open(sendPath, fs.OpenMode.READ_ONLY)
+      // 删除路径后仅句柄可读：模拟原生路径模式失败、句柄仍可用的场景
+      fs.unlinkSync(sendPath)
+      let prepareHandler = (e: NativeEvent): void => {
+        if (e.type === 'prepareUpload') {
+          acceptWithRecvTargets(e, getRecvDir())
+        }
+      }
+      onBridgeEvent('prepareUpload', prepareHandler)
+      // 测试服务器固定 HTTP；临时关闭本地加密，避免协议协商按默认加密拒绝
+      let originalHttps: boolean = getHttpsEnabled()
+      setHttpsEnabled(false)
+      try {
+        let device: DiscoveredDevice = {
+          alias: 'HandySendTest',
+          ip: '127.0.0.1',
+          port: suitePort,
+          fingerprint: 'test_fp',
+          version: '2.2',
+          deviceModel: 'TestModel',
+          deviceType: 'desktop',
+          protocol: 'http',
+          lastSeen: Date.now(),
+          channels: []
+        }
+        let files: Array<SendFileItem> = [{
+          fileId: 'e2e_fallback_1',
+          filePath: sendPath,
+          fileName: fileName,
+          fileType: 'text/plain',
+          size: content.length,
+          hash: hash,
+          sourceFd: source.fd,
+          pathSource: true
+        }]
+        let result = await sendToDevice(device, files, 'loopback_fallback_key', '')
+        if (!result.success) {
+          throw new Error('[E2E] 句柄回退失败: ' + JSON.stringify(result.error) +
+            ' [Rust 日志] ' + dumpRustLogs())
+        }
+        expect(result.success).assertTrue()
+        let recvPath: string = getRecvDir() + fileName
+        let saved: boolean = false
+        let deadline: number = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (fileExists(recvPath)) {
+            saved = true
+            break
+          }
+          await sleep(200)
+        }
+        if (!saved) {
+          throw new Error('[E2E] 回退文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+        }
+        expect(readFileContent(recvPath) === content).assertTrue()
+      } finally {
+        offBridgeEvent('prepareUpload', prepareHandler)
+        setHttpsEnabled(originalHttps)
+        // 测试设置变更不应触发真实服务重启
+        clearServerNeedsRestart()
+        try {
+          fs.closeSync(source)
+        } catch (_e) {
+        }
+      }
+      done()
+    })
+
     it('loopback_transfer_fd_content_matches', 0, async (done: Function) => {
       // 回归：fd 读取走 Rust pread，从文件头开始，不依赖共享偏移。
       // 先把句柄偏移推到末尾：旧实现（顺序 read）会从末尾读到 0 字节。
@@ -324,7 +498,7 @@ export default function LoopbackTransferTest() {
           preview: undefined,
           sha256: hash
         }]
-        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_3')
         if (!result.success) {
           throw new Error('[E2E] fd send failed: ' + JSON.stringify(result.error) +
             ' [Rust 日志] ' + dumpRustLogs())
@@ -343,6 +517,63 @@ export default function LoopbackTransferTest() {
           throw new Error('[E2E] fd 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
         }
         expect(readFileContent(recvPath) === content).assertTrue()
+      } finally {
+        offBridgeEvent('prepareUpload', prepareHandler)
+      }
+      done()
+    })
+
+    it('loopback_nested_relative_path_preserves_directories', 0, async (done: Function) => {
+      let sendName: string = 'nested_src_' + Date.now().toString() + '.txt'
+      let recvName: string = 'outer/inner/nested_' + Date.now().toString() + '.txt'
+      let content: string = 'NESTED-' + Date.now().toString() + '-0123456789abcdef'
+      let sendPath: string = writeTestFileToSandbox(sendName, content)
+
+      let prepareHandler = (e: NativeEvent): void => {
+        if (e.type === 'prepareUpload') {
+          acceptWithRecvTargets(e, getRecvDir())
+        }
+      }
+      onBridgeEvent('prepareUpload', prepareHandler)
+      try {
+        let hash: string = await nativeHashFileStream(sendPath, undefined)
+        let target: NativeTargetDevice = {
+          ip: '127.0.0.1',
+          port: suitePort,
+          fingerprint: 'test_fp',
+          protocol: 'http'
+        }
+        let files: Array<NativeFileToSend> = [{
+          fileId: 'e2e_nested_1',
+          filePath: sendPath,
+          fileName: recvName,
+          fileType: 'text/plain',
+          size: content.length,
+          preview: undefined,
+          sha256: hash
+        }]
+        let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files,
+          'loopback_transfer_nested')
+        if (!result.success) {
+          throw new Error('[E2E] nested send failed: ' + JSON.stringify(result.error) +
+            ' [Rust 日志] ' + dumpRustLogs())
+        }
+        let recvPath: string = getRecvDir() + recvName
+        let saved: boolean = false
+        let deadline: number = Date.now() + 10000
+        while (Date.now() < deadline) {
+          if (fileExists(recvPath)) {
+            saved = true
+            break
+          }
+          await sleep(200)
+        }
+        if (!saved) {
+          throw new Error('[E2E] nested 接收文件未落盘: ' + recvPath + ' [Rust 日志] ' + dumpRustLogs())
+        }
+        expect(readFileContent(recvPath) === content).assertTrue()
+        // 嵌套最终目录下的临时区清空后应被移除
+        expect(fs.accessSync(getRecvDir() + 'outer/inner/' + TEMP_DIR_NAME)).assertFalse()
       } finally {
         offBridgeEvent('prepareUpload', prepareHandler)
       }
@@ -433,7 +664,7 @@ export default function LoopbackTransferTest() {
         preview: undefined,
         sha256: hash
       }]
-      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files)
+      let result: NativeSendResult = await nativeSendFiles(target, 'HandySendTest', files, 'loopback_transfer_4')
       // 无 pin 应被拒绝（发送失败）
       expect(result.success).assertFalse()
       done()

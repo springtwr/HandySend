@@ -71,7 +71,7 @@ export function SendMethodZone(options: SendMethodZoneOptions) {
     .accessibilityGroup(true)
     .id('send_method_web')
 
-    // 在线服务入口：进入站点导航页
+    // 远程传输入口：进入站点导航页
     Stack() {
       SymbolGlyph($r('sys.symbol.icloud'))
         .fontSize(DesignTokens.font.titleM)

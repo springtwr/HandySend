@@ -8,13 +8,16 @@
 
 import {
   SessionCapabilities,
+  SessionContentKind,
   SessionDataFlow,
   SessionDisplayDescriptor,
   SessionFileDescriptor,
+  SessionFolderInfo,
   SessionInitiator,
   SessionPeer,
   SessionStage
 } from '../../../model/transfer/TransferSession';
+import { summarizeInboundFolder } from '../../../model/transfer/FolderSummary';
 import { nativeCancelLocalSession } from '../../NativeBridge';
 import { getLogger } from '../../../utils/Logger';
 import { LogDomains } from '../../../common/LogDomains';
@@ -22,8 +25,10 @@ import {
   createSession,
   finish,
   getSession,
+  markFileCompleted,
   setStage,
   updateFileProgress,
+  updateSessionFileTargets,
   updateSessionFilePath
 } from '../TransferSessionRegistry';
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
@@ -133,6 +138,7 @@ export function ensureReceiveSession(protocolSessionId: string, senderAlias: str
   if (textPreview.length > 0) {
     textPreviewByProtocol.set(protocolSessionId, textPreview);
   }
+  let folder: SessionFolderInfo | undefined = summarizeInboundFolder(files);
   let session = createSession({
     protocolKey: LOCAL_RECEIVE_KEY,
     protocolSessionId: protocolSessionId,
@@ -140,6 +146,8 @@ export function ensureReceiveSession(protocolSessionId: string, senderAlias: str
     initiatedBy: SessionInitiator.remote,
     peer: buildPeer(senderAlias, senderIp, senderFingerprint, senderDeviceType, senderDeviceModel),
     files: files,
+    contentKind: folder !== undefined ? SessionContentKind.folder : SessionContentKind.files,
+    folder: folder,
     capabilities: capabilities(),
     stage: needsConfirm ? SessionStage.awaitingConfirmation : SessionStage.active,
     // 仅手动输入文本携带 preview；文件选择器选取的 .txt 不带该字段
@@ -160,6 +168,15 @@ export function updateReceiveProgress(protocolSessionId: string, fileId: string,
     return;
   }
   updateFileProgress(unifiedId, fileId, bytesSent, totalBytes);
+}
+
+/** 单文件完成：按会话内已知大小补齐字节与完成阶段（进度事件缺大小时兜底）。 */
+export function markReceiveFileCompleted(protocolSessionId: string, fileId: string): void {
+  let unifiedId = unifiedByProtocol.get(protocolSessionId);
+  if (unifiedId === undefined) {
+    return;
+  }
+  markFileCompleted(unifiedId, fileId);
 }
 
 /**
@@ -212,6 +229,16 @@ export function updateReceiveSessionFilePath(protocolSessionId: string, fileId: 
     return;
   }
   updateSessionFilePath(unifiedId, fileId, path);
+}
+
+/** 批量回写接收目标的最终路径与实际相对名（accept 阶段一次完成，避免 N 次通知）。 */
+export function updateReceiveSessionFileTargets(protocolSessionId: string,
+  paths: Record<string, string>, names: Record<string, string>): void {
+  let unifiedId = unifiedByProtocol.get(protocolSessionId);
+  if (unifiedId === undefined) {
+    return;
+  }
+  updateSessionFileTargets(unifiedId, paths, names);
 }
 
 function resolveProtocolId(sessionId: string): string {

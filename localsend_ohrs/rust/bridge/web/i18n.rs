@@ -71,6 +71,13 @@ pub struct WebPageI18n {
     pub preview_unavailable: String,
     pub share_updated_retry: String,
     pub https_hint: String,
+    pub wechat_hint: String,
+    pub wechat_guide_title: String,
+    pub wechat_guide_text: String,
+    pub wechat_guide_copy_hint: String,
+    pub wechat_guide_copy: String,
+    pub wechat_guide_copy_failed: String,
+    pub wechat_guide_action: String,
 }
 
 /// 按 BCP47 语言选择文案集（未知回退简体中文）。
@@ -149,6 +156,20 @@ fn simplified() -> WebPageI18n {
         share_updated_retry: "分享内容已更新，请刷新页面重试。".to_string(),
         https_hint: "当前为加密连接（自签名证书），如下载失败，可让对方关闭加密传输后重试。"
             .to_string(),
+        wechat_hint: "微信内置浏览器无法直接下载文件。请点右上角「…」选择「在浏览器打开」，\
+            或点下方「复制浏览器链接」到浏览器粘贴打开；打不开就刷新微信页面重试。"
+            .to_string(),
+        wechat_guide_title: "请在浏览器中打开".to_string(),
+        wechat_guide_text: "微信内置浏览器无法直接下载文件。请点右上角「…」，\
+            选择「在浏览器打开」（iOS 为「在 Safari 中打开」）。"
+            .to_string(),
+        wechat_guide_copy_hint: "若「在浏览器打开」后网页要求输入访问码，\
+            请回到微信页面点「复制浏览器链接」，再到浏览器粘贴打开；\
+            打不开就刷新微信页面重试。"
+            .to_string(),
+        wechat_guide_copy: "复制浏览器链接".to_string(),
+        wechat_guide_copy_failed: "复制链接失败，请刷新微信页面重试，或改用访问码。".to_string(),
+        wechat_guide_action: "知道了".to_string(),
     }
 }
 
@@ -217,6 +238,21 @@ fn traditional() -> WebPageI18n {
         share_updated_retry: "分享內容已更新，請重新整理頁面重試。".to_string(),
         https_hint: "目前為加密連線（自簽章憑證），如下載失敗，可請對方關閉加密傳輸後重試。"
             .to_string(),
+        wechat_hint: "微信內建瀏覽器無法直接下載檔案。請點右上角「…」選擇「在瀏覽器開啟」，\
+            或點下方「複製瀏覽器連結」到瀏覽器貼上開啟；打不開就重新整理微信頁面重試。"
+            .to_string(),
+        wechat_guide_title: "請在瀏覽器中開啟".to_string(),
+        wechat_guide_text: "微信內建瀏覽器無法直接下載檔案。請點右上角「…」，\
+            選擇「在瀏覽器開啟」（iOS 為「在 Safari 中開啟」）。"
+            .to_string(),
+        wechat_guide_copy_hint: "若「在瀏覽器開啟」後網頁要求輸入存取碼，\
+            請回到微信頁面點「複製瀏覽器連結」，再到瀏覽器貼上開啟；\
+            打不開就重新整理微信頁面重試。"
+            .to_string(),
+        wechat_guide_copy: "複製瀏覽器連結".to_string(),
+        wechat_guide_copy_failed: "複製連結失敗，請重新整理微信頁面重試，或改用存取碼。"
+            .to_string(),
+        wechat_guide_action: "知道了".to_string(),
     }
 }
 
@@ -284,6 +320,13 @@ fn english() -> WebPageI18n {
         preview_unavailable: "Preview unavailable.".to_string(),
         share_updated_retry: "Shared content has changed. Refresh the page and try again.".to_string(),
         https_hint: "This is an encrypted connection (self-signed certificate). If downloads fail, ask them to turn off encrypted transfer and retry.".to_string(),
+        wechat_hint: "WeChat's built-in browser cannot download files. Tap \"…\" in the top-right corner and choose \"Open in Browser\", or tap \"Copy browser link\" below and paste it into a browser. If it won't open, refresh the WeChat page and try again.".to_string(),
+        wechat_guide_title: "Open in browser".to_string(),
+        wechat_guide_text: "WeChat's built-in browser cannot download files. Tap \"…\" in the top-right corner and choose \"Open in Browser\" (\"Open in Safari\" on iOS).".to_string(),
+        wechat_guide_copy_hint: "If the page asks for an access code after \"Open in Browser\", return to the WeChat page, tap \"Copy browser link\", and paste it into the browser. If it still won't open, refresh the WeChat page and try again.".to_string(),
+        wechat_guide_copy: "Copy browser link".to_string(),
+        wechat_guide_copy_failed: "Couldn't copy the link. Refresh the WeChat page and try again, or use the access code.".to_string(),
+        wechat_guide_action: "Got it".to_string(),
     }
 }
 
@@ -323,6 +366,22 @@ mod tests {
         );
         assert!(json["shareUpdatedRetry"].as_str().unwrap().len() > 0);
         assert!(json["httpsHint"].as_str().unwrap().len() > 0);
+        assert_eq!(
+            json["wechatGuideTitle"],
+            serde_json::json!("Open in browser")
+        );
+        assert_eq!(json["wechatGuideAction"], serde_json::json!("Got it"));
+        assert_eq!(
+            json["wechatGuideCopy"],
+            serde_json::json!("Copy browser link")
+        );
+        assert!(json["wechatHint"].as_str().unwrap().len() > 0);
+        assert!(!json["wechatHint"].as_str().unwrap().contains('\n'));
+        assert!(json["wechatGuideText"].as_str().unwrap().len() > 0);
+        assert!(!json["wechatGuideText"].as_str().unwrap().contains('\n'));
+        assert!(json["wechatGuideCopyHint"].as_str().unwrap().len() > 0);
+        assert!(!json["wechatGuideCopyHint"].as_str().unwrap().contains('\n'));
+        assert!(json["wechatGuideCopyFailed"].as_str().unwrap().len() > 0);
         assert!(json["accessLinkRequired"].as_str().unwrap().len() > 0);
         assert!(json["accessLinkInvalid"].as_str().unwrap().len() > 0);
         assert_eq!(

@@ -231,10 +231,28 @@ function deleteEntryFile(entry: ReceiveHistoryEntry): void {
     return;
   }
   try {
-    fs.unlinkSync(entry.path);
+    if (entry.isFolder === true) {
+      removeDirectoryRecursive(entry.path);
+    } else {
+      fs.unlinkSync(entry.path);
+    }
   } catch (_e) {
-    // 文件不存在或删除失败——静默跳过
+    // 文件/文件夹不存在或删除失败——静默跳过
   }
+}
+
+/** 递归删除文件夹（先删子项再删目录），失败由调用方 best-effort 吞掉。 */
+function removeDirectoryRecursive(path: string): void {
+  let names: Array<string> = fs.listFileSync(path);
+  for (let i = 0; i < names.length; i++) {
+    let child: string = path + '/' + names[i];
+    if (fs.statSync(child).isDirectory()) {
+      removeDirectoryRecursive(child);
+    } else {
+      fs.unlinkSync(child);
+    }
+  }
+  fs.rmdirSync(path);
 }
 
 // 写时复制而非原地修改：落盘按对象引用比对变更区间，原地修改引用不变会被误判为无变化而跳过落盘
@@ -248,7 +266,10 @@ function copyEntryWithGalleryStatus(entry: ReceiveHistoryEntry, saved: boolean):
     isMessage: entry.isMessage,
     fileSize: entry.fileSize,
     senderAlias: entry.senderAlias,
-    timestamp: entry.timestamp
+    timestamp: entry.timestamp,
+    isFolder: entry.isFolder,
+    fileCount: entry.fileCount,
+    failedCount: entry.failedCount
   };
 }
 

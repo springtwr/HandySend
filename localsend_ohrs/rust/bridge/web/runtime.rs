@@ -233,6 +233,7 @@ pub async fn start(config_json: &str) -> anyhow::Result<u16> {
         )),
         auth_sessions: Arc::new(Mutex::new(HashMap::new())),
         cap_sessions: Arc::new(Mutex::new(HashMap::new())),
+        handoffs: Arc::new(Mutex::new(HashMap::new())),
         files: Arc::new(Mutex::new(table)),
         file_order: Arc::new(Mutex::new(file_order)),
         retained: Arc::new(Mutex::new(HashMap::new())),

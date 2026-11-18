@@ -7,10 +7,12 @@
  * 「用其他应用打开」走应用文件分享机制，不受影响。
  * 接收方向的图片/视频另有可选「保存到相册」项：已保存过时保留该项但置灰为「已保存到相册」，
  * 未被置灰时点击进入保存弹窗（SaveButton 授权后写入相册）。
- * 会话详情文件清单另有可选「校验和」项：仅在文件确有校验和时展示，点击弹出完整值弹窗。
+ * 会话详情文件清单另有可选「校验和」项：仅在文件确有校验和时展示，点击弹出完整值弹窗；
+ * 该页还在末尾追加「完整文件名」项，仅在文件名确实被两行省略时展示。
  *
  * 使用约定：调用方在组件内以 `Menu() { FileEntryMenuItems(options) ... }` 包一层后绑定到行上
- * （`bindMenu`），既可在末尾追加本页专有项（接收历史页的复制文本 / 删除记录），
+ * （`bindMenu`），既可在末尾追加本页专有项（接收历史页的复制文本 / 删除记录，
+ * 会话详情文件清单的完整文件名），
  * 也保证两页共用同一套菜单项实现（改一处即两页同步生效）。
  */
 
@@ -40,6 +42,9 @@ export interface FileEntryMenuOptions {
   /** 是否展示「校验和」项（可选；会话详情文件清单仅在文件有校验和时展示） */
   showChecksum?: boolean
   onShowChecksum?: () => void
+  /** 是否展示「查看失败文件」项（可选；文件夹聚合行有失败时展示） */
+  showFailedFiles?: boolean
+  onShowFailedFiles?: () => void
 }
 
 /** 公共菜单项集合（须由调用方包在 `Menu()` 内使用）。 */
@@ -104,6 +109,17 @@ export function FileEntryMenuItems(options: FileEntryMenuOptions) {
       .onClick(() => {
         if (options.onShowChecksum !== undefined) {
           options.onShowChecksum();
+        }
+      })
+  }
+  if (options.showFailedFiles === true) {
+    MenuItem({
+      content: $r('app.string.session_folder_failed_files'),
+      startIcon: $r('sys.symbol.exclamationmark_triangle')
+    })
+      .onClick(() => {
+        if (options.onShowFailedFiles !== undefined) {
+          options.onShowFailedFiles();
         }
       })
   }

@@ -2,7 +2,8 @@
  * FileEntryThumb.ets — 类型图标 / 图片与视频缩略区（跨页公用组件）
  *
  * 按条目定位、类型与文件名解析展示物：
- * - 图片：自行 open 句柄并用 ImageSource 按展示尺寸解码成 PixelMap（失败回退类型图标）；
+ * - 图片：仅对系统可解码的格式自行 open 句柄并用 ImageSource 按展示尺寸解码成 PixelMap
+ *   （格式不支持或解码失败时回退类型图标）；
  * - 视频：按需异步生成缩略图（AVImageGenerator）后渲染；
  * - 其余类型或解码失败：回退类型图标（与发送页暂存列表、接收历史同源）。
  * 加载时机：条目滚入可视区时加载；详情页首屏之后若干行可按 preloadDelay 提前排队解码，
@@ -16,6 +17,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import { DesignTokens } from '../common/DesignTokens';
 import { getFileTypeIconResource } from '../utils/FileTypeIconUtil';
+import { isThumbnailDecodableImage } from '../utils/MimeUtils';
 import { normalizeFileLocation } from '../utils/FileLocationUtil';
 import { generateVideoThumbnail } from '../utils/VideoThumbnailUtil';
 import { ensureUriAccess } from '../utils/UriPermission';
@@ -123,7 +125,31 @@ export struct FileEntryThumb {
       this.loadVideoThumbnail();
       return;
     }
+    // 非图片或不在可解码格式清单内（如 XCF）：直接回退类型图标，
+    // 不发起必然失败的解码，也避免对 Picker 来源的非图片条目误触发 URI 授权激活。
+    if (!this.canDecodeThumbnail()) {
+      this.requested = false;
+      return;
+    }
     this.loadImageThumbnail();
+  }
+
+  /**
+   * 是否值得尝试缩略图解码：优先按条目自身的类型/文件名判断；
+   * 条目定位可能不是原文件（如 MTA 确认阶段首条图片用对端给的 JPEG 预览图顶替），
+   * 此时再按实际定位的扩展名判断，避免原文件格式不支持时丢掉可用的预览图。
+   * 已知非图片类型不按路径扩展名兜底，避免无谓的解码与 Picker URI 授权激活。
+   */
+  private canDecodeThumbnail(): boolean {
+    if (isThumbnailDecodableImage(this.fileType, this.fileName)) {
+      return true;
+    }
+    let normalizedType: string = this.fileType.toLowerCase();
+    if (normalizedType.length === 0 || normalizedType.startsWith('image/') ||
+      normalizedType === 'application/octet-stream') {
+      return isThumbnailDecodableImage('', this.path);
+    }
+    return false;
   }
 
   /**
@@ -144,9 +170,17 @@ export struct FileEntryThumb {
     let file: fs.File | undefined = undefined;
     let source: image.ImageSource | undefined = undefined;
     try {
-      // 访问前激活持久化授权：临时授权可能已超过有效期（与进程是否重启无关）
-      await ensureUriAccess(location.uri);
-      file = await fs.open(location.uri, fs.OpenMode.READ_ONLY);
+      // 仅 Picker / 媒体库来源需要激活持久化授权；接收文件等普通路径直接可读，
+      // 不要对从未持久化的文件 URI 调用 activatePermission。
+      if (location.needsPermissionActivation) {
+        await ensureUriAccess(location.uri);
+      }
+      let openTarget: string = location.needsPermissionActivation ?
+        location.uri : location.localPath;
+      if (openTarget.length === 0) {
+        openTarget = location.uri;
+      }
+      file = await fs.open(openTarget, fs.OpenMode.READ_ONLY);
       source = image.createImageSource(file.fd);
       // 运行时可能在解码前置阶段返回 undefined（声明类型未覆盖），按不可用处理
       let info: image.ImageInfo | undefined = source.getImageInfoSync(0);
@@ -243,7 +277,10 @@ export struct FileEntryThumb {
     if (this.loadFailed || this.path.length === 0) {
       return false;
     }
-    return this.fileType.startsWith('image/') || this.fileType.startsWith('video/');
+    if (this.fileType.startsWith('video/')) {
+      return true;
+    }
+    return this.canDecodeThumbnail();
   }
 
   build() {
@@ -261,6 +298,11 @@ export struct FileEntryThumb {
           .height(this.thumbSize)
           .borderRadius(this.cornerRadius)
           .backgroundColor($r('app.color.border_light'))
+      } else if (this.fileType === 'folder') {
+        // 文件夹聚合行与普通文件行同构：缩略区使用文件夹图标
+        SymbolGlyph($r('sys.symbol.folder'))
+          .fontSize(this.thumbSize)
+          .fontColor([$r('app.color.text_secondary')])
       } else {
         Image(getFileTypeIconResource(this.isMessage, this.fileName, this.fileType))
           .width(this.thumbSize)

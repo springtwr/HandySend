@@ -1,6 +1,6 @@
 import { common, wantConstant, Want } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { fileUri } from '@kit.CoreFileKit';
+import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { AdvancedDialogV2Button, ConfirmDialogV2, promptAction, uiObserver } from '@kit.ArkUI';
 import {
   DesignTokens
@@ -13,12 +13,18 @@ import { getStringSync } from '../../utils/ResourceUtil';
 import { getDeviceType } from '../../service/repository/DeviceRepository';
 import { buildDiagnosticLogAttachment } from '../../service/log/DiagnosticLogService';
 import { LogAttachmentResult } from '../../model/LogFileTypes';
+import { GallerySaveResult, MediaFileInfo } from '../../model/Types';
+import { saveMediaToGallery } from '../../service/GallerySaveService';
 import {
   SettingsViewModel
 } from '../../viewmodel/SettingsViewModel';
+import {
+  CacheClearResult, clearAppCache, getAppCacheSize, hasActiveTransferSessions
+} from '../../service/CacheCleanupService';
+import { formatSizeDetailed } from '../../utils/FormatUtil';
 import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
-// 更多设置分组（关于/反馈/评价/赞助/诊断日志/恢复默认）。
+// 更多设置分组（关于/反馈/评价/赞助/缓存/诊断日志/恢复默认）。
 // 关于/反馈/评价/赞助半屏弹窗直接绑定在本组件，各自独立。
 
 // 反馈收件邮箱：邮箱路径统一写入收件人，避免用户手填出错
@@ -39,6 +45,10 @@ export struct MoreSettingsSection {
   @Local private sponsorPageWidth: number = 9999
   // 反馈邮件是否附带诊断日志（每次打开联系开发者弹窗时复位为不附带）
   @Local attachDiagnosticLogs: boolean = false
+  // 赞赏码保存进行中：阻止连续点击生成重复图库条目，并避免缓存文件被并发清理
+  @Local private savingSponsorCode: boolean = false
+  // 当前缓存大小展示值：进入更多设置、点击入口与清理完成后刷新
+  @Local private cacheSizeText: string = '0 B'
   // 当前打开的 A 类弹窗 id（接触开发者弹窗关闭时使用）
   private activeDialogId: number = -1
   // 新传输直达详情前的弹层收起：本组件只处理自己打开的四个半模态与弹窗
@@ -52,6 +62,7 @@ export struct MoreSettingsSection {
 
   aboutToAppear(): void {
     subscribeOverlayClose(this.overlayCloseCallback);
+    this.refreshCacheSize();
   }
 
   aboutToDisappear(): void {
@@ -192,8 +203,9 @@ export struct MoreSettingsSection {
 
         Button($r('app.string.sponsor_afdian'))
           .width('100%')
-          .backgroundColor($r('app.color.accent_blue_bg'))
-          .fontColor($r('app.color.ip_blue_text'))
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .margin({ top: DesignTokens.space.lg })
           .onClick(() => {
@@ -206,8 +218,9 @@ export struct MoreSettingsSection {
 
         Button($r('app.string.sponsor_wechat'))
           .width('100%')
-          .backgroundColor($r('app.color.accent_blue_bg'))
-          .fontColor($r('app.color.ip_blue_text'))
+          .height(DesignTokens.size.thumbSm)
+          .backgroundColor($r('app.color.accent_blue'))
+          .fontColor($r('app.color.text_on_color'))
           .borderRadius(DesignTokens.radius.md)
           .margin({ top: DesignTokens.space.sm, bottom: DesignTokens.space.xl })
           .onClick(() => {
@@ -227,7 +240,7 @@ export struct MoreSettingsSection {
     .translate({ x: this.sponsorShowWechat ? -this.sponsorPageWidth : 0 })
   }
 
-  /** 微信赞赏码：收款码 + 扫码提示。 */
+  /** 微信赞赏码：收款码 + 扫码提示 + 保存到图库入口。 */
   @Builder
   wechatSponsorContent(): void {
     Scroll() {
@@ -251,6 +264,30 @@ export struct MoreSettingsSection {
           .textAlign(TextAlign.Center)
           .width('100%')
           .margin({ top: DesignTokens.space.md })
+
+        // SaveButton 安全控件：点击即授权，授权后复用 saveMediaToGallery 写入图库
+        // 安全控件不支持 margin，用容器包裹拉开与上方提示的间距
+        Column() {
+          SaveButton({
+            icon: SaveIconStyle.FULL_FILLED,
+            text: SaveDescription.SAVE_TO_GALLERY,
+            buttonType: ButtonType.ROUNDED_RECTANGLE
+          })
+            .width('100%')
+            .height(DesignTokens.size.thumbSm)
+            // 与设备详情「验证设备」按钮保持一致的蓝底白字风格（字号同样用默认值）
+            .fontColor($r('app.color.text_on_color'))
+            .iconColor($r('app.color.text_on_color'))
+            .backgroundColor($r('app.color.accent_blue'))
+            .borderRadius(DesignTokens.radius.md)
+            .enabled(!this.savingSponsorCode)
+            .onClick((_event: ClickEvent, result: SaveButtonOnClickResult) => {
+              this.saveWechatSponsorCode(result);
+            })
+            .id('settings_sponsor_wechat_save_btn')
+        }
+        .width('100%')
+        .margin({ top: DesignTokens.space.lg })
       }
       .width('100%')
       .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
@@ -262,6 +299,117 @@ export struct MoreSettingsSection {
     .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring)
     .translate({ x: this.sponsorShowWechat ? 0 : this.sponsorPageWidth })
+  }
+
+  /**
+   * 保存微信赞赏码到图库：SaveButton 已完成临时授权，这里把内置图片写入缓存并复用
+   * saveMediaToGallery 写库，结束后清理缓存副本。
+   */
+  private async saveWechatSponsorCode(result: SaveButtonOnClickResult): Promise<void> {
+    if (this.savingSponsorCode) {
+      return;
+    }
+    let ui = this.getUIContext();
+    if (result !== SaveButtonOnClickResult.SUCCESS) {
+      ui.getPromptAction().showToast({ message: $r('app.string.gallery_save_failed'), duration: 1500 });
+      return;
+    }
+    this.savingSponsorCode = true;
+    let path: string = '';
+    try {
+      let context = ui.getHostContext() as common.UIAbilityContext;
+      path = context.cacheDir + '/wechat_sponsor.png';
+      let bytes: Uint8Array = context.resourceManager.getMediaContentSync($r('app.media.ic_wechat_sponsor').id);
+      let file: fs.File = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+      try {
+        // 复制为独立缓冲区再写，避免资源字节是更大缓冲区的视图时写入多余内容
+        let content: Uint8Array = bytes.slice();
+        fs.writeSync(file.fd, content.buffer);
+      } finally {
+        fs.closeSync(file);
+      }
+      let mediaFile: MediaFileInfo = {
+        filePath: path,
+        fileName: 'wechat_sponsor.png',
+        fileType: 'image/png',
+        isImage: true
+      };
+      let saveResult: GallerySaveResult = await saveMediaToGallery(context, [mediaFile]);
+      ui.getPromptAction().showToast({
+        message: saveResult.successCount > 0 ? $r('app.string.gallery_save_success') :
+          $r('app.string.gallery_save_failed'),
+        duration: 1500
+      });
+    } catch (_e) {
+      ui.getPromptAction().showToast({ message: $r('app.string.gallery_save_failed'), duration: 1500 });
+    } finally {
+      this.savingSponsorCode = false;
+      if (path.length > 0) {
+        try {
+          fs.unlinkSync(path);
+        } catch (_e) {
+          // 缓存文件可能未创建，忽略清理失败
+        }
+      }
+    }
+  }
+
+  /**
+   * 缓存清理入口：赞赏码保存或传输进行中时给出提示；确认后由缓存清理服务执行，
+   * 只清理临时文件。
+   */
+  private requestClearCache(): void {
+    let cacheBytes: number = getAppCacheSize();
+    this.cacheSizeText = formatSizeDetailed(cacheBytes);
+    if (cacheBytes === 0) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.clear_cache_empty'),
+        duration: 2000
+      });
+      return;
+    }
+    if (this.savingSponsorCode || hasActiveTransferSessions()) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.clear_cache_busy'),
+        duration: 2000
+      });
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: $r('app.string.clear_cache_title'),
+      message: $r('app.string.clear_cache_confirm'),
+      primaryButton: {
+        value: $r('app.string.dialog_cancel'),
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: $r('app.string.dialog_confirm'),
+        action: () => {
+          let result: CacheClearResult = clearAppCache();
+          let message: ResourceStr = $r('app.string.clear_cache_failed');
+          if (result.status === 'cleared') {
+            let remainingBytes: number = getAppCacheSize();
+            this.cacheSizeText = formatSizeDetailed(remainingBytes);
+            if (result.bytes === 0) {
+              message = remainingBytes === 0 ? $r('app.string.clear_cache_empty') :
+                $r('app.string.clear_cache_failed');
+            } else {
+              message = getStringSync(this.getUIContext(), $r('app.string.clear_cache_success'))
+                .replace('%s', formatSizeDetailed(result.bytes));
+            }
+          } else if (result.status === 'busy') {
+            message = $r('app.string.clear_cache_busy');
+          }
+          this.getUIContext().getPromptAction().showToast({ message: message, duration: 2000 });
+        }
+      }
+    });
+  }
+
+  /** 刷新缓存大小展示值。 */
+  private refreshCacheSize(): void {
+    this.cacheSizeText = formatSizeDetailed(getAppCacheSize());
   }
 
   @Builder
@@ -288,8 +436,9 @@ export struct MoreSettingsSection {
 
       Button($r('app.string.rate_go'))
         .width('100%')
-        .backgroundColor($r('app.color.accent_blue_bg'))
-        .fontColor($r('app.color.ip_blue_text'))
+        .height(DesignTokens.size.thumbSm)
+        .backgroundColor($r('app.color.accent_blue'))
+        .fontColor($r('app.color.text_on_color'))
         .borderRadius(DesignTokens.radius.md)
         .margin({ top: DesignTokens.space.lg, bottom: DesignTokens.space.xl })
         .onClick(() => {
@@ -766,6 +915,32 @@ export struct MoreSettingsSection {
             // 不调用 springBack：取消下拉回弹，使下拉直接进入关闭流程
           }
         })
+
+        // 缓存（右侧展示当前缓存大小；只清理临时文件）
+        Row() {
+          Text($r('app.string.cache_label'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Row({ space: DesignTokens.space.xxs }) {
+            Text(this.cacheSizeText)
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_tertiary'))
+
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.subtitleL)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.tiny, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.requestClearCache();
+        })
+        .id('settings_clear_cache_entry')
 
         // 诊断日志（带箭头的导航入口行）
         Row() {

@@ -53,20 +53,54 @@ function hyperlinkRecord(url: string, description: string): unifiedDataChannel.U
   return record;
 }
 
-// 文件夹记录（Folder 子类，属不支持类型）
+// 文件夹记录（Folder 子类，独立属性 folderUri）
 function folderRecord(uri: string): unifiedDataChannel.UnifiedRecord {
   let record = new unifiedDataChannel.Folder();
   record.folderUri = uri;
   return record;
 }
 
+// 文件夹记录（folderUri 为空、目录地址写在基类 uri 上：兼容以通用文件形态携带目录的拖出方）
+function folderRecordWithBaseUri(uri: string): unifiedDataChannel.UnifiedRecord {
+  let record = new unifiedDataChannel.Folder();
+  record.folderUri = '';
+  record.uri = uri;
+  return record;
+}
+
+// 不支持类型记录（系统预置桌面图标 openharmony.app-item，既非文件也非文本）
+function appItemRecord(): unifiedDataChannel.UnifiedRecord {
+  let record = new unifiedDataChannel.SystemDefinedAppItem();
+  record.appId = 'com.example.demo';
+  record.appName = '示例应用';
+  return record;
+}
+
 // 拖入记录解析纯函数测试：
-// 1. 文件类分流：File 基类读 uri，Image/Video/Audio 读各自独立 uri 属性，均进入 uris。
-// 2. 文本类分流：PlainText 取 textContent（isLink=false）；Hyperlink 按
+// 1. 文件夹类分流：Folder 子类读 folderUri，进入 folders（不混入文件 uris）。
+// 2. 文件类分流：File 基类读 uri，Image/Video/Audio 读各自独立 uri 属性，均进入 uris。
+// 3. 文本类分流：PlainText 取 textContent（isLink=false）；Hyperlink 按
 //    「描述+换行+URL」组合（isLink=true），仅其一非空时用其值，均空则跳过。
-// 3. 边界：不支持类型（Folder 等）跳过、空数组返回空结果、全不支持返回空结果、空内容文本跳过。
+// 4. 边界：不支持类型（openharmony.app-item 等）跳过、空数组返回空结果、
+//    全不支持返回空结果、空内容文本跳过。
 export default function DragDropParserTest() {
   describe('DragDropParserTest', () => {
+    // ── 文件夹类分流 ──
+
+    it('folder_record_goes_to_folders', 0, () => {
+      let result: DragDropParseResult = parseDroppedRecords([folderRecord('file://docs/folder')]);
+      expect(result.uris.length).assertEqual(0);
+      expect(result.folders.length).assertEqual(1);
+      expect(result.folders[0]).assertEqual('file://docs/folder');
+    })
+
+    it('folder_record_falls_back_to_base_uri', 0, () => {
+      let result: DragDropParseResult =
+        parseDroppedRecords([folderRecordWithBaseUri('file://docs/folder-by-uri')]);
+      expect(result.folders.length).assertEqual(1);
+      expect(result.folders[0]).assertEqual('file://docs/folder-by-uri');
+    })
+
     // ── 文件类分流 ──
 
     it('file_record_goes_to_uris', 0, () => {
@@ -144,44 +178,44 @@ export default function DragDropParserTest() {
         fileRecord('file://docs/a.txt'),
         plainTextRecord('hello'),
         imageRecord('file://media/b.png'),
-        hyperlinkRecord('https://example.com', '站点')
+        hyperlinkRecord('https://example.com', '站点'),
+        folderRecord('file://docs/folder')
       ]);
       expect(result.uris.length).assertEqual(2);
       expect(result.uris[0]).assertEqual('file://docs/a.txt');
       expect(result.uris[1]).assertEqual('file://media/b.png');
+      expect(result.folders.length).assertEqual(1);
+      expect(result.folders[0]).assertEqual('file://docs/folder');
       expect(result.texts.length).assertEqual(2);
       expect(result.texts[0].content).assertEqual('hello');
       expect(result.texts[1].content).assertEqual('站点\nhttps://example.com');
     })
 
-    it('unsupported_folder_is_skipped', 0, () => {
-      let result: DragDropParseResult = parseDroppedRecords([folderRecord('file://docs/folder')]);
-      expect(result.uris.length).assertEqual(0);
-      expect(result.texts.length).assertEqual(0);
-    })
-
     it('empty_records_returns_empty_result', 0, () => {
       let result: DragDropParseResult = parseDroppedRecords([]);
       expect(result.uris.length).assertEqual(0);
+      expect(result.folders.length).assertEqual(0);
       expect(result.texts.length).assertEqual(0);
     })
 
     it('only_unsupported_records_returns_empty_result', 0, () => {
       let result: DragDropParseResult = parseDroppedRecords([
-        folderRecord('file://docs/f1'),
-        folderRecord('file://docs/f2')
+        appItemRecord(),
+        appItemRecord()
       ]);
       expect(result.uris.length).assertEqual(0);
+      expect(result.folders.length).assertEqual(0);
       expect(result.texts.length).assertEqual(0);
     })
 
     it('supported_and_unsupported_mixed_keeps_only_supported', 0, () => {
       let result: DragDropParseResult = parseDroppedRecords([
-        folderRecord('file://docs/folder'),
+        appItemRecord(),
         fileRecord('file://docs/keep.txt')
       ]);
       expect(result.uris.length).assertEqual(1);
       expect(result.uris[0]).assertEqual('file://docs/keep.txt');
+      expect(result.folders.length).assertEqual(0);
       expect(result.texts.length).assertEqual(0);
     })
 

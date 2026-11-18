@@ -25,6 +25,42 @@
       "value": "文件"
     },
     {
+      "name": "send_folder",
+      "value": "文件夹"
+    },
+    {
+      "name": "send_download",
+      "value": "下载"
+    },
+    {
+      "name": "send_batch_unsupported",
+      "value": "鸿蒙7.0以下设备不支持选择文件夹"
+    },
+    {
+      "name": "send_folder_empty",
+      "value": "文件夹中没有可发送的文件"
+    },
+    {
+      "name": "send_folder_too_many",
+      "value": "文件夹文件数超过单次上限 %d，建议压缩后发送"
+    },
+    {
+      "name": "send_folder_scan_failed",
+      "value": "扫描文件夹失败，请重试"
+    },
+    {
+      "name": "send_batch_over_limit",
+      "value": "单次最多发送 %d 个文件，建议压缩后发送"
+    },
+    {
+      "name": "send_batch_soft_hint",
+      "value": "文件较多（%d 个），建议压缩目录后发送"
+    },
+    {
+      "name": "send_mta_folder_unsupported",
+      "value": "互传暂不支持文件夹，请发送到局域网设备"
+    },
+    {
       "name": "send_media",
       "value": "图库"
     },
@@ -103,6 +139,34 @@
     {
       "name": "restore_defaults_confirm",
       "value": "确定要将所有设置恢复为默认值吗？此操作不可撤销"
+    },
+    {
+      "name": "cache_label",
+      "value": "缓存"
+    },
+    {
+      "name": "clear_cache_title",
+      "value": "清除缓存"
+    },
+    {
+      "name": "clear_cache_confirm",
+      "value": "将清除以下缓存文件：发送缩略图、接收临时/回退文件、MTA 预览缩略图、网页上传暂存文件、诊断日志导出临时文件，以及旧版本发送临时残留"
+    },
+    {
+      "name": "clear_cache_success",
+      "value": "已清除 %s 缓存"
+    },
+    {
+      "name": "clear_cache_empty",
+      "value": "没有需要清理的缓存"
+    },
+    {
+      "name": "clear_cache_busy",
+      "value": "有传输或保存操作正在进行，请稍后再试"
+    },
+    {
+      "name": "clear_cache_failed",
+      "value": "清除缓存失败，请稍后重试"
     },
     {
       "name": "dialog_confirm",
@@ -307,6 +371,14 @@
     {
       "name": "save_to_gallery_desc",
       "value": "接收的文件包含图片时会提示保存到相册"
+    },
+    {
+      "name": "auto_open_session_detail_label",
+      "value": "自动进入任务详情"
+    },
+    {
+      "name": "auto_open_session_detail_desc",
+      "value": "点击设备发送后自动进入该任务的详情页"
     },
     {
       "name": "advanced_settings_label",
@@ -605,6 +677,10 @@
       "value": "Wi-Fi"
     },
     {
+      "name": "network_type_hotspot",
+      "value": "热点"
+    },
+    {
       "name": "network_type_cellular",
       "value": "蜂窝网络"
     },
@@ -757,6 +833,14 @@
       "value": "共%d个文件，%s"
     },
     {
+      "name": "send_staged_folder_summary",
+      "value": "%d个文件夹，%d个文件，%s"
+    },
+    {
+      "name": "send_preparing_files",
+      "value": "文件准备中，请稍后再点击发送"
+    },
+    {
       "name": "send_add_files",
       "value": "添加文件"
     },
@@ -874,7 +958,7 @@
     },
     {
       "name": "send_error_timeout",
-      "value": "接收方未响应，请确认对方已打开应用后重试"
+      "value": "接收方未响应，请确认对方已打开应用；若对方更换过网络，请刷新设备列表后重试"
     },
     {
       "name": "send_error_cancelled",
@@ -907,6 +991,14 @@
     {
       "name": "send_failure_card_action_detail",
       "value": "查看详情"
+    },
+    {
+      "name": "send_failure_card_action_refresh",
+      "value": "刷新设备列表"
+    },
+    {
+      "name": "send_refreshing_devices_toast",
+      "value": "正在刷新设备列表…"
     },
     {
       "name": "send_protocol_block_title",
@@ -1039,6 +1131,30 @@
     {
       "name": "history_delete_files_label",
       "value": "同时删除文件"
+    },
+    {
+      "name": "history_delete_folder_label",
+      "value": "同时删除文件夹"
+    },
+    {
+      "name": "history_folder_file_count",
+      "value": "%d 个文件"
+    },
+    {
+      "name": "history_folder_multi_name",
+      "value": "多个文件夹"
+    },
+    {
+      "name": "session_folder_file_count",
+      "value": "%d 个文件"
+    },
+    {
+      "name": "session_folder_failed_files",
+      "value": "查看失败文件"
+    },
+    {
+      "name": "session_folder_failed_more",
+      "value": "另有 %d 个失败文件"
     },
     {
       "name": "history_delete_message_file",
@@ -1641,6 +1757,18 @@
       "value": "请确认设备处于同一网络"
     },
     {
+      "name": "localsend_client_install_hint",
+      "value": "其他系统设备如需使用客户端，可安装 LocalSend"
+    },
+    {
+      "name": "localsend_download_address",
+      "value": "下载地址"
+    },
+    {
+      "name": "send_no_source_links_hint",
+      "value": "若目标手机支持互传联盟，可打开手机的互传功能\n\n其他系统设备如需使用客户端，可安装 LocalSend"
+    },
+    {
       "name": "settings_source_localsend",
       "value": "LocalSend"
     },
@@ -1825,6 +1953,10 @@
       "value": "内容过长，仅显示前 128KB"
     },
     {
+      "name": "session_file_full_name",
+      "value": "完整文件名"
+    },
+    {
       "name": "session_file_open_with_app",
       "value": "用其他应用打开"
     },
@@ -1902,7 +2034,7 @@
     },
     {
       "name": "favorites_probe_failed",
-      "value": "无法连接到该设备，请检查网络"
+      "value": "无法连接到该设备，请检查网络；若对方更换过网络或 IP，请刷新设备列表后重试"
     },
     {
       "name": "multi_select_cancel",
@@ -2011,6 +2143,10 @@
     {
       "name": "web_address_switch",
       "value": "切换网页地址"
+    },
+    {
+      "name": "web_address_multi_hint",
+      "value": "检测到多个网络接口，请确保所选网络接口与其他人处于同一网络"
     },
     {
       "name": "web_service_restart_title",
@@ -2174,7 +2310,7 @@
     },
     {
       "name": "portal_restore_failed",
-      "value": "恢复失败，请检查网络"
+      "value": "恢复失败，请稍后重试"
     },
     {
       "name": "portal_delete_title",
@@ -2327,6 +2463,18 @@
     {
       "name": "portal_open_confirm_action",
       "value": "打开"
+    },
+    {
+      "name": "receive_folder_too_many_files",
+      "value": "发送方文件夹超过 %s 个文件，已拒绝接收"
+    },
+    {
+      "name": "receive_folder_invalid_path",
+      "value": "发送方提供的文件路径不合法，已拒绝接收"
+    },
+    {
+      "name": "receive_folder_reserved_name",
+      "value": "发送方文件夹包含应用保留的临时目录名，已拒绝接收"
     }
   ]
 }

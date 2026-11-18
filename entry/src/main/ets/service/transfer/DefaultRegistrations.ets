@@ -11,7 +11,7 @@ import {
   TransferMethodDescriptor,
   TransferMethodGroup
 } from '../../model/transfer/Registries';
-import { DiscoveredDevice } from '../../model/Types';
+import { DiscoveredDevice, EmptyStateLink } from '../../model/Types';
 import { registerSource } from './DeviceSourceRegistry';
 import { registerMethod } from './TransferMethodRegistry';
 import { registerSettingsGroup } from './SettingsGroupRegistry';
@@ -37,6 +37,17 @@ function dispatch(key: string): void {
 }
 
 // ── 设备来源 ──
+
+/** LocalSend 下载说明：提示其他系统安装客户端。 */
+const LOCALSEND_DOWNLOAD_HINT: ResourceStr = $r('app.string.localsend_client_install_hint');
+
+/** LocalSend 下载入口：国内加速地址（下载页内同时声明可访问时优先从官方地址下载）。 */
+export const LOCALSEND_DOWNLOAD_LINKS: Array<EmptyStateLink> = [
+  {
+    label: $r('app.string.localsend_download_address'),
+    url: 'https://gitcode.com/springtwr/localsend-ohos/releases'
+  }
+];
 
 /** 非 MTA 的局域网设备（LocalSend 来源）。 */
 function localSendDevices(): Array<DiscoveredDevice> {
@@ -69,7 +80,9 @@ export function registerDefaultSources(): void {
     emptyState: {
       text: $r('app.string.no_devices_found'),
       hint: $r('app.string.discovery_empty_hint_localsend'),
-      hintVisible: (): boolean => false
+      hintVisible: (): boolean => false,
+      links: LOCALSEND_DOWNLOAD_LINKS,
+      linksHint: LOCALSEND_DOWNLOAD_HINT
     },
     discoveryProvider: localSendDevices
   };

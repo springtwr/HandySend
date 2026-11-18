@@ -65,6 +65,12 @@ export interface FileLocation {
   locatable: boolean
   /** 是否为图库来源（媒体库图片 / 视频资源标识）：存在性判定与界面可用性判定的依据 */
   isGalleryResource: boolean
+  /**
+   * 是否需要激活 Picker/媒体库的持久化授权。
+   * `file://` 来源（Picker、媒体库）需要；普通绝对路径（接收文件、沙箱文件）不需要，
+   * 直接按路径访问即可，避免对从未持久化的文件 URI 调用 activatePermission。
+   */
+  needsPermissionActivation: boolean
 }
 
 /** 打开类操作的结果态（调用方据此给出明确提示）。 */
@@ -95,7 +101,13 @@ enum FileProbe {
 
 /** 不可定位结果（保留原串仅用于诊断，不参与打开）。 */
 function unlocatable(): FileLocation {
-  return { localPath: '', uri: '', locatable: false, isGalleryResource: false };
+  return {
+    localPath: '',
+    uri: '',
+    locatable: false,
+    isGalleryResource: false,
+    needsPermissionActivation: false
+  };
 }
 
 /**
@@ -110,7 +122,13 @@ export function normalizeFileLocation(location: string): FileLocation {
     return unlocatable();
   }
   if (location.startsWith(MEDIA_PHOTO_PREFIX)) {
-    return { localPath: '', uri: location, locatable: true, isGalleryResource: true };
+    return {
+      localPath: '',
+      uri: location,
+      locatable: true,
+      isGalleryResource: true,
+      needsPermissionActivation: true
+    };
   }
   if (!location.startsWith('file://')) {
     try {
@@ -118,7 +136,14 @@ export function normalizeFileLocation(location: string): FileLocation {
       if (uri.length === 0) {
         return unlocatable();
       }
-      return { localPath: location, uri: uri, locatable: true, isGalleryResource: false };
+      // 普通路径（接收文件、沙箱文件）直接按路径访问，不需要文件 URI 授权
+      return {
+        localPath: location,
+        uri: uri,
+        locatable: true,
+        isGalleryResource: false,
+        needsPermissionActivation: false
+      };
     } catch (e) {
       logger.warn('路径转 URI 失败 path=' + location + ' 原因=' + String(e));
       return unlocatable();
@@ -129,7 +154,14 @@ export function normalizeFileLocation(location: string): FileLocation {
     if (localPath.length === 0) {
       return unlocatable();
     }
-    return { localPath: localPath, uri: location, locatable: true, isGalleryResource: false };
+    // Picker / 媒体库的 file:// 来源：临时授权可能已过期，需要持久化授权激活
+    return {
+      localPath: localPath,
+      uri: location,
+      locatable: true,
+      isGalleryResource: false,
+      needsPermissionActivation: true
+    };
   } catch (e) {
     logger.warn('URI 解析失败 uri=' + location + ' 原因=' + String(e));
     return unlocatable();
@@ -206,6 +238,15 @@ function probeFile(location: FileLocation): FileProbe {
   if (location.isGalleryResource) {
     return probeByUri(location.uri, true);
   }
+  // 普通路径直接按路径探测：接收文件从未按文件 URI 持久化授权，
+  // 先走 URI 探测只会产生无意义的 Operation not permitted。
+  if (!location.needsPermissionActivation && location.localPath.length > 0) {
+    try {
+      return fs.accessSync(location.localPath) ? FileProbe.readable : FileProbe.missing;
+    } catch (e) {
+      return probeErrorOf(e);
+    }
+  }
   let byUri: FileProbe = location.uri.length > 0 ? probeByUri(location.uri) : FileProbe.missing;
   if (byUri === FileProbe.readable) {
     return FileProbe.readable;
@@ -266,10 +307,12 @@ function containingDocsDirectoryUri(uri: string): string {
  * 仅在判定为「无权限」时重试，物理缺失（ENOENT）不重试。
  */
 async function probeWithAccess(location: FileLocation): Promise<FileProbe> {
-  // 先激活持久化授权：Picker 的临时授权只在一定时间内有效（与进程是否重启无关）
-  await ensureUriAccess(location.uri);
+  // 只有 Picker / 媒体库来源才需要激活持久化授权；普通路径直接可读
+  if (location.needsPermissionActivation) {
+    await ensureUriAccess(location.uri);
+  }
   let probe: FileProbe = probeFile(location);
-  if (probe !== FileProbe.denied) {
+  if (probe !== FileProbe.denied || !location.needsPermissionActivation) {
     return probe;
   }
   // 接收目录中的文件：持久化授权记录在目录 URI 上，激活父目录后重试

@@ -75,11 +75,19 @@ const CAPABILITY_COOKIE: &str = "handysend_web_cap";
 const CAPABILITY_COOKIE_HTTPS: &str = "handysend_web_cap_https";
 /// 访问码授权有效期（服务重启或访问码变更后全部失效）。
 const AUTH_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+/// 微信内置浏览器 → 系统浏览器的短期交接令牌有效期。
+const HANDOFF_TTL: Duration = Duration::from_secs(5 * 60);
+/// 每个客户端 IP 同时保留的复制链接交接令牌上限。
+const MAX_COPY_HANDOFFS_PER_IP: usize = 8;
+/// 每个客户端 IP 只保留最新的二维码原生交接令牌。
+const MAX_NATIVE_HANDOFFS_PER_IP: usize = 1;
 /// 页面关闭后的结束宽限：刷新会在宽限内重新心跳并取消关闭。
 /// 留足重新加载（含文案与快照请求）的时间，避免刷新被误判为关闭。
 const LEAVE_GRACE: Duration = Duration::from_secs(15);
 /// 被删文件保留宽限（供已建会话按快照下完）。
 const RETAIN_GRACE: Duration = Duration::from_secs(30);
+/// 待下载批次有效期：浏览器可能在确认/续传之间间隔较久；仅保存标识，不持有 fd。
+const PENDING_BATCH_TTL: Duration = Duration::from_secs(5 * 60);
 /// 内容下发读块（与旧 fd 内容源同量级）。
 const READ_BUF_SIZE: usize = 512 * 1024;
 /// 进度通道容量（块）。
@@ -127,7 +135,7 @@ pub enum ProgressEvent {
         user_agent: Option<String>,
         file_count: usize,
     },
-    /// 下载批次开始（第一个 body chunk 成功入队后发）。
+    /// 整包下载流开始（无 Range 或 `bytes=0-` 时发；分片 Range 不建任务）。
     DownloadStarted {
         batch_id: String,
         ip: String,
@@ -147,7 +155,7 @@ pub enum ProgressEvent {
         file_id: String,
         total_bytes: u64,
     },
-    /// 下载批次结束（成功/失败/取消，只发一次）。
+    /// 整包下载流结束（无 Range 或 `bytes=0-` 时发；分片 Range 不发任务事件）。
     DownloadEnded {
         batch_id: String,
         outcome: DownloadOutcome,
@@ -228,6 +236,17 @@ impl ClientBinding {
     }
 }
 
+/// 微信内置浏览器到系统浏览器的短期交接令牌：绑定接收方 IP，仅能兑换一次。
+#[derive(Clone, Copy, Debug)]
+pub struct HandoffToken {
+    /// 绑定创建时的对端 IP。
+    pub peer_ip: IpAddr,
+    /// 交接令牌过期时刻。
+    pub expires_at: Instant,
+    /// 是否由页面「复制浏览器链接」生成（区分于二维码原生交接）。
+    pub is_copy: bool,
+}
+
 /// 连接关闭信号：硬停止或重启服务时通知所有已建立连接退出，
 /// 避免浏览器复用旧 keep-alive/SSE 连接继续读到旧状态。
 #[derive(Debug, Default)]
@@ -264,7 +283,7 @@ impl ShutdownSignal {
     }
 }
 
-/// 多选下载的待开始批次（POST 登记，GET 消费；不建应用任务）。
+/// 多选下载的待下载批次（POST 登记；GET 可重复下发，TTL 过期清理；不建应用任务）。
 #[derive(Clone, Debug)]
 pub struct PendingZipBatch {
     pub token: String,
@@ -293,6 +312,8 @@ pub struct WebServiceState {
     pub auth_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
     /// 能力令牌换取的浏览器 Cookie token → 客户端绑定（IP/UA 绑定）。
     pub cap_sessions: Arc<Mutex<HashMap<String, ClientBinding>>>,
+    /// 微信内置浏览器 → 系统浏览器的短期交接令牌（单次、同 IP）。
+    pub handoffs: Arc<Mutex<HashMap<String, HandoffToken>>>,
     /// 当前分享文件表（换表版本号单调增）。
     pub files: Arc<Mutex<SharedFileTable>>,
     /// 文件展示顺序（与 ArkTS 暂存列表一致；仅用于浏览器列表排序，不参与内容定位）。
@@ -313,7 +334,7 @@ pub struct WebServiceState {
     pub file_events: Option<tokio::sync::broadcast::Sender<FileTableChange>>,
     /// 上传会话结束广播（浏览器 SSE 订阅；携带浏览器 token）。
     pub session_events: Option<tokio::sync::broadcast::Sender<String>>,
-    /// 多选下载待开始批次（POST 登记，GET 消费；60s 过期）。
+    /// 多选下载待下载批次（POST 登记；GET 可重复下发，TTL 过期清理）。
     pub pending_batches: Arc<Mutex<HashMap<String, PendingZipBatch>>>,
     /// 活动下载批次的取消标志（应用取消时置位）。
     pub active_batches: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
@@ -468,9 +489,10 @@ impl WebServiceState {
     }
 
     /// 全量惰性打扫（各请求入口调用）：上传超时终结（清临时文件并上报
-    /// `Finished`）+ 保留区过期释放 + 上传关闭宽限 + 待下载批次过期。
+    /// `Finished`）+ 保留区过期释放 + 上传关闭宽限 + 待下载批次/浏览器交接令牌过期。
     pub(crate) async fn sweep_all(&self, now: Instant) {
         self.sweep_retained(now);
+        lock(&self.handoffs).retain(|_, entry| entry.expires_at > now);
         let closed: Vec<String> = {
             let mut closing = lock(&self.closing);
             let expired: Vec<String> = closing
@@ -614,6 +636,11 @@ impl WebServiceState {
         if !constant_time_eq(presented.as_bytes(), expected.as_bytes()) {
             return None;
         }
+        Some(self.issue_capability_session(headers, peer))
+    }
+
+    /// 为当前客户端签发能力 Cookie token（IP + UA 绑定）。
+    fn issue_capability_session(&self, headers: &hyper::HeaderMap, peer: SocketAddr) -> String {
         let now = Instant::now();
         let token = uuid::Uuid::new_v4().to_string();
         let mut sessions = lock(&self.cap_sessions);
@@ -626,7 +653,70 @@ impl WebServiceState {
                 expires_at: now + AUTH_TTL,
             },
         );
-        Some(token)
+        token
+    }
+
+    /// 生成微信内置浏览器 → 系统浏览器的短期交接令牌。
+    /// `is_copy` 区分页面复制链接与二维码原生交接，两类分别计数，复制令牌不会挤掉原生令牌。
+    fn issue_handoff(&self, peer: SocketAddr, is_copy: bool) -> String {
+        let now = Instant::now();
+        let token = uuid::Uuid::new_v4().to_string();
+        let peer_ip = peer.ip();
+        let limit = if is_copy {
+            MAX_COPY_HANDOFFS_PER_IP
+        } else {
+            MAX_NATIVE_HANDOFFS_PER_IP
+        };
+        let mut handoffs = lock(&self.handoffs);
+        handoffs.retain(|_, entry| entry.expires_at > now);
+        // 同一 IP、同一用途只保留最近若干枚：正常页面复用同一枚，恶意重复调用也不至于无限堆积。
+        while handoffs
+            .values()
+            .filter(|entry| entry.peer_ip == peer_ip && entry.is_copy == is_copy)
+            .count()
+            >= limit
+        {
+            let oldest = handoffs
+                .iter()
+                .filter(|(_, entry)| entry.peer_ip == peer_ip && entry.is_copy == is_copy)
+                .min_by_key(|(_, entry)| entry.expires_at)
+                .map(|(token, _)| token.clone());
+            match oldest {
+                Some(token) => {
+                    handoffs.remove(&token);
+                }
+                None => break,
+            }
+        }
+        handoffs.insert(
+            token.clone(),
+            HandoffToken {
+                peer_ip,
+                expires_at: now + HANDOFF_TTL,
+                is_copy,
+            },
+        );
+        token
+    }
+
+    /// 兑换浏览器交接令牌：校验 IP/有效期并原子消费，成功后签发能力 Cookie token。
+    /// 令牌不存在、已过期、已使用或 IP 不一致时返回 `None`；错误 IP 不消费令牌。
+    fn consume_handoff(
+        &self,
+        presented: &str,
+        headers: &hyper::HeaderMap,
+        peer: SocketAddr,
+    ) -> Option<String> {
+        let now = Instant::now();
+        let mut handoffs = lock(&self.handoffs);
+        handoffs.retain(|_, entry| entry.expires_at > now);
+        let entry = *handoffs.get(presented)?;
+        if entry.peer_ip != peer.ip() {
+            return None;
+        }
+        handoffs.remove(presented);
+        drop(handoffs);
+        Some(self.issue_capability_session(headers, peer))
     }
 
     /// 校验访问码并发放新的浏览器授权 token（绑定当前 IP/UA）。
@@ -715,6 +805,20 @@ impl WebServiceState {
             let _ = tx.send(event).await;
         }
     }
+}
+
+/// 是否为移动端微信内置浏览器：UA 含 `MicroMessenger`，排除桌面微信。
+fn is_wechat_mobile(headers: &hyper::HeaderMap) -> bool {
+    let Some(value) = headers.get(hyper::header::USER_AGENT) else {
+        return false;
+    };
+    let Ok(user_agent) = value.to_str() else {
+        return false;
+    };
+    let user_agent = user_agent.to_ascii_lowercase();
+    user_agent.contains("micromessenger")
+        && !user_agent.contains("windowswechat")
+        && !user_agent.contains("macwechat")
 }
 
 /// User-Agent 摘要（Cookie 会话的身份绑定因子；缺失按空串参与摘要）。
@@ -872,6 +976,7 @@ async fn handle(
     }
     match (method.as_str(), path.as_str()) {
         ("GET", "/caps") => Ok(caps_response(&state)),
+        ("POST", "/web/handoff") => Ok(handoff_response(&state, peer)),
         ("GET", "/web/events") => Ok(events_response(&state)),
         // 上传地址与下载地址同页（单页按 caps 条件渲染两段）：`/upload`
         // 打开即定位上传段，浏览器扫上传码直达。
@@ -1036,7 +1141,8 @@ fn leave_response(
 
 /// 单页/上传页：二维码能力令牌与访问码是并列入口。
 /// 带令牌时换取 HttpOnly Cookie；裸地址在设置了访问码时渲染访问码页，
-/// 未设置访问码时给出「请扫码」提示页。
+/// 未设置访问码时给出「请扫码」提示页。微信内扫码还会下发短期浏览器交接令牌，
+/// 供系统浏览器打开时免访问码进入。
 fn page_response(
     state: &WebServiceState,
     req: &Request<Incoming>,
@@ -1044,12 +1150,32 @@ fn page_response(
     peer: SocketAddr,
     path: &'static str,
 ) -> Response<BoxBody> {
+    let wechat = is_wechat_mobile(req.headers());
+    // 微信页面上的 h 参数只给系统浏览器兑换，微信自身不消费；这样「在浏览器打开」
+    // 仍带着令牌。浏览器兑换成功即换发能力 Cookie 并回到干净地址；失效时回退访问码。
+    if let Some(presented) = query.get("h") {
+        if !wechat {
+            if let Some(token) = state.consume_handoff(presented, req.headers(), peer) {
+                let secure = is_secure(state);
+                let cookie = cookie_header(capability_cookie_name(secure), &token, secure);
+                return redirect_with_cookie(path, &cookie);
+            }
+            log::debug!("浏览器交接令牌无效或已使用 ip={}", peer.ip());
+        }
+    }
     if state.capability_required() {
         if let Some(presented) = query.get("t") {
             match state.exchange_capability(presented, req.headers(), peer) {
                 Some(token) => {
                     let secure = is_secure(state);
                     let cookie = cookie_header(capability_cookie_name(secure), &token, secure);
+                    if wechat {
+                        // 微信 WebView 与系统浏览器不共享 Cookie：把二维码授权换成
+                        // 短期交接令牌留在地址栏，供「在浏览器打开」携带兑换。
+                        let handoff = state.issue_handoff(peer, false);
+                        let location = format!("{path}?h={handoff}");
+                        return redirect_with_cookie(&location, &cookie);
+                    }
                     return redirect_with_cookie(path, &cookie);
                 }
                 None => {
@@ -1091,9 +1217,10 @@ fn page_response(
     html_response(state, req, peer)
 }
 
-/// 能力令牌换取成功：带 Cookie 重定向到去掉令牌的干净地址，
-/// 避免令牌停留在地址栏、历史记录与后续请求的 Referer 中。
-fn redirect_with_cookie(path: &'static str, cookie: &str) -> Response<BoxBody> {
+/// 能力/交接令牌换取成功：带 Cookie 重定向。
+/// 普通浏览器回到干净地址，避免长期令牌停留在地址栏；微信 WebView 回到带短期
+/// 交接令牌的地址，供「在浏览器打开」携带兑换，令牌 5 分钟、单次、同 IP。
+fn redirect_with_cookie(path: &str, cookie: &str) -> Response<BoxBody> {
     let mut response = full_response(StatusCode::FOUND, "text/plain; charset=utf-8", "");
     if let Ok(value) = hyper::header::HeaderValue::from_str(path) {
         response
@@ -1244,6 +1371,14 @@ fn caps_response(state: &WebServiceState) -> Response<BoxBody> {
     snapshot.has_download = !files.files.is_empty();
     snapshot.file_revision = files.revision;
     let body: String = serde_json::to_string(&snapshot).unwrap_or_else(|_| "{}".to_string());
+    json_response(StatusCode::OK, &body)
+}
+
+/// `POST /web/handoff`：为已授权页面生成一条短期浏览器交接令牌。
+/// 微信页面可先取得链接再复制到系统浏览器，不依赖微信菜单保留 URL 参数。
+fn handoff_response(state: &WebServiceState, peer: SocketAddr) -> Response<BoxBody> {
+    let token = state.issue_handoff(peer, true);
+    let body = serde_json::json!({ "token": token }).to_string();
     json_response(StatusCode::OK, &body)
 }
 
@@ -1592,7 +1727,12 @@ async fn start_download(
         )
         .await;
     });
-    let file_name = meta_file.file_name.replace('/', "-");
+    let file_name = meta_file
+        .file_name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(meta_file.file_name.as_str())
+        .to_string();
     let mut response = Response::new(body.boxed());
     *response.status_mut() = status;
     let headers = response.headers_mut();
@@ -1642,6 +1782,12 @@ struct BatchEmit {
 struct ZipResponseWriter {
     tx: mpsc::Sender<Bytes>,
     client_gone: Arc<AtomicBool>,
+    /// 需要跳过的 ZIP 前缀字节数（Range 续传起点）。
+    skip_bytes: u64,
+    /// 还需写出的 ZIP 字节数（Range 长度；整包为总长）。
+    limit_bytes: u64,
+    /// 请求的字节范围已全部写出。
+    range_done: Arc<AtomicBool>,
 }
 
 /// 一个待写出的 ZIP 条目：名称、声明大小、源与 Zip64 标记。
@@ -1662,12 +1808,30 @@ struct ZipWriteResult {
 
 impl Write for ZipResponseWriter {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut data = buf;
+        if self.skip_bytes > 0 {
+            let skip = self.skip_bytes.min(data.len() as u64) as usize;
+            data = &data[skip..];
+            self.skip_bytes -= skip as u64;
+        }
+        if data.is_empty() {
+            return Ok(buf.len());
+        }
+        if self.limit_bytes == 0 {
+            self.range_done.store(true, Ordering::Relaxed);
+            return Ok(buf.len());
+        }
+        let send_len = self.limit_bytes.min(data.len() as u64) as usize;
         self.tx
-            .blocking_send(Bytes::copy_from_slice(buf))
+            .blocking_send(Bytes::copy_from_slice(&data[..send_len]))
             .map_err(|_| {
                 self.client_gone.store(true, Ordering::Relaxed);
                 std::io::Error::new(std::io::ErrorKind::BrokenPipe, "客户端已断开")
             })?;
+        self.limit_bytes -= send_len as u64;
+        if self.limit_bytes == 0 {
+            self.range_done.store(true, Ordering::Relaxed);
+        }
         Ok(buf.len())
     }
 
@@ -1688,9 +1852,30 @@ fn open_zip_source(source: FileSource) -> anyhow::Result<File> {
     }
 }
 
-/// ZIP 条目名去重：同名文件按 `name_2.ext` 递增，避免覆盖。
+/// ZIP 条目名清洗：保留相对目录（`/`），逐段去掉分隔符、`.`、`..`。
+/// 网页下载的文件夹靠条目名建目录；不能把整条路径压成单段。
+fn sanitize_zip_entry_name(name: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for raw in name.split(['/', '\\']) {
+        let segment = raw.trim();
+        if segment.is_empty() || segment == "." || segment == ".." {
+            continue;
+        }
+        let cleaned = sanitize_file_name(segment);
+        if !cleaned.is_empty() {
+            parts.push(cleaned);
+        }
+    }
+    if parts.is_empty() {
+        "unnamed".to_string()
+    } else {
+        parts.join("/")
+    }
+}
+
+/// ZIP 条目名去重：同一完整路径按 `name_2.ext` 递增，避免覆盖。
 fn unique_zip_name(name: &str, used: &mut HashMap<String, usize>) -> String {
-    let base = sanitize_file_name(name);
+    let base = sanitize_zip_entry_name(name);
     let count = used.entry(base.clone()).or_insert(0);
     *count += 1;
     if *count == 1 {
@@ -1710,6 +1895,24 @@ fn emit_blocking(tx: &Option<mpsc::Sender<ProgressEvent>>, event: ProgressEvent)
     }
 }
 
+/// 分片写出范围：跳过 ZIP 前缀 `skip` 字节，最多写出 `limit` 字节。
+#[derive(Clone, Copy, Debug)]
+struct ZipByteRange {
+    skip: u64,
+    limit: u64,
+}
+
+/// 持有尚未处理的 ZIP 条目：提前返回时关闭剩余内容源，避免 fd 泄漏。
+struct RemainingZipEntries(std::vec::IntoIter<ZipBatchEntry>);
+
+impl Drop for RemainingZipEntries {
+    fn drop(&mut self) {
+        for entry in self.0.by_ref() {
+            entry.source.close();
+        }
+    }
+}
+
 /// 阻塞写出流式 ZIP：数据边读边送响应体，不预打包、不落临时文件。
 ///
 /// 条目名称、大小与 `large` 标记由调用方预先布局；本函数只按布局写出，
@@ -1721,12 +1924,18 @@ fn write_zip_stream(
     batch: BatchEmit,
     progress_tx: Option<mpsc::Sender<ProgressEvent>>,
     cancel: Arc<AtomicBool>,
+    byte_range: ZipByteRange,
 ) -> ZipWriteResult {
     let client_gone = Arc::new(AtomicBool::new(false));
+    let range_done = Arc::new(AtomicBool::new(false));
     let mut zip = ZipWriter::new_stream(ZipResponseWriter {
         tx,
         client_gone: Arc::clone(&client_gone),
+        skip_bytes: byte_range.skip,
+        limit_bytes: byte_range.limit,
+        range_done: Arc::clone(&range_done),
     });
+    let mut remaining_entries = RemainingZipEntries(files.into_iter());
     if force_zip64 {
         // 恰好 4GB 边界时 zip crate 的 `>` 判断会漏掉 Zip64 EOCD；
         // 空 extensible data sector 会强制它写出完整 Zip64 尾部。
@@ -1747,8 +1956,9 @@ fn write_zip_stream(
         };
     }
     let mut buffer = vec![0u8; 64 * 1024];
-    for entry in files {
+    for mut entry in remaining_entries.0.by_ref() {
         if cancel.load(Ordering::Relaxed) || client_gone.load(Ordering::Relaxed) {
+            entry.source.close();
             return ZipWriteResult {
                 outcome: DownloadOutcome::Cancelled,
                 error: Some("下载已取消".to_string()),
@@ -1759,12 +1969,23 @@ fn write_zip_stream(
             .large_file(entry.large)
             .last_modified_time(zip_plan::entry_date_time(entry.last_modified_ms));
         if let Err(e) = zip.start_file(&entry.entry_name, options) {
+            entry.source.close();
             return ZipWriteResult {
                 outcome: DownloadOutcome::Failed,
                 error: Some(format!("创建 zip 条目失败: {e}")),
             };
         }
-        let mut file = match open_zip_source(entry.source) {
+        if range_done.load(Ordering::Relaxed) {
+            entry.source.close();
+            return ZipWriteResult {
+                outcome: DownloadOutcome::Succeeded,
+                error: None,
+            };
+        }
+        let mut file = match open_zip_source(std::mem::replace(
+            &mut entry.source,
+            FileSource::Path(String::new()),
+        )) {
             Ok(value) => value,
             Err(e) => {
                 return ZipWriteResult {
@@ -1812,6 +2033,12 @@ fn write_zip_stream(
                         DownloadOutcome::Failed
                     },
                     error: Some(format!("写出 zip 失败: {e}")),
+                };
+            }
+            if range_done.load(Ordering::Relaxed) {
+                return ZipWriteResult {
+                    outcome: DownloadOutcome::Succeeded,
+                    error: None,
                 };
             }
             remaining -= read as u64;
@@ -1993,7 +2220,7 @@ async fn prepare_download_batch(
                 file_ids: file_ids.clone(),
                 all: request.all,
                 created_at: now,
-                expires_at: now + Duration::from_secs(60),
+                expires_at: now + PENDING_BATCH_TTL,
             },
         );
     }
@@ -2005,7 +2232,8 @@ async fn prepare_download_batch(
     json_response(StatusCode::OK, &response.to_string())
 }
 
-/// `GET /web/download-batch?batch=`：消费待下载批次并流式下发 ZIP。
+/// `GET /web/download-batch?batch=`：流式下发待下载批次；批次保留到 TTL 结束，
+/// 浏览器可因探测/确认/续传重复请求。
 async fn download_batch(
     req: &Request<Incoming>,
     query: &HashMap<String, String>,
@@ -2021,7 +2249,11 @@ async fn download_batch(
         log::debug!("批次下载缺少 batch ip={}", peer.ip());
         return download_error_response(req, StatusCode::BAD_REQUEST, ended_message);
     };
-    let pending = { lock(&state.pending_batches).remove(batch_id) };
+    // 批次在 TTL 内可重复取用：部分 Android 浏览器/下载管理器会在确认下载前先发一次
+    // 探测 GET（读取少量字节后断开），确认后才发起真正的下载。首次 GET 即消费会让
+    // 第二次请求拿到 410；改为保留到 TTL 结束。注意小 ZIP 的探测请求可能一次性读完
+    // 整个响应而被服务端视为成功，因此成功下发后也不能立即移除批次。
+    let pending = { lock(&state.pending_batches).get(batch_id).cloned() };
     let Some(pending) = pending else {
         log::debug!("下载批次不存在或已过期 batch={} ip={}", batch_id, peer.ip());
         return download_error_response(req, StatusCode::GONE, updated_message);
@@ -2062,32 +2294,26 @@ async fn download_batch(
         };
         (offered, session.user_agent.clone())
     };
-    let (entries, total_len, force_zip64, batch) = {
+    // 先只规划条目元数据与 ZIP 总长（不打开内容源）：浏览器预检只需要响应头，
+    // 不应因探测而打开全部文件或创建下载任务。
+    let (planned, total_len, force_zip64, batch_files) = {
         if offered.is_empty() {
             log::debug!("下载批次无可下发文件 batch={}", batch_id);
             return download_error_response(req, StatusCode::GONE, updated_message);
         }
         let mut used: HashMap<String, usize> = HashMap::new();
-        let mut planned: Vec<(String, String, u64, Option<u64>, FileSource)> = Vec::new();
+        let mut planned: Vec<(String, String, u64, Option<u64>, bool)> = Vec::new();
         let mut batch_files: Vec<AdapterFileDto> = Vec::new();
         for item in offered.into_iter() {
             let entry_name = unique_zip_name(&item.file.file_name, &mut used);
-            let Some(source) = state.locate_source(&item.file_id, now) else {
-                log::debug!(
-                    "批次内容源已不可用 file={} batch={}",
-                    item.file_id,
-                    batch_id
-                );
-                return download_error_response(req, StatusCode::GONE, updated_message);
-            };
-            batch_files.push(adapter_file_dto(&item.file));
             planned.push((
                 item.file_id,
                 entry_name,
                 item.file.size,
                 item.last_modified_ms,
-                source,
+                item.file.size >= zip_plan::ZIP64_THRESHOLD,
             ));
+            batch_files.push(adapter_file_dto(&item.file));
         }
         let sizes: Vec<zip_plan::SizeEntry> = planned
             .iter()
@@ -2107,35 +2333,76 @@ async fn download_batch(
                 );
             }
         };
-        let entries: Vec<ZipBatchEntry> = planned
-            .into_iter()
-            .enumerate()
-            .map(
-                |(index, (file_id, entry_name, size, last_modified_ms, source))| ZipBatchEntry {
-                    file_id,
-                    entry_name,
-                    size,
-                    last_modified_ms,
-                    large: layout.entries[index].large,
-                    source,
-                },
-            )
-            .collect();
-        (
-            entries,
-            layout.total_len,
-            layout.force_zip64,
-            BatchEmit {
-                batch_id: batch_id.clone(),
-                ip: peer.ip().to_string(),
-                user_agent,
-                files: batch_files,
-            },
-        )
+        (planned, layout.total_len, layout.force_zip64, batch_files)
+    };
+    let range_header = req
+        .headers()
+        .get(hyper::header::RANGE)
+        .and_then(|value| value.to_str().ok());
+    if let Some(value) = range_header {
+        log::debug!(
+            "下载批次 Range batch={} range={} ip={}",
+            batch_id,
+            value,
+            peer.ip()
+        );
+    }
+    let range = parse_range(range_header, total_len);
+    // 下载预检：只请求 ZIP 开头几个字节时直接回应对应前导字节与完整长度，
+    // 不创建下载任务，也不消费批次（浏览器随后才发起真正的整包下载）。
+    if let RangeRequest::Partial { start, end } = range {
+        if end < ZIP_MAGIC_PREFIX.len() as u64 {
+            return zip_probe_response(start, end, total_len);
+        }
+    }
+    if matches!(range, RangeRequest::Unsatisfiable) {
+        return zip_range_error_response(total_len);
+    }
+    // 整包与 `bytes=0-` 视为一次完整下载：发任务事件；分片（浏览器探测或断点续传）
+    // 只回对应字节，不建任务。批次无论成败都保留到 TTL 结束，浏览器可重试。
+    let (status, range_start, range_end, emit_events) = match range {
+        RangeRequest::Full => (StatusCode::OK, 0u64, total_len.saturating_sub(1), true),
+        RangeRequest::Partial { start, end } => {
+            let full = start == 0 && end + 1 == total_len;
+            (StatusCode::PARTIAL_CONTENT, start, end, full)
+        }
+        RangeRequest::Unsatisfiable => unreachable!(),
+    };
+    let limit_bytes: u64 = if total_len == 0 {
+        0
+    } else {
+        range_end.saturating_sub(range_start) + 1
+    };
+    let mut entries: Vec<ZipBatchEntry> = Vec::with_capacity(planned.len());
+    for (file_id, entry_name, size, last_modified_ms, large) in planned {
+        let Some(source) = state.locate_source(&file_id, now) else {
+            log::debug!("批次内容源已不可用 file={} batch={}", file_id, batch_id);
+            return download_error_response(req, StatusCode::GONE, updated_message);
+        };
+        entries.push(ZipBatchEntry {
+            file_id,
+            entry_name,
+            size,
+            last_modified_ms,
+            large,
+            source,
+        });
+    }
+    let batch = BatchEmit {
+        batch_id: batch_id.clone(),
+        ip: peer.ip().to_string(),
+        user_agent,
+        files: batch_files,
     };
     let cancel = Arc::new(AtomicBool::new(false));
     lock(&state.active_batches).insert(batch_id.clone(), Arc::clone(&cancel));
-    let progress_tx = state.progress_tx.clone();
+    // 同一批次可能因浏览器重试存在多个流；仅允许本流移除自己登记的取消入口。
+    let cancel_for_unregister = Arc::clone(&cancel);
+    let progress_tx = if emit_events {
+        state.progress_tx.clone()
+    } else {
+        None
+    };
     let (body_tx, body_rx) = mpsc::channel::<Bytes>(BODY_CHANNEL_CAPACITY);
     // 响应体流超时后丢弃接收端，让阻塞写线程的 blocking_send 失败退出。
     let body = http_body_util::StreamBody::new(futures_util::stream::unfold(
@@ -2158,6 +2425,10 @@ async fn download_batch(
                 batch,
                 progress_tx,
                 Arc::clone(&cancel),
+                ZipByteRange {
+                    skip: range_start,
+                    limit: limit_bytes,
+                },
             )
         })
         .await;
@@ -2178,20 +2449,30 @@ async fn download_batch(
             ),
             DownloadOutcome::Succeeded => {}
         }
-        let tx = serve_state.progress_tx.clone();
-        if let Some(tx) = tx {
-            let _ = tx
-                .send(ProgressEvent::DownloadEnded {
-                    batch_id: batch_for_events.batch_id.clone(),
-                    outcome,
-                    error,
-                })
-                .await;
+        if emit_events {
+            let tx = serve_state.progress_tx.clone();
+            if let Some(tx) = tx {
+                let _ = tx
+                    .send(ProgressEvent::DownloadEnded {
+                        batch_id: batch_for_events.batch_id.clone(),
+                        outcome,
+                        error,
+                    })
+                    .await;
+            }
         }
-        lock(&serve_state.active_batches).remove(&batch_for_events.batch_id);
+        let mut actives = lock(&serve_state.active_batches);
+        let owns_entry: bool = match actives.get(&batch_for_events.batch_id) {
+            Some(current) => Arc::ptr_eq(current, &cancel_for_unregister),
+            None => false,
+        };
+        if owns_entry {
+            actives.remove(&batch_for_events.batch_id);
+        }
     });
     let zip_name = zip_plan::zip_file_name();
     let mut response = Response::new(body.boxed());
+    *response.status_mut() = status;
     let headers = response.headers_mut();
     headers.insert(
         CONTENT_TYPE,
@@ -2202,11 +2483,78 @@ async fn download_batch(
     {
         headers.insert(CONTENT_DISPOSITION, value);
     }
-    headers.insert(CONTENT_LENGTH, hyper::header::HeaderValue::from(total_len));
+    headers.insert(
+        CONTENT_LENGTH,
+        hyper::header::HeaderValue::from(limit_bytes),
+    );
+    headers.insert(
+        hyper::header::ACCEPT_RANGES,
+        hyper::header::HeaderValue::from_static("bytes"),
+    );
+    if status == StatusCode::PARTIAL_CONTENT {
+        if let Ok(value) = hyper::header::HeaderValue::from_str(&format!(
+            "bytes {range_start}-{range_end}/{total_len}"
+        )) {
+            headers.insert(hyper::header::CONTENT_RANGE, value);
+        }
+    }
     headers.insert(
         hyper::header::CACHE_CONTROL,
         hyper::header::HeaderValue::from_static("no-store"),
     );
+    response
+}
+
+/// ZIP 前导字节（首个本地文件头魔数），供浏览器下载预检的 Range 请求直接应答。
+const ZIP_MAGIC_PREFIX: &[u8] = b"PK\x03\x04";
+
+/// 下载预检响应：只返回 ZIP 开头请求范围内的字节与完整长度，不创建下载任务。
+fn zip_probe_response(start: u64, end: u64, total_len: u64) -> Response<BoxBody> {
+    let prefix = &ZIP_MAGIC_PREFIX[(start as usize)..=(end as usize)];
+    let body = Full::new(Bytes::copy_from_slice(prefix))
+        .map_err(|never| match never {})
+        .boxed();
+    let mut response = Response::new(body);
+    *response.status_mut() = StatusCode::PARTIAL_CONTENT;
+    let headers = response.headers_mut();
+    headers.insert(
+        CONTENT_TYPE,
+        hyper::header::HeaderValue::from_static("application/zip"),
+    );
+    if let Ok(value) = hyper::header::HeaderValue::from_str(&format!(
+        "attachment; filename=\"{}\"",
+        zip_plan::zip_file_name()
+    )) {
+        headers.insert(CONTENT_DISPOSITION, value);
+    }
+    headers.insert(
+        CONTENT_LENGTH,
+        hyper::header::HeaderValue::from(prefix.len() as u64),
+    );
+    headers.insert(
+        hyper::header::ACCEPT_RANGES,
+        hyper::header::HeaderValue::from_static("bytes"),
+    );
+    if let Ok(value) =
+        hyper::header::HeaderValue::from_str(&format!("bytes {start}-{end}/{total_len}"))
+    {
+        headers.insert(hyper::header::CONTENT_RANGE, value);
+    }
+    headers.insert(
+        hyper::header::CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
+    );
+    response
+}
+
+/// 下载批次 Range 起点越界：回 416 并给出总长（与单文件下载一致）。
+fn zip_range_error_response(total_len: u64) -> Response<BoxBody> {
+    let mut response = text_response(StatusCode::RANGE_NOT_SATISFIABLE, "范围超出文件大小");
+    if let Ok(value) = hyper::header::HeaderValue::from_str(&format!("bytes */{total_len}")) {
+        response
+            .headers_mut()
+            .insert(hyper::header::CONTENT_RANGE, value);
+    }
     response
 }
 
@@ -3480,4 +3828,36 @@ pub async fn bind_loopback() -> std::io::Result<(TcpListener, SocketAddr)> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr: SocketAddr = listener.local_addr()?;
     Ok((listener, addr))
+}
+
+#[cfg(test)]
+mod zip_name_tests {
+    use super::*;
+
+    #[test]
+    fn zip_entry_keeps_nested_directories() {
+        assert_eq!(
+            sanitize_zip_entry_name("Photos/2024/a.jpg"),
+            "Photos/2024/a.jpg"
+        );
+        assert_eq!(
+            sanitize_zip_entry_name("Photos\\2024\\a.jpg"),
+            "Photos/2024/a.jpg"
+        );
+    }
+
+    #[test]
+    fn zip_entry_drops_traversal_segments() {
+        assert_eq!(sanitize_zip_entry_name("../secret/a.txt"), "secret/a.txt");
+        assert_eq!(sanitize_zip_entry_name("./Photos/./a.jpg"), "Photos/a.jpg");
+        assert_eq!(sanitize_zip_entry_name("Photos/"), "Photos");
+    }
+
+    #[test]
+    fn zip_duplicate_is_unique_per_full_path() {
+        let mut used: HashMap<String, usize> = HashMap::new();
+        assert_eq!(unique_zip_name("Photos/a.txt", &mut used), "Photos/a.txt");
+        assert_eq!(unique_zip_name("Photos/a.txt", &mut used), "Photos/a_2.txt");
+        assert_eq!(unique_zip_name("Other/a.txt", &mut used), "Other/a.txt");
+    }
 }

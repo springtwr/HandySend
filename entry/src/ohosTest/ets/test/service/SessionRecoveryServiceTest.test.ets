@@ -28,6 +28,7 @@ import {
   resetRegistry
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
+  SessionContentKind,
   SessionDataFlow,
   SessionFileStage,
   SessionHistoryOutcome,
@@ -641,6 +642,42 @@ export default function SessionRecoveryServiceTest() {
       expect(loadSessionDraft(session.id) === undefined).assertTrue()
       removeSessionDraft(session.id)
       resetRegistry()
+    })
+
+    it('recover_outbound_folder_keeps_summary_and_timeline', 0, () => {
+      resetRegistry()
+      clearSessionHistory()
+      clearDrafts()
+      let id = 'recover-folder-' + Date.now().toString()
+      let f1 = makeFile('f1', '/storage/Users/currentUser/Download/Folder/a.txt', 10)
+      f1.fileName = 'Folder/a.txt'
+      f1.stage = SessionFileStage.completed
+      f1.bytesSent = 10
+      let f2 = makeFile('f2', '/storage/Users/currentUser/Download/Folder/sub/b.txt', 20)
+      f2.fileName = 'Folder/sub/b.txt'
+      f2.stage = SessionFileStage.completed
+      f2.bytesSent = 20
+      let draft = makeDraft(id, [f1, f2])
+      draft.dataFlow = SessionDataFlow.outbound
+      draft.protocolKey = 'localsend-send'
+      draft.stage = SessionStage.succeeded
+      draft.updatedAt = Date.now()
+      saveSessionDraft(draft)
+      recoverSessionDrafts()
+      let entry = findSession(id)
+      expect(entry !== undefined).assertTrue()
+      if (entry !== undefined) {
+        // 草稿不含摘要：恢复时按相对名补出文件夹，并至少保留创建/完成时间线
+        expect(entry.contentKind).assertEqual(SessionContentKind.folder)
+        expect(entry.folder !== undefined).assertTrue()
+        if (entry.folder !== undefined) {
+          expect(entry.folder.name).assertEqual('Folder')
+          expect(entry.folder.fileCount).assertEqual(2)
+        }
+        expect(entry.timeline.length > 0).assertTrue()
+        expect(entry.completedCount).assertEqual(2)
+      }
+      removeSessionDraft(id)
     })
 
     it('recover_is_idempotent', 0, () => {

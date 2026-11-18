@@ -126,14 +126,22 @@ export async function persistWritableUri(uri: string): Promise<void> {
 
 /**
  * 访问自定义接收目录前调用：激活已持久化的读写授权。
- * 未持久化过或授权已被撤销时记录后不再重复调用，由目录校验兜底回退默认目录。
+ * 返回 false 表示本进程内确认无法激活；调用方仍应以实际写探测为准
+ * （部分设备激活接口对可写目录也返回不支持/不允许）。
  */
-export async function ensureWritableUriAccess(uri: string): Promise<void> {
-  if (!isUriLike(uri) || activatedWritableUris.has(uri) || activationFailedWritableUris.has(uri)) {
-    return;
+export async function ensureWritableUriAccess(uri: string): Promise<boolean> {
+  if (!isUriLike(uri)) {
+    return true;
+  }
+  if (activatedWritableUris.has(uri)) {
+    return true;
+  }
+  if (activationFailedWritableUris.has(uri)) {
+    return false;
   }
   if (!isSupported()) {
-    return;
+    // 设备不支持持久化授权：沿用路径访问能力，由实际读写决定
+    return true;
   }
   let policy: fileShare.PolicyInfo = {
     uri: uri,
@@ -142,9 +150,11 @@ export async function ensureWritableUriAccess(uri: string): Promise<void> {
   try {
     await fileShare.activatePermission([policy]);
     activatedWritableUris.add(uri);
+    return true;
   } catch (e) {
     activationFailedWritableUris.add(uri);
     logger.debug('目录读写授权激活失败 uri=' + uri + ' 原因=' + String(e));
+    return false;
   }
 }
 

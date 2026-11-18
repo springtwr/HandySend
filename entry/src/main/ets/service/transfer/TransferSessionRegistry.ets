@@ -13,14 +13,20 @@
  *   不使用按协议分散的一次性事件队列。
  */
 
-import { notifyChange, subscribe, unsubscribe } from '../repository/AppCore';
+import { getLocalInterfaces, notifyChange, subscribe, unsubscribe } from '../repository/AppCore';
 import { getDeviceAlias, getLocalDeviceInfo } from '../repository/DeviceRepository';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
+import {
+  isIpv4Address,
+  selectDefaultRouteInterface,
+  selectInterfaceForPeer
+} from '../../utils/NetworkInterfaceSelection';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import {
   OverallSnapshot,
   SessionCapabilities,
+  SessionContentKind,
   SessionCreateInput,
   SessionDataFlow,
   SessionEventKind,
@@ -40,6 +46,7 @@ import {
   SessionHistoryEntry, SessionHistoryQuery
 } from '../../model/transfer/SessionHistory';
 import { hasPreviewableTextPath } from '../../model/transfer/SessionArchiveRules';
+import { folderRootPathOf } from '../../model/transfer/FolderSummary';
 import {
   archiveSession,
   getSessionHistory as loadSessionHistory,
@@ -73,6 +80,8 @@ export const NO_PROGRESS_ERROR_CODE: string = 'no_progress';
 // ── 模块状态 ──
 
 const sessions: Map<string, TransferSession> = new Map();
+// 会话内文件标识 → 数组下标：文件数上千时逐条进度事件按标识线性查找代价过高
+const fileIndexes: Map<string, Map<string, number>> = new Map();
 // 会话回收定时器（会话标识 → timer id）；代次守卫见 scheduleReclaim
 const reclaimTimers: Map<string, number> = new Map();
 // 峰值速度采样点（会话标识 → 上次采样时间与已传字节）
@@ -92,7 +101,63 @@ interface SpeedSample {
   lastBytes: number
 }
 
-/** 会话记录用的本机网卡：取自启停过滤后的接口列表，与 getLocalDeviceInfo 的主 IP 同一选取结果。 */
+// 进度事件合并通知间隔（毫秒）：上千文件逐条通知会让主线程反复重建界面
+const PROGRESS_NOTIFY_INTERVAL_MS: number = 120;
+let progressNotifyTimer: number = -1;
+let progressNotifyPending: boolean = false;
+
+/** 重建会话的文件标识索引（创建、追加、整体替换后调用）。 */
+function indexSessionFiles(session: TransferSession): void {
+  let indexes: Map<string, number> = new Map<string, number>();
+  for (let i = 0; i < session.files.length; i++) {
+    indexes.set(session.files[i].fileId, i);
+  }
+  fileIndexes.set(session.id, indexes);
+}
+
+/** 按文件标识取数组下标；索引缺失或失配时回退线性查找并修复索引。 */
+function fileIndexOf(session: TransferSession, fileId: string): number {
+  let indexes: Map<string, number> | undefined = fileIndexes.get(session.id);
+  if (indexes !== undefined) {
+    let index: number | undefined = indexes.get(fileId);
+    if (index !== undefined && index >= 0 && index < session.files.length &&
+      session.files[index].fileId === fileId) {
+      return index;
+    }
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    if (session.files[i].fileId === fileId) {
+      if (indexes === undefined) {
+        indexes = new Map<string, number>();
+        fileIndexes.set(session.id, indexes);
+      }
+      indexes.set(fileId, i);
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * 合并进度变更通知：传输期间最多每 120ms 刷新一次界面。
+ * 终态、文件清单与阶段变化仍走即时通知，保证关键状态不延迟。
+ */
+export function notifyProgressChange(): void {
+  progressNotifyPending = true;
+  if (progressNotifyTimer !== -1) {
+    return;
+  }
+  progressNotifyTimer = setTimeout(() => {
+    progressNotifyTimer = -1;
+    if (!progressNotifyPending) {
+      return;
+    }
+    progressNotifyPending = false;
+    notifyChange();
+  }, PROGRESS_NOTIFY_INTERVAL_MS);
+}
+
+/** 回退用的本机主接口：有对端 IP 但无法推断承载接口时使用；取自启停过滤后的接口列表。 */
 function defaultLocalInterface(): NetworkInterface | undefined {
   let info: LocalDeviceInfo = getLocalDeviceInfo();
   let list: Array<NetworkInterface> = info.interfaces;
@@ -108,6 +173,35 @@ function defaultLocalInterface(): NetworkInterface | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * 会话记录用的本机网卡：
+ * - 对端 IP 落在某个本机接口网段时取该接口（本次传输实际经过的网卡）。匹配使用全部
+ *   本机接口（按实际路由证据，不受发现/接收的启停过滤限制）；
+ * - 发送方向的对端在跨网段/虚拟组网中时，按默认网络接口取本机地址（发送源地址由
+ *   默认路由决定）。默认接口取启停过滤后的列表，避免把用户已关闭的接口记成来源；
+ * - 对端 IP 缺失/非法（如 MTA 等无 IP 协议）时留空，不用主接口冒充；
+ * - 接收方向无法从对端 IP 反推被连接的本机地址（如端口映射），与有对端 IP 但
+ *   无法推断时一样，回退到本机主接口。
+ */
+function localInterfaceForPeer(peerIp: string, dataFlow: SessionDataFlow): NetworkInterface | undefined {
+  // 无对端 IP 无法判定本机承载端点：留空（详情页显示占位符）
+  if (!isIpv4Address(peerIp)) {
+    return undefined;
+  }
+  let matched: NetworkInterface | undefined = selectInterfaceForPeer(getLocalInterfaces(), peerIp);
+  if (matched !== undefined) {
+    return matched;
+  }
+  if (dataFlow === SessionDataFlow.outbound) {
+    let viaDefault: NetworkInterface | undefined =
+      selectDefaultRouteInterface(getLocalDeviceInfo().interfaces);
+    if (viaDefault !== undefined) {
+      return viaDefault;
+    }
+  }
+  return defaultLocalInterface();
 }
 
 /** 采样瞬时速度并维护会话峰值速度（不可得时保持既有值）。 */
@@ -359,12 +453,14 @@ export function createSession(input: SessionCreateInput): TransferSession {
   session.capabilities = input.capabilities;
   session.stageText = input.stageText ?? '';
   session.textMessage = input.textMessage === true;
+  session.contentKind = input.contentKind !== undefined ? input.contentKind : SessionContentKind.files;
+  session.folder = input.folder;
   // 协议在逐文件清单可用前声明的文件总数（0 表示未知）：仅用于实时展示
   session.declaredFileCount = input.declaredFileCount !== undefined ? input.declaredFileCount : 0;
   session.startedAt = Date.now();
-  // 采集本机标识（昵称 / 默认 IP / 网卡接口名），随历史持久化以支撑详情展示
+  // 采集本机标识（昵称 / 承载 IP 与网卡接口名，无法推断时留空），随历史持久化以支撑详情展示
   session.localAlias = getDeviceAlias();
-  let localInterface = defaultLocalInterface();
+  let localInterface = localInterfaceForPeer(input.peer.ip ?? '', input.dataFlow);
   session.localIp = localInterface !== undefined ? localInterface.ip : '';
   session.localInterfaceName = localInterface !== undefined ? localInterface.name : '';
   let files: Array<SessionFile> = [];
@@ -372,6 +468,7 @@ export function createSession(input: SessionCreateInput): TransferSession {
     files.push(toSessionFile(input.files[i]));
   }
   session.files = files;
+  indexSessionFiles(session);
   session.stage = input.stage ?? SessionStage.active;
   recomputeTotals(session);
   sessions.set(session.id, session);
@@ -431,6 +528,100 @@ export function updateSessionFilePath(sessionId: string, fileId: string, path: s
   return false;
 }
 
+/**
+ * 运行期回写会话文件显示名：接收目标确定最终相对路径（含 ` (N)` 后缀）后调用，
+ * 使任务详情/任务历史的文件名与磁盘实际落盘一致。
+ * 会话不存在、已终态、名称为空或文件标识未命中时为空操作。
+ */
+export function updateSessionFileName(sessionId: string, fileId: string, fileName: string): boolean {
+  if (sessionId.length === 0 || fileId.length === 0 || fileName.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  for (let i = 0; i < session.files.length; i++) {
+    if (session.files[i].fileId === fileId) {
+      session.files[i].fileName = fileName;
+      // SessionFile.fileName 非 @Trace：替换数组引用，驱动详情清单重建行并读取新名称
+      session.files = session.files.slice();
+      notifyChange();
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 批量回写接收目标的最终路径与显示名（一次数组替换 + 一次变更通知）。
+ * 大文件夹逐文件调用单条更新会产生 N 次全数组复制与 N 次 UI 通知，故 accept 阶段使用本入口。
+ */
+export function updateSessionFileTargets(sessionId: string, paths: Record<string, string>,
+  names: Record<string, string>): boolean {
+  if (sessionId.length === 0) {
+    return false;
+  }
+  let session = sessions.get(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return false;
+  }
+  let changed: boolean = false;
+  for (let i = 0; i < session.files.length; i++) {
+    let file = session.files[i];
+    let path: string | undefined = paths[file.fileId];
+    if (path !== undefined && path.length > 0 && file.path !== path) {
+      file.path = path;
+      changed = true;
+    }
+    let name: string | undefined = names[file.fileId];
+    if (name !== undefined && name.length > 0 && file.fileName !== name) {
+      file.fileName = name;
+      changed = true;
+    }
+  }
+  // 接收侧摘要创建时还不知道最终落盘根路径：accept 回填文件目标后补出根路径，
+  // 使详情页文件夹卡可直接打开系统文件管理器；根目录因同名冲突整体改名时，
+  // 摘要名称同步改为磁盘上的实际目录名。
+  if (session.folder !== undefined && session.folder.rootCount === 1) {
+    for (let i = 0; i < session.files.length; i++) {
+      let file: SessionFile = session.files[i];
+      if (file.fileName.indexOf('/') > 0) {
+        let slash: number = file.fileName.indexOf('/');
+        let rootName: string = file.fileName.substring(0, slash);
+        let root: string = session.folder.path;
+        if (file.path.length > 0) {
+          let derivedRoot: string = folderRootPathOf(file.path, file.fileName);
+          if (derivedRoot.length > 0) {
+            root = derivedRoot;
+          }
+        }
+        let nameChanged: boolean = rootName.length > 0 && session.folder.name !== rootName;
+        let pathChanged: boolean = root.length > 0 && session.folder.path !== root;
+        if (nameChanged || pathChanged) {
+          session.folder = {
+            name: nameChanged ? rootName : session.folder.name,
+            path: root,
+            rootCount: session.folder.rootCount,
+            fileCount: session.folder.fileCount,
+            totalBytes: session.folder.totalBytes,
+            looseFileCount: session.folder.looseFileCount,
+            looseBytes: session.folder.looseBytes
+          };
+          changed = true;
+        }
+        break;
+      }
+    }
+  }
+  if (changed) {
+    // path/fileName 均非 @Trace：替换数组引用，驱动详情清单重建行
+    session.files = session.files.slice();
+    notifyChange();
+  }
+  return changed;
+}
+
 /** 回填接收确认阶段的对端预览图路径（目前仅 MTA 缩略图使用）。
  *
  * 会话已终结、路径为空或与现有值相同时为空操作，返回是否写入。
@@ -461,6 +652,7 @@ export function updateSessionPeerPreview(sessionId: string, path: string): boole
     next.push(toSessionFile(files[i]));
   }
   session.files = next;
+  indexSessionFiles(session);
   recomputeTotals(session);
   saveOutboundDraft(session);
   // 文件集追加亦视为进展：刷新发送会话活动基准
@@ -490,6 +682,7 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
     next.push(toSessionFile(files[i]));
   }
   session.files = next;
+  indexSessionFiles(session);
   // 真实清单已取代创建期占位：声明文件数不再参与展示（部分完成时以已落盘数量为准）
   session.declaredFileCount = 0;
   recomputeTotals(session);
@@ -504,25 +697,43 @@ export function setSessionFiles(sessionId: string, files: Array<SessionFileDescr
  * 供适配器在终结会话前收口个别文件：例如挂载清单里从未开始下载的条目
  * 按「已取消」记录，使随后的成功终态不会把它们误标为已完成。
  */
+/** 把文件标记为完成并按已知总大小补齐字节（进度事件缺大小时兜底）。 */
+export function markFileCompleted(sessionId: string, fileId: string): void {
+  let session = getSession(sessionId);
+  if (session === undefined || isTerminalStage(session.stage)) {
+    return;
+  }
+  let index: number = fileIndexOf(session, fileId);
+  if (index < 0) {
+    return;
+  }
+  let total: number = session.files[index].totalBytes;
+  if (total > 0) {
+    updateFileProgress(sessionId, fileId, total, total);
+    return;
+  }
+  markFileStage(sessionId, fileId, SessionFileStage.completed);
+}
+
 export function markFileStage(sessionId: string, fileId: string,
   stage: SessionFileStage): void {
   let session = getSession(sessionId);
   if (session === undefined || isTerminalStage(session.stage)) {
     return;
   }
-  for (let i = 0; i < session.files.length; i++) {
-    if (session.files[i].fileId === fileId) {
-      let wasCompleted: boolean = session.files[i].stage === SessionFileStage.completed;
-      session.files[i].stage = stage;
-      // 发送方向：完成状态持久化到草稿，强杀恢复不会把已发送文件降级。
-      if (!wasCompleted && stage === SessionFileStage.completed &&
-        session.dataFlow === SessionDataFlow.outbound) {
-        updateOutboundDraftFile(session.id, fileId, stage, session.files[i].bytesSent);
-      }
-      break;
+  let index: number = fileIndexOf(session, fileId);
+  if (index >= 0) {
+    let file: SessionFile = session.files[index];
+    let wasCompleted: boolean = file.stage === SessionFileStage.completed;
+    file.stage = stage;
+    // 发送方向：完成状态持久化到草稿，强杀恢复不会把已发送文件降级。
+    if (!wasCompleted && stage === SessionFileStage.completed &&
+      session.dataFlow === SessionDataFlow.outbound) {
+      updateOutboundDraftFile(session.id, fileId, stage, file.bytesSent);
     }
   }
-  notifyChange();
+  // 批量文件逐个完成时合并刷新，避免逐条重建界面
+  notifyProgressChange();
 }
 
 /**
@@ -536,41 +747,48 @@ export function updateFileProgress(sessionId: string, fileId: string,
   if (session === undefined || isTerminalStage(session.stage)) {
     return;
   }
-  for (let i = 0; i < session.files.length; i++) {
-    let f = session.files[i];
-    if (f.fileId !== fileId) {
-      continue;
-    }
-    if (totalBytes !== undefined && totalBytes > 0) {
-      f.totalBytes = totalBytes;
-    }
-    let wasCompleted: boolean = f.stage === SessionFileStage.completed;
-    if (bytesSent > f.bytesSent) {
-      f.bytesSent = bytesSent;
-      // 首个字节进度即实际开始传输：耗时与平均速度自此起点计时（不把等待确认、
-      // 校验和计算与建链时间计入传输耗时），时间线的「已开始」也在同一时刻记录
-      if (session.transferStartedAt === 0) {
-        session.transferStartedAt = Date.now();
-        pushTimeline(session, SessionEventKind.started);
-      }
-    }
-    if (f.totalBytes > 0 && f.bytesSent >= f.totalBytes) {
-      f.stage = SessionFileStage.completed;
-    } else if (f.bytesSent > 0) {
-      f.stage = SessionFileStage.transferring;
-    }
-    if (!wasCompleted && f.stage === SessionFileStage.completed &&
-      session.dataFlow === SessionDataFlow.outbound) {
-      // 发送方向：只在完成点写草稿，避免高频进度写盘；入站会话不读草稿。
-      updateOutboundDraftFile(session.id, fileId, f.stage, f.bytesSent);
-    }
-    break;
+  let index: number = fileIndexOf(session, fileId);
+  if (index < 0) {
+    return;
   }
-  recomputeTotals(session);
+  let f: SessionFile = session.files[index];
+  let previousBytes: number = f.bytesSent;
+  let previousTotal: number = f.totalBytes;
+  if (totalBytes !== undefined && totalBytes > 0) {
+    f.totalBytes = totalBytes;
+  }
+  let wasCompleted: boolean = f.stage === SessionFileStage.completed;
+  if (bytesSent > f.bytesSent) {
+    f.bytesSent = bytesSent;
+    // 首个字节进度即实际开始传输：耗时与平均速度自此起点计时（不把等待确认、
+    // 校验和计算与建链时间计入传输耗时），时间线的「已开始」也在同一时刻记录
+    if (session.transferStartedAt === 0) {
+      session.transferStartedAt = Date.now();
+      pushTimeline(session, SessionEventKind.started);
+    }
+  }
+  if (f.totalBytes > 0 && f.bytesSent >= f.totalBytes) {
+    f.stage = SessionFileStage.completed;
+  } else if (f.bytesSent > 0) {
+    f.stage = SessionFileStage.transferring;
+  }
+  if (!wasCompleted && f.stage === SessionFileStage.completed &&
+    session.dataFlow === SessionDataFlow.outbound) {
+    // 发送方向：只在完成点写草稿，避免高频进度写盘；入站会话不读草稿。
+    updateOutboundDraftFile(session.id, fileId, f.stage, f.bytesSent);
+  }
+  // 增量维护汇总，避免每条进度事件都遍历上千文件（2000 文件时会导致主线程卡死）
+  if (f.bytesSent > previousBytes) {
+    session.bytesSent = session.bytesSent + (f.bytesSent - previousBytes);
+  }
+  if (f.totalBytes !== previousTotal) {
+    session.totalBytes = session.totalBytes + (f.totalBytes - previousTotal);
+  }
   sampleSpeed(session);
   // 字节进度即进展：刷新发送会话活动基准
   touchActivity(session);
-  notifyChange();
+  // 上千文件的逐条进度合并为周期通知，避免反复触发全界面刷新
+  notifyProgressChange();
 }
 
 /** 离散阶段进度（无字节进度的协议：仅更新阶段文案）。 */
@@ -898,6 +1116,7 @@ function removeSession(session: TransferSession): void {
     }
   }
   sessions.delete(session.id);
+  fileIndexes.delete(session.id);
   speedSamples.delete(session.id);
   activityTimes.delete(session.id);
 }
@@ -1258,7 +1477,13 @@ export function resetRegistry(): void {
   reclaimTimers.clear();
   stopWatchdog();
   sessions.clear();
+  fileIndexes.clear();
   speedSamples.clear();
   activityTimes.clear();
+  if (progressNotifyTimer !== -1) {
+    clearTimeout(progressNotifyTimer);
+    progressNotifyTimer = -1;
+  }
+  progressNotifyPending = false;
   idSeq = 0;
 }

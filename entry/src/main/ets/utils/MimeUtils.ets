@@ -128,6 +128,46 @@ export function isImageExtension(ext: string): boolean {
   return IMAGE_EXTENSIONS.indexOf(ext.toLowerCase()) >= 0;
 }
 
+// 可尝试缩略图解码的图片格式：以 Image Kit 官方支持的解码格式为准
+// （JPEG、PNG、GIF、WebP、BMP、SVG、ICO、DNG、HEIF、WBMP、TIFF、AVIF；
+// 部分格式受系统版本与设备硬件影响，解码失败仍回退类型图标）。
+// 只用于「是否值得发起解码」：`image/x-xcf` 等虽属图片 MIME，但不在 Image Kit
+// 支持格式内，发起解码只会失败并反复产生无意义的失败日志，应直接回退类型图标。
+const THUMBNAIL_DECODABLE_MIMES: Array<string> = [
+  'image/jpeg', 'image/jpg', 'image/pjpeg', 'image/png', 'image/x-png', 'image/gif',
+  'image/webp', 'image/bmp', 'image/x-ms-bmp', 'image/svg+xml', 'image/x-icon',
+  'image/vnd.microsoft.icon', 'image/heic', 'image/heif', 'image/heifs',
+  'image/heic-sequence', 'image/heif-sequence', 'image/vnd.wap.wbmp', 'image/wbmp',
+  'image/tiff', 'image/avif', 'image/avis', 'image/x-adobe-dng', 'image/x-dng', 'image/dng'
+];
+
+const THUMBNAIL_DECODABLE_EXTENSIONS: Array<string> = [
+  'jpg', 'jpeg', 'jpe', 'jfif', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico',
+  'heic', 'heif', 'heifs', 'wbmp', 'tif', 'tiff', 'avif', 'avis', 'dng'
+];
+
+/**
+ * 是否为可尝试缩略图解码的图片：MIME 命中 Image Kit 支持的格式，或扩展名可解码。
+ * 扩展名兜底用于对端 MIME 缺失 / 不准（如通用二进制类型）但文件确为图片的场景。
+ */
+export function isThumbnailDecodableImage(mime: string, fileName: string): boolean {
+  // 类型串可能带参数（如 `image/jpeg; charset=utf-8`）：按分号前的主类型判断
+  let normalizedMime: string = mime.trim().toLowerCase();
+  let semicolon: number = normalizedMime.indexOf(';');
+  if (semicolon >= 0) {
+    normalizedMime = normalizedMime.substring(0, semicolon).trim();
+  }
+  if (THUMBNAIL_DECODABLE_MIMES.indexOf(normalizedMime) >= 0) {
+    return true;
+  }
+  let dot: number = fileName.lastIndexOf('.');
+  if (dot < 0 || dot >= fileName.length - 1) {
+    return false;
+  }
+  let ext: string = fileName.substring(dot + 1).toLowerCase();
+  return THUMBNAIL_DECODABLE_EXTENSIONS.indexOf(ext) >= 0;
+}
+
 // ── 文本类文件判定（唯一来源） ──
 
 // 可按文本预览的扩展名（与 getMimeForExt 中的 text/* 映射保持一致）

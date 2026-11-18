@@ -16,6 +16,7 @@ import {
   KEY_CREATE_CHECKSUMS,
   KEY_VERIFY_CHECKSUMS,
   KEY_AUTO_CLEAR_STAGED,
+  KEY_AUTO_OPEN_SESSION_DETAIL,
   KEY_ADVANCED_SETTINGS,
   KEY_PORT,
   KEY_MULTICAST_GROUP,
@@ -59,6 +60,7 @@ import {
   DEFAULT_NETWORK_WHITELIST,
   DEFAULT_NETWORK_BLACKLIST,
   DEFAULT_AUTO_CLEAR_STAGED,
+  DEFAULT_AUTO_OPEN_SESSION_DETAIL,
   DEFAULT_LOCALSEND_ENABLED,
   DEFAULT_MTA_ENABLED,
   DEFAULT_WEB_SEND_ENABLED,
@@ -81,7 +83,7 @@ import { LANGUAGE_LIST } from '../../common/LanguageConstants';
 
 const logger = getLogger(LogDomains.SETTINGS, 'HandySend:SettingsRepository', '设置');
 
-// ── 设置状态（唯一事实来源；Preferences 负责持久化） ──
+// ── 设置运行时状态（缓存当前值；Preferences 负责持久化；部分纯偏好项不缓存，直接读） ──
 
 let httpsEnabled: boolean = DEFAULT_ENCRYPTED_TRANSFER;
 let autoConfirmMode: AutoConfirmMode = DEFAULT_AUTO_CONFIRM_MODE;
@@ -630,6 +632,16 @@ export function setAutoClearStagedAfterSend(enabled: boolean): void {
 
 export function isAutoClearStagedAfterSend(): boolean {
   return preferencesRepo.getBoolean(KEY_AUTO_CLEAR_STAGED, DEFAULT_AUTO_CLEAR_STAGED);
+}
+
+/** 点击设备发送后是否自动进入该任务详情页（默认关闭）。 */
+export function setAutoOpenSessionDetailAfterSend(enabled: boolean): void {
+  preferencesRepo.setBoolean(KEY_AUTO_OPEN_SESSION_DETAIL, enabled);
+  notifyChange();
+}
+
+export function isAutoOpenSessionDetailAfterSend(): boolean {
+  return preferencesRepo.getBoolean(KEY_AUTO_OPEN_SESSION_DETAIL, DEFAULT_AUTO_OPEN_SESSION_DETAIL);
 }
 
 export function setAdvancedSettings(enabled: boolean): void {

@@ -84,7 +84,10 @@ export const KEY_BACKGROUND_RECEIVE: string = 'backgroundReceiveEnabled';
 
 export const KEY_AUTO_CLEAR_STAGED: string = 'autoClearStagedAfterSend';
 
-// ── 在线服务站点 ──
+// 点击设备发送后自动进入该任务详情页
+export const KEY_AUTO_OPEN_SESSION_DETAIL: string = 'autoOpenSessionDetailAfterSend';
+
+// ── 远程传输站点 ──
 // 用户添加的站点（不含预设）。
 export const KEY_PORTAL_USER_SITES: string = 'portalUserSites';
 // 预设的本地覆盖：用户编辑过的预设副本。
@@ -100,6 +103,9 @@ export class PreferencesUtil {
   private storeName: string;
   private pref: preferences.Preferences | null = null;
   private flushTimer: number = 0;
+  // 未初始化访问只警告一次：避免设置页批量读取时刷屏，同时保留
+  // 「有代码早于初始化访问设置」的线索（否则表现为设置改不动且无日志）。
+  private warnedUninitialized: boolean = false;
 
   constructor(storeName: string) {
     this.storeName = storeName;
@@ -113,8 +119,23 @@ export class PreferencesUtil {
     }
   }
 
+  /**
+   * 记录一次未初始化访问：仅首次打 warn，避免设置页批量读取时刷屏。
+   * 一次日志即覆盖读与写两种后果（读按默认值/空结果、写被丢弃），不区分首次是哪种访问，
+   * 避免首次只报读取而掩盖写入丢失。
+   */
+  private warnUninitialized(key: string): void {
+    if (this.warnedUninitialized) {
+      return;
+    }
+    this.warnedUninitialized = true;
+    logger.warn('偏好存储未初始化，读取按默认值处理、写入/删除被丢弃（key=' + key +
+      '，须先调用 init 或 initAllPreferences）');
+  }
+
   getBoolean(key: string, defaultValue: boolean): boolean {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return defaultValue;
     }
     let value: preferences.ValueType = this.pref.getSync(key, defaultValue);
@@ -123,6 +144,7 @@ export class PreferencesUtil {
 
   setBoolean(key: string, value: boolean): void {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return;
     }
     this.pref.putSync(key, value);
@@ -131,6 +153,7 @@ export class PreferencesUtil {
 
   getString(key: string, defaultValue: string): string {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return defaultValue;
     }
     let value: preferences.ValueType = this.pref.getSync(key, defaultValue);
@@ -139,6 +162,7 @@ export class PreferencesUtil {
 
   setString(key: string, value: string): void {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return;
     }
     this.pref.putSync(key, value);
@@ -147,6 +171,7 @@ export class PreferencesUtil {
 
   getNumber(key: string, defaultValue: number): number {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return defaultValue;
     }
     let value: preferences.ValueType = this.pref.getSync(key, defaultValue);
@@ -155,6 +180,7 @@ export class PreferencesUtil {
 
   setNumber(key: string, value: number): void {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return;
     }
     this.pref.putSync(key, value);
@@ -163,6 +189,7 @@ export class PreferencesUtil {
 
   getObject<T>(key: string, defaultValue: T): T {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return defaultValue;
     }
     let value: preferences.ValueType = this.pref.getSync(key, '');
@@ -190,6 +217,7 @@ export class PreferencesUtil {
 
   setObject<T>(key: string, value: T): void {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return;
     }
     this.pref.putSync(key, JSON.stringify(value));
@@ -198,6 +226,7 @@ export class PreferencesUtil {
 
   has(key: string): boolean {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return false;
     }
     return this.pref.hasSync(key);
@@ -209,6 +238,7 @@ export class PreferencesUtil {
    */
   delete(key: string): void {
     if (this.pref === null) {
+      this.warnUninitialized(key);
       return;
     }
     if (!this.pref.hasSync(key)) {

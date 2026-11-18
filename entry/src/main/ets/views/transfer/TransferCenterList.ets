@@ -377,6 +377,13 @@ export struct TransferCenterList {
                   this.viewModel.enterSelection(ri.item.session?.sessionId ?? '');
                 }
               }))
+              // PC/2in1：鼠标右键与触摸长按等价，右键点击（抬起）即进入多选；其他按键不处理
+              .onMouse((event: MouseEvent) => {
+                if (event.button === MouseButton.Right && event.action === MouseAction.Release &&
+                  !this.viewModel.selectionMode) {
+                  this.viewModel.enterSelection(ri.item.session?.sessionId ?? '');
+                }
+              })
               .accessibilityText(ri.item.session.peerName)
               .id('transfer_center_session_item')
             }

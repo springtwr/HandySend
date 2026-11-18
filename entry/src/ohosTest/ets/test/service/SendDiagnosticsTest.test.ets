@@ -8,11 +8,10 @@ import { NativeErrorEvent } from '../../../../main/ets/model/NativeTypes'
 
 export default function SendDiagnosticsTest() {
   describe('SendDiagnosticsTest', () => {
-    it('cancelTarget_onlyProtocolId_elseNoDispatch', 0, () => {
-      // 协议标识可用：返回可下发目标（握手后的接收方标识 / 握手期标识）
-      expect(decideCancelTarget('recv-uuid-1')).assertEqual('recv-uuid-1')
-      expect(decideCancelTarget('prepare_10.0.0.1')).assertEqual('prepare_10.0.0.1')
-      // 取不到协议标识：返回空串表示不下发，不回退到任何应用内部业务编号
+    it('cancelTarget_onlyOwnedNativeSendKey_elseNoDispatch', 0, () => {
+      // 会话持有原生发送键：返回可下发目标（本次发送专属，prepare 与上传阶段通用）
+      expect(decideCancelTarget('send_1700000000000_1')).assertEqual('send_1700000000000_1')
+      // 取不到键：返回空串表示不下发，不回退到进程级「当前发送会话」或业务编号
       expect(decideCancelTarget('')).assertEqual('')
     })
 

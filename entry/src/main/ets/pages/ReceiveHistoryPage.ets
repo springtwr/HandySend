@@ -53,6 +53,7 @@ export struct ReceiveHistoryPage {
   @Local deleteDialogTitle: string = ''
   @Local deleteDialogMessage: string = ''
   @Local deleteDialogCheck: boolean = false
+  @Local deleteDialogCheckLabel: ResourceStr = $r('app.string.history_delete_files_label')
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
   // 单文件保存到相册弹窗节点（ComponentContent 方式自带 customStyle=true，避免系统背板叠加成两层弹窗）
@@ -70,6 +71,11 @@ export struct ReceiveHistoryPage {
   @Local fullTextDialogTruncated: boolean = false
   // 全文弹窗内容区可用宽度（vp，由内容文本 onAreaChange 获取，用于判定单行/多行对齐）
   @Local fullTextDialogContentWidth: number = 0
+  // PC/2in1 右键菜单：是否打开、当前条目 id，以及鼠标在行内的位置（vp）
+  @Local contextMenuShown: boolean = false
+  @Local contextMenuRowId: string = ''
+  @Local contextMenuX: number = 0
+  @Local contextMenuY: number = 0
   // 确认回调（打开时暂存，确认时执行）
   private deleteConfirmCallback: (deleteFiles: boolean) => void = (_deleteFiles: boolean) => {
   }
@@ -88,6 +94,9 @@ export struct ReceiveHistoryPage {
 
   aboutToDisappear(): void {
     unsubscribeOverlayClose(this.overlayCloseCallback);
+    // 页面离开时收起右键菜单状态，避免页面复用后残留
+    this.contextMenuShown = false;
+    this.contextMenuRowId = '';
   }
 
   private withAnimation(action: () => void): void {
@@ -131,10 +140,12 @@ export struct ReceiveHistoryPage {
   // ── DialogV2 弹窗：历史删除/清空确认（A 类 TipsDialogV2 带 checkTips） ──
 
   private showHistoryDeleteConfirmDialog(title: ResourceStr, message: string,
-    onConfirm: (deleteFiles: boolean) => void): void {
+    onConfirm: (deleteFiles: boolean) => void, checkLabel?: ResourceStr): void {
     this.deleteDialogTitle = typeof title === 'string' ? title : this.resolveTitleString(title);
     this.deleteDialogMessage = message;
     this.deleteDialogCheck = false;
+    this.deleteDialogCheckLabel = checkLabel !== undefined ? checkLabel :
+      $r('app.string.history_delete_files_label');
     this.deleteConfirmCallback = onConfirm;
     let dialogOptions: promptAction.CustomDialogOptions = {
       builder: () => {
@@ -168,7 +179,7 @@ export struct ReceiveHistoryPage {
       imageRes: $r('sys.symbol.trash'),
       title: this.deleteDialogTitle,
       content: this.deleteDialogMessage,
-      checkTips: $r('app.string.history_delete_files_label'),
+      checkTips: this.deleteDialogCheckLabel,
       checked: this.deleteDialogCheck,
       onCheckedChange: (checked: boolean) => {
         this.deleteDialogCheck = checked;
@@ -591,12 +602,48 @@ export struct ReceiveHistoryPage {
     };
   }
 
+  // 文件夹摘要菜单：逐文件操作交给系统文件管理器，这里只保留打开目录与删除记录。
+  @Builder
+  folderHistoryMenu(item: ReceiveHistoryItemViewModel) {
+    Menu() {
+      MenuItem({
+        content: $r('app.string.history_open_directory'),
+        startIcon: $r('sys.symbol.folder')
+      })
+        .enabled(item.path.length > 0)
+        .onClick(() => {
+          this.handleOpenLocation(item);
+        })
+      MenuItem({
+        content: $r('app.string.delete_record'),
+        startIcon: $r('sys.symbol.trash')
+      })
+        .contentFontColor($r('app.color.danger_red'))
+        .onClick(() => {
+          let name: string = item.fileName.length > 0 ? item.fileName :
+            getStringSync(this.getUIContext(), $r('app.string.history_folder_multi_name'));
+          this.showHistoryDeleteConfirmDialog(
+            $r('app.string.history_delete_title'),
+            this.formatHistoryMessage($r('app.string.history_delete_message_file'), '%s', name),
+            (deleteFiles: boolean) => {
+              this.withAnimation(() => {
+                this.viewModel.deleteEntry(item.id, deleteFiles);
+              });
+            },
+            $r('app.string.history_delete_folder_label'));
+        })
+    }
+  }
+
   // 列表项更多操作菜单：公共项（预览全文 / 打开所在位置 / 用其他应用打开）
   // 之后追加本页专有项（复制文本 / 删除记录）
   @Builder
   historyMenuBuilder(item: ReceiveHistoryItemViewModel) {
-    Menu() {
-      FileEntryMenuItems(this.menuOptionsFor(item))
+    if (item.isFolder) {
+      this.folderHistoryMenu(item)
+    } else {
+      Menu() {
+        FileEntryMenuItems(this.menuOptionsFor(item))
       if (item.canCopyText) {
         MenuItem({
           content: $r('app.string.copy'),
@@ -625,6 +672,7 @@ export struct ReceiveHistoryPage {
               });
             });
         })
+      }
     }
   }
 
@@ -672,20 +720,31 @@ export struct ReceiveHistoryPage {
                           .hitTestBehavior(HitTestMode.None)
                       }
 
-                      // 左侧类型图标区：图片 / 视频缩略由公共组件按需懒加载，其余或失败回退类型图标
-                      FileEntryThumb({
-                        path: ri.item.path,
-                        fileType: ri.item.fileType,
-                        fileName: ri.item.fileName,
-                        isMessage: ri.item.isMessage,
-                        thumbSize: DesignTokens.size.thumbSm,
-                        cornerRadius: DesignTokens.radius.md
-                      })
+                      // 左侧类型图标区：文件夹用目录图标；图片 / 视频缩略由公共组件按需懒加载
+                      if (ri.item.isFolder) {
+                        SymbolGlyph($r('sys.symbol.folder'))
+                          .fontSize(DesignTokens.size.thumbSm)
+                          .fontColor([$r('app.color.text_secondary')])
+                          .width(DesignTokens.size.thumbSm)
+                          .height(DesignTokens.size.thumbSm)
+                      } else {
+                        FileEntryThumb({
+                          path: ri.item.path,
+                          fileType: ri.item.fileType,
+                          fileName: ri.item.fileName,
+                          isMessage: ri.item.isMessage,
+                          thumbSize: DesignTokens.size.thumbSm,
+                          cornerRadius: DesignTokens.radius.md
+                        })
+                      }
 
                       // 多行文本：文件名 /（文本类缩略预览）/ 发送者·大小 / 时间。
                       // 文本消息条目不展示沙箱文件名（内部实现细节）：首行改用“文本”标签，内容由缩略预览行承载
                       Column() {
-                        Text(ri.item.isMessage ? $r('app.string.transfer_center_text_label') : ri.item.fileName)
+                        Text(ri.item.isFolder ?
+                          (ri.item.fileName.length > 0 ? ri.item.fileName :
+                            $r('app.string.history_folder_multi_name')) :
+                          (ri.item.isMessage ? $r('app.string.transfer_center_text_label') : ri.item.fileName))
                           .fontSize(DesignTokens.font.subtitleM)
                           .fontWeight(FontWeight.Medium)
                           .fontColor($r('app.color.text_primary'))
@@ -714,13 +773,19 @@ export struct ReceiveHistoryPage {
                             .fontSize(DesignTokens.font.bodyS)
                             .fontColor($r('app.color.text_secondary'))
 
+                          if (ri.item.isFolder) {
+                            Text($r('app.string.history_folder_file_count', ri.item.fileCount))
+                              .fontSize(DesignTokens.font.bodyS)
+                              .fontColor($r('app.color.text_secondary'))
+                          }
+
                           if (ri.item.fileSize > 0) {
                             Text(ri.item.formattedSize)
                               .fontSize(DesignTokens.font.bodyS)
                               .fontColor($r('app.color.text_secondary'))
                           }
 
-                          if (ri.item.savedToGallery) {
+                          if (ri.item.savedToGallery && !ri.item.isFolder) {
                             Image($r('app.media.ic_more_photoalbums'))
                               .width(DesignTokens.font.subtitleM)
                               .height(DesignTokens.font.subtitleM)
@@ -762,6 +827,8 @@ export struct ReceiveHistoryPage {
                     .onClick(() => {
                       if (this.viewModel.selectionMode) {
                         this.viewModel.toggleSelect(ri.item.id);
+                      } else if (ri.item.isFolder) {
+                        this.handleOpenLocation(ri.item);
                       } else {
                         this.requestFullText(ri.item);
                       }
@@ -769,9 +836,31 @@ export struct ReceiveHistoryPage {
                     // 长按进入多选模式并选中本条（已在多选模式中时不重复响应）
                     .gesture(LongPressGesture().onAction(() => {
                       if (!this.viewModel.selectionMode) {
+                        this.contextMenuShown = false;
                         this.viewModel.enterSelection(ri.item.id);
                       }
                     }))
+                    // PC/2in1：鼠标右键打开行内「更多」菜单，与右侧下拉入口共用同一份菜单；
+                    // 多选模式下不响应右键（与右侧入口一致）
+                    .onMouse((event: MouseEvent) => {
+                      if (event.button === MouseButton.Right && event.action === MouseAction.Release &&
+                        !this.viewModel.selectionMode) {
+                        this.contextMenuX = event.x;
+                        this.contextMenuY = event.y;
+                        this.contextMenuRowId = ri.item.id;
+                        this.contextMenuShown = true;
+                      }
+                    })
+                    .bindContextMenu(this.contextMenuShown && this.contextMenuRowId === ri.item.id,
+                      this.historyMenuBuilder(ri.item), {
+                        anchorPosition: { x: this.contextMenuX, y: this.contextMenuY },
+                        aboutToDisappear: (): void => {
+                          if (this.contextMenuRowId === ri.item.id) {
+                            this.contextMenuShown = false;
+                            this.contextMenuRowId = '';
+                          }
+                        }
+                      })
                     // 点击态反馈：多选模式下用于切换勾选；否则为可查看文本内容
                     // （含超阈值截断预览）的条目启用系统点击缩放反馈
                     .clickEffect(this.viewModel.selectionMode ||

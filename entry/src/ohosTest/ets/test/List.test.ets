@@ -23,6 +23,9 @@ import ProgressLogicTest from './repository/ProgressLogicTest.test'
 import ReceiveBehaviorTest from './repository/ReceiveBehaviorTest.test'
 import ReceiveTargetsTest from './repository/ReceiveTargetsTest.test'
 import ReceiveTargetPrepOrderTest from './service/ReceiveTargetPrepOrderTest.test'
+import FolderScanTest from './service/FolderScanTest.test'
+import SendFolderStagingTest from './service/SendFolderStagingTest.test'
+import ReceiveSessionNameTest from './service/ReceiveSessionNameTest.test'
 import ReceiveInterruptedCleanupTest from './repository/ReceiveInterruptedCleanupTest.test'
 import ProtocolToggleSettingsTest from './repository/ProtocolToggleSettingsTest.test'
 
@@ -33,6 +36,9 @@ import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
 import SessionArchiveRulesTest from './model/SessionArchiveRulesTest.test'
+import ReceivedPathTest from './model/ReceivedPathTest.test'
+import SendFolderPathTest from './model/SendFolderPathTest.test'
+import FolderSummaryTest from './model/FolderSummaryTest.test'
 import SendProgressTest from './model/SendProgressTest.test'
 import DragDropParserTest from './model/DragDropParserTest.test'
 import HistorySegmentsTest from './model/HistorySegmentsTest.test'
@@ -48,6 +54,7 @@ import IPValidatorTest from './utils/IPValidatorTest.test'
 import EventBusTest from './utils/EventBusTest.test'
 import NetworkPresentationTest from './utils/NetworkPresentationTest.test'
 import NetworkInterfaceRulesTest from './utils/NetworkInterfaceRulesTest.test'
+import NetworkInterfaceSelectionTest from './utils/NetworkInterfaceSelectionTest.test'
 import SpeedEstimatorTest from './utils/SpeedEstimatorTest.test'
 import MtaProgressUtilTest from './utils/MtaProgressUtilTest.test'
 import LargeTransferUtilTest from './utils/LargeTransferUtilTest.test'
@@ -57,6 +64,8 @@ import PreferencesUtilTest from './utils/PreferencesUtilTest.test'
 import FingerprintIconsTest from './utils/FingerprintIconsTest.test'
 import FilePreviewPolicyTest from './utils/FilePreviewPolicyTest.test'
 import FileLocationUtilTest from './utils/FileLocationUtilTest.test'
+import FolderSelectionTest from './utils/FolderSelectionTest.test'
+import TransferLimitsTest from './utils/TransferLimitsTest.test'
 import GallerySavePolicyTest from './utils/GallerySavePolicyTest.test'
 import TextAlignUtilTest from './utils/TextAlignUtilTest.test'
 import WebAccessCodeTest from './utils/WebAccessCodeTest.test'
@@ -89,6 +98,7 @@ import SessionHistoryStoreTest from './service/SessionHistoryStoreTest.test'
 import SessionDraftStoreTest from './service/SessionDraftStoreTest.test'
 import SessionRecoveryServiceTest from './service/SessionRecoveryServiceTest.test'
 import TempWorkspaceSweepTest from './service/TempWorkspaceSweepTest.test'
+import CacheCleanupServiceTest from './service/CacheCleanupServiceTest.test'
 import RegistriesTest from './service/RegistriesTest.test'
 import AdaptersTest from './service/AdaptersTest.test'
 import GallerySaveNameTest from './service/GallerySaveNameTest.test'
@@ -101,6 +111,7 @@ import ReceiveHistoryItemTest from './viewmodel/ReceiveHistoryItemTest.test'
 import ReceiveHistorySelectionTest from './viewmodel/ReceiveHistorySelectionTest.test'
 import PendingConfirmTest from './service/PendingConfirmTest.test'
 import SendPageTest from './viewmodel/SendPageTest.test'
+import DeviceItemViewModelTest from './viewmodel/DeviceItemViewModelTest.test'
 import ShareLinkViewModelTest from './viewmodel/ShareLinkViewModelTest.test'
 import BackgroundAggregateTest from './service/BackgroundAggregateTest.test'
 import AdapterExtensibilityTest from './service/AdapterExtensibilityTest.test'
@@ -130,6 +141,9 @@ export default function testsuite() {
   ReceiveBehaviorTest()
   ReceiveTargetsTest()
   ReceiveTargetPrepOrderTest()
+  FolderScanTest()
+  SendFolderStagingTest()
+  ReceiveSessionNameTest()
   ReceiveInterruptedCleanupTest()
   ProtocolToggleSettingsTest()
 
@@ -140,6 +154,9 @@ export default function testsuite() {
   MtaProtocolModelsTest()
   MtaDiscoveryGuardTest()
   SessionArchiveRulesTest()
+  ReceivedPathTest()
+  SendFolderPathTest()
+  FolderSummaryTest()
   SendProgressTest()
   DragDropParserTest()
   WebAddressTest()
@@ -154,6 +171,7 @@ export default function testsuite() {
   EventBusTest()
   NetworkPresentationTest()
   NetworkInterfaceRulesTest()
+  NetworkInterfaceSelectionTest()
   SpeedEstimatorTest()
   MtaProgressUtilTest()
   LargeTransferUtilTest()
@@ -163,6 +181,8 @@ export default function testsuite() {
   FingerprintIconsTest()
   FilePreviewPolicyTest()
   FileLocationUtilTest()
+  FolderSelectionTest()
+  TransferLimitsTest()
   GallerySavePolicyTest()
   TextAlignUtilTest()
   WebAccessCodeTest()
@@ -196,6 +216,7 @@ export default function testsuite() {
   SessionDraftStoreTest()
   SessionRecoveryServiceTest()
   TempWorkspaceSweepTest()
+  CacheCleanupServiceTest()
   RegistriesTest()
   AdaptersTest()
   GallerySaveNameTest()
@@ -208,6 +229,7 @@ export default function testsuite() {
   ReceiveHistorySelectionTest()
   PendingConfirmTest()
   SendPageTest()
+  DeviceItemViewModelTest()
   ShareLinkViewModelTest()
   BackgroundAggregateTest()
   AdapterExtensibilityTest()

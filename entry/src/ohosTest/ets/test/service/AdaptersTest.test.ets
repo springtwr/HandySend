@@ -2,6 +2,7 @@ import { describe, it, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { DiscoveredDevice, MediaFileInfo, SendFileItem } from '../../../../main/ets/model/Types'
 import {
+  SessionContentKind,
   SessionDataFlow,
   SessionInitiator,
   SessionStage,
@@ -10,6 +11,7 @@ import {
 import {
   LOCAL_SEND_KEY,
   beginLocalSendSession,
+  getLocalSendNativeKey,
   updateLocalSendProgress,
   finishLocalSend
 } from '../../../../main/ets/service/transfer/adapters/LocalSendSendAdapter'
@@ -210,6 +212,37 @@ export default function AdaptersTest() {
       resetRegistry()
     })
 
+    it('localsendSend_nativeCancelKey_uniquePerSession', 0, () => {
+      resetRegistry()
+      // 多设备并发发送：每个会话持有独立的原生发送键（取消只作用于本会话）
+      let firstId = beginLocalSendSession('multi_1', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      let secondId = beginLocalSendSession('multi_2', device(), [
+        {
+          fileId: 'f1',
+          filePath: '/a',
+          fileName: 'a',
+          fileType: 'text/plain',
+          size: 100
+        }
+      ])
+      let firstKey = getLocalSendNativeKey(firstId)
+      let secondKey = getLocalSendNativeKey(secondId)
+      expect(firstKey.length > 0).assertTrue()
+      expect(secondKey.length > 0).assertTrue()
+      expect(firstKey === secondKey).assertFalse()
+      // 会话不存在时不下发取消目标
+      expect(getLocalSendNativeKey('missing').length).assertEqual(0)
+      resetRegistry()
+    })
+
     it('localsendSend_textMessage_noByteProgress', 0, () => {
       resetRegistry()
       // 单条文本消息走「仅预览送达」路径：接收端不上传文件、无字节进度事件，
@@ -296,6 +329,52 @@ export default function AdaptersTest() {
       let done = getSession(id)
       if (done !== undefined) {
         expect(done.stage).assertEqual(SessionStage.succeeded)
+      }
+      resetRegistry()
+    })
+
+    it('localsendReceive_folderSummary', 0, () => {
+      resetRegistry()
+      let id = ensureReceiveSession('sess-folder', 'Sender', '10.0.0.2', 'fp', 'mobile', 'Model',
+        [{
+          fileId: 'f1',
+          fileName: 'Photos/a.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 10
+        }, {
+          fileId: 'f2',
+          fileName: 'Photos/sub/b.jpg',
+          fileType: 'image/jpeg',
+          totalBytes: 20
+        }], true, '')
+      let s = getSession(id)
+      expect(s !== undefined).assertTrue()
+      if (s !== undefined) {
+        expect(s.contentKind).assertEqual(SessionContentKind.folder)
+        expect(s.folder !== undefined).assertTrue()
+        if (s.folder !== undefined) {
+          expect(s.folder.name).assertEqual('Photos')
+          expect(s.folder.rootCount).assertEqual(1)
+          expect(s.folder.fileCount).assertEqual(2)
+          expect(s.folder.totalBytes).assertEqual(30)
+        }
+      }
+      resetRegistry()
+    })
+
+    it('localsendReceive_plainFilesKeepDefaultKind', 0, () => {
+      resetRegistry()
+      let id = ensureReceiveSession('sess-plain', 'Sender', '10.0.0.2', 'fp', 'mobile', 'Model',
+        [{
+          fileId: 'f1',
+          fileName: 'a.txt',
+          fileType: 'text/plain',
+          totalBytes: 1
+        }], true, '')
+      let s = getSession(id)
+      if (s !== undefined) {
+        expect(s.contentKind).assertEqual(SessionContentKind.files)
+        expect(s.folder === undefined).assertTrue()
       }
       resetRegistry()
     })
@@ -1125,6 +1204,35 @@ export default function AdaptersTest() {
         expect(done.stage).assertEqual(SessionStage.succeeded)
       }
       resetRegistry()
+    })
+
+    it('webDownload_probeSuccessThenRetryMergesRecords', 0, () => {
+      resetRegistry()
+      clearSessionHistory()
+      resetSessionHistoryCache()
+      let first = beginWebDownloadBatch('batch-merge', '192.168.1.60', [{
+        fileId: 'f1',
+        fileName: 'tiny.txt',
+        fileType: 'text/plain',
+        totalBytes: 10
+      }])
+      // 小 ZIP 的探测请求会读完整个响应，先按成功收口
+      handleWebDownloadEnded('batch-merge', 'succeeded')
+      expect(getHistory().some((entry) => entry.sessionId === first)).assertTrue()
+      // 真正的下载再次请求同一批次：旧的探测任务/历史应被合并掉
+      let second = beginWebDownloadBatch('batch-merge', '192.168.1.60', [{
+        fileId: 'f1',
+        fileName: 'tiny.txt',
+        fileType: 'text/plain',
+        totalBytes: 10
+      }])
+      expect(second === first).assertFalse()
+      expect(getSession(first) === undefined).assertTrue()
+      expect(getHistory().some((entry) => entry.sessionId === first)).assertFalse()
+      handleWebDownloadEnded('batch-merge', 'succeeded')
+      resetRegistry()
+      clearSessionHistory()
+      resetSessionHistoryCache()
     })
 
     it('webDownload_textPreviewOnlyForDeclaredTextMessage', 0, () => {

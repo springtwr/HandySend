@@ -7,15 +7,22 @@
  */
 
 import { TabSegmentButtonV2, SegmentButtonV2Items, SegmentButtonV2ItemOptions } from '@kit.ArkUI';
+import { Want } from '@kit.AbilityKit';
 import { DesignTokens } from '../../common/DesignTokens';
+import { LogDomains } from '../../common/LogDomains';
 import { EmptyState } from '../EmptyState';
 import { DeviceSourceDescriptor } from '../../model/transfer/Registries';
-import { DiscoveredDevice } from '../../model/Types';
+import { DiscoveredDevice, EmptyStateLink } from '../../model/Types';
 import { filterEnabledDeviceSources, listSources } from '../../service/transfer/DeviceSourceRegistry';
+import { LOCALSEND_DOWNLOAD_LINKS } from '../../service/transfer/DefaultRegistrations';
+import { getAppContext } from '../../service/repository/AppCore';
+import { getLogger } from '../../utils/Logger';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../../viewmodel/DeviceItemViewModel';
 import { DeviceListItem } from '../../views/DeviceListItem';
 import { SendMethodZone } from './SendMethodZone';
+
+const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendTargetZone', '发送目标');
 
 @ComponentV2
 export struct SendTargetZone {
@@ -29,7 +36,7 @@ export struct SendTargetZone {
   // 点击网页图标：直接进入统一的「网页传输」面板
   @Event onOpenWeb: () => void = () => {
   }
-  // 点击云图标：进入「在线服务」站点导航页
+  // 点击云图标：进入「远程传输」站点导航页
   @Event onOpenPortal: () => void = () => {
   }
   // 当前选中的来源下标（而非来源键）：官方分段标签按「下标」持有选中态。
@@ -195,6 +202,40 @@ export struct SendTargetZone {
     return descriptor !== undefined ? descriptor.emptyState.hint : '';
   }
 
+  /** 空态附带的地址入口：总空态固定给 LocalSend 下载地址，来源空态取描述符配置。 */
+  private emptyLinks(): Array<EmptyStateLink> | undefined {
+    if (this.showCombinedEmptyState()) {
+      return LOCALSEND_DOWNLOAD_LINKS;
+    }
+    let descriptor = this.currentSource();
+    return descriptor !== undefined ? descriptor.emptyState.links : undefined;
+  }
+
+  /** 地址区上方的说明文案（与 emptyLinks 同口径）：总空态先提示互传联盟，再提示安装 LocalSend。 */
+  private emptyLinksHint(): ResourceStr | undefined {
+    if (this.showCombinedEmptyState()) {
+      return $r('app.string.send_no_source_links_hint');
+    }
+    let descriptor = this.currentSource();
+    return descriptor !== undefined ? descriptor.emptyState.linksHint : undefined;
+  }
+
+  /** 交给系统浏览器打开地址。 */
+  private openEmptyStateLink(url: string): void {
+    let context = getAppContext();
+    if (context === undefined) {
+      logger.warn('打开空态地址失败：应用上下文不可用');
+      return;
+    }
+    let want: Want = {
+      action: 'ohos.want.action.viewData',
+      uri: url
+    };
+    context.startAbility(want).catch((e: Error): void => {
+      logger.warn('打开空态地址失败：' + String(e));
+    });
+  }
+
   private openDeviceDetails(device: DiscoveredDevice): void {
     this.onInfo(device);
   }
@@ -245,10 +286,11 @@ export struct SendTargetZone {
           })
         }
       }).key((item: DeviceItemViewModel) =>
-      // 身份取稳定键（MTA 为发送者 ID）：广播地址轮换不再触发条目重建；
-      // 不含 alias——设备名缺失时 alias 回退为地址，同样会随轮换变化
-      item.identityKey + '|' + item.ip + ':' + item.item.port + '|' + item.deviceModel +
-        '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
+      // 身份取稳定键（MTA 为发送者 ID），但 MTA 的 BLE 地址/品牌/5GHz 是发送目标的一部分，
+      // 必须纳入 key；Repeat 全量加载模式下 key 不变时即使数据更新也不会刷新。
+      // LocalSend 与 MTA 的真实广播昵称由 keyAlias 参与；MTA 地址回退别名不重复参与。
+      item.identityKey + '|' + item.keyAlias + '|' + item.keyMta + '|' + item.ip + ':' + item.item.port +
+        '|' + item.deviceModel + '|' + item.deviceType + '|' + item.item.version + '|' + item.item.protocol)
     }
     .width('100%')
   }
@@ -269,6 +311,11 @@ export struct SendTargetZone {
         onAction: () => {
           this.onOpenWeb();
         },
+        links: this.emptyLinks(),
+        linksHint: this.emptyLinksHint(),
+        onLinkClick: (url: string) => {
+          this.openEmptyStateLink(url);
+        },
         useCard: true
       })
         .id('send_no_source')
@@ -278,6 +325,11 @@ export struct SendTargetZone {
         mainText: this.emptyText(),
         hintText: this.emptyHintVisible() ? this.emptyHint() : undefined,
         hintColor: $r('app.color.warning_orange'),
+        links: this.emptyLinks(),
+        linksHint: this.emptyLinksHint(),
+        onLinkClick: (url: string) => {
+          this.openEmptyStateLink(url);
+        },
         useCard: true
       })
         .id('send_no_devices')

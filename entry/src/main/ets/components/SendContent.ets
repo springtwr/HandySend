@@ -1,6 +1,5 @@
 import { pasteboard, deviceInfo } from '@kit.BasicServicesKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import {
   curves,
   CustomContentDialogV2,
@@ -13,7 +12,7 @@ import { getLogger } from '../utils/Logger';
 import { LogDomains } from '../common/LogDomains';
 import {
   subscribe, unsubscribe, connectByIp, getPort,
-  getHttpsEnabled, resolveSendProtocol
+  getHttpsEnabled, resolveSendProtocol, isAutoOpenSessionDetailAfterSend
 } from '../service/AppService';
 import { DiscoveredDevice, StagedFile, FavoriteDevice } from '../model/Types';
 import { SendContentZone } from './send/SendContentZone';
@@ -25,6 +24,7 @@ import { getSheetWidth, isNarrowWidth, isWidescreenSideBarLayout, isWideWidth } 
 import {
   SendViewModel,
   SendInitiateResult,
+  BatchNoticeKind,
   SendFailureNotice,
   MtaSendOutcome,
   FavoriteSendResult,
@@ -37,7 +37,6 @@ import { isValidIpAddress } from '../utils/IPValidator';
 import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
-import { parseDroppedRecords, fetchDroppedUnifiedData, DragDropParseResult } from '../model/DragDropParser';
 import { isMtaDevice, MtaSendRequest } from '../model/mta/MtaMainModels';
 import { isDemoDevice } from '../service/demo/DemoDevices';
 import { DemoScenarioType } from '../service/demo/DemoData';
@@ -56,8 +55,6 @@ export struct SendContent {
   @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
   @Local isRestarting: boolean = false
-  // 拖拽悬停状态：驱动发送页高亮遮罩显隐（onDragEnter 置真 / onDragLeave 复位 / onDrop 处理完毕复位）
-  @Local isDragOver: boolean = false
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
@@ -119,6 +116,8 @@ export struct SendContent {
   @Local private sendFailureTitle: string = ''
   @Local private sendFailureBody: string = ''
   @Local private sendFailureMulti: boolean = false
+  // 是否在失败浮卡提供“刷新设备列表”：仅超时/连接类失败（对端可能已更换网络或 IP）
+  @Local private sendFailureSuggestRefresh: boolean = false
   private sendFailureSessionId: string = ''
   private sendFailureCount: number = 0
   private sendFailureLastMessage: string = ''
@@ -140,11 +139,48 @@ export struct SendContent {
   // MTA 发起前会话快照：建链完成即返回，不能靠发起返回判定结果，
   // 改在变更通知里等本次新建会话进入终态（见 checkMtaSendWatch）
   private mtaWatchBeforeIds: Array<string> | undefined = undefined
+  // 本次 MTA 发送已自动进入详情的新会话标识：只跳转一次，避免每次注册表变更重复导航
+  private mtaAutoOpenSessionId: string = ''
 
   // 发现快照刷新时更新面板在线状态（面板打开期间设备上线/离线实时反映）
   @Monitor('viewModel.discoveredDevices')
   onDiscoveredDevicesChange(): void {
     this.favoritesPanelViewModel.refreshOnlineStatus();
+  }
+
+  // 批量上限/文件夹扫描提示：ViewModel 只置一次类型，视图取本地化文案后清除。
+  @Monitor('viewModel.batchNotice')
+  onLimitNoticeChange(): void {
+    let kind: BatchNoticeKind = this.viewModel.batchNotice;
+    if (kind === BatchNoticeKind.none) {
+      return;
+    }
+    let count: number = this.viewModel.batchNoticeCount;
+    this.viewModel.batchNotice = BatchNoticeKind.none;
+    let res: Resource | undefined = undefined;
+    if (kind === BatchNoticeKind.unsupported) {
+      res = $r('app.string.send_batch_unsupported');
+    } else if (kind === BatchNoticeKind.emptyFolder) {
+      res = $r('app.string.send_folder_empty');
+    } else if (kind === BatchNoticeKind.folderTooMany) {
+      res = $r('app.string.send_folder_too_many');
+    } else if (kind === BatchNoticeKind.scanFailed) {
+      res = $r('app.string.send_folder_scan_failed');
+    } else if (kind === BatchNoticeKind.overLimit) {
+      res = $r('app.string.send_batch_over_limit');
+    } else if (kind === BatchNoticeKind.softHint) {
+      res = $r('app.string.send_batch_soft_hint');
+    } else if (kind === BatchNoticeKind.mtaFolderUnsupported) {
+      res = $r('app.string.send_mta_folder_unsupported');
+    }
+    if (res === undefined) {
+      return;
+    }
+    let text: string = getStringSync(this.getUIContext(), res);
+    if (count > 0) {
+      text = text.replace('%d', String(count));
+    }
+    this.getUIContext().getPromptAction().showToast({ message: text, duration: 3000 });
   }
 
   // 面板关闭时退出多选：面板视图模型的生命周期跟随发送页（@Local 字段）而非面板本身，
@@ -269,79 +305,6 @@ export struct SendContent {
     } catch (e) {
       logger.error('粘贴数据处理失败：' + JSON.stringify(e));
     }
-  }
-
-  // 拖放目标处理：获取 UDMF 数据（首次失败 1500ms 重试一次）→ 解析分流 → 暂存 → 反馈拖拽结果。
-  // 结果语义：数据获取失败或整批类型均不支持时反馈失败（不支持时同时提示）；
-  // 存在可处理内容即反馈成功，包括内容因重复去重而未新增的拖入（操作已接受、仅未新增条目）。
-  private handleDropContent(event: DragEvent): void {
-    fetchDroppedUnifiedData(event, (data: unifiedDataChannel.UnifiedData | undefined) => {
-      if (data === undefined) {
-        this.isDragOver = false;
-        event.setResult(DragResult.DRAG_FAILED);
-        logger.warn('拖放已拒绝：获取 UDMF 数据失败');
-        return;
-      }
-      let records: Array<unifiedDataChannel.UnifiedRecord> = data.getRecords();
-      // 来源类型诊断：输出每条记录的 UTD 类型，便于确认中转站等来源实际拖出的数据类型
-      // （如拖出图片是 general.image 还是 general.file）
-      let types: Array<string> = [];
-      for (let i = 0; i < records.length; i++) {
-        types.push(records[i].getType());
-      }
-      logger.debug('拖放记录：count=' + records.length + ' types=' + types.join(','));
-      let result: DragDropParseResult = parseDroppedRecords(records);
-      let added: boolean = this.viewModel.applyDroppedContent(result);
-      // 整批均无任何可处理内容（不支持类型）才算失败；重复内容已走暂存去重、语义上仍是已接受
-      let unsupported: boolean = result.uris.length === 0 && result.texts.length === 0;
-      this.isDragOver = false;
-      event.setResult(unsupported ? DragResult.DRAG_FAILED : DragResult.DRAG_SUCCESSFUL);
-      logger.debug('拖放已处理：uris=' + result.uris.length + ' texts=' + result.texts.length +
-        ' added=' + added + ' unsupported=' + unsupported);
-      if (unsupported) {
-        this.getUIContext()
-          .getPromptAction()
-          .showToast({ message: $r('app.string.drag_drop_unsupported'), duration: 2000 });
-      }
-      // 移动端会话首次拖入含文件类内容：弹出可靠性提示（须手动关闭）
-      if (this.viewModel.shouldShowDropReliabilityHint(result.uris.length > 0)) {
-        this.openDropReliabilityNotice();
-      }
-    });
-  }
-
-  // 拖入文件类内容的可靠性提示：移动端会话首次拖入文件类内容时弹出。
-  // autoCancel:false 禁止点击外部关闭，必须点击「知道了」手动关闭。
-  // 提示缘由：拖入文件的 URI 由来源应用/中转站托管，关闭后可能不可读（文本已写入沙箱不受影响）。
-  private openDropReliabilityNotice(): void {
-    let dialogOptions: promptAction.CustomDialogOptions = {
-      builder: () => {
-        this.dropReliabilityNoticeDialog();
-      },
-      autoCancel: false
-    };
-    this.getUIContext()
-      .getPromptAction()
-      .openCustomDialog(dialogOptions)
-      .then((id: number) => {
-        this.activeDialogId = id;
-      })
-      .catch(() => {
-      });
-  }
-
-  @Builder
-  dropReliabilityNoticeDialog() {
-    AlertDialogV2({
-      primaryTitle: $r('app.string.drag_drop_reliability_title'),
-      content: $r('app.string.drag_drop_reliability_message'),
-      primaryButton: new AdvancedDialogV2Button({
-        content: $r('app.string.drag_drop_reliability_ok'),
-        action: () => {
-          this.closeActiveDialog();
-        }
-      })
-    })
   }
 
   // 大文件发送二次确认：暂存总量达到阈值时先弹确认（取消/发送两键），否则直接执行
@@ -506,6 +469,13 @@ export struct SendContent {
       this.openDemoScenarioDialog(device);
       return;
     }
+    // 暂存元数据仍在补全：不发起/不排队，只给即时提示，避免无任务却占用发送状态
+    if (this.viewModel.isFillingStagedMeta) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.send_preparing_files'), duration: 2000, alignment: Alignment.Center });
+      return;
+    }
     // 未暂存内容时提示并中断发送（点击设备即发送的统一拦截）
     if (this.viewModel.stagedFiles.length === 0) {
       this.getUIContext()
@@ -540,7 +510,8 @@ export struct SendContent {
 
   /**
    * 发起内联发送并给出结果反馈：
-   * 点击当帧即确认「已开始发送」（不引入人为延迟）；会话终结为失败时弹出失败浮卡。
+   * 点击当帧即确认「已开始发送」（不引入人为延迟）；会话终结为失败时弹出失败浮卡
+   * （「自动进入任务详情」开启时改为跳转详情页，失败由详情页承载、不再弹卡）。
    * 预判不可发起（忙/无内容）时不弹开始确认，避免两条提示互相打架。
    */
   private beginInlineSend(device: DiscoveredDevice): void {
@@ -551,15 +522,27 @@ export struct SendContent {
     }
     // 发送前快照：失败提示只认本次点击后新建的会话，历史失败不会被重复提示
     let beforeIds: Array<string> = this.viewModel.sendSessionIdsForIp(device.ip);
+    // 自动进入任务详情：新会话登记后立即跳转，此时发送仍在后台继续；
+    // 已进入详情时不再弹失败浮卡（失败原因在详情页可见）
+    let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
+    let autoOpened: boolean = false;
     this.showSendToast($r('app.string.send_started_toast'), device.alias);
-    this.viewModel.sendToMultipleDeviceInline(device).then((result: SendInitiateResult) => {
+    this.viewModel.sendToMultipleDeviceInline(device, (sessionId: string) => {
+      if (autoEnterDetail && !this.isDetached) {
+        autoOpened = true;
+        // 离开发送页前收起既有失败浮卡：浮卡挂在 UIContext 层，切页签不会自动消失，
+        // 其内容属于上一次发送，留在详情页会误导
+        this.closeSendFailureCard();
+        this.onOpenSessionDetail(sessionId);
+      }
+    }).then((result: SendInitiateResult) => {
       if (this.isDetached) {
         return;
       }
       // 竞态兜底：预判后被并发操作拦截时按实际结果补提示
       this.showSendInitiateFeedback(result);
       let failure: SendFailureNotice | undefined = this.viewModel.newSendFailure(device.ip, beforeIds);
-      if (failure !== undefined) {
+      if (failure !== undefined && !autoOpened) {
         this.showSendFailureCard(failure);
       }
     }).catch((e: Object) => {
@@ -620,6 +603,9 @@ export struct SendContent {
       this.sendFailureUniform = this.sendFailureUniform && notice.message === this.sendFailureLastMessage;
     }
     this.sendFailureLastMessage = notice.message;
+    // 仅当多次失败原因一致且本次为网络类失败时才给刷新入口：
+    // 混合原因时刷新列表无法解决，仍指引用户去任务页
+    this.sendFailureSuggestRefresh = this.sendFailureUniform && notice.suggestRefresh;
     this.sendFailureTitle = multi ?
       getStringSync(this.getUIContext(), $r('app.string.send_failure_card_title_multi'))
         .replace('%s', this.sendFailureCount.toString()) :
@@ -737,6 +723,7 @@ export struct SendContent {
     this.sendFailureTitle = '';
     this.sendFailureBody = '';
     this.sendFailureMulti = false;
+    this.sendFailureSuggestRefresh = false;
     this.sendFailureSessionId = '';
     this.sendFailureCount = 0;
     this.sendFailureLastMessage = '';
@@ -759,6 +746,15 @@ export struct SendContent {
     this.onOpenTaskCenter();
   }
 
+  /** 网络类失败浮卡的刷新入口：关闭浮卡后刷新设备列表，并提示用户等待扫描完成。 */
+  private refreshDevicesFromFailureCard(): void {
+    this.closeSendFailureCard();
+    this.refreshDevices();
+    this.getUIContext()
+      .getPromptAction()
+      .showToast({ message: $r('app.string.send_refreshing_devices_toast'), duration: 1500 });
+  }
+
   @Builder
   sendFailureCard() {
     Row({ space: DesignTokens.space.sm }) {
@@ -778,8 +774,21 @@ export struct SendContent {
           Text(this.sendFailureBody)
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
-            .maxLines(2)
+            .maxLines(5)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+
+        if (this.sendFailureSuggestRefresh) {
+          Text($r('app.string.send_failure_card_action_refresh'))
+            .fontSize(DesignTokens.font.bodyS)
+            .fontColor($r('app.color.accent_blue_text'))
+            .width('100%')
+            .height(DesignTokens.size.inlineButton)
+            .textAlign(TextAlign.Start)
+            .onClick(() => {
+              this.refreshDevicesFromFailureCard();
+            })
+            .id('send_failure_refresh')
         }
       }
       .layoutWeight(1)
@@ -923,28 +932,39 @@ export struct SendContent {
   }
 
   /**
-   * 发起 MTA 发送并给出与局域网一致的反馈：点击当帧确认开始，会话终结为失败时弹浮卡。
+   * 发起 MTA 发送并给出与局域网一致的反馈：点击当帧确认开始，会话终结为失败时弹浮卡
+   * （「自动进入任务详情」开启时改为进入详情页，失败由详情页承载）。
    * 结果只能等会话终态：`startMtaSend` 在建链（写回 P2pInfo）后就返回，
    * 早于对端确认/传输，按发起返回查询会漏掉「对方拒绝」这类终态。
    */
   private beginMtaSend(device: DiscoveredDevice, params: MtaSendRequest): void {
     this.mtaWatchBeforeIds = this.viewModel.mtaSendSessionIds();
+    this.mtaAutoOpenSessionId = '';
     this.showSendToast($r('app.string.send_started_toast'), device.alias);
     this.viewModel.startMtaSend(params);
   }
 
-  /** 检查本次 MTA 发起的结局：已结算则停止监听，失败时弹浮卡。 */
+  /** 检查本次 MTA 发起的结局：新会话出现时按设置进入详情，已结算则停止监听，失败时弹浮卡。 */
   private checkMtaSendWatch(): void {
     let beforeIds: Array<string> | undefined = this.mtaWatchBeforeIds;
     if (beforeIds === undefined) {
       return;
     }
     let outcome: MtaSendOutcome = this.viewModel.mtaSendOutcome(beforeIds);
+    // 新会话一出现即按设置进入详情（MTA 会话在发送状态事件中才登记，故在变更通知里补跳）；
+    // 已自动进入时不再弹失败浮卡，失败原因在详情页可见
+    if (outcome.sessionId.length > 0 && this.mtaAutoOpenSessionId.length === 0 &&
+      isAutoOpenSessionDetailAfterSend() && !this.isDetached) {
+      this.mtaAutoOpenSessionId = outcome.sessionId;
+      // 与点击设备路径一致：离开发送页前收起既有失败浮卡，避免旧内容覆盖详情页
+      this.closeSendFailureCard();
+      this.onOpenSessionDetail(outcome.sessionId);
+    }
     if (!outcome.settled) {
       return;
     }
     this.mtaWatchBeforeIds = undefined;
-    if (outcome.failure !== undefined && !this.isDetached) {
+    if (outcome.failure !== undefined && this.mtaAutoOpenSessionId.length === 0 && !this.isDetached) {
       this.showSendFailureCard(outcome.failure);
     }
   }
@@ -967,7 +987,7 @@ export struct SendContent {
     });
   }
 
-  // 点击云图标：进入「在线服务」站点导航页。
+  // 点击云图标：进入「远程传输」站点导航页。
   onOpenPortalPanel(): void {
     this.onNavigateTo('PortalPage', undefined);
   }
@@ -1268,7 +1288,15 @@ export struct SendContent {
     }
     // 收藏发送同样经大文件二次确认门禁（总量达阈值时先弹确认）
     this.runAfterLargeFileConfirm(() => {
-      this.viewModel.sendToFavorite(favorite).then((result: FavoriteSendResult) => {
+      let autoEnterDetail: boolean = isAutoOpenSessionDetailAfterSend();
+      this.viewModel.sendToFavorite(favorite, (sessionId: string) => {
+        if (autoEnterDetail && !this.isDetached) {
+          // 面板是模态：先收起面板再跳转，避免详情页被半模态遮挡；旧失败浮卡同样在离开前收起
+          this.isShowFavoritesSheet = false;
+          this.closeSendFailureCard();
+          this.onOpenSessionDetail(sessionId);
+        }
+      }).then((result: FavoriteSendResult) => {
         this.favoritesPanelViewModel.clearProbing();
         this.showFavoriteSendFeedback(result);
       });
@@ -1280,7 +1308,7 @@ export struct SendContent {
     if (result === FavoriteSendResult.probeFailed) {
       this.getUIContext()
         .getPromptAction()
-        .showToast({ message: $r('app.string.favorites_probe_failed'), duration: 2000, alignment: Alignment.Center });
+        .showToast({ message: $r('app.string.favorites_probe_failed'), duration: 3000, alignment: Alignment.Center });
     } else if (result === FavoriteSendResult.busy) {
       this.getUIContext()
         .getPromptAction()
@@ -1308,8 +1336,7 @@ export struct SendContent {
   }
 
   build() {
-    // 根容器：Stack 包裹既有 Scroll，作为发送页整体拖放目标（allowDrop 声明支持的 UTD 类型），
-    // 悬停时叠加高亮遮罩提示；遮罩不拦截触摸（HitTestMode.None），不影响正常滚动与点击
+    // 根容器：Stack 包裹既有 Scroll，作为收藏设备半模态等页内弹层的常驻宿主
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll(this.scroller) {
         Column() {
@@ -1565,45 +1592,11 @@ export struct SendContent {
           this.onScrollDelta(-999, 0);
         }
       })
-
-      // 拖拽悬停高亮遮罩：半透明遮罩（DesignTokens 色板中的既有遮罩色）+ 居中提示文案
-      if (this.isDragOver) {
-        Column({ space: DesignTokens.space.sm }) {
-          Text($r('app.string.drag_drop_hint'))
-            .fontSize(DesignTokens.font.bodyL)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_on_color'))
-            .textAlign(TextAlign.Center)
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .backgroundColor($r('app.color.overlay_mask'))
-        .hitTestBehavior(HitTestMode.None)
-      }
     }
     .width('100%')
     .height('100%')
     // 内容根节点延伸至系统状态栏与导航条区域：页面背景铺满屏幕，正文保持在安全区内
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .allowDrop([
-      uniformTypeDescriptor.UniformDataType.FILE,
-      uniformTypeDescriptor.UniformDataType.IMAGE,
-      uniformTypeDescriptor.UniformDataType.VIDEO,
-      uniformTypeDescriptor.UniformDataType.AUDIO,
-      uniformTypeDescriptor.UniformDataType.PLAIN_TEXT,
-      uniformTypeDescriptor.UniformDataType.HYPERLINK
-    ])
-    .onDragEnter(() => {
-      this.isDragOver = true;
-    })
-    .onDragLeave(() => {
-      this.isDragOver = false;
-    })
-    .onDrop((event: DragEvent) => {
-      this.handleDropContent(event);
-    })
     // 收藏设备半模态面板：以发送页根 Stack 为常驻宿主，双向绑定显隐
     .bindSheet($$this.isShowFavoritesSheet, this.favoritesSheetBuilder(), {
       height: SheetSize.MEDIUM,

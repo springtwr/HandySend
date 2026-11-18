@@ -145,11 +145,24 @@ async fn http_get(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, 
 
 /// 读取二进制响应（ZIP 等）：保留原始字节用于 Content-Length 断言。
 async fn http_get_bytes(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, Vec<u8>) {
+    http_get_bytes_with_headers(addr, path, &[]).await
+}
+
+/// 读取二进制响应并携带自定义请求头（Range 预检等）。
+async fn http_get_bytes_with_headers(
+    addr: SocketAddr,
+    path: &str,
+    extra_headers: &[(&str, &str)],
+) -> (u16, Vec<(String, String)>, Vec<u8>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(addr)
         .await
         .expect("回环连接失败");
-    let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let mut request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+    for (name, value) in extra_headers {
+        request.push_str(&format!("{name}: {value}\r\n"));
+    }
+    request.push_str("\r\n");
     stream
         .write_all(request.as_bytes())
         .await
@@ -430,6 +443,28 @@ async fn test_single_page_and_unknown_path() {
     assert!(
         body.contains("id=\"drag-hint\"") && body.contains("supportsFileDrag"),
         "桌面端应在选择文件入口提示可拖入文件"
+    );
+    assert!(
+        body.contains("id=\"wechat-hint\"")
+            && body.contains("id=\"wechat-hint-text\"")
+            && body.contains("id=\"wechat-hint-copy\"")
+            && body.contains("id=\"wechat-hint-copy-label\"")
+            && body.contains("id=\"wechat-hint-error\"")
+            && body.contains("id=\"wechat-guide\"")
+            && body.contains("id=\"wechat-guide-title\"")
+            && body.contains("id=\"wechat-guide-text\"")
+            && body.contains("id=\"wechat-guide-hint\"")
+            && body.contains("id=\"wechat-guide-error\"")
+            && body.contains("id=\"wechat-guide-copy\"")
+            && body.contains("id=\"wechat-guide-close\"")
+            && body.contains("wechatHint")
+            && body.contains("wechatGuideCopy")
+            && body.contains("MicroMessenger")
+            && body.contains("WindowsWechat")
+            && body.contains("blockWechatDownload")
+            && body.contains("prepareWechatHandoff")
+            && body.contains("/web/handoff"),
+        "单页应识别微信内置浏览器并拦截下载入口"
     );
     assert!(body.contains("prepare-upload"), "单页应含上传建会话逻辑");
     assert!(
@@ -806,7 +841,312 @@ async fn test_download_batch_streams_zip() {
     handle.abort();
 }
 
-/// 访问密码门禁：未登录只给密码页，接口 401；窗口内错误过多 429；
+/// 浏览器下载前的 Range 预检不应消费批次，也不应创建下载任务。
+#[tokio::test]
+async fn test_download_batch_range_probe_keeps_batch() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (probe_status, probe_headers, probe_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=0-0")]).await;
+    assert_eq!(probe_status, 206, "预检应回 206");
+    assert_eq!(probe_body, b"P", "预检只需返回 ZIP 前导字节");
+    let total = header(&probe_headers, "content-range")
+        .and_then(|value| value.rsplit('/').next())
+        .and_then(|value| value.parse::<usize>().ok())
+        .expect("预检缺 Content-Range");
+    assert!(total > probe_body.len());
+    // 预检不应创建下载任务；渠道里只可能有建会话的 WebAccess。
+    while let Ok(event) = progress_rx.try_recv() {
+        if let ProgressEvent::DownloadStarted { batch_id: id, .. } = event {
+            panic!("Range 预检不应创建下载任务: {id}");
+        }
+    }
+    // 预检之后同一个 batchId 仍可正常下载。
+    let (zip_status, zip_headers, zip_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(zip_status, 200, "预检后整包下载失败");
+    assert_eq!(
+        header(&zip_headers, "content-length").and_then(|v| v.parse::<usize>().ok()),
+        Some(zip_body.len())
+    );
+    assert!(String::from_utf8_lossy(&zip_body).contains("a.txt"));
+    // 等待成功收口：小 ZIP 的探测可能读完整包，成功也不能消费批次。
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "成功下发后批次仍应保留到 TTL"
+    );
+    let (repeat_status, _, repeat_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(repeat_status, 200, "成功后的重复请求仍应可下载");
+    assert!(!repeat_body.is_empty());
+    handle.abort();
+}
+
+/// `Range: bytes=0-` 等价整包：回 206 与完整 Content-Range，成功后批次保留。
+#[tokio::test]
+async fn test_download_batch_range_from_zero_is_partial() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (zip_status, zip_headers, zip_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=0-")]).await;
+    assert_eq!(zip_status, 206);
+    assert_eq!(
+        header(&zip_headers, "content-length").and_then(|v| v.parse::<usize>().ok()),
+        Some(zip_body.len())
+    );
+    assert_eq!(
+        header(&zip_headers, "content-range"),
+        Some(format!("bytes 0-{}/{}", zip_body.len() - 1, zip_body.len()).as_str())
+    );
+    assert!(String::from_utf8_lossy(&zip_body).contains("a.txt"));
+    assert!(String::from_utf8_lossy(&zip_body).contains("b.txt"));
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "整包成功也保留批次到 TTL"
+    );
+    handle.abort();
+}
+
+/// 非零起点 Range：只回剩余字节，不建任务、不消费批次；随后整包仍可下载。
+#[tokio::test]
+async fn test_download_batch_resume_range_keeps_batch() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (probe_status, probe_headers, _) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=0-0")]).await;
+    assert_eq!(probe_status, 206);
+    let total = header(&probe_headers, "content-range")
+        .and_then(|value| value.rsplit('/').next())
+        .and_then(|value| value.parse::<usize>().ok())
+        .expect("预检缺 Content-Range");
+    while progress_rx.try_recv().is_ok() {}
+
+    let (resume_status, resume_headers, resume_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=1-")]).await;
+    assert_eq!(resume_status, 206);
+    assert_eq!(resume_body.len(), total - 1);
+    assert_eq!(
+        header(&resume_headers, "content-length").and_then(|v| v.parse::<usize>().ok()),
+        Some(total - 1)
+    );
+    assert_eq!(
+        header(&resume_headers, "content-range"),
+        Some(format!("bytes 1-{}/{}", total - 1, total).as_str())
+    );
+    assert_eq!(
+        resume_body.first().copied(),
+        Some(b'K'),
+        "应从 ZIP 第二字节开始"
+    );
+    while let Ok(event) = progress_rx.try_recv() {
+        if let ProgressEvent::DownloadStarted { .. } = event {
+            panic!("非零起点 Range 不应创建下载任务");
+        }
+    }
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "非零起点 Range 不应消费批次"
+    );
+
+    // 落在首个本地头内的小分片：提前返回路径也要正确截断。
+    let (head_status, head_headers, head_body) =
+        http_get_bytes_with_headers(addr, &path, &[("Range", "bytes=4-9")]).await;
+    assert_eq!(head_status, 206);
+    assert_eq!(head_body.len(), 6);
+    assert_eq!(
+        header(&head_headers, "content-range"),
+        Some(format!("bytes 4-9/{total}").as_str())
+    );
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+
+    // 分片之后整包仍可下载，批次保留到 TTL。
+    let (full_status, _, full_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(full_status, 200);
+    assert_eq!(full_body.len(), total);
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+    handle.abort();
+}
+
+/// 下载管理器先探测后真正下载：首次连接中断不应消费批次，重试应成功。
+#[tokio::test]
+async fn test_download_batch_retry_after_client_abort() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let content = vec![b'x'; 32 * 1024 * 1024];
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "big.bin", &content)]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    // 首次连接：读到响应头就断开，模拟浏览器确认下载前的预检请求。
+    let mut stream = tokio::net::TcpStream::connect(addr)
+        .await
+        .expect("回环连接失败");
+    let request = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\n\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .expect("请求写入失败");
+    let mut buf = vec![0u8; 4096];
+    let _ = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut buf))
+        .await
+        .expect("读取响应超时")
+        .expect("读取响应失败");
+    drop(stream);
+    // 服务端应把这次中断收口为已取消，并保留批次。
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, error, .. } = event {
+            assert_ne!(
+                outcome.as_str(),
+                "succeeded",
+                "首次中断不应成功下发: {error:?}"
+            );
+            break;
+        }
+    }
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+    // 同一 batchId 重试应完整成功。
+    let (zip_status, _, zip_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(zip_status, 200, "中断后重试失败");
+    assert!(!zip_body.is_empty());
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(state.pending_batches.lock().unwrap().len(), 1);
+    handle.abort();
+}
+
+/// 小 ZIP 的探测请求可能读完整个响应：成功后仍要允许真正的下载再次请求。
+#[tokio::test]
+async fn test_download_batch_repeat_after_success() {
+    let (handle, addr, state, mut progress_rx, _ctx) =
+        spawn_with_files(vec![("f1", "a.txt", b"aaa"), ("f2", "b.txt", b"bbb")]).await;
+    let token = prepare_download_token(addr).await;
+    let (batch_status, _, batch_body) = http_post_bytes(
+        addr,
+        &format!("/web/download-batch?token={token}"),
+        b"{\"all\":true}",
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(batch_status, 200, "批次登记失败: {batch_body}");
+    let batch: serde_json::Value = serde_json::from_str(&batch_body).unwrap();
+    let batch_id = batch["batchId"].as_str().expect("缺 batchId").to_string();
+    let path = format!("/web/download-batch?batch={batch_id}");
+
+    let (first_status, _, first_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(first_status, 200);
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), progress_rx.recv())
+            .await
+            .expect("等待下载结束超时")
+            .expect("进度通道关闭");
+        if let ProgressEvent::DownloadEnded { outcome, .. } = event {
+            assert_eq!(outcome.as_str(), "succeeded");
+            break;
+        }
+    }
+    assert_eq!(
+        state.pending_batches.lock().unwrap().len(),
+        1,
+        "成功后批次应保留到 TTL，供真正的下载请求重试"
+    );
+    let (second_status, _, second_body) = http_get_bytes(addr, &path).await;
+    assert_eq!(second_status, 200, "成功后的重复请求不应回 410");
+    assert_eq!(second_body.len(), first_body.len());
+    handle.abort();
+}
+
 /// 登录成功后 Cookie 放行 caps / 单页 / 建会话，且建会话不再需要 PIN 参数。
 #[tokio::test]
 async fn test_pin_gate() {
@@ -1092,6 +1432,178 @@ async fn test_protocol_switch_uses_distinct_cookie_names() {
     let cap_http = header(&cap_http_headers, "set-cookie").expect("换令牌应下发 Cookie");
     assert!(cap_http.starts_with("handysend_web_cap="));
     assert!(!cap_http.contains("Secure"));
+    handle.abort();
+}
+
+/// 微信扫码后生成短期浏览器交接令牌：微信页面保留 `?h=` 供「在浏览器打开」携带，
+/// 系统浏览器兑换后免访问码；令牌单次有效，失效时回退访问码页。
+#[tokio::test]
+async fn test_wechat_browser_handoff() {
+    let wechat_ua: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) \
+        AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.50";
+    let browser_ua: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) \
+        AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-wechat".to_string());
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
+
+    // 微信扫码：302 到带交接令牌的地址，并下发微信 WebView 能力 Cookie。
+    let (status, headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-wechat", &[("User-Agent", wechat_ua)])
+            .await;
+    assert_eq!(status, 302);
+    let location: String = header(&headers, "location")
+        .expect("微信入口应重定向")
+        .to_string();
+    assert!(
+        location.starts_with("/?h="),
+        "微信入口应带浏览器交接令牌: {location}"
+    );
+    let wechat_cookie: String = header(&headers, "set-cookie")
+        .expect("微信入口应下发能力 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+
+    // 微信页面带 ?h= 打开：不消费交接令牌，按能力 Cookie 正常渲染内容页。
+    let (page_status, _, page) = http_request_with_headers(
+        addr,
+        "GET",
+        &location,
+        &[
+            ("Cookie", wechat_cookie.as_str()),
+            ("User-Agent", wechat_ua),
+        ],
+    )
+    .await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"open\""));
+
+    // 系统浏览器打开同一地址：消费交接令牌，302 到干净地址并下发浏览器能力 Cookie。
+    let (browser_status, browser_headers, _) =
+        http_request_with_headers(addr, "GET", &location, &[("User-Agent", browser_ua)]).await;
+    assert_eq!(browser_status, 302);
+    assert_eq!(header(&browser_headers, "location"), Some("/"));
+    let browser_cookie: String = header(&browser_headers, "set-cookie")
+        .expect("浏览器交接应下发能力 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let (page_status, _, page) = http_request_with_headers(
+        addr,
+        "GET",
+        "/",
+        &[
+            ("Cookie", browser_cookie.as_str()),
+            ("User-Agent", browser_ua),
+        ],
+    )
+    .await;
+    assert_eq!(page_status, 200);
+    assert!(page.contains("data-auth=\"open\""));
+
+    // 交接令牌一次性：第三个浏览器再用同一地址只能回到访问码页。
+    let (reuse_status, _, reuse_body) = http_request_with_headers(
+        addr,
+        "GET",
+        &location,
+        &[("User-Agent", "ThirdBrowser/1.0")],
+    )
+    .await;
+    assert_eq!(reuse_status, 200);
+    assert!(reuse_body.contains("data-auth=\"locked\""));
+
+    // 微信页面可主动取一条新交接令牌（复制浏览器链接兜底）。
+    let (handoff_status, _, handoff_body) = http_request_with_headers(
+        addr,
+        "POST",
+        "/web/handoff",
+        &[
+            ("Cookie", wechat_cookie.as_str()),
+            ("User-Agent", wechat_ua),
+        ],
+    )
+    .await;
+    assert_eq!(handoff_status, 200);
+    let handoff_json: serde_json::Value =
+        serde_json::from_str(&handoff_body).expect("交接响应应为 JSON");
+    let handoff_token: &str = handoff_json["token"].as_str().expect("交接响应缺 token");
+    let handoff_path: String = format!("/?h={handoff_token}");
+    let (copy_status, copy_headers, _) =
+        http_request_with_headers(addr, "GET", &handoff_path, &[("User-Agent", browser_ua)]).await;
+    assert_eq!(copy_status, 302);
+    assert_eq!(header(&copy_headers, "location"), Some("/"));
+    handle.abort();
+}
+
+/// 同一 IP 的浏览器交接令牌有上限：重复生成会淘汰最早一枚，避免有效凭据无限堆积。
+#[tokio::test]
+async fn test_handoff_token_limit_per_ip() {
+    let wechat_ua: &str = "WeChat MicroMessenger/8.0.50";
+    let (handle, addr, state, _rx, _ctx) = spawn_with_files(vec![("f1", "a.txt", b"abc")]).await;
+    *state.capability.lock().unwrap() = Some("cap-native".to_string());
+    *state.expected_pin.lock().unwrap() = Some("123456".to_string());
+    // 微信扫码：拿到一枚二维码原生交接令牌与微信 WebView 能力 Cookie。
+    let (qr_status, qr_headers, _) =
+        http_request_with_headers(addr, "GET", "/?t=cap-native", &[("User-Agent", wechat_ua)])
+            .await;
+    assert_eq!(qr_status, 302);
+    let qr_location: String = header(&qr_headers, "location")
+        .expect("扫码应重定向到交接地址")
+        .to_string();
+    let native_token: String = qr_location
+        .strip_prefix("/?h=")
+        .expect("二维码交接地址应带 h 参数")
+        .to_string();
+    let wechat_cookie: String = header(&qr_headers, "set-cookie")
+        .expect("扫码应下发能力 Cookie")
+        .split(';')
+        .next()
+        .expect("Cookie 格式非法")
+        .to_string();
+    let mut tokens: Vec<String> = Vec::new();
+    for _ in 0..9 {
+        let (status, _, body) = http_request_with_headers(
+            addr,
+            "POST",
+            "/web/handoff",
+            &[
+                ("Cookie", wechat_cookie.as_str()),
+                ("User-Agent", wechat_ua),
+            ],
+        )
+        .await;
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).expect("交接响应应为 JSON");
+        tokens.push(
+            json["token"]
+                .as_str()
+                .expect("交接响应缺 token")
+                .to_string(),
+        );
+    }
+    // 复制链接上限 8：最早一枚已被淘汰，浏览器打开只会回退到访问码页。
+    let old_path = format!("/?h={}", tokens[0]);
+    let (old_status, old_headers, old_body) =
+        http_request_with_headers(addr, "GET", &old_path, &[("User-Agent", "Safari/17.0")]).await;
+    assert_eq!(old_status, 200);
+    assert!(old_body.contains("data-auth=\"locked\""));
+    assert_eq!(header(&old_headers, "location"), None);
+    // 复制令牌的淘汰不影响二维码原生交接令牌。
+    let native_path = format!("/?h={native_token}");
+    let (native_status, native_headers, _) =
+        http_request_with_headers(addr, "GET", &native_path, &[("User-Agent", "Safari/17.0")])
+            .await;
+    assert_eq!(native_status, 302);
+    assert_eq!(header(&native_headers, "location"), Some("/"));
+    // 最后一枚复制令牌仍可兑换。
+    let new_path = format!("/?h={}", tokens[8]);
+    let (new_status, new_headers, _) =
+        http_request_with_headers(addr, "GET", &new_path, &[("User-Agent", "Safari/17.0")]).await;
+    assert_eq!(new_status, 302);
+    assert_eq!(header(&new_headers, "location"), Some("/"));
     handle.abort();
 }
 

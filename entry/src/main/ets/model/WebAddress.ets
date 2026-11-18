@@ -2,7 +2,7 @@
  * WebAddress.ets — 网页服务可用地址的纯函数
  *
  * 网页服务监听全部网卡；这里只负责从本机接口列表中筛出可展示的 IPv4 地址，
- * 按 Wi-Fi → 有线 → VPN → 网桥 → 其他排序，并处理用户筛选与上次选择。
+ * 按 Wi-Fi → 有线 → VPN → 网桥 → 其他排序，并处理用户筛选、上次选择与热点标记透传。
  * 不依赖 UI、系统上下文或仓储状态，便于设备端单元测试。
  */
 
@@ -15,6 +15,8 @@ export interface WebAddress {
   ip: string
   type: NetworkType
   isDefault: boolean
+  // 是否为热点（SoftAP）接口：面板据此把热点地址与普通 Wi-Fi 地址区分展示
+  isHotspot: boolean
 }
 
 /** 网页端口校验结果。 */
@@ -95,7 +97,8 @@ export function listWebAddresses(interfaces: Array<NetworkInterface>,
       name: netIf.name,
       ip: netIf.ip,
       type: netIf.type,
-      isDefault: netIf.isDefault
+      isDefault: netIf.isDefault,
+      isHotspot: netIf.isHotspot
     });
   }
   candidates.sort((a: WebAddress, b: WebAddress): number => {

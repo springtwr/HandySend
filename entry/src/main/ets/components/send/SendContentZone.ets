@@ -1,7 +1,7 @@
 /**
  * SendContentZone.ets — 发送页内容区
  *
- * 内容类型选择 + 暂存列表：无暂存内容时展示一行四个类型入口磁贴，有暂存内容时展示
+ * 内容类型选择 + 暂存列表：无暂存内容时展示三列两行六个类型入口磁贴，有暂存内容时展示
  * 统计/添加/清空操作行与暂存条目列表（40vp 缩略图、48vp 行高、红色圆形移除按钮）；
  * 已选内容后再次添加时以锚在按钮下方的气泡复用同一组入口磁贴。
  * 磁贴高度、图标与字号随宽度断点放大；暂存列表按条目数取整行（最多 4 行，超出内部滚动）。
@@ -15,7 +15,7 @@ import { StagedFile } from '../../model/Types';
 import { SendViewModel } from '../../viewmodel/SendViewModel';
 import { getFileTypeIconResource } from '../../utils/FileTypeIconUtil';
 
-// 类型入口磁贴：高度、图标与字号随宽度断点放大，避免宽屏下四格被压成扁条
+// 类型入口磁贴：高度、图标与字号随宽度断点放大，避免宽屏下六格被压成扁条
 const ACTION_TILE_HEIGHT: WidthBreakpointType<number> = new WidthBreakpointType<number>(72, 96, 112, 128);
 const ACTION_ICON_SIZE: WidthBreakpointType<number> = new WidthBreakpointType<number>(24, 28, 32, 32);
 const ACTION_LABEL_FONT: WidthBreakpointType<number> = new WidthBreakpointType<number>(12, 12, 14, 14);
@@ -64,6 +64,27 @@ export struct SendContentZone {
           compact, () => {
             this.dispatchPick(() => {
               this.viewModel.pickFiles();
+            });
+          })
+      }
+
+      // 文件夹：聚合为一个暂存条目，发送时展开为逐文件。
+      // 入口在所有 API 版本展示以保持磁贴栅格完整；不具备能力的设备点击时只提示，不拉起选择器
+      GridItem() {
+        this.pickAction($r('sys.symbol.folder_fill'), $r('app.string.send_folder'), 'send_pick_folder',
+          compact, () => {
+            this.dispatchPick(() => {
+              this.viewModel.pickFolder();
+            });
+          })
+      }
+
+      // 下载：文件选择器直接定位到 Download 目录
+      GridItem() {
+        this.pickAction($r('sys.symbol.arrowshape_down_to_line_fill'), $r('app.string.send_download'),
+          'send_pick_download', compact, () => {
+            this.dispatchPick(() => {
+              this.viewModel.pickDownload();
             });
           })
       }
@@ -119,14 +140,14 @@ export struct SendContentZone {
           })
       }
     }
-    // 空态整行 1×4 铺满卡片；气泡内 2×2 紧凑排布，避免气泡横跨大半个屏幕
-    .columnsTemplate(compact ? '1fr 1fr' : '1fr 1fr 1fr 1fr')
-    .rowsTemplate(compact ? '1fr 1fr' : '1fr')
+    // 空态三列两行铺满卡片；气泡内两列三行，六个入口无空缺
+    .columnsTemplate(compact ? '1fr 1fr' : '1fr 1fr 1fr')
+    .rowsTemplate(compact ? '1fr 1fr 1fr' : '1fr 1fr')
     .columnsGap(DesignTokens.space.inner)
     .rowsGap(DesignTokens.space.inner)
     .width('100%')
-    .height(compact ? ACTION_TILE_HEIGHT_COMPACT * 2 + DesignTokens.space.inner :
-      ACTION_TILE_HEIGHT.getValue(this.breakpointInfo.widthBreakpoint))
+    .height(compact ? ACTION_TILE_HEIGHT_COMPACT * 3 + DesignTokens.space.inner * 2 :
+      ACTION_TILE_HEIGHT.getValue(this.breakpointInfo.widthBreakpoint) * 2 + DesignTokens.space.inner)
     .id(compact ? 'send_type_picker_compact' : 'send_type_picker')
   }
 
@@ -192,8 +213,15 @@ export struct SendContentZone {
   @Builder
   stagedRow(ri: RepeatItem<StagedFile>) {
     Row({ space: DesignTokens.space.sm }) {
-      // 缩略图 40vp（行高 48）：图片源直显，视频用异步生成的缩略图，其余回退类型图标
-      if (ri.item.isImage) {
+      // 缩略图 40vp（行高 48）：文件夹用目录图标；图片源直显，视频用异步生成的缩略图，
+      // 其余回退类型图标
+      if (ri.item.isFolder === true) {
+        SymbolGlyph($r('sys.symbol.folder_fill'))
+          .fontSize(DesignTokens.size.iconLg)
+          .fontColor([$r('app.color.text_secondary')])
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+      } else if (ri.item.isImage) {
         Image(ri.item.uri)
           .width(DesignTokens.size.iconLg)
           .height(DesignTokens.size.iconLg)
@@ -217,8 +245,10 @@ export struct SendContentZone {
       // 文件名（flex 自适应宽度，最多两行，超出尾部截断）。
       // 文本消息条目不展示沙箱文件名（内部实现细节），直接展示正文预览，便于分辨内容；
       // 文本消息条目可点击进入编辑；普通文件点击无操作（编辑能力仅面向 isManualText 标记的条目）
-      Text(ri.item.isManualText === true && ri.item.textPreview !== undefined ?
-        ri.item.textPreview : ri.item.fileName)
+      Text(ri.item.isFolder === true ?
+        ri.item.fileName + '（' + (ri.item.folderFileCount ?? 0) + ' 个文件）' :
+        (ri.item.isManualText === true && ri.item.textPreview !== undefined ?
+          ri.item.textPreview : ri.item.fileName))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_primary'))
         // 文件名最多两行，超长尾部截断（48vp 行高内垂直居中）
@@ -297,8 +327,19 @@ export struct SendContentZone {
   stagedSection() {
     // 操作行：统计 + 添加 + 清空
     Row({ space: DesignTokens.space.sm }) {
-      Text($r('app.string.send_file_count_total', this.viewModel.stagedFiles.length,
-        this.viewModel.getTotalSizeText()))
+      if (this.viewModel.isFillingStagedMeta) {
+        // 大量文件选中后大小等属性异步补全，避免用户误以为页面卡住
+        LoadingProgress()
+          .width(DesignTokens.size.iconXs)
+          .height(DesignTokens.size.iconXs)
+          .color($r('app.color.accent_blue'))
+          .id('send_staging_loading')
+      }
+      Text(this.viewModel.stagedFolderCount() > 0 ?
+        $r('app.string.send_staged_folder_summary', this.viewModel.stagedFolderCount(),
+          this.viewModel.stagedFileCount(), this.viewModel.getTotalSizeText()) :
+        $r('app.string.send_file_count_total', this.viewModel.stagedFileCount(),
+          this.viewModel.getTotalSizeText()))
         .fontSize(DesignTokens.font.bodyS)
         .fontColor($r('app.color.text_secondary'))
         .layoutWeight(1)
@@ -392,7 +433,7 @@ export struct SendContentZone {
       .borderRadius(DesignTokens.radius.lg)
       .backgroundColor($r('app.color.card_background'))
       .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
-      // 卡片高度随内容：空态只有一行入口磁贴（72~128，随宽度断点），加入首个文件后长到列表高度
+      // 卡片高度随内容：空态为两行入口磁贴（72~128，随宽度断点），加入首个文件后长到列表高度
       // 卡片成为内容区首元素：沿用原标题行的顶部间距，避免内容贴顶
       .margin({ top: DesignTokens.space.md })
     }

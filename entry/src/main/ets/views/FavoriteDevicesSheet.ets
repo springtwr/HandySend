@@ -3,7 +3,7 @@
  *
  * 由发送页以 bindSheet 半模态承载，集中展示全部收藏设备（在线 / 离线）：
  * 点击条目请求发送（在线直发、离线由发送页先定向探测）、长按进入多选批量删除、
- * 条目右侧「更多」菜单提供重命名 / 恢复默认别名 / 删除。
+ * PC/2in1 上鼠标右键打开条目「更多」菜单；条目右侧「更多」菜单提供重命名 / 恢复默认别名 / 删除。
  * 设备图标与徽标口径复用附近列表同一套实现，保证两处展示一致。
  */
 
@@ -42,6 +42,17 @@ export struct FavoriteDevicesSheet {
   private pendingDeleteIsSingleMenu: boolean = false
   // 当前打开的弹窗 id（关闭时使用）
   private activeDialogId: number = -1
+  // PC/2in1 右键菜单：是否打开、当前条目指纹，以及鼠标在行内的位置（vp）
+  @Local contextMenuShown: boolean = false
+  @Local contextMenuFingerprint: string = ''
+  @Local contextMenuX: number = 0
+  @Local contextMenuY: number = 0
+
+  aboutToDisappear(): void {
+    // 面板关闭时收起右键菜单状态，避免面板复用后残留
+    this.contextMenuShown = false;
+    this.contextMenuFingerprint = '';
+  }
 
   private closeActiveDialog(): void {
     if (this.activeDialogId >= 0) {
@@ -374,9 +385,31 @@ export struct FavoriteDevicesSheet {
     })
     .gesture(LongPressGesture().onAction(() => {
       if (!this.panelViewModel.selectionMode) {
+        this.contextMenuShown = false;
         this.panelViewModel.enterSelection(item.fingerprint);
       }
     }))
+    // PC/2in1：鼠标右键打开行内「更多」菜单，与右侧更多入口共用同一份菜单；
+    // 多选模式下不响应右键（与右侧入口一致）
+    .onMouse((event: MouseEvent) => {
+      if (event.button === MouseButton.Right && event.action === MouseAction.Release &&
+        !this.panelViewModel.selectionMode) {
+        this.contextMenuX = event.x;
+        this.contextMenuY = event.y;
+        this.contextMenuFingerprint = item.fingerprint;
+        this.contextMenuShown = true;
+      }
+    })
+    .bindContextMenu(this.contextMenuShown && this.contextMenuFingerprint === item.fingerprint,
+      this.itemMenu(item), {
+        anchorPosition: { x: this.contextMenuX, y: this.contextMenuY },
+        aboutToDisappear: (): void => {
+          if (this.contextMenuFingerprint === item.fingerprint) {
+            this.contextMenuShown = false;
+            this.contextMenuFingerprint = '';
+          }
+        }
+      })
     .id('favorite_device_item')
   }
 

@@ -1,8 +1,8 @@
 /**
- * PortalSiteCard.ets — 在线服务站点卡片。
+ * PortalSiteCard.ets — 远程传输站点卡片。
  *
  * 三行信息：站点名称、特性徽标、站点地址；左侧为名称首字色块。
- * 点击用系统浏览器打开站点，长按弹出编辑/删除菜单。
+ * 点击请求打开站点（页面确认后交给系统浏览器），长按或鼠标右键弹出编辑/删除菜单。
  */
 
 import { DesignTokens } from '../common/DesignTokens';
@@ -78,9 +78,12 @@ export struct PortalSiteCard {
   @Event onDelete: (site: PortalSite) => void = (_site: PortalSite): void => {
   };
 
-  /** 长按菜单：编辑与删除。 */
+  /**
+   * 站点操作菜单：编辑与删除。
+   * 参数为触发方式（触摸长按 / 鼠标右键），菜单内容不区分触发方式。
+   */
   @Builder
-  cardMenu() {
+  cardMenu(_responseType: ResponseType) {
     Menu() {
       MenuItem({ content: $r('app.string.portal_edit') })
         .onClick((): void => {
@@ -187,7 +190,9 @@ export struct PortalSiteCard {
     .onClick((): void => {
       this.onOpen(this.site);
     })
-    .bindContextMenu(this.cardMenu, ResponseType.LongPress)
+    // 长按（触摸）与鼠标右键共用同一菜单：
+    // ResponseType.LongPress 不响应鼠标长按，PC 上需由右键触发
+    .bindContextMenuWithResponse(this.cardMenu)
     .accessibilityGroup(true)
   }
 }

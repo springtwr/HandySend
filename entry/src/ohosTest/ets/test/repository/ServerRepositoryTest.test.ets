@@ -30,7 +30,8 @@ function makeIface(name: string, ip: string, prefixLength: number, type: Network
     ip: ip,
     prefixLength: prefixLength,
     type: type,
-    isDefault: false
+    isDefault: false,
+    isHotspot: false
   }
 }
 

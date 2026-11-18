@@ -34,10 +34,12 @@ import {
   NO_PROGRESS_ERROR_CODE
 } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
 import {
+  SessionContentKind,
   SessionCreateInput,
   SessionDataFlow,
   SessionEventKind,
   SessionFileStage,
+  SessionFolderInfo,
   SessionInitiator,
   SessionPeer,
   SessionStage,
@@ -163,6 +165,54 @@ export default function TransferSessionRegistryTest() {
       expect(s.timeline.length).assertEqual(1) // created（「已开始」在首个字节进度时才记录）
       expect(getActiveCount()).assertEqual(1)
       expect(getSession(s.id) !== undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('create_session_defaults_to_files_content', 0, () => {
+      resetRegistry()
+      let s = createSession(makeInput())
+      expect(s.contentKind).assertEqual(SessionContentKind.files)
+      expect(s.folder === undefined).assertTrue()
+      resetRegistry()
+    })
+
+    it('create_session_keeps_folder_summary', 0, () => {
+      resetRegistry()
+      let input: SessionCreateInput = makeInput()
+      let folder: SessionFolderInfo = {
+        name: 'Photos',
+        path: '/storage/Users/currentUser/Download/Photos',
+        rootCount: 1,
+        fileCount: 12,
+        totalBytes: 3456
+      }
+      input.contentKind = SessionContentKind.folder
+      input.folder = folder
+      let s = createSession(input)
+      expect(s.contentKind).assertEqual(SessionContentKind.folder)
+      expect(s.folder !== undefined).assertTrue()
+      if (s.folder !== undefined) {
+        expect(s.folder.name).assertEqual('Photos')
+        expect(s.folder.fileCount).assertEqual(12)
+        expect(s.folder.totalBytes).assertEqual(3456)
+      }
+      resetRegistry()
+    })
+
+    it('create_session_noPeerIp_leavesLocalNetworkEmpty', 0, () => {
+      resetRegistry()
+      // 无对端 IP（MTA 等无 IP 协议）无法判定本机承载端点：留空，由详情页显示占位符，
+      // 不再用主接口（通常是 wlan0）冒充
+      let s = createSession(makeInput())
+      expect(s.localIp).assertEqual('')
+      expect(s.localInterfaceName).assertEqual('')
+      // 非 IPv4 文本（如网页上传的回退 token）同样按无法判定处理
+      let invalid = makeInput()
+      invalid.protocolSessionId = 'p-token'
+      invalid.peer = namedPeer('web', 'web-token')
+      let s2 = createSession(invalid)
+      expect(s2.localIp).assertEqual('')
+      expect(s2.localInterfaceName).assertEqual('')
       resetRegistry()
     })
 
