@@ -40,7 +40,6 @@ import {
 import { sendToDevice } from '../../../../main/ets/service/repository/SendRepository'
 import { DiscoveredDevice, SendFileItem } from '../../../../main/ets/model/Types'
 import {
-  clearServerNeedsRestart,
   getHttpsEnabled,
   setHttpsEnabled
 } from '../../../../main/ets/service/repository/SettingsRepository'
@@ -453,8 +452,6 @@ export default function LoopbackTransferTest() {
       } finally {
         offBridgeEvent('prepareUpload', prepareHandler)
         setHttpsEnabled(originalHttps)
-        // 测试设置变更不应触发真实服务重启
-        clearServerNeedsRestart()
         try {
           fs.closeSync(source)
         } catch (_e) {

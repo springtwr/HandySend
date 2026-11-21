@@ -100,7 +100,6 @@ let advancedSettings: boolean = DEFAULT_ADVANCED_SETTINGS;
 let port: number = DEFAULT_PORT;
 let multicastGroup: string = DEFAULT_MULTICAST_GROUP;
 let discoveryTimeout: number = DEFAULT_DISCOVERY_TIMEOUT;
-let serverNeedsRestart: boolean = false;
 let localSendEnabled: boolean = DEFAULT_LOCALSEND_ENABLED;
 let mtaEnabled: boolean = DEFAULT_MTA_ENABLED;
 let webSendAllowed: boolean = DEFAULT_WEB_SEND_ENABLED;
@@ -115,20 +114,6 @@ let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
 let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
 let backgroundReceiveEnabled: boolean = DEFAULT_BACKGROUND_RECEIVE;
-
-// ── 服务器重启标志（与 ServerRepository 共享） ──
-
-export function markServerNeedsRestart(): void {
-  serverNeedsRestart = true;
-}
-
-export function clearServerNeedsRestart(): void {
-  serverNeedsRestart = false;
-}
-
-export function doesServerNeedRestart(): boolean {
-  return serverNeedsRestart;
-}
 
 // ── 从 Preferences 加载全部设置（应用启动时调用一次） ──
 
@@ -186,7 +171,6 @@ export function setHttpsEnabled(enabled: boolean): void {
   preferencesRepo.flushNow();
   logger.debug(
     '已持久化 key=' + KEY_ENCRYPTED_TRANSFER + ' value=' + enabled.toString() + ' 已刷盘');
-  markServerNeedsRestart();
   notifyChange();
 }
 
@@ -218,7 +202,6 @@ export function setReceivePin(pin: string): void {
   receivePin = pin;
   preferencesRepo.setString(KEY_RECEIVE_PIN, pin);
   // PIN 变更需要重启服务器
-  markServerNeedsRestart();
   notifyChange();
 }
 
@@ -659,7 +642,6 @@ export function isAdvancedSettings(): boolean {
 export function setPort(p: number): void {
   port = p;
   preferencesRepo.setNumber(KEY_PORT, p);
-  markServerNeedsRestart();
   notifyChange();
 }
 
@@ -670,7 +652,6 @@ export function getPort(): number {
 export function setMulticastGroup(group: string): void {
   multicastGroup = group;
   preferencesRepo.setString(KEY_MULTICAST_GROUP, group);
-  markServerNeedsRestart();
   notifyChange();
 }
 
@@ -681,7 +662,6 @@ export function getMulticastGroup(): string {
 export function setDiscoveryTimeout(timeout: number): void {
   discoveryTimeout = timeout;
   preferencesRepo.setNumber(KEY_DISCOVERY_TIMEOUT, timeout);
-  markServerNeedsRestart();
   notifyChange();
 }
 

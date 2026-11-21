@@ -83,42 +83,42 @@
               {
                 "scheme": "file",
                 "utd": "general.image",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.video",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.audio",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.composite-object",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.text",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.archive",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.file",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               },
               {
                 "scheme": "file",
                 "utd": "general.folder",
-                "maxFileSupported": 50
+                "maxFileSupported": 500
               }
             ]
           }

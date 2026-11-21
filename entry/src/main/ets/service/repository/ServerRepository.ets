@@ -27,7 +27,6 @@ import {
   getMulticastGroup,
   getDiscoveryTimeout,
   getNetworkListAsArray,
-  clearServerNeedsRestart,
   isVerifyChecksums,
   ensureDefaultNetworkLists,
   getLocalSendEnabled
@@ -38,6 +37,13 @@ import { getDeviceAlias, getDeviceModel, getDeviceType, getLocalDeviceInfo } fro
 import { triggerStagedDiscover, clearDiscoveryState, resetScanState } from './DiscoveryRepository';
 import { getPendingRecvMediaPaths } from './ReceiveRepository';
 import { refreshMtaReceiveIdentity } from './MtaRepository';
+import {
+  computePendingReasons,
+  isAliasOnlyPending as isAliasOnlyPendingReasons,
+  isAliasPending as isAliasPendingReasons,
+  ServerPendingReason,
+  ServerRunConfig
+} from '../../model/ServerRunConfig';
 
 const logger = getLogger(LogDomains.SERVER, 'HandySend:ServerRepository', '服务端');
 
@@ -131,6 +137,10 @@ function computeDiscoveryWhitelist(): Array<string> {
 // ── 服务器运行时状态 ──
 
 let serverRunning = false;
+// 当前运行中的 LocalSend 服务实际使用的配置：用于计算待生效项
+let runningConfig: ServerRunConfig | undefined = undefined;
+// 最近一次服务器启动失败的可展示原因；启动成功或主动停止时清空
+let lastServerStartError: string = '';
 let noWifiWarning: boolean = false;
 let allInterfacesDisabled: boolean = false;
 // 上一次成功启动 discovery 时的配置签名：配置未变化时跳过无谓的 stop/start 重启
@@ -138,6 +148,52 @@ let lastDiscoverySignature: string = '';
 
 export function isServerRunning(): boolean {
   return serverRunning;
+}
+
+/** 最近一次服务器启动失败原因（空串表示无错误或已恢复）。 */
+export function getLastServerStartError(): string {
+  return lastServerStartError;
+}
+
+/** 当前设置与运行配置的差异；服务未运行或没有快照时返回空。 */
+export function getServerPendingReasons(): Array<ServerPendingReason> {
+  if (!serverRunning) {
+    return [];
+  }
+  return computePendingReasons(runningConfig, currentServerConfig());
+}
+
+/** 待生效项数量。 */
+export function getPendingReasonCount(): number {
+  return getServerPendingReasons().length;
+}
+
+/** 当前运行的 LocalSend 是否仍使用旧昵称。 */
+export function isAliasPendingRestart(): boolean {
+  return isAliasPendingReasons(getServerPendingReasons());
+}
+
+/** 是否只有昵称一项待生效。 */
+export function isAliasOnlyPending(): boolean {
+  return isAliasOnlyPendingReasons(getServerPendingReasons());
+}
+
+/** 是否存在需要重启服务的设置变更；服务停止时为 false。 */
+export function doesServerNeedRestart(): boolean {
+  return getServerPendingReasons().length > 0;
+}
+
+function currentServerConfig(): ServerRunConfig {
+  return {
+    alias: getDeviceAlias(),
+    deviceType: getDeviceType(),
+    deviceModel: getDeviceModel(),
+    port: getPort(),
+    useHttps: getHttpsEnabled(),
+    pin: getReceivePin(),
+    multicastGroup: getMulticastGroup(),
+    discoveryTimeout: getDiscoveryTimeout()
+  };
 }
 
 export function getNoWifiWarning(): boolean {
@@ -296,16 +352,21 @@ function computeDiscoverySignature(config: NativeDiscoveryConfig): string {
 }
 
 // 统一构建 discovery 配置：各启动/重启路径字段来源完全一致，仅 protocol 由调用方决定
-function buildDiscoveryConfig(protocol: string): NativeDiscoveryConfig {
+function buildDiscoveryConfigWith(protocol: string, port: number, multicastGroup: string,
+  discoveryTimeout: number): NativeDiscoveryConfig {
   return {
-    port: getPort(),
+    port: port,
     protocol: protocol,
-    multicastGroup: getMulticastGroup(),
+    multicastGroup: multicastGroup,
     networkWhitelist: computeDiscoveryWhitelist(),
     networkBlacklist: resolveNetworkBlacklist(),
-    discoveryTimeoutMs: getDiscoveryTimeout(),
+    discoveryTimeoutMs: discoveryTimeout,
     download: true
   };
+}
+
+function buildDiscoveryConfig(protocol: string): NativeDiscoveryConfig {
+  return buildDiscoveryConfigWith(protocol, getPort(), getMulticastGroup(), getDiscoveryTimeout());
 }
 
 // 重启发现（不停 HTTP 服务器）：刷新接口列表 → 重算白/黑名单 → stop + start discovery。
@@ -368,6 +429,9 @@ function syncServerState(): boolean {
   try {
     let status = nativeGetServerStatus();
     serverRunning = status.running;
+    if (!serverRunning) {
+      runningConfig = undefined;
+    }
     if (status.fingerprint !== undefined && status.fingerprint.length > 0) {
       setServerFingerprint(status.fingerprint);
     }
@@ -409,7 +473,6 @@ export function restartServer(): Promise<void> {
 }
 
 async function doRestartServer(): Promise<void> {
-  clearServerNeedsRestart();
   // 始终执行完整的停止 + 启动以确保状态干净
   await stopLocalServer();
   try {
@@ -456,44 +519,70 @@ export async function startLocalServer(): Promise<string> {
   }
   // 启动时清理接收临时目录中的孤儿文件（崩溃/强杀等残留），best-effort
   cleanupOrphanSandboxFiles();
-  let protocol = getHttpsEnabled() ? 'https' : 'http';
+  // 启动前统一捕获配置：服务器、发现与运行快照使用同一组值，
+  // 避免启动过程中设置被改动导致运行快照与真实运行配置不一致。
+  let serverAlias: string = getDeviceAlias();
+  let serverDeviceType: string = getDeviceType();
+  let serverDeviceModel: string = getDeviceModel();
+  let serverPort: number = getPort();
+  let serverUseHttps: boolean = getHttpsEnabled();
+  let serverPin: string = getReceivePin();
+  let serverMulticastGroup: string = getMulticastGroup();
+  let serverDiscoveryTimeout: number = getDiscoveryTimeout();
+  let protocol = serverUseHttps ? 'https' : 'http';
   let handle: NativeServerHandle;
   try {
     handle = await nativeCreateServer({
-      alias: getDeviceAlias(),
-      deviceModel: getDeviceModel(),
-      deviceType: getDeviceType(),
-      port: getPort(),
+      alias: serverAlias,
+      deviceModel: serverDeviceModel,
+      deviceType: serverDeviceType,
+      port: serverPort,
       saveDir: saveDir,
-      useHttps: getHttpsEnabled(),
+      useHttps: serverUseHttps,
       verifyChecksums: isVerifyChecksums(),
-      pin: getReceivePin().length > 0 ? getReceivePin() : undefined
+      pin: serverPin.length > 0 ? serverPin : undefined
     });
   } catch (e) {
     serverRunning = false;
+    runningConfig = undefined;
     let errorMsg = String(e);
     // 检测端口占用错误并提供用户友好的提示
     if (errorMsg.indexOf('in use') >= 0 || errorMsg.indexOf('EADDRINUSE') >= 0 ||
       errorMsg.indexOf('Address already') >= 0) {
       // 入口已判空 appContext 并提前返回，此处必非空
-      let portMsg = appContext.resourceManager.getStringSync($r('app.string.port_in_use_error').id)
-        .replace('%d', String(getPort()));
-      logger.error(portMsg);
+      lastServerStartError = appContext.resourceManager
+        .getStringSync($r('app.string.port_in_use_error').id)
+        .replace('%d', String(serverPort));
+      logger.error(lastServerStartError);
     } else {
-      logger.error('服务器启动失败：' + errorMsg);
+      lastServerStartError = appContext.resourceManager
+        .getStringSync($r('app.string.notice_server_start_failed').id)
+        .replace('%s', errorMsg);
+      logger.error(lastServerStartError);
     }
+    notifyChange();
     return '';
   }
   setServerFingerprint(handle.fingerprint);
   serverRunning = true;
-  // 服务器以当前设置运行——无需重启
-  clearServerNeedsRestart();
+  runningConfig = {
+    alias: serverAlias,
+    deviceType: serverDeviceType,
+    deviceModel: serverDeviceModel,
+    port: serverPort,
+    useHttps: serverUseHttps,
+    pin: serverPin,
+    multicastGroup: serverMulticastGroup,
+    discoveryTimeout: serverDiscoveryTimeout
+  };
+  lastServerStartError = '';
   logger.info('服务器已启动');
   logger.debug('服务器 fingerprint=' + handle.fingerprint);
 
   // 启动 Rust 核心发现
   try {
-    let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfig(protocol);
+    let discoveryConfig: NativeDiscoveryConfig = buildDiscoveryConfigWith(protocol, serverPort,
+      serverMulticastGroup, serverDiscoveryTimeout);
     logger.debug('启动 v2 port=' + discoveryConfig.port + ' protocol=' + discoveryConfig.protocol +
       ' whitelist=' + JSON.stringify(discoveryConfig.networkWhitelist) +
       ' blacklist=' + JSON.stringify(discoveryConfig.networkBlacklist));
@@ -533,6 +622,8 @@ export async function stopLocalServer(): Promise<void> {
     logger.warn('停止原生服务器失败：' + String(e));
   }
   serverRunning = false;
+  runningConfig = undefined;
+  lastServerStartError = '';
   setServerFingerprint('');
   clearDiscoveryState();
   logger.info('服务器已停止');

@@ -20,9 +20,9 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | 文件 | 职责 |
 |------|------|
 | `AppCore.ets` | 共享运行时：appContext、事件总线（subscribe/unsubscribe/notifyChange）、日志、本地网卡枚举、服务器指纹 |
-| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、serverNeedsRestart 标志、LocalSend/MTA 协议总开关（get/set + 持久化）、协议部分关闭提示的已展示签名 |
+| `SettingsRepository.ets` | 全部设置（set/get + Preferences 持久化）、LocalSend/MTA 协议总开关（get/set + 持久化）、协议部分关闭提示的已展示签名；不再持有服务器重启布尔，待生效状态由 `ServerRepository` 的运行快照比较得出 |
 | `DeviceRepository.ets` | 设备身份（alias/type/model）、refreshDeviceInfo、getLocalDeviceInfo |
-| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、<br>Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
+| `ServerRepository.ets` | 服务器生命周期（start/stop/restart）、serverRunning/serverError/noWifiWarning/allInterfacesDisabled、<br>启动时捕获运行配置快照（昵称/端口/HTTPS/PIN/组播/发现超时等），提供待生效原因查询与最近启动失败原因；<br>Rust save_dir 与接收临时目录、孤儿文件清理（细节见注 1）；`startLocalServer` 入口受 LocalSend 总开关守卫（关闭时空操作） |
 | `DiscoveryRepository.ets` | 设备发现（事件处理/rescan/staged scan/手动连接） |
 | `SendRepository.ets` | 发送链路的**协议 I/O** 与零拷贝发送、文本消息准备，会话经 `LocalSendSendAdapter` 登记统一注册表（详见注 2） |
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
@@ -107,7 +107,7 @@ URIs 通过 `setPendingSharedUris/consumePendingSharedUris` inbox 传递；接�
   `initDeviceIdentity()` 与 `loadFromPreferences()`；任何设置 getter/setter 都不得早于该初始化。
   未初始化时读取按默认值处理、写入/删除被丢弃且不抛异常；`PreferencesUtil` 对每个存储实例的
   首次此类访问打一条 warn（`HandySend:PreferencesUtil`），用于定位「设置改了不生效且无报错」。
-- **模式选择**：需要「进程内有效但不持久化」的状态（如 `webLastPort`、`serverNeedsRestart`）必须用
+- **模式选择**：需要「进程内有效但不持久化」的状态（如 `webLastPort`、当前服务器运行配置快照）必须用
   `SettingsRepository` 模块变量；纯用户偏好可让 getter 直接读 Preferences，避免多一份缓存。
 - **读写路径**：VM/View 经 AppService 门面调用 `SettingsRepository`，不直接访问 `PreferencesUtil` /
   `PreferencesRepo`。设备身份是既有例外：`DeviceRepository` 初始化与刷新时直接经 `PreferencesRepo`

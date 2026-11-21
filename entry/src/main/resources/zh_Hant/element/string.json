@@ -2451,6 +2451,46 @@
     {
       "name": "receive_folder_reserved_name",
       "value": "傳送方資料夾包含應用保留的暫存目錄名稱，已拒絕接收"
+    },
+    {
+      "name": "nickname_pending_inline",
+      "value": "LocalSend 暱稱待重新啟動生效"
+    },
+    {
+      "name": "nickname_pending_title",
+      "value": "LocalSend 暱稱待重新啟動生效"
+    },
+    {
+      "name": "nickname_pending_busy",
+      "value": "傳輸結束後可重新啟動"
+    },
+    {
+      "name": "settings_pending_title",
+      "value": "%d 項設定待重新啟動"
+    },
+    {
+      "name": "settings_pending_action_settings",
+      "value": "去設定"
+    },
+    {
+      "name": "restart_server_failed",
+      "value": "重新啟動服務失敗"
+    },
+    {
+      "name": "settings_applied_toast",
+      "value": "設定已生效"
+    },
+    {
+      "name": "notice_server_start_failed",
+      "value": "伺服器啟動失敗：%s"
+    },
+    {
+      "name": "share_truncated_title",
+      "value": "部分分享內容未匯入"
+    },
+    {
+      "name": "share_truncated_message",
+      "value": "外部分享最多支援 %d 個檔案或資料夾，其中 %d 個未匯入"
     }
   ]
 }

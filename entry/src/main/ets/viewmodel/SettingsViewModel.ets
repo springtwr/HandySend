@@ -47,6 +47,10 @@ import {
   getEncryptedTransfer,
   isServerRunning,
   doesServerNeedRestart,
+  getLastServerStartError,
+  getPendingReasonCount,
+  isAliasOnlyPending,
+  isAliasPendingRestart,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   subscribe,
@@ -224,6 +228,11 @@ export class SettingsViewModel {
   @Trace public autoClearStaged: boolean = DEFAULT_AUTO_CLEAR_STAGED
   @Trace public autoOpenSessionDetail: boolean = DEFAULT_AUTO_OPEN_SESSION_DETAIL
   @Trace public serverNeedsRestart: boolean = false
+  @Trace public pendingReasonCount: number = 0
+  @Trace public aliasOnlyPending: boolean = false
+  @Trace public aliasNeedsRestart: boolean = false
+  @Trace public localSendBusy: boolean = false
+  @Trace public serverStartError: string = ''
   @Trace public hideTabBarOnScroll: boolean = DEFAULT_HIDE_TAB_BAR_ON_SCROLL
   @Trace public theme: string = DEFAULT_THEME
   @Trace public locale: string = DEFAULT_LOCALE
@@ -289,7 +298,7 @@ export class SettingsViewModel {
     this.networkWhitelist = getNetworkWhitelist();
     this.networkBlacklist = getNetworkBlacklist();
     this.serverReady = isServerRunning();
-    this.serverNeedsRestart = doesServerNeedRestart();
+    this.refreshServerPendingState();
     this.noWifiWarning = getNoWifiWarning();
     // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
     this.notificationGranted = isNotificationPermissionGranted();
@@ -312,7 +321,7 @@ export class SettingsViewModel {
   subscribe(): void {
     this.refreshCallback = () => {
       this.serverReady = isServerRunning();
-      this.serverNeedsRestart = doesServerNeedRestart();
+      this.refreshServerPendingState();
       this.noWifiWarning = getNoWifiWarning();
       this.allInterfacesDisabled = getAllInterfacesDisabled();
       // 网页方向开关可由面板内按钮改写（双向同步），此处一并重读，
@@ -338,6 +347,32 @@ export class SettingsViewModel {
 
   unsubscribe(): void {
     unsubscribe(this.refreshCallback);
+  }
+
+  /** 从运行快照刷新待生效状态；服务停止时自然为空。 */
+  refreshServerPendingState(): void {
+    this.serverNeedsRestart = doesServerNeedRestart();
+    this.pendingReasonCount = getPendingReasonCount();
+    this.aliasOnlyPending = isAliasOnlyPending();
+    this.aliasNeedsRestart = isAliasPendingRestart();
+    this.localSendBusy = listActiveSessionsByProtocolKeys(LOCALSEND_SESSION_KEYS).length > 0;
+    this.serverStartError = getLastServerStartError();
+  }
+
+  /** 仅昵称待生效时的行内重启入口：传输中不执行，失败给出原因。 */
+  async restartServerForPending(): Promise<void> {
+    if (this.localSendBusy) {
+      return;
+    }
+    await restartServer();
+    this.refreshServerPendingState();
+    if (!isServerRunning() || this.pendingReasonCount > 0) {
+      let reason: string = getLastServerStartError();
+      DialogService.showCenterToast(reason.length > 0 ? reason :
+        $r('app.string.restart_server_failed'), 3000);
+      return;
+    }
+    DialogService.showCenterToast($r('app.string.settings_applied_toast'), 2000);
   }
 
   setAlias(value: string): void {

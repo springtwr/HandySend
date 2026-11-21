@@ -31,12 +31,12 @@ import {
   processSharedUris,
   isAutoClearStagedAfterSend,
   isServerRunning,
-  doesServerNeedRestart,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   consumePendingSharedUris,
   consumePendingSharedFolders,
   consumePendingSharedTexts,
+  consumePendingSharedTruncatedCount,
   sendToDeviceMulti,
   startServer,
   restartServer,
@@ -360,6 +360,8 @@ export class SendViewModel {
   // 提示文案中 %d 的取值（仅 overLimit/softHint/folderTooMany 使用）：
   // 超上限类提示传上限值，softHint 传当前文件总数
   @Trace public batchNoticeCount: number = 0
+  // 外部分享被代码上限截断的数量：发送页显示一次防御性提示
+  @Trace public shareTruncatedCount: number = 0
   // 文件夹扫描结果缓存：StagedFile.folderScanId → 扫描结果
   private folderScans: Map<string, FolderScanResult> = new Map()
   private folderScanSeq: number = 0
@@ -390,7 +392,6 @@ export class SendViewModel {
   @Trace public isFillingStagedMeta: boolean = false
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
-  @Trace public serverNeedsRestart: boolean = false
   // 网页服务是否运行：驱动方式区网页图标绿点（服务启动即亮，不要求已挂载文件）
   @Trace public webServiceActive: boolean = false
   // 网页方向允许开关镜像：驱动菜单勾选（勾选表达开关意向，不表达传输中）
@@ -471,6 +472,11 @@ export class SendViewModel {
     return result;
   }
 
+  /** 关闭发送页外部分享截断提示。 */
+  clearShareTruncatedCount(): void {
+    this.shareTruncatedCount = 0;
+  }
+
   refresh(): void {
     // 失效手动文本条目自检：清除发送文本文件后移除底层文件已消失的条目（先于消费新内容收敛）
     this.pruneMissingStagedTextFiles();
@@ -495,6 +501,10 @@ export class SendViewModel {
         this.updateTotalSizeCache();
         this.scheduleShareSync();
       }
+    }
+    let shareTruncated: number = consumePendingSharedTruncatedCount();
+    if (shareTruncated > 0) {
+      this.shareTruncatedCount += shareTruncated;
     }
     // 消费系统分享的文件夹：逐个扫描后以聚合条目暂存（扫描是异步的，失败只提示）
     let pendingFoldersJson: string = consumePendingSharedFolders();
@@ -602,7 +612,6 @@ export class SendViewModel {
     // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
     this.serverReady = isServerRunning();
-    this.serverNeedsRestart = doesServerNeedRestart();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
     // 网页方向允许开关镜像：驱动菜单勾选（勾选表达开关意向，不表达传输中）

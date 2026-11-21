@@ -5,7 +5,7 @@ import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { LocalDeviceInfo, NetworkInterface } from '../../model/Types';
 import { getLocalInterfaces, getServerFingerprint, notifyChange } from './AppCore';
-import { getNetworkListAsArray, markServerNeedsRestart } from './SettingsRepository';
+import { getNetworkListAsArray } from './SettingsRepository';
 import { KEY_NETWORK_WHITELIST, KEY_NETWORK_BLACKLIST } from '../../utils/PreferencesUtil';
 import { isInterfaceEnabled } from '../../utils/NetworkInterfaceRules';
 
@@ -50,13 +50,11 @@ export function refreshDeviceInfo(): void {
   let newDeviceType = getSystemDeviceType();
   let newDeviceModel = deviceInfo.productModel;
 
-  // 仅当设备身份实际变化时才标记服务器重启
+  // 仅当设备身份实际变化时通知 UI；待生效状态由运行配置快照比较得出
   if (newAlias !== alias || newDeviceType !== deviceType || newDeviceModel !== deviceModel) {
     alias = newAlias;
     deviceType = newDeviceType;
     deviceModel = newDeviceModel;
-    markServerNeedsRestart();
-    // 通知 UI 刷新，让重启横幅立即显示（与 SettingsRepository 各 setter 的模式一致）
     notifyChange();
   }
 }

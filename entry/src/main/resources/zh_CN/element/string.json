@@ -2451,6 +2451,46 @@
     {
       "name": "receive_folder_reserved_name",
       "value": "发送方文件夹包含应用保留的临时目录名，已拒绝接收"
+    },
+    {
+      "name": "nickname_pending_inline",
+      "value": "LocalSend 昵称待重启生效"
+    },
+    {
+      "name": "nickname_pending_title",
+      "value": "LocalSend 昵称待重启生效"
+    },
+    {
+      "name": "nickname_pending_busy",
+      "value": "传输结束后可重启"
+    },
+    {
+      "name": "settings_pending_title",
+      "value": "%d 项设置待重启"
+    },
+    {
+      "name": "settings_pending_action_settings",
+      "value": "去设置"
+    },
+    {
+      "name": "restart_server_failed",
+      "value": "重启服务失败"
+    },
+    {
+      "name": "settings_applied_toast",
+      "value": "设置已生效"
+    },
+    {
+      "name": "notice_server_start_failed",
+      "value": "服务器启动失败：%s"
+    },
+    {
+      "name": "share_truncated_title",
+      "value": "部分分享内容未导入"
+    },
+    {
+      "name": "share_truncated_message",
+      "value": "外部分享最多支持 %d 个文件或文件夹，其中 %d 个未导入"
     }
   ]
 }

@@ -63,16 +63,21 @@ export async function persistPickedUris(uris: Array<string>): Promise<void> {
   if (policies.length === 0) {
     return;
   }
-  try {
-    await fileShare.persistPermission(policies);
-    // 持久化成功后清除此前的激活失败标记：下次访问会重新尝试激活
-    for (let i = 0; i < policies.length; i++) {
-      activationFailedUris.delete(policies[i].uri);
+  // 分批提交：外部分享上限 500，一次提交全部 policies 可能触发系统限制或明显耗时
+  const PERSIST_BATCH_SIZE: number = 50;
+  for (let start = 0; start < policies.length; start += PERSIST_BATCH_SIZE) {
+    let batch: Array<fileShare.PolicyInfo> = policies.slice(start, start + PERSIST_BATCH_SIZE);
+    try {
+      await fileShare.persistPermission(batch);
+      // 持久化成功后清除此前的激活失败标记：下次访问会重新尝试激活
+      for (let i = 0; i < batch.length; i++) {
+        activationFailedUris.delete(batch[i].uri);
+      }
+      logger.debug('URI 持久化授权成功 数量=' + batch.length);
+    } catch (e) {
+      // 部分失败时错误对象内带逐 URI 的原因，记录首个失败便于定位
+      logger.warn('URI 持久化授权失败 数量=' + batch.length + ' 原因=' + String(e));
     }
-    logger.debug('URI 持久化授权成功 数量=' + policies.length);
-  } catch (e) {
-    // 部分失败时错误对象内带逐 URI 的原因，记录首个失败便于定位
-    logger.warn('URI 持久化授权失败 数量=' + policies.length + ' 原因=' + String(e));
   }
 }
 

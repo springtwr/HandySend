@@ -2451,6 +2451,46 @@
     {
       "name": "receive_folder_reserved_name",
       "value": "The sender folder contains a reserved temporary directory name; the transfer was rejected"
+    },
+    {
+      "name": "nickname_pending_inline",
+      "value": "LocalSend nickname pending restart"
+    },
+    {
+      "name": "nickname_pending_title",
+      "value": "LocalSend nickname pending restart"
+    },
+    {
+      "name": "nickname_pending_busy",
+      "value": "Can restart after the current transfer finishes"
+    },
+    {
+      "name": "settings_pending_title",
+      "value": "%d settings pending restart"
+    },
+    {
+      "name": "settings_pending_action_settings",
+      "value": "Go to settings"
+    },
+    {
+      "name": "restart_server_failed",
+      "value": "Failed to restart service"
+    },
+    {
+      "name": "settings_applied_toast",
+      "value": "Settings applied"
+    },
+    {
+      "name": "notice_server_start_failed",
+      "value": "Server start failed: %s"
+    },
+    {
+      "name": "share_truncated_title",
+      "value": "Some shared items were not imported"
+    },
+    {
+      "name": "share_truncated_message",
+      "value": "External sharing supports up to %d files or folders; %d were not imported"
     }
   ]
 }

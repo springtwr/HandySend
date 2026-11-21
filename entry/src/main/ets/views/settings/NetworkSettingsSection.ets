@@ -492,8 +492,10 @@ export struct NetworkSettingsSection {
 
   build() {
     Column() {
-      // LocalSend 总开关关闭时不显示重启横幅（服务器已停，重启提示无意义）
-      if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
+      // 仅昵称待生效时由通用分组的行内提示承担，避免与顶部横幅重复；
+      // 多项待生效才在这里显示聚合重启入口。
+      if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart &&
+        !this.viewModel.aliasOnlyPending) {
         Row({ space: DesignTokens.space.sm }) {
           SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
             .fontSize(DesignTokens.font.iconInline)
@@ -516,9 +518,9 @@ export struct NetworkSettingsSection {
             .fontColor($r('app.color.text_on_color'))
             .backgroundColor($r('app.color.accent_blue'))
             .borderRadius(DesignTokens.radius.max)
-            .enabled(!this.isRestarting)
+            .enabled(!this.isRestarting && !this.viewModel.localSendBusy)
             .onClick(() => {
-              this.runServerAction(() => this.viewModel.restartServer());
+              this.runServerAction(() => this.viewModel.restartServerForPending());
             })
             .id('settings_server_restart_banner_btn')
         }

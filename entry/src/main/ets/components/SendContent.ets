@@ -38,6 +38,7 @@ import { isLargeTransfer } from '../utils/LargeTransferUtil';
 import { formatSizeDetailed } from '../utils/FormatUtil';
 import { getStringSync } from '../utils/ResourceUtil';
 import { isMtaDevice, MtaSendRequest } from '../model/mta/MtaMainModels';
+import { SHARE_MAX_ITEMS } from '../model/ShareInbox';
 
 const logger = getLogger(LogDomains.TRANSFER, 'HandySend:SendContent', '发送内容');
 
@@ -50,7 +51,6 @@ export struct SendContent {
   // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
   @Require @Param scroller: Scroller
   @Local refreshAngle: number = 0
-  @Local isRestarting: boolean = false
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 页面导航回调（NavBar 首页组件经 UIContext 上抛，由 MainTabFloating 持有 pathStack 执行）
@@ -1312,6 +1312,50 @@ export struct SendContent {
             .margin({ top: DesignTokens.space.md })
           }
 
+          // 外部分享截断提示：只有代码侧确实发生截断时出现；关闭后本次不再提示。
+          if (this.viewModel.shareTruncatedCount > 0) {
+            Row({ space: DesignTokens.space.sm }) {
+              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.warning_orange')])
+
+              Column({ space: DesignTokens.space.mini }) {
+                Text($r('app.string.share_truncated_title'))
+                  .fontSize(DesignTokens.font.bodyM)
+                  .fontColor($r('app.color.warning_orange'))
+                  .width('100%')
+                Text($r('app.string.share_truncated_message', SHARE_MAX_ITEMS,
+                  this.viewModel.shareTruncatedCount))
+                  .fontSize(DesignTokens.font.bodyS)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(DesignTokens.font.iconInline)
+                .fontColor([$r('app.color.text_secondary')])
+                .responseRegion({
+                  x: -14,
+                  y: -14,
+                  width: 48,
+                  height: 48
+                })
+                .onClick(() => {
+                  this.viewModel.clearShareTruncatedCount();
+                })
+                .id('send_share_truncated_dismiss')
+            }
+            .width('100%')
+            .padding(DesignTokens.space.md)
+            .backgroundColor($r('app.color.warning_bg'))
+            .borderRadius(DesignTokens.radius.lg)
+            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+            .margin({ top: DesignTokens.space.md })
+            .alignItems(VerticalAlign.Center)
+          }
+
           // 「所有传输方式均已关闭」中性提示卡：全部关闭且无任何可用路径时说明；
           // 仅部分方式关闭时由下方「部分传输方式已关闭」提示卡负责。
           // 主动禁用不是故障，故取中性/信息语义色（非警示橙），并提供「去设置」入口与关闭入口。
@@ -1408,49 +1452,6 @@ export struct SendContent {
             .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
             .margin({ top: DesignTokens.space.md })
             .alignItems(VerticalAlign.Center)
-          }
-
-          // 服务器重启警告横幅（LocalSend 总开关关闭时不显示：服务器已停，重启提示无意义）
-          if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart) {
-            Row({ space: DesignTokens.space.sm }) {
-              SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-                .fontSize(DesignTokens.font.iconInline)
-                .fontColor([$r('app.color.warning_orange')])
-
-              Text($r('app.string.server_needs_restart'))
-                .fontSize(DesignTokens.font.bodyM)
-                .fontColor($r('app.color.warning_orange'))
-                .layoutWeight(1)
-
-              if (this.isRestarting) {
-                LoadingProgress()
-                  .width(DesignTokens.font.iconInline)
-                  .height(DesignTokens.font.iconInline)
-                  .color($r('app.color.accent_blue'))
-              }
-              Button($r('app.string.restart_server'))
-                .fontSize(DesignTokens.font.bodyS)
-                .height(DesignTokens.size.inlineButton)
-                .fontColor($r('app.color.text_on_color'))
-                .backgroundColor($r('app.color.accent_blue'))
-                .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting)
-                .onClick(() => {
-                  this.isRestarting = true;
-                  this.viewModel.restartServer().then(() => {
-                    this.isRestarting = false;
-                  }).catch(() => {
-                    this.isRestarting = false;
-                  });
-                })
-                .id('send_server_restart_btn')
-            }
-            .width('100%')
-            .padding(DesignTokens.space.md)
-            .borderRadius(DesignTokens.radius.lg)
-            .backgroundColor($r('app.color.warning_bg'))
-            .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-            .margin({ top: DesignTokens.space.md })
           }
 
           // 连接警告横幅：网络/蓝牙/互传依赖按优先级只显示一条，避免多条横幅堆叠

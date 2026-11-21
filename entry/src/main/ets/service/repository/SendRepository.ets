@@ -31,9 +31,9 @@ import {
 } from '../../utils/MimeUtils';
 import { getAppContext, notifyChange } from './AppCore';
 import { DialogService } from '../DialogService';
-import { doesServerNeedRestart, getHttpsEnabled } from './SettingsRepository';
+import { getHttpsEnabled } from './SettingsRepository';
+import { doesServerNeedRestart, isServerRunning, restartServer } from './ServerRepository';
 import { getDeviceAlias } from './DeviceRepository';
-import { isServerRunning, restartServer } from './ServerRepository';
 import { getLogger } from '../../utils/Logger';
 import { forEachConcurrently } from '../../utils/AsyncBatch';
 import { progressLogThrottle } from '../../utils/ProgressLogThrottle';
@@ -93,6 +93,8 @@ let pendingSharedUrisJson: string = '';
 let pendingSharedFoldersJson: string = '';
 // 共享文本收件箱：EntryAbility 在此写入分享的文本/链接内容；SendViewModel 消费它们。
 let pendingSharedTextsJson: string = '';
+// 外部分享被代码上限截断的数量：仅用于发送页防御性提示
+let pendingSharedTruncatedCount: number = 0;
 
 // ── 发送文件信息映射（fileId → 大小/路径）──
 // 供发送方向进度事件补齐 totalBytes/filePath（新事件仅携带 progress）。
@@ -172,6 +174,20 @@ export function consumePendingSharedFolders(): string {
   let json: string = pendingSharedFoldersJson;
   pendingSharedFoldersJson = '';
   return json;
+}
+
+/** 记录外部分享被截断的数量；多次分享累计。 */
+export function addPendingSharedTruncatedCount(count: number): void {
+  if (count > 0) {
+    pendingSharedTruncatedCount += count;
+  }
+}
+
+/** 消费待展示的截断数量。 */
+export function consumePendingSharedTruncatedCount(): number {
+  let count: number = pendingSharedTruncatedCount;
+  pendingSharedTruncatedCount = 0;
+  return count;
 }
 
 export function setPendingSharedTexts(json: string): void {

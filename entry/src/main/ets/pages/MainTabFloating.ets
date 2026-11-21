@@ -67,8 +67,18 @@ import {
 } from '../service/repository/SettingsRepository';
 import {
   querySessions, getSession, getPendingSessionIds, hasSessionOrHistory, subscribeSessions,
-  unsubscribeSessions
+  unsubscribeSessions, listActiveSessionsByProtocolKeys
 } from '../service/transfer/TransferSessionRegistry';
+import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
+import { LOCAL_RECEIVE_KEY } from '../service/transfer/adapters/LocalSendReceiveAdapter';
+import {
+  getLastServerStartError,
+  getPendingReasonCount,
+  isAliasOnlyPending,
+  isServerRunning
+} from '../service/repository/ServerRepository';
+import { SettingsPendingChip } from '../components/settings/SettingsPendingChip';
+import { DialogService } from '../service/DialogService';
 import {
   SessionFilter,
   SessionStage,
@@ -108,6 +118,10 @@ struct MainTabFloating {
   // 在此标志置真后一次性构建；同时作为重量级初始化（应用服务、服务器、订阅、滚动绑定）的
   // 一次性守卫。置真时机：onPageShow 首次触发时（首帧已绘制之后），此后不再重复执行
   @Local private firstFrameContentReady: boolean = false;
+  // 壳层设置待生效状态：仅昵称时显示胶囊；多项时引导去设置
+  @Local private pendingReasonCount: number = 0;
+  @Local private aliasOnlyPending: boolean = false;
+  @Local private settingsPendingBusy: boolean = false;
   private hdsController: HdsTabsController = new HdsTabsController();
   // 底部系统导航条避让高度（vp）：>0 表示存在系统导航条。窗口在全屏/小窗/分屏间切换、
   // 旋转或折叠时该值会变化，故监听 avoidAreaChange 动态更新；底部浮动页签栏间距据此条件化
@@ -185,6 +199,7 @@ struct MainTabFloating {
         setNotifiedProtocolSignature('');
       }
     }
+    this.refreshSettingsPendingState();
   }
 
   // 变更总线回调：通知深链（热启动经变更总线送达）与回前台补开详情页共用。
@@ -193,6 +208,7 @@ struct MainTabFloating {
   private navigationCallback: () => void = (): void => {
     this.handlePendingNavigation();
     this.tryOpenPendingSessionDetail();
+    this.refreshSettingsPendingState();
   }
 
   aboutToAppear(): void {
@@ -203,6 +219,7 @@ struct MainTabFloating {
     // 相册保存自动提示回调：订阅本身延后到首帧之后，但回调字段须在订阅前完成赋值
     this.galleryPromptCallback = (): void => {
       this.detectAutoGalleryPrompt();
+      this.refreshSettingsPendingState();
     };
 
     // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
@@ -280,6 +297,7 @@ struct MainTabFloating {
     this.sendViewModel.init(context);
     this.sendViewModel.subscribeFavorites();
     this.transferViewModel.start();
+    this.refreshSettingsPendingState();
 
     // 相册保存自动提示：接收完成后用户未必停留在详情页，故在壳层订阅统一变更总线触发
     subscribeSessions(this.galleryPromptCallback);
@@ -767,11 +785,40 @@ struct MainTabFloating {
       this.refreshLocalInterfacesIfHomeVisible();
     }, 0);
     this.updateMtaScanByVisibility();
+    this.refreshSettingsPendingState();
     // 冷启动/热启动兜底：消费可能仍待处理的深链信号（消费即清空，不重复导航）
     this.handlePendingNavigation();
     // 覆盖「待确认请求在后台到达、回到前台」的场景：补开详情页一次（非前台时未消费信号）。
     // 真机实测 onPageShow 可能早于 onForeground，这里被前台判断拦下时由变更总线回调兜底重试。
     this.tryOpenPendingSessionDetail();
+  }
+
+  /** 从服务运行快照刷新壳层待生效状态；会话变化也走这里更新“传输中”。 */
+  private refreshSettingsPendingState(): void {
+    this.pendingReasonCount = getPendingReasonCount();
+    this.aliasOnlyPending = isAliasOnlyPending();
+    this.settingsPendingBusy =
+      listActiveSessionsByProtocolKeys([LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY]).length > 0;
+  }
+
+  /** 壳层昵称/设置待生效胶囊的重启动作：传输中不执行，失败给出原因。 */
+  private restartFromSettingsPending(): void {
+    if (this.settingsPendingBusy) {
+      return;
+    }
+    this.sendViewModel.restartServer().then(() => {
+      this.refreshSettingsPendingState();
+      if (!isServerRunning() || this.pendingReasonCount > 0) {
+        let reason: string = getLastServerStartError();
+        DialogService.showCenterToast(reason.length > 0 ? reason :
+          $r('app.string.restart_server_failed'), 3000);
+        return;
+      }
+      DialogService.showCenterToast($r('app.string.settings_applied_toast'), 2000);
+    }).catch(() => {
+      this.refreshSettingsPendingState();
+      DialogService.showCenterToast($r('app.string.restart_server_failed'), 3000);
+    });
   }
 
   onPageHide(): void {
@@ -1552,6 +1599,36 @@ struct MainTabFloating {
         this.navBarVisible = visible;
         this.updateMtaScanByVisibility();
       })
+
+      // 设置待生效胶囊：设置页根页签由行内提示承担，其余页签/子页面显示胶囊。
+      if (this.pendingReasonCount > 0 && (this.currentTabIndex !== 2 || this.pathStack.size() > 0)) {
+        Column() {
+          SettingsPendingChip({
+            aliasOnly: this.aliasOnlyPending,
+            reasonCount: this.pendingReasonCount,
+            busy: this.settingsPendingBusy,
+            onRestart: (): void => {
+              this.restartFromSettingsPending();
+            },
+            onOpenSettings: (): void => {
+              this.pathStack.clear(false);
+              this.switchToTab(2);
+              this.refreshSettingsPendingState();
+            }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .padding({
+          left: DesignTokens.space.md,
+          right: DesignTokens.space.md,
+          bottom: DesignTokens.size.tabBarClearance
+        })
+        .justifyContent(FlexAlign.End)
+        .alignItems(HorizontalAlign.Center)
+        .hitTestBehavior(HitTestMode.Transparent)
+        .id('settings_pending_overlay')
+      }
 
       // 拖拽悬停高亮遮罩：半透明遮罩（DesignTokens 色板中的既有遮罩色）+ 居中提示文案
       if (this.isDragOver) {

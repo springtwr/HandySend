@@ -45,6 +45,8 @@ import HistorySegmentsTest from './model/HistorySegmentsTest.test'
 import WebAddressTest from './model/WebAddressTest.test'
 import PortalSiteTest from './model/PortalSiteTest.test'
 import WebSettingsTest from './model/WebSettingsTest.test'
+import ServerRunConfigTest from './model/ServerRunConfigTest.test'
+import ShareInboxTest from './model/ShareInboxTest.test'
 
 // ── utils/ 迁移测试（原 Local Test）──
 import MimeUtilsTest from './utils/MimeUtilsTest.test'
@@ -162,6 +164,8 @@ export default function testsuite() {
   WebAddressTest()
   PortalSiteTest()
   WebSettingsTest()
+  ServerRunConfigTest()
+  ShareInboxTest()
 
   // ── utils/ 迁移测试套件 ──
   MimeUtilsTest()
