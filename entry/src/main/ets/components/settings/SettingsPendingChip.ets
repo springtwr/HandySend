@@ -12,6 +12,7 @@ export struct SettingsPendingChip {
   @Param aliasOnly: boolean = false
   @Param reasonCount: number = 0
   @Param busy: boolean = false
+  @Param restarting: boolean = false
   @Param onRestart: () => void = (): void => {
   }
   @Param onOpenSettings: () => void = (): void => {
@@ -27,7 +28,7 @@ export struct SettingsPendingChip {
       Column({ space: DesignTokens.space.mini }) {
         Text(this.aliasOnly ? $r('app.string.nickname_pending_title') :
           $r('app.string.settings_pending_title', this.reasonCount))
-          .fontSize(DesignTokens.font.bodyS)
+          .fontSize(DesignTokens.font.bodyM)
           .fontColor($r('app.color.warning_orange'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -45,7 +46,13 @@ export struct SettingsPendingChip {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      if (this.aliasOnly && !this.busy) {
+      if (this.aliasOnly && !this.busy && this.restarting) {
+        LoadingProgress()
+          .width(DesignTokens.font.iconInline)
+          .height(DesignTokens.font.iconInline)
+          .color($r('app.color.accent_blue'))
+          .id('settings_pending_restarting')
+      } else if (this.aliasOnly && !this.busy) {
         Button($r('app.string.restart_server'))
           .fontSize(DesignTokens.font.bodyS)
           .height(DesignTokens.size.inlineButton)
@@ -70,15 +77,12 @@ export struct SettingsPendingChip {
       }
     }
     .width('100%')
-    .padding({
-      left: DesignTokens.space.md,
-      right: DesignTokens.space.sm,
-      top: DesignTokens.space.sm,
-      bottom: DesignTokens.space.sm
-    })
+    .padding(DesignTokens.space.md)
     .backgroundColor($r('app.color.warning_bg'))
-    .borderRadius(DesignTokens.radius.max)
+    // 与页面内提示卡一致：使用 16vp 圆角，不做全圆角胶囊
+    .borderRadius(DesignTokens.radius.lg)
     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
+    .shadow({ radius: 12, color: '#33000000', offsetY: 4 })
     .alignItems(VerticalAlign.Center)
     .accessibilityText(this.aliasOnly ? $r('app.string.nickname_pending_title') :
       $r('app.string.settings_pending_title', this.reasonCount))
