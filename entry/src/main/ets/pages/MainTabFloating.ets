@@ -804,10 +804,10 @@ struct MainTabFloating {
 
   /** 壳层昵称/设置待生效胶囊的重启动作：传输中不执行，失败给出原因。 */
   private restartFromSettingsPending(): void {
-    logger.info('壳层昵称重启：开始 busy=' + this.settingsPendingBusy.toString() +
+    logger.debug('壳层昵称重启：开始 busy=' + this.settingsPendingBusy.toString() +
       ' aliasOnly=' + this.aliasOnlyPending.toString() + ' pending=' + this.pendingReasonCount);
     if (this.settingsPendingBusy) {
-      logger.info('壳层昵称重启：存在 LocalSend 活跃会话，跳过');
+      logger.debug('壳层昵称重启：存在 LocalSend 活跃会话，跳过');
       DialogService.showCenterToast($r('app.string.nickname_pending_busy'), 2000);
       return;
     }
@@ -823,12 +823,12 @@ struct MainTabFloating {
           $r('app.string.restart_server_failed'), 3000);
         return;
       }
-      logger.info('壳层昵称重启：成功');
+      logger.debug('壳层昵称重启：成功');
       DialogService.showCenterToast($r('app.string.settings_applied_toast'), 2000);
     }).catch(() => {
       this.settingsRestarting = false;
       this.refreshSettingsPendingState();
-      logger.warn('壳层昵称重启：Promise 异常 pending=' + this.pendingReasonCount);
+      logger.error('壳层昵称重启：Promise 异常 pending=' + this.pendingReasonCount);
       DialogService.showCenterToast($r('app.string.restart_server_failed'), 3000);
     });
   }

@@ -246,7 +246,7 @@ export default class EntryAbility extends UIAbility {
         }
         // 两者均空则静默跳过
       }
-      logger.info('分享意图汇总：records=' + records.length + ' files=' + uris.length +
+      logger.debug('分享意图汇总：records=' + records.length + ' files=' + uris.length +
         ' folders=' + folders.length + ' texts=' + texts.length);
       if (uris.length > SHARE_MAX_ITEMS) {
         truncatedCount += uris.length - SHARE_MAX_ITEMS;
@@ -271,7 +271,7 @@ export default class EntryAbility extends UIAbility {
         let merged = mergeShareTextJson(consumePendingSharedTexts(), JSON.stringify(texts));
         setPendingSharedTexts(merged.json);
       }
-      logger.info('分享收件箱：files=' + uris.length + ' folders=' + folders.length +
+      logger.debug('分享收件箱：files=' + uris.length + ' folders=' + folders.length +
         ' texts=' + texts.length + ' truncated=' + truncatedCount + ' limit=' + SHARE_MAX_ITEMS);
       if (truncatedCount > 0) {
         addPendingSharedTruncatedCount(truncatedCount);

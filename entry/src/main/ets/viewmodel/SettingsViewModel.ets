@@ -361,10 +361,10 @@ export class SettingsViewModel {
 
   /** 仅昵称待生效时的行内重启入口：传输中不执行，失败给出原因。 */
   async restartServerForPending(): Promise<void> {
-    logger.info('设置页昵称重启：开始 busy=' + this.localSendBusy.toString() +
+    logger.debug('设置页昵称重启：开始 busy=' + this.localSendBusy.toString() +
       ' aliasOnly=' + this.aliasOnlyPending.toString() + ' pending=' + this.pendingReasonCount);
     if (this.localSendBusy) {
-      logger.info('设置页昵称重启：存在 LocalSend 活跃会话，跳过');
+      logger.debug('设置页昵称重启：存在 LocalSend 活跃会话，跳过');
       DialogService.showCenterToast($r('app.string.nickname_pending_busy'), 2000);
       return;
     }
@@ -378,7 +378,7 @@ export class SettingsViewModel {
         $r('app.string.restart_server_failed'), 3000);
       return;
     }
-    logger.info('设置页昵称重启：成功');
+    logger.debug('设置页昵称重启：成功');
     DialogService.showCenterToast($r('app.string.settings_applied_toast'), 2000);
   }
 
