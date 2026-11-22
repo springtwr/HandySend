@@ -94,7 +94,8 @@
 > 已提交条目作为部分交付，只清理未提交临时文件。`maxTotalBytes` 为解压总量上限（由
 > ArkTS 按对端声明值与容差计算）、`maxEntryBytes` 为单条目解压上限（0 表示不限制）；
 > `connectTimeoutMs`/`stallTimeoutMs`/`headerTimeoutMs` 分别覆盖连接、下载停滞与等待
-> 响应头超时（缺省用 Rust 侧默认值）。
+> 响应头超时（缺省用 Rust 侧默认值）。接收下载的取消令牌登记在 `mta_receive_transfers`，
+> 与 LocalSend 的 `active_transfers` 分表存放，停止/重启 LocalSend 服务器不会中断 MTA 接收。
 >
 > **注 5**：`nativeSendFiles` 的 `sendKey` 为调用方生成的本会话原生发送键：Rust 以它为键登记
 > 取消令牌，并在 prepare 与上传阶段全程复用；`nativeCancelTransferLocal(sendKey)` 因而只中止

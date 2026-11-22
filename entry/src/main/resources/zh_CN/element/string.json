@@ -405,12 +405,12 @@
       "value": "发现超时（毫秒）"
     },
     {
-      "name": "server_needs_restart",
-      "value": "LocalSend 设置已修改，重启服务后生效"
-    },
-    {
       "name": "restart_server",
       "value": "重启服务"
+    },
+    {
+      "name": "restart_server_short",
+      "value": "重启"
     },
     {
       "name": "localsend_enabled_label",
@@ -2453,32 +2453,40 @@
       "value": "发送方文件夹包含应用保留的临时目录名，已拒绝接收"
     },
     {
-      "name": "nickname_pending_inline",
-      "value": "LocalSend 昵称待重启生效"
-    },
-    {
       "name": "nickname_pending_title",
-      "value": "LocalSend 昵称待重启生效"
+      "value": "新昵称尚未生效"
     },
     {
-      "name": "nickname_pending_busy",
-      "value": "传输结束后可重启"
+      "name": "nickname_pending_effect",
+      "value": "LocalSend 昵称将在服务重启后生效"
     },
     {
       "name": "settings_pending_title",
-      "value": "%d 项设置待重启"
+      "value": "%d 项设置尚未生效"
     },
     {
-      "name": "settings_pending_action_settings",
-      "value": "去设置"
+      "name": "settings_pending_effect",
+      "value": "LocalSend 设置将在服务重启后生效"
+    },
+    {
+      "name": "settings_pending_interrupt_hint",
+      "value": "重启将中断进行中的 LocalSend 传输"
+    },
+    {
+      "name": "server_restart_confirm_title",
+      "value": "重启服务？"
+    },
+    {
+      "name": "server_restart_confirm_message",
+      "value": "进行中的 LocalSend 传输将会中断"
     },
     {
       "name": "restart_server_failed",
       "value": "重启服务失败"
     },
     {
-      "name": "settings_applied_toast",
-      "value": "设置已生效"
+      "name": "localsend_restarted_toast",
+      "value": "LocalSend 服务已重启"
     },
     {
       "name": "notice_server_start_failed",

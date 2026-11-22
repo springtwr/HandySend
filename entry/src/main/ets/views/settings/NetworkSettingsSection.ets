@@ -492,46 +492,6 @@ export struct NetworkSettingsSection {
 
   build() {
     Column() {
-      // 仅昵称待生效时由通用分组的行内提示承担，避免与顶部横幅重复；
-      // 多项待生效才在这里显示聚合重启入口。
-      if (this.viewModel.localSendEnabled && this.viewModel.serverNeedsRestart &&
-        !this.viewModel.aliasOnlyPending) {
-        Row({ space: DesignTokens.space.sm }) {
-          SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-            .fontSize(DesignTokens.font.iconInline)
-            .fontColor([$r('app.color.warning_orange')])
-
-          Text($r('app.string.server_needs_restart'))
-            .fontSize(DesignTokens.font.bodyM)
-            .fontColor($r('app.color.warning_orange'))
-            .layoutWeight(1)
-
-          if (this.isRestarting) {
-            LoadingProgress()
-              .width(DesignTokens.font.iconInline)
-              .height(DesignTokens.font.iconInline)
-              .color($r('app.color.accent_blue'))
-          }
-          Button($r('app.string.restart_server'))
-            .fontSize(DesignTokens.font.bodyS)
-            .height(DesignTokens.size.inlineButton)
-            .fontColor($r('app.color.text_on_color'))
-            .backgroundColor($r('app.color.accent_blue'))
-            .borderRadius(DesignTokens.radius.max)
-            .enabled(!this.isRestarting && !this.viewModel.localSendBusy)
-            .onClick(() => {
-              this.runServerAction(() => this.viewModel.restartServerForPending());
-            })
-            .id('settings_server_restart_banner_btn')
-        }
-        .width('100%')
-        .padding(DesignTokens.space.md)
-        .borderRadius(DesignTokens.radius.lg)
-        .backgroundColor($r('app.color.warning_bg'))
-        .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
-        .margin({ top: DesignTokens.space.md })
-      }
-
       // 网络警告横幅（LocalSend 总开关开启、服务器运行中时显示）
       // 没有网络连接优先级高于接口关闭；LocalSend 总开关显式联动，与发送页同口径
       if (this.viewModel.localSendEnabled && this.viewModel.noWifiWarning && this.viewModel.serverReady) {

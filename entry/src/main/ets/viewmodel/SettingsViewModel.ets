@@ -24,7 +24,7 @@ import {
   setVerifyChecksums,
   setAutoClearStagedAfterSend,
   setAutoConfirmMode,
-  restartServer,
+  restartServer as restartLocalSendServer,
   startServer,
   stopServer,
   getAutoConfirmMode,
@@ -46,11 +46,7 @@ import {
   getDiscoveryTimeout,
   getEncryptedTransfer,
   isServerRunning,
-  doesServerNeedRestart,
   getLastServerStartError,
-  getPendingReasonCount,
-  isAliasOnlyPending,
-  isAliasPendingRestart,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   subscribe,
@@ -159,6 +155,7 @@ import {
   cancelSessions as cancelActiveSessions,
   confirmDisableDirection
 } from '../service/transfer/ProtocolDisableGuard';
+import { confirmLocalSendRestart } from '../service/transfer/LocalSendRestartGuard';
 import { listActiveSessionsByProtocolKeys } from '../service/transfer/TransferSessionRegistry';
 import { DialogService } from '../service/DialogService';
 import { TransferSession } from '../model/transfer/TransferSession';
@@ -227,11 +224,6 @@ export class SettingsViewModel {
   @Trace public verifyChecksums: boolean = DEFAULT_VERIFY_CHECKSUMS
   @Trace public autoClearStaged: boolean = DEFAULT_AUTO_CLEAR_STAGED
   @Trace public autoOpenSessionDetail: boolean = DEFAULT_AUTO_OPEN_SESSION_DETAIL
-  @Trace public serverNeedsRestart: boolean = false
-  @Trace public pendingReasonCount: number = 0
-  @Trace public aliasOnlyPending: boolean = false
-  @Trace public aliasNeedsRestart: boolean = false
-  @Trace public localSendBusy: boolean = false
   @Trace public serverStartError: string = ''
   @Trace public hideTabBarOnScroll: boolean = DEFAULT_HIDE_TAB_BAR_ON_SCROLL
   @Trace public theme: string = DEFAULT_THEME
@@ -298,7 +290,7 @@ export class SettingsViewModel {
     this.networkWhitelist = getNetworkWhitelist();
     this.networkBlacklist = getNetworkBlacklist();
     this.serverReady = isServerRunning();
-    this.refreshServerPendingState();
+    this.refreshServerStartError();
     this.noWifiWarning = getNoWifiWarning();
     // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
     this.notificationGranted = isNotificationPermissionGranted();
@@ -321,7 +313,7 @@ export class SettingsViewModel {
   subscribe(): void {
     this.refreshCallback = () => {
       this.serverReady = isServerRunning();
-      this.refreshServerPendingState();
+      this.refreshServerStartError();
       this.noWifiWarning = getNoWifiWarning();
       this.allInterfacesDisabled = getAllInterfacesDisabled();
       // 网页方向开关可由面板内按钮改写（双向同步），此处一并重读，
@@ -349,37 +341,9 @@ export class SettingsViewModel {
     unsubscribe(this.refreshCallback);
   }
 
-  /** 从运行快照刷新待生效状态；服务停止时自然为空。 */
-  refreshServerPendingState(): void {
-    this.serverNeedsRestart = doesServerNeedRestart();
-    this.pendingReasonCount = getPendingReasonCount();
-    this.aliasOnlyPending = isAliasOnlyPending();
-    this.aliasNeedsRestart = isAliasPendingRestart();
-    this.localSendBusy = listActiveSessionsByProtocolKeys(LOCALSEND_SESSION_KEYS).length > 0;
+  /** 刷新服务器启动错误；待生效状态由壳层提示卡与重启守卫统一处理。 */
+  refreshServerStartError(): void {
     this.serverStartError = getLastServerStartError();
-  }
-
-  /** 仅昵称待生效时的行内重启入口：传输中不执行，失败给出原因。 */
-  async restartServerForPending(): Promise<void> {
-    logger.debug('设置页昵称重启：开始 busy=' + this.localSendBusy.toString() +
-      ' aliasOnly=' + this.aliasOnlyPending.toString() + ' pending=' + this.pendingReasonCount);
-    if (this.localSendBusy) {
-      logger.debug('设置页昵称重启：存在 LocalSend 活跃会话，跳过');
-      DialogService.showCenterToast($r('app.string.nickname_pending_busy'), 2000);
-      return;
-    }
-    await restartServer();
-    this.refreshServerPendingState();
-    if (!isServerRunning() || this.pendingReasonCount > 0) {
-      let reason: string = getLastServerStartError();
-      logger.warn('设置页昵称重启：未生效 running=' + isServerRunning().toString() +
-        ' pending=' + this.pendingReasonCount + ' reason=' + reason);
-      DialogService.showCenterToast(reason.length > 0 ? reason :
-        $r('app.string.restart_server_failed'), 3000);
-      return;
-    }
-    logger.debug('设置页昵称重启：成功');
-    DialogService.showCenterToast($r('app.string.settings_applied_toast'), 2000);
   }
 
   setAlias(value: string): void {
@@ -827,8 +791,13 @@ export class SettingsViewModel {
     setVerifyChecksums(on);
   }
 
-  restartServer(): Promise<string | void> {
-    return restartServer();
+  /** 设置页服务器状态的重启入口：有 LocalSend 传输时先确认，确认后中断并重启。 */
+  async restartServer(): Promise<string | void> {
+    let confirmed: boolean = await confirmLocalSendRestart();
+    if (!confirmed) {
+      return;
+    }
+    return restartLocalSendServer();
   }
 
   startServer(): Promise<string | void> {

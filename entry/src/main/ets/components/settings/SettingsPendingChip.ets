@@ -1,8 +1,10 @@
 /**
  * SettingsPendingChip.ets — 壳层设置待生效提示
  *
- * 仅昵称待生效时显示“重启服务”；多项待生效时只引导去设置，
- * 避免在非设置页直接重启并中断传输。
+ * 提供“重启服务”动作；存在 LocalSend 传输时不禁用，
+ * 点击后先确认 LocalSend 传输将中断，确认后再重启。
+ * 排版与发送失败浮卡一致：短标题 + 正文列 + 右侧按钮；
+ * 长文案放正文，标题保持一行，避免标题列被按钮挤窄后截断。
  */
 
 import { DesignTokens } from '../../common/DesignTokens';
@@ -14,8 +16,6 @@ export struct SettingsPendingChip {
   @Param busy: boolean = false
   @Param restarting: boolean = false
   @Param onRestart: () => void = (): void => {
-  }
-  @Param onOpenSettings: () => void = (): void => {
   }
 
   build() {
@@ -29,16 +29,25 @@ export struct SettingsPendingChip {
         Text(this.aliasOnly ? $r('app.string.nickname_pending_title') :
           $r('app.string.settings_pending_title', this.reasonCount))
           .fontSize(DesignTokens.font.bodyM)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.warning_orange'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
 
-        if (this.aliasOnly && this.busy) {
-          Text($r('app.string.nickname_pending_busy'))
+        Text(this.aliasOnly ? $r('app.string.nickname_pending_effect') :
+          $r('app.string.settings_pending_effect'))
+          .fontSize(DesignTokens.font.bodyS)
+          .fontColor($r('app.color.text_secondary'))
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+
+        if (this.busy && !this.restarting) {
+          Text($r('app.string.settings_pending_interrupt_hint'))
             .fontSize(DesignTokens.font.bodyS)
             .fontColor($r('app.color.text_secondary'))
-            .maxLines(1)
+            .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
         }
@@ -46,14 +55,15 @@ export struct SettingsPendingChip {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      if (this.aliasOnly && !this.busy && this.restarting) {
+      if (this.restarting) {
         LoadingProgress()
           .width(DesignTokens.font.iconInline)
           .height(DesignTokens.font.iconInline)
           .color($r('app.color.accent_blue'))
           .id('settings_pending_restarting')
-      } else if (this.aliasOnly && !this.busy) {
-        Button($r('app.string.restart_server'))
+      } else {
+        // 卡片内使用短文案，给标题/正文留出宽度；完整“重启服务”见确认弹窗与设置页状态行
+        Button($r('app.string.restart_server_short'))
           .fontSize(DesignTokens.font.bodyS)
           .height(DesignTokens.size.inlineButton)
           .fontColor($r('app.color.text_on_color'))
@@ -63,17 +73,6 @@ export struct SettingsPendingChip {
             this.onRestart();
           })
           .id('settings_pending_restart_btn')
-      } else if (!this.aliasOnly) {
-        Button($r('app.string.settings_pending_action_settings'))
-          .fontSize(DesignTokens.font.bodyS)
-          .height(DesignTokens.size.inlineButton)
-          .fontColor($r('app.color.text_on_color'))
-          .backgroundColor($r('app.color.accent_blue'))
-          .borderRadius(DesignTokens.radius.max)
-          .onClick(() => {
-            this.onOpenSettings();
-          })
-          .id('settings_pending_open_btn')
       }
     }
     .width('100%')
@@ -84,8 +83,6 @@ export struct SettingsPendingChip {
     .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.warning_orange') })
     .shadow({ radius: 12, color: '#33000000', offsetY: 4 })
     .alignItems(VerticalAlign.Center)
-    .accessibilityText(this.aliasOnly ? $r('app.string.nickname_pending_title') :
-      $r('app.string.settings_pending_title', this.reasonCount))
     .id('settings_pending_chip')
   }
 }

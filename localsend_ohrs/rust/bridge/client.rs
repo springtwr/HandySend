@@ -712,12 +712,16 @@ pub async fn cancel_transfer_remote(
 ///
 /// 局域网发送以调用方生成、随 `send_files` 下传的 sendKey 为键；
 /// 接收等场景以会话标识为键。并发发送下不同会话的键互不相同。
+/// MTA 接收下载的令牌登记在 `mta_receive_transfers`，这里一并查找。
 pub fn cancel_transfer(state: &BridgeState, session_id: &str) {
     if let Some(cancel) = state.active_transfers.get(session_id) {
         log::debug!("取消：触发取消 session={}", session_id);
         cancel.cancel();
+    } else if let Some(cancel) = state.mta_receive_transfers.get(session_id) {
+        log::debug!("取消：触发取消 MTA 接收 task={}", session_id);
+        cancel.cancel();
     } else {
-        log::debug!("取消：会话无 active_transfers 记录 session={}", session_id);
+        log::debug!("取消：无取消令牌记录 session={}", session_id);
     }
 }
 
@@ -918,6 +922,17 @@ mod tests {
             .active_transfers
             .insert("session-1".to_string(), cancel.clone());
         cancel_transfer(&state, "session-1");
+        assert!(cancel.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancel_transfer_mta_receive() {
+        let mut state = BridgeState::new();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        state
+            .mta_receive_transfers
+            .insert("mta-task-1".to_string(), cancel.clone());
+        cancel_transfer(&state, "mta-task-1");
         assert!(cancel.is_cancelled());
     }
 

@@ -186,7 +186,7 @@ pub async fn native_mta_receive_download(
     // 清理本次登记（成功/失败/取消均执行）
     {
         let mut s = lock(state);
-        s.active_transfers.remove(&task_id);
+        s.mta_receive_transfers.remove(&task_id);
         if let Some(id) = cancel_token_id.as_deref() {
             if !id.is_empty() {
                 s.cancel_tokens.remove(id);
@@ -227,7 +227,8 @@ fn duration_from_ms(value: Option<f64>, fallback: Duration) -> Duration {
     }
 }
 
-/// 解析（或创建）取消令牌，并登记到 `active_transfers[taskId]` 供按 taskId 取消。
+/// 解析（或创建）取消令牌，并登记到 `mta_receive_transfers[taskId]` 供按 taskId 取消。
+/// MTA 接收下载与 LocalSend 传输的取消令牌分表存放，避免停止 LocalSend 服务器时误取消。
 fn resolve_cancel_token(
     state: &Mutex<BridgeState>,
     cancel_token_id: Option<&str>,
@@ -243,7 +244,7 @@ fn resolve_cancel_token(
         }
     };
     lock(state)
-        .active_transfers
+        .mta_receive_transfers
         .insert(task_id.to_string(), token.clone());
     token
 }

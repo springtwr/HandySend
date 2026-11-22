@@ -32,7 +32,6 @@ import {
 import { getAppContext, notifyChange } from './AppCore';
 import { DialogService } from '../DialogService';
 import { getHttpsEnabled } from './SettingsRepository';
-import { doesServerNeedRestart, isServerRunning, restartServer } from './ServerRepository';
 import { getDeviceAlias } from './DeviceRepository';
 import { getLogger } from '../../utils/Logger';
 import { forEachConcurrently } from '../../utils/AsyncBatch';
@@ -409,14 +408,8 @@ export async function sendToDevice(
     logger.debug('发送前会话已终态，跳过：对端=' + device.alias);
     return sendAbortedResult(unifiedSessionId);
   }
-  // 若存在待应用的配置变更（如 HTTPS 开关）且服务器正在运行，自动重启服务器，
-  // 确保运行中的服务器协议与当前设置一致。
-  // 服务器未运行时不拉起：发送为纯客户端操作，静默开启监听端口超出用户预期，
-  // 且未运行的服务器下次启动时本就读取最新设置，无需借发送流程补启动。
-  if (doesServerNeedRestart() && isServerRunning()) {
-    logger.debug('发送前自动重启服务器…');
-    await restartServer();
-  }
+  // 待生效的 LocalSend 设置由壳层提示卡/设置页手动重启应用；发送请求读取原生运行态
+  // 快照（旧端口/协议/昵称），与运行中的服务器保持一致，此处不自动重启以免静默中断其他传输。
 
   // 协议协商逻辑（加密不可降级策略）：
   let localHttps = getHttpsEnabled();

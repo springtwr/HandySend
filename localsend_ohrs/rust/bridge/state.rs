@@ -94,6 +94,10 @@ pub struct BridgeState {
     pub pending_decisions: HashMap<String, oneshot::Sender<PrepareUploadDecisionV2>>,
     /// 进行中的传输取消令牌（发送侧与接收侧共用）。
     pub active_transfers: HashMap<String, tokio_util::sync::CancellationToken>,
+    /// MTA 接收下载的取消令牌（taskId → token）。
+    /// 与 LocalSend 的 active_transfers 分开存放：停止/重启 LocalSend 服务器
+    /// 只应中断 LocalSend 传输，不得取消 MTA 接收。
+    pub mta_receive_transfers: HashMap<String, tokio_util::sync::CancellationToken>,
     /// 以 UUID id 为键的取消令牌，用于对哈希/上传操作进行细粒度取消。
     pub cancel_tokens: HashMap<String, tokio_util::sync::CancellationToken>,
     pub pending_requests: Arc<Mutex<Vec<PendingRequest>>>,
@@ -136,6 +140,7 @@ impl BridgeState {
             event_tx: None,
             pending_decisions: HashMap::new(),
             active_transfers: HashMap::new(),
+            mta_receive_transfers: HashMap::new(),
             cancel_tokens: HashMap::new(),
             pending_requests: Arc::new(Mutex::new(Vec::new())),
             session_peers: HashMap::new(),

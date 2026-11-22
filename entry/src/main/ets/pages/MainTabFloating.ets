@@ -72,6 +72,11 @@ import {
 import { LOCAL_SEND_KEY } from '../service/transfer/adapters/LocalSendSendAdapter';
 import { LOCAL_RECEIVE_KEY } from '../service/transfer/adapters/LocalSendReceiveAdapter';
 import {
+  clearLocalSendRestartConfirmPresenter,
+  confirmLocalSendRestart,
+  setLocalSendRestartConfirmPresenter
+} from '../service/transfer/LocalSendRestartGuard';
+import {
   getLastServerStartError,
   getPendingReasonCount,
   isAliasOnlyPending,
@@ -118,11 +123,15 @@ struct MainTabFloating {
   // 在此标志置真后一次性构建；同时作为重量级初始化（应用服务、服务器、订阅、滚动绑定）的
   // 一次性守卫。置真时机：onPageShow 首次触发时（首帧已绘制之后），此后不再重复执行
   @Local private firstFrameContentReady: boolean = false;
-  // 壳层设置待生效状态：仅昵称时显示胶囊；多项时引导去设置
+  // 壳层设置待生效状态：仅昵称时显示昵称文案；多项时显示聚合数量
   @Local private pendingReasonCount: number = 0;
   @Local private aliasOnlyPending: boolean = false;
   @Local private settingsPendingBusy: boolean = false;
   @Local private settingsRestarting: boolean = false;
+  // 重启确认弹窗：回调与弹窗 ID（-1 空闲，-2 打开中）
+  private restartConfirmCallback: (confirmed: boolean) => void = (): void => {
+  };
+  private restartConfirmDialogId: number = -1;
   private hdsController: HdsTabsController = new HdsTabsController();
   // 底部系统导航条避让高度（vp）：>0 表示存在系统导航条。窗口在全屏/小窗/分屏间切换、
   // 旋转或折叠时该值会变化，故监听 avoidAreaChange 动态更新；底部浮动页签栏间距据此条件化
@@ -226,6 +235,11 @@ struct MainTabFloating {
     // 冷启动深链：onCreate 已置位信号，此处首次消费（onPageShow 亦会兜底一次，消费即清空不重复）
     this.handlePendingNavigation();
 
+    // 重启确认弹窗由壳层组件打开：DialogV2 的 builder 必须绑定组件上下文
+    setLocalSendRestartConfirmPresenter((onResult: (confirmed: boolean) => void): void => {
+      this.showLocalSendRestartConfirm(onResult);
+    });
+
     // 底部页签栏间距依赖系统导航条避让高度：注册避让区监听（同时完成初始取值）
     this.registerAvoidAreaListener();
   }
@@ -322,6 +336,7 @@ struct MainTabFloating {
   }
 
   aboutToDisappear(): void {
+    clearLocalSendRestartConfirmPresenter();
     this.viewModel.stop();
     this.sendViewModel.unsubscribeFavorites();
     this.transferViewModel.stop();
@@ -802,33 +817,121 @@ struct MainTabFloating {
       listActiveSessionsByProtocolKeys([LOCAL_SEND_KEY, LOCAL_RECEIVE_KEY]).length > 0;
   }
 
-  /** 壳层昵称/设置待生效胶囊的重启动作：传输中不执行，失败给出原因。 */
+  /**
+   * 壳层设置待生效卡片的“重启服务”动作。
+   * 无活跃 LocalSend 传输时直接重启；有传输时先确认，
+   * 确认后中断这些传输再重启。
+   */
   private restartFromSettingsPending(): void {
-    logger.debug('壳层昵称重启：开始 busy=' + this.settingsPendingBusy.toString() +
-      ' aliasOnly=' + this.aliasOnlyPending.toString() + ' pending=' + this.pendingReasonCount);
-    if (this.settingsPendingBusy) {
-      logger.debug('壳层昵称重启：存在 LocalSend 活跃会话，跳过');
-      DialogService.showCenterToast($r('app.string.nickname_pending_busy'), 2000);
+    if (this.settingsRestarting) {
       return;
     }
+    logger.debug('壳层待生效重启：开始 busy=' + this.settingsPendingBusy.toString() +
+      ' aliasOnly=' + this.aliasOnlyPending.toString() + ' pending=' + this.pendingReasonCount);
+    confirmLocalSendRestart().then((confirmed: boolean): void => {
+      if (!confirmed) {
+        logger.debug('壳层待生效重启：用户取消');
+        return;
+      }
+      this.doRestartFromSettingsPending();
+    });
+  }
+
+  /**
+   * 打开 LocalSend 重启确认弹窗（由重启守卫经 presenter 调用）。
+   * DialogV2 的 builder 形式必须从组件方法打开，不能放在非 UI 服务里。
+   */
+  private showLocalSendRestartConfirm(onResult: (confirmed: boolean) => void): void {
+    if (this.restartConfirmDialogId !== -1) {
+      // 已有确认弹窗在场：本次请求按取消处理，避免覆盖前一次回调
+      onResult(false);
+      return;
+    }
+    this.restartConfirmDialogId = -2;
+    this.restartConfirmCallback = onResult;
+    let options: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.localSendRestartConfirmDialog();
+      },
+      alignment: DialogAlignment.Center,
+      onWillDismiss: (action: DismissDialogAction) => {
+        this.settleLocalSendRestartConfirm(false);
+        action.dismiss();
+      }
+    };
+    this.getUIContext().getPromptAction().openCustomDialog(options).then((id: number) => {
+      if (this.restartConfirmDialogId === -2) {
+        this.restartConfirmDialogId = id;
+        return;
+      }
+      // 极快点击已在 ID 返回前结算：立即关闭，避免弹窗残留或下一轮被误判为占用
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(id);
+      } catch (_e) {
+      }
+    }).catch((e: BusinessError) => {
+      logger.warn('打开重启确认弹窗失败：' + JSON.stringify(e));
+      this.restartConfirmDialogId = -1;
+      this.settleLocalSendRestartConfirm(false);
+    });
+  }
+
+  /** 结算重启确认弹窗：关闭弹窗并回调守卫（成功/取消）。 */
+  private settleLocalSendRestartConfirm(confirmed: boolean): void {
+    let callback = this.restartConfirmCallback;
+    this.restartConfirmCallback = (): void => {
+    };
+    if (this.restartConfirmDialogId >= 0) {
+      try {
+        this.getUIContext().getPromptAction().closeCustomDialog(this.restartConfirmDialogId);
+      } catch (_e) {
+      }
+    }
+    this.restartConfirmDialogId = -1;
+    callback(confirmed);
+  }
+
+  /** LocalSend 重启确认：与设置页其他简单确认相同的 DialogV2 样式。 */
+  @Builder
+  localSendRestartConfirmDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.server_restart_confirm_title'),
+      content: $r('app.string.server_restart_confirm_message'),
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.settleLocalSendRestartConfirm(false);
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.restart_server'),
+        action: () => {
+          this.settleLocalSendRestartConfirm(true);
+        }
+      })
+    })
+  }
+
+  /** 执行重启并给出成功/失败反馈。 */
+  private doRestartFromSettingsPending(): void {
     this.settingsRestarting = true;
     this.sendViewModel.restartServer().then(() => {
       this.settingsRestarting = false;
       this.refreshSettingsPendingState();
       if (!isServerRunning() || this.pendingReasonCount > 0) {
         let reason: string = getLastServerStartError();
-        logger.warn('壳层昵称重启：未生效 running=' + isServerRunning().toString() +
+        logger.warn('壳层待生效重启：未生效 running=' + isServerRunning().toString() +
           ' pending=' + this.pendingReasonCount + ' reason=' + reason);
         DialogService.showCenterToast(reason.length > 0 ? reason :
           $r('app.string.restart_server_failed'), 3000);
         return;
       }
-      logger.debug('壳层昵称重启：成功');
-      DialogService.showCenterToast($r('app.string.settings_applied_toast'), 2000);
+      logger.debug('壳层待生效重启：成功');
+      DialogService.showCenterToast($r('app.string.localsend_restarted_toast'), 2000);
     }).catch(() => {
       this.settingsRestarting = false;
       this.refreshSettingsPendingState();
-      logger.error('壳层昵称重启：Promise 异常 pending=' + this.pendingReasonCount);
+      logger.error('壳层待生效重启：Promise 异常 pending=' + this.pendingReasonCount);
       DialogService.showCenterToast($r('app.string.restart_server_failed'), 3000);
     });
   }
@@ -1612,33 +1715,34 @@ struct MainTabFloating {
         this.updateMtaScanByVisibility();
       })
 
-      // 设置待生效胶囊：设置页根页签由行内提示承担，其余页签/子页面显示胶囊。
-      if (this.pendingReasonCount > 0 && (this.currentTabIndex !== 2 || this.pathStack.size() > 0)) {
+      // 设置待生效提示卡：所有主页签统一显示，设置页不再使用页内待生效横幅。
+      // 摆放与发送失败浮卡一致：宽屏侧边栏形态贴右下角（400vp，24vp 边距）；
+      // 其余形态底部居中，窄屏占窗口 92%，平板/宽屏固定 480vp。
+      if (this.pendingReasonCount > 0) {
         Column() {
-          SettingsPendingChip({
-            aliasOnly: this.aliasOnlyPending,
-            reasonCount: this.pendingReasonCount,
-            busy: this.settingsPendingBusy,
-            restarting: this.settingsRestarting,
-            onRestart: (): void => {
-              this.restartFromSettingsPending();
-            },
-            onOpenSettings: (): void => {
-              this.pathStack.clear(false);
-              this.switchToTab(2);
-              this.refreshSettingsPendingState();
-            }
-          })
+          Column() {
+            SettingsPendingChip({
+              aliasOnly: this.aliasOnlyPending,
+              reasonCount: this.pendingReasonCount,
+              busy: this.settingsPendingBusy,
+              restarting: this.settingsRestarting,
+              onRestart: (): void => {
+                this.restartFromSettingsPending();
+              }
+            })
+          }
+          .width(this.useWidescreenSideBar() ? 400 :
+            (isNarrowWidth(this.breakpointInfo.widthBreakpoint) ? '92%' : 480))
         }
         .width('100%')
         .height('100%')
         .padding({
-          left: DesignTokens.space.md,
-          right: DesignTokens.space.md,
-          bottom: DesignTokens.size.tabBarClearance
+          right: this.useWidescreenSideBar() ? DesignTokens.space.lg : 0,
+          bottom: this.useWidescreenSideBar() ?
+            DesignTokens.space.lg + this.naviIndicatorHeight : DesignTokens.size.tabBarClearance
         })
         .justifyContent(FlexAlign.End)
-        .alignItems(HorizontalAlign.Center)
+        .alignItems(this.useWidescreenSideBar() ? HorizontalAlign.End : HorizontalAlign.Center)
         .hitTestBehavior(HitTestMode.Transparent)
         .id('settings_pending_overlay')
       }

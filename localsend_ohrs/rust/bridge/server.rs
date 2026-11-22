@@ -548,6 +548,8 @@ pub fn stop_server(state: &Mutex<BridgeState>) {
         task.abort();
     }
     s.server_handle.take();
+    // 仅取消 LocalSend 侧传输（发送键/会话标识）。MTA 接收下载登记在
+    // mta_receive_transfers，停止 LocalSend 服务器不得联动中断。
     for (_key, cancel) in s.active_transfers.drain() {
         cancel.cancel();
     }
@@ -961,6 +963,9 @@ mod tests {
         let cancel = tokio_util::sync::CancellationToken::new();
         bs.active_transfers
             .insert("transfer-1".to_string(), cancel.clone());
+        let mta_cancel = tokio_util::sync::CancellationToken::new();
+        bs.mta_receive_transfers
+            .insert("mta-task-1".to_string(), mta_cancel.clone());
         let state = Mutex::new(bs);
 
         stop_server(&state);
@@ -972,6 +977,11 @@ mod tests {
         assert!(s.active_transfers.is_empty());
         assert!(s.pending_decisions.is_empty());
         assert!(cancel.is_cancelled(), "活跃传输的取消令牌应被触发");
+        assert!(
+            !mta_cancel.is_cancelled(),
+            "停止 LocalSend 服务器不应取消 MTA 接收下载"
+        );
+        assert_eq!(s.mta_receive_transfers.len(), 1);
     }
 
     #[test]

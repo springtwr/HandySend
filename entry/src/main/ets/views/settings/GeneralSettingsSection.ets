@@ -214,50 +214,6 @@ export struct GeneralSettingsSection {
       })
       .id('settings_alias_entry')
 
-      // 昵称待重启行内提示：仅昵称时提供重启入口；多项待生效时由网络设置顶部横幅承担动作。
-      if (this.viewModel.aliasNeedsRestart) {
-        Row({ space: DesignTokens.space.sm }) {
-          SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
-            .fontSize(DesignTokens.font.iconInline)
-            .fontColor([$r('app.color.warning_orange')])
-
-          Column({ space: DesignTokens.space.mini }) {
-            Text($r('app.string.nickname_pending_inline'))
-              .fontSize(DesignTokens.font.bodyS)
-              .fontColor($r('app.color.warning_orange'))
-              .width('100%')
-            if (this.viewModel.aliasOnlyPending && this.viewModel.localSendBusy) {
-              Text($r('app.string.nickname_pending_busy'))
-                .fontSize(DesignTokens.font.bodyS)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-            }
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-
-          if (this.viewModel.aliasOnlyPending && !this.viewModel.localSendBusy) {
-            Button($r('app.string.restart_server'))
-              .fontSize(DesignTokens.font.bodyS)
-              .height(DesignTokens.size.inlineButton)
-              .fontColor($r('app.color.text_on_color'))
-              .backgroundColor($r('app.color.accent_blue'))
-              .borderRadius(DesignTokens.radius.max)
-              .onClick(() => {
-                this.viewModel.restartServerForPending();
-              })
-              .id('settings_alias_restart_btn')
-          }
-        }
-        .width('100%')
-        .padding(DesignTokens.space.sm)
-        .backgroundColor($r('app.color.warning_bg'))
-        .borderRadius(DesignTokens.radius.md)
-        .margin({ bottom: DesignTokens.space.tiny })
-        .alignItems(VerticalAlign.Center)
-        .id('settings_alias_pending_hint')
-      }
-
       // 文件保存目录：默认 Download/<包名>（界面显示应用名）；自定义目录需设备具备文件夹选择能力
       Row() {
         Text($r('app.string.receive_directory_label'))

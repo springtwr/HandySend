@@ -405,12 +405,12 @@
       "value": "探索逾時（毫秒）"
     },
     {
-      "name": "server_needs_restart",
-      "value": "LocalSend 設定已修改，重啟服務後生效"
-    },
-    {
       "name": "restart_server",
       "value": "重啟服務"
+    },
+    {
+      "name": "restart_server_short",
+      "value": "重新啟動"
     },
     {
       "name": "localsend_enabled_label",
@@ -2453,32 +2453,40 @@
       "value": "傳送方資料夾包含應用保留的暫存目錄名稱，已拒絕接收"
     },
     {
-      "name": "nickname_pending_inline",
-      "value": "LocalSend 暱稱待重新啟動生效"
-    },
-    {
       "name": "nickname_pending_title",
-      "value": "LocalSend 暱稱待重新啟動生效"
+      "value": "新暱稱尚未生效"
     },
     {
-      "name": "nickname_pending_busy",
-      "value": "傳輸結束後可重新啟動"
+      "name": "nickname_pending_effect",
+      "value": "LocalSend 暱稱將在服務重新啟動後生效"
     },
     {
       "name": "settings_pending_title",
-      "value": "%d 項設定待重新啟動"
+      "value": "%d 項設定尚未生效"
     },
     {
-      "name": "settings_pending_action_settings",
-      "value": "去設定"
+      "name": "settings_pending_effect",
+      "value": "LocalSend 設定將在服務重新啟動後生效"
+    },
+    {
+      "name": "settings_pending_interrupt_hint",
+      "value": "重新啟動將中斷進行中的 LocalSend 傳輸"
+    },
+    {
+      "name": "server_restart_confirm_title",
+      "value": "重新啟動服務？"
+    },
+    {
+      "name": "server_restart_confirm_message",
+      "value": "進行中的 LocalSend 傳輸將被中斷"
     },
     {
       "name": "restart_server_failed",
       "value": "重新啟動服務失敗"
     },
     {
-      "name": "settings_applied_toast",
-      "value": "設定已生效"
+      "name": "localsend_restarted_toast",
+      "value": "LocalSend 服務已重新啟動"
     },
     {
       "name": "notice_server_start_failed",

@@ -405,12 +405,12 @@
       "value": "Discovery timeout (ms)"
     },
     {
-      "name": "server_needs_restart",
-      "value": "LocalSend settings have changed. Restart the service to apply them."
-    },
-    {
       "name": "restart_server",
       "value": "Restart service"
+    },
+    {
+      "name": "restart_server_short",
+      "value": "Restart"
     },
     {
       "name": "localsend_enabled_label",
@@ -2453,32 +2453,40 @@
       "value": "The sender folder contains a reserved temporary directory name; the transfer was rejected"
     },
     {
-      "name": "nickname_pending_inline",
-      "value": "LocalSend nickname pending restart"
-    },
-    {
       "name": "nickname_pending_title",
-      "value": "LocalSend nickname pending restart"
+      "value": "New nickname not applied"
     },
     {
-      "name": "nickname_pending_busy",
-      "value": "Can restart after the current transfer finishes"
+      "name": "nickname_pending_effect",
+      "value": "LocalSend nickname applies after restart"
     },
     {
       "name": "settings_pending_title",
-      "value": "%d settings pending restart"
+      "value": "%d settings not applied"
     },
     {
-      "name": "settings_pending_action_settings",
-      "value": "Go to settings"
+      "name": "settings_pending_effect",
+      "value": "LocalSend settings take effect after restart"
+    },
+    {
+      "name": "settings_pending_interrupt_hint",
+      "value": "LocalSend transfers will be interrupted"
+    },
+    {
+      "name": "server_restart_confirm_title",
+      "value": "Restart service?"
+    },
+    {
+      "name": "server_restart_confirm_message",
+      "value": "Ongoing LocalSend transfers will be interrupted"
     },
     {
       "name": "restart_server_failed",
       "value": "Failed to restart service"
     },
     {
-      "name": "settings_applied_toast",
-      "value": "Settings applied"
+      "name": "localsend_restarted_toast",
+      "value": "LocalSend service restarted"
     },
     {
       "name": "notice_server_start_failed",

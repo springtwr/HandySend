@@ -204,6 +204,7 @@ Release（debug 关）下 debug 级被抑制，仅 info 及以上输出。
 | `HandySend:SessionRecovery` | `[会话恢复]` | service/transfer/SessionRecoveryService.ets | 启动恢复、历史补写与本协议临时区清理 |
 | `HandySend:SessionAdapter` | `[协议适配]` | service/transfer/adapters/*.ets | 各协议事件翻译与能力/展示描述符 |
 | `HandySend:ProtocolDisableGuard` | `[协议开关]` | service/transfer/ProtocolDisableGuard.ets | 协议关闭确认文案解析 |
+| `HandySend:LocalSendRestartGuard` | `[设置待生效]` | service/transfer/LocalSendRestartGuard.ets | 重启确认流程异常（同步兜底） |
 | `HandySend:TransferCenter` | `[任务]` | viewmodel/TransferCenterViewModel.ets | 中心分组/筛选/批量操作 |
 | `HandySend:SessionDetail` | `[会话详情]` | viewmodel/SessionDetailViewModel.ets、pages/SessionDetailPage.ets | 通用详情页状态与动作 |
 | `HandySend:ChecksumRepository` | `[校验]` | ChecksumRepository.ets | 校验和计算 |
