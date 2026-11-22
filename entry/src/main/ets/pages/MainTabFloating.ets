@@ -914,9 +914,10 @@ struct MainTabFloating {
 
   /** 执行重启并给出成功/失败反馈。 */
   private doRestartFromSettingsPending(): void {
+    let startTime = Date.now();
     this.settingsRestarting = true;
     this.sendViewModel.restartServer().then(() => {
-      this.settingsRestarting = false;
+      this.finishSettingsRestarting(startTime);
       this.refreshSettingsPendingState();
       if (!isServerRunning() || this.pendingReasonCount > 0) {
         let reason: string = getLastServerStartError();
@@ -929,11 +930,23 @@ struct MainTabFloating {
       logger.debug('壳层待生效重启：成功');
       DialogService.showCenterToast($r('app.string.localsend_restarted_toast'), 2000);
     }).catch(() => {
-      this.settingsRestarting = false;
+      this.finishSettingsRestarting(startTime);
       this.refreshSettingsPendingState();
       logger.error('壳层待生效重启：Promise 异常 pending=' + this.pendingReasonCount);
       DialogService.showCenterToast($r('app.string.restart_server_failed'), 3000);
     });
+  }
+
+  /** 重启加载态至少保留 800ms，与设置页状态行的重启动画保持一致。 */
+  private finishSettingsRestarting(startTime: number): void {
+    let remaining = 800 - (Date.now() - startTime);
+    if (remaining > 0) {
+      setTimeout(() => {
+        this.settingsRestarting = false;
+      }, remaining);
+    } else {
+      this.settingsRestarting = false;
+    }
   }
 
   onPageHide(): void {
@@ -1482,6 +1495,7 @@ struct MainTabFloating {
         if (this.firstFrameContentReady) {
           SettingsContent({
             scroller: this.settingsScroller,
+            externalRestarting: this.settingsRestarting,
             onScrollDelta: (deltaY: number, absY: number) => {
               this.handleScrollDelta(deltaY, absY)
             },

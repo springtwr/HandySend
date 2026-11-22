@@ -46,6 +46,7 @@ import {
   getDiscoveryTimeout,
   getEncryptedTransfer,
   isServerRunning,
+  isServerRestarting,
   getLastServerStartError,
   getNoWifiWarning,
   getAllInterfacesDisabled,
@@ -289,7 +290,9 @@ export class SettingsViewModel {
     this.discoveryTimeout = getDiscoveryTimeout();
     this.networkWhitelist = getNetworkWhitelist();
     this.networkBlacklist = getNetworkBlacklist();
-    this.serverReady = isServerRunning();
+    if (!isServerRestarting()) {
+      this.serverReady = isServerRunning();
+    }
     this.refreshServerStartError();
     this.noWifiWarning = getNoWifiWarning();
     // 权限为系统状态（非持久化设置），随设置加载一并查询刷新
@@ -312,7 +315,9 @@ export class SettingsViewModel {
 
   subscribe(): void {
     this.refreshCallback = () => {
-      this.serverReady = isServerRunning();
+      if (!isServerRestarting()) {
+        this.serverReady = isServerRunning();
+      }
       this.refreshServerStartError();
       this.noWifiWarning = getNoWifiWarning();
       this.allInterfacesDisabled = getAllInterfacesDisabled();

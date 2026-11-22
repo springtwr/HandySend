@@ -31,6 +31,8 @@ export struct NetworkSettingsSection {
   // 系统宽度断点（随窗口尺寸变化自动刷新，半屏弹窗宽度断点化用）
   @Env(SystemProperties.BREAK_POINT) breakpointInfo: uiObserver.WindowSizeLayoutBreakpointInfo
   @Require @Param viewModel: SettingsViewModel
+  // 壳层待生效卡片触发的重启：与本地服务器操作共用加载态，避免状态行短暂闪成离线
+  @Param externalRestarting: boolean = false
   @Local isRestarting: boolean = false
   @Local isShowNetworkInterfaceSheet: boolean = false
   @Local isShowCertificateSheet: boolean = false
@@ -284,6 +286,11 @@ export struct NetworkSettingsSection {
     }).catch(() => {
       this.isRestarting = false;
     });
+  }
+
+  /** 服务器操作进行中（含壳层卡片触发的重启）：状态行显示加载动画并禁用操作按钮。 */
+  private serverActionBusy(): boolean {
+    return this.isRestarting || this.externalRestarting;
   }
 
   // 解析逗号分隔文本为字符串数组
@@ -557,7 +564,7 @@ export struct NetworkSettingsSection {
 
         // 服务器状态（顶层第一项）
         Row() {
-          if (this.isRestarting) {
+          if (this.serverActionBusy()) {
             LoadingProgress()
               .width(DesignTokens.size.iconXs)
               .height(DesignTokens.size.iconXs)
@@ -582,7 +589,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
+                .enabled(!this.serverActionBusy() && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.startServer());
                 })
@@ -594,7 +601,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.accent_blue'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
+                .enabled(!this.serverActionBusy() && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.restartServer());
                 })
@@ -605,7 +612,7 @@ export struct NetworkSettingsSection {
                 .fontColor($r('app.color.text_on_color'))
                 .backgroundColor($r('app.color.danger_red'))
                 .borderRadius(DesignTokens.radius.max)
-                .enabled(!this.isRestarting && this.viewModel.localSendEnabled)
+                .enabled(!this.serverActionBusy() && this.viewModel.localSendEnabled)
                 .onClick(() => {
                   this.runServerAction(() => this.viewModel.stopServer());
                 })

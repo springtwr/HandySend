@@ -20,6 +20,8 @@ export struct SettingsContent {
   @Local viewModel: SettingsViewModel = new SettingsViewModel();
   // 滚动控制器由壳层下传：壳层需将它绑定到导航组件（驱动标题栏滚动模糊）与页签控制器
   @Require @Param scroller: Scroller
+  // 壳层触发的服务器重启（待生效卡片）：用于设置页状态行同步显示重启动画
+  @Param externalRestarting: boolean = false
   @Event onScrollDelta: (deltaY: number, absY: number) => void = (_deltaY: number, _absY: number) => {
   }
   // 打开诊断日志页意图：本组件不持有导航栈，继续上抛由壳层执行
@@ -53,7 +55,7 @@ export struct SettingsContent {
       GeneralSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'localsend') {
       // LocalSend 分组：单卡片（服务器状态 / 请求确认 / 下载请求 / 高级设置）
-      NetworkSettingsSection({ viewModel: this.viewModel })
+      NetworkSettingsSection({ viewModel: this.viewModel, externalRestarting: this.externalRestarting })
     } else if (descriptor.sectionKey === 'mta') {
       MtaSettingsSection({ viewModel: this.viewModel })
     } else if (descriptor.sectionKey === 'web') {
