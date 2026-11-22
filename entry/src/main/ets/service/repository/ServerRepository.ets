@@ -150,6 +150,11 @@ export function isServerRunning(): boolean {
   return serverRunning;
 }
 
+/** 是否有一次 stop/start 重启正在进行：用于抑制重启窗口内的“服务未启动”闪屏。 */
+export function isServerRestarting(): boolean {
+  return restartInFlight !== undefined;
+}
+
 /** 最近一次服务器启动失败原因（空串表示无错误或已恢复）。 */
 export function getLastServerStartError(): string {
   return lastServerStartError;
@@ -467,6 +472,8 @@ export function restartServer(): Promise<void> {
   }
   let p = doRestartServer().finally(() => {
     restartInFlight = undefined;
+    // 重启结束（成功或失败）后通知 UI 重新评估离线横幅/状态
+    notifyChange();
   });
   restartInFlight = p;
   return p;

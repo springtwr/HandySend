@@ -234,6 +234,7 @@ export { getDeviceAlias,
 
 // 服务端仓储导出
 export { isServerRunning,
+  isServerRestarting,
   getLastServerStartError,
   getServerPendingReasons,
   getPendingReasonCount,

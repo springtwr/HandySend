@@ -1279,7 +1279,8 @@ export struct SendContent {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll(this.scroller) {
         Column() {
-          if (this.viewModel.localSendEnabled && !this.viewModel.serverReady) {
+          if (this.viewModel.localSendEnabled && !this.viewModel.serverReady &&
+            !this.viewModel.serverRestarting) {
             Row({ space: DesignTokens.space.sm }) {
               SymbolGlyph($r('sys.symbol.exclamationmark_triangle'))
                 .fontSize(DesignTokens.font.iconInline)

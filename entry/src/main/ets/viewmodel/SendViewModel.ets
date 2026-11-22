@@ -31,6 +31,7 @@ import {
   processSharedUris,
   isAutoClearStagedAfterSend,
   isServerRunning,
+  isServerRestarting,
   getNoWifiWarning,
   getAllInterfacesDisabled,
   consumePendingSharedUris,
@@ -392,6 +393,8 @@ export class SendViewModel {
   @Trace public isFillingStagedMeta: boolean = false
   // 服务器状态 + 设置镜像
   @Trace public serverReady: boolean = false
+  // stop/start 重启窗口内抑制“服务未启动”横幅，避免一闪而过
+  @Trace public serverRestarting: boolean = false
   // 网页服务是否运行：驱动方式区网页图标绿点（服务启动即亮，不要求已挂载文件）
   @Trace public webServiceActive: boolean = false
   // 网页方向允许开关镜像：驱动菜单勾选（勾选表达开关意向，不表达传输中）
@@ -612,6 +615,7 @@ export class SendViewModel {
     // 互传发现扫描的启停由页面可见性驱动（MainTabFloating），数据刷新不再拉起扫描
     this.isScanning = isScanningStatus();
     this.serverReady = isServerRunning();
+    this.serverRestarting = isServerRestarting();
     this.noWifiWarning = getNoWifiWarning();
     this.allInterfacesDisabled = getAllInterfacesDisabled();
     // 网页方向允许开关镜像：驱动菜单勾选（勾选表达开关意向，不表达传输中）
