@@ -33,6 +33,7 @@ import {
   KEY_WEB_INTERFACE_BLACKLIST,
   KEY_WEB_DISPLAY_ADDRESS,
   KEY_MTA_RECEIVE_ENABLED,
+  KEY_MTA_AUTO_CONFIRM_MODE,
   KEY_MTA_SIMULATED_BRAND,
   KEY_MTA_CONNECTION_WARNINGS,
   KEY_PROTOCOL_HINT_SIGNATURE,
@@ -74,6 +75,7 @@ import {
   WEB_PORT_MIN,
   WEB_PORT_MAX,
   DEFAULT_MTA_RECEIVE_ENABLED,
+  DEFAULT_MTA_AUTO_CONFIRM_MODE,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
   DEFAULT_BACKGROUND_RECEIVE
@@ -111,11 +113,23 @@ let webInterfaces: string = DEFAULT_WEB_INTERFACES;
 let webInterfaceBlacklist: string = DEFAULT_WEB_INTERFACE_BLACKLIST;
 let webDisplayAddress: string = DEFAULT_WEB_DISPLAY_ADDRESS;
 let mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED;
+let mtaAutoConfirmMode: AutoConfirmMode = DEFAULT_MTA_AUTO_CONFIRM_MODE;
 let mtaSimulatedBrand: number = DEFAULT_MTA_SIMULATED_BRAND;
 let mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS;
 let backgroundReceiveEnabled: boolean = DEFAULT_BACKGROUND_RECEIVE;
 
 // ── 从 Preferences 加载全部设置（应用启动时调用一次） ──
+
+/** 解析持久化的 MTA 自动确认模式：仅接受三个合法值，其余回退默认（纯本地辅助） */
+function parseMtaAutoConfirmMode(value: string): AutoConfirmMode {
+  if (value === 'paired') {
+    return AutoConfirmMode.paired;
+  }
+  if (value === 'on') {
+    return AutoConfirmMode.on;
+  }
+  return AutoConfirmMode.off;
+}
 
 export function loadFromPreferences(): void {
   httpsEnabled = preferencesRepo.getBoolean(KEY_ENCRYPTED_TRANSFER, DEFAULT_ENCRYPTED_TRANSFER);
@@ -155,6 +169,8 @@ export function loadFromPreferences(): void {
     DEFAULT_WEB_INTERFACE_BLACKLIST);
   webDisplayAddress = preferencesRepo.getString(KEY_WEB_DISPLAY_ADDRESS, DEFAULT_WEB_DISPLAY_ADDRESS);
   mtaReceiveEnabled = preferencesRepo.getBoolean(KEY_MTA_RECEIVE_ENABLED, DEFAULT_MTA_RECEIVE_ENABLED);
+  mtaAutoConfirmMode = parseMtaAutoConfirmMode(
+    preferencesRepo.getString(KEY_MTA_AUTO_CONFIRM_MODE, DEFAULT_MTA_AUTO_CONFIRM_MODE.toString()));
   // 未注册/越界的持久化值按第三方处理（不写回，避免读取产生副作用）
   mtaSimulatedBrand = normalizeMtaBrandId(
     preferencesRepo.getNumber(KEY_MTA_SIMULATED_BRAND, DEFAULT_MTA_SIMULATED_BRAND));
@@ -384,6 +400,20 @@ export function setMtaReceiveEnabled(enabled: boolean): void {
 
 export function getMtaReceiveEnabled(): boolean {
   return mtaReceiveEnabled;
+}
+
+// ── 互传联盟（MTA）接收自动确认 ──
+
+/** 写入 MTA 自动确认模式（off/paired/on）；持久化并通知订阅者，无协议副作用 */
+export function setMtaAutoConfirmMode(mode: AutoConfirmMode): void {
+  mtaAutoConfirmMode = mode;
+  preferencesRepo.setString(KEY_MTA_AUTO_CONFIRM_MODE, mode.toString());
+  notifyChange();
+}
+
+/** 当前 MTA 自动确认模式（默认关闭） */
+export function getMtaAutoConfirmMode(): AutoConfirmMode {
+  return mtaAutoConfirmMode;
 }
 
 // ── 互传联盟（MTA）模拟品牌 ──

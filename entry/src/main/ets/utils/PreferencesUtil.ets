@@ -72,6 +72,9 @@ export const KEY_WEB_DISPLAY_ADDRESS: string = 'webDisplayAddress';
 
 export const KEY_MTA_RECEIVE_ENABLED: string = 'mtaReceiveEnabled';
 
+// MTA 接收自动确认模式（off/paired/on；paired 仅收藏的互传设备）
+export const KEY_MTA_AUTO_CONFIRM_MODE: string = 'mtaAutoConfirmMode';
+
 export const KEY_MTA_SIMULATED_BRAND: string = 'mtaSimulatedBrand';
 
 export const KEY_MTA_CONNECTION_WARNINGS: string = 'mtaConnectionWarnings';

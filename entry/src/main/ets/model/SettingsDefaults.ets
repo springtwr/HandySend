@@ -99,6 +99,9 @@ export const WEB_PORT_MAX: number = 65535;
 
 export const DEFAULT_MTA_RECEIVE_ENABLED: boolean = true;
 
+// MTA 接收自动确认：默认关闭（与 LocalSend 默认一致）；paired 仅收藏的互传设备
+export const DEFAULT_MTA_AUTO_CONFIRM_MODE: AutoConfirmMode = AutoConfirmMode.off;
+
 // 默认第三方：品牌标识语义归属品牌注册表，此处仅引用
 export const DEFAULT_MTA_SIMULATED_BRAND: number = MTA_BRAND_ID_THIRD_PARTY;
 

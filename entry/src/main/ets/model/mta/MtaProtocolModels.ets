@@ -346,6 +346,12 @@ export class ReceiverState {
   groupFrequency: number = 0;
   /** 收到的接收请求 */
   receiveRequest: ReceiveRequest | undefined = undefined;
+  /** 本次请求是否命中自动确认（true 表示会话从创建起即为进行中，不进入待确认） */
+  autoAccepted: boolean = false;
+  /** 对端品牌标识（接收载荷不携带，由仓储按发现/收藏补齐；-1 表示未知） */
+  peerBrandId: number = -1;
+  /** 对端品牌名称（由仓储补齐；空串表示未知） */
+  peerBrandName: string = '';
   /** 本会话已拉取到的发送端缩略图路径（空串表示未提供或未取到），供确认界面预览 */
   requestThumbnailPath: string = '';
   /** 下载进度 */
@@ -375,6 +381,9 @@ export class ReceiverState {
     copy.transferPort = this.transferPort;
     copy.groupFrequency = this.groupFrequency;
     copy.receiveRequest = this.receiveRequest;
+    copy.autoAccepted = this.autoAccepted;
+    copy.peerBrandId = this.peerBrandId;
+    copy.peerBrandName = this.peerBrandName;
     copy.requestThumbnailPath = this.requestThumbnailPath;
     copy.progress = this.progress;
     copy.savedFiles = this.savedFiles.slice();

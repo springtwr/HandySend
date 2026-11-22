@@ -121,6 +121,15 @@ export function setMtaReceiveTextSavedNotifier(notifier: (savedPath: string) => 
   textSavedNotifier = notifier;
 }
 
+// 自动确认判定（由协议仓库注入）：按接收请求的发送者 ID 判定是否跳过用户确认。
+// 判定为真时服务在进入 REQUEST_RECEIVED 后立即接受，并跳过确认阶段的缩略图预取。
+let autoAcceptDecider: ((senderId: string) => boolean) | undefined = undefined;
+
+/** 注册自动确认判定入口；由协议仓库在装配阶段注入（判定逻辑与收藏/设置解耦） */
+export function setMtaReceiveAutoAcceptDecider(decider: (senderId: string) => boolean): void {
+  autoAcceptDecider = decider;
+}
+
 /** 接收端服务编排门面 */
 export class MtaReceiveService {
   /** 当前状态（对外仅暴露快照） */
@@ -367,6 +376,7 @@ export class MtaReceiveService {
       this.removeReceiveDraft(request);
     }
     this.state.receiveRequest = undefined;
+    this.state.autoAccepted = false;
     this.state.requestThumbnailPath = '';
     this.state.progress = new DownloadProgress();
     this.state.endedWithPartialFiles = false;
@@ -436,22 +446,58 @@ export class MtaReceiveService {
     this.scheduleDecisionTimeout();
     // 先持有请求：预取期间即以本请求作为写回缩略图路径的持有判据
     this.state.receiveRequest = request;
-    if (request.thumbnail.length > 0) {
+    // 自动确认判定先于缩略图预取：自动接收不需要确认阶段预览，也避免无谓等待。
+    // 判定异常按手动确认处理，不能因收藏/设置读取异常中断接收流程
+    let autoAccepted: boolean = false;
+    if (autoAcceptDecider !== undefined) {
+      try {
+        autoAccepted = autoAcceptDecider(request.senderId);
+      } catch (e) {
+        this.appendLog('服务', '自动确认判定异常，按手动确认处理：' + String(e), LogLevels.WARN);
+      }
+    }
+    this.state.autoAccepted = autoAccepted;
+    this.appendLog('服务',
+      `自动确认判定：发送者 ID=${request.senderId.length > 0 ? request.senderId : '(空)'}` +
+        ` 结果=${autoAccepted ? '命中' : '未命中'} 任务=${request.taskId}`, LogLevels.DEBUG);
+    if (!autoAccepted && request.thumbnail.length > 0) {
       await this.fetchThumbnailBounded(request);
     }
     this.setStage(ReceiverStage.REQUEST_RECEIVED);
     this.notifyState();
-    // 待确认请求也写草稿：强杀后恢复为已取消，避免任务整条丢失。
-    this.writeReceiveDraft(request, SessionStage.awaitingConfirmation);
+    // 待确认请求写草稿：强杀后恢复为已取消，避免任务整条丢失；
+    // 自动接收已进入接收流程，草稿按进行中记录
+    this.writeReceiveDraft(request, autoAccepted ? SessionStage.active : SessionStage.awaitingConfirmation);
     this.appendLog('WS', `收到接收请求：来自 ${request.senderName}，共 ${request.fileCount} 个文件`, LogLevels.INFO);
     this.appendLog('WS', `接收请求 发送方=${request.senderName} 文件=${request.fileName}` +
       ` 文件数=${request.fileCount} 总字节=${request.totalSize} 任务=${request.taskId}`, LogLevels.DEBUG);
     if (this.linkTiming.isRunning()) {
-      this.linkTiming.mark('本机弹窗', Date.now());
+      // 自动接收没有确认弹窗：阶段名与总耗时口径按实际路径区分，避免诊断日志误称"弹窗"
+      this.linkTiming.mark(autoAccepted ? '请求就绪' : '本机弹窗', Date.now());
       this.appendLog('计时',
-        `接收建链总耗时=${this.linkTiming.totalMs(Date.now())}ms（收到 P2pInfo→弹出确认）` +
+        `接收建链总耗时=${this.linkTiming.totalMs(Date.now())}ms` +
+          `（收到 P2pInfo→${autoAccepted ? '自动接收' : '弹出确认'}）` +
           ` 阶段=[${this.linkTiming.summary()}]`, LogLevels.DEBUG);
     }
+    if (autoAccepted) {
+      this.appendLog('服务',
+        `自动确认命中：发送者 ID=${request.senderId.length > 0 ? request.senderId : '(空)'}` +
+          ` 任务=${request.taskId}`, LogLevels.INFO);
+      this.acceptAutomatically(request);
+    }
+  }
+
+  /** 自动确认命中后的接受入口：文本走文本收尾，其余进入下载流程 */
+  private acceptAutomatically(request: ReceiveRequest): void {
+    if (request.textContent.length > 0) {
+      this.acceptTextRequest(true).catch((e: Object): void => {
+        this.appendLog('服务', '自动接收文本异常：' + String(e), LogLevels.ERROR);
+      });
+      return;
+    }
+    this.acceptRequest(true).catch((e: Object): void => {
+      this.appendLog('服务', '自动接收文件异常：' + String(e), LogLevels.ERROR);
+    });
   }
 
   /** 有界预取缩略图：与固定预算赛跑，超预算即放行（后台拉取继续，命中后再回填会话） */
@@ -1117,7 +1163,7 @@ export class MtaReceiveService {
   }
 
   /** 用户接受接收请求：回 ack 并进入下载流程 */
-  async acceptRequest(): Promise<void> {
+  async acceptRequest(automatic: boolean = false): Promise<void> {
     if (this.state.stage !== ReceiverStage.REQUEST_RECEIVED || this.state.receiveRequest === undefined) {
       this.appendLog('服务', '当前无待确认的接收请求', LogLevels.DEBUG);
       return;
@@ -1125,7 +1171,8 @@ export class MtaReceiveService {
     // 用户已决策：撤销等待确认超时，避免确认后又被自动拒绝
     this.cancelDecisionTimeout();
     let request = this.state.receiveRequest;
-    this.appendLog('服务', '用户已接受接收请求，开始下载', LogLevels.INFO);
+    this.appendLog('服务', automatic ? '自动确认已接受接收请求，开始下载' : '用户已接受接收请求，开始下载',
+      LogLevels.INFO);
     this.appendLog('服务', `接收任务=${request.taskId}`, LogLevels.DEBUG);
     this.acceptMs = Date.now();
     try {
@@ -1150,7 +1197,7 @@ export class MtaReceiveService {
    * ack/status 发送失败（WS 已断）仅记日志、不中断收尾——文本已在本机可见，
    * 用户侧不可逆，发送方将按超时收尾。
    */
-  async acceptTextRequest(): Promise<void> {
+  async acceptTextRequest(automatic: boolean = false): Promise<void> {
     if (this.state.stage !== ReceiverStage.REQUEST_RECEIVED) {
       this.appendLog('服务', '当前无待确认的接收请求', LogLevels.DEBUG);
       return;
@@ -1190,7 +1237,7 @@ export class MtaReceiveService {
     }
     this.completeTextDraft(request, textPath);
     this.appendLog('服务',
-      '用户已接受文本消息，已落盘并完成接收', LogLevels.INFO);
+      automatic ? '自动接受文本消息，已落盘并完成接收' : '用户已接受文本消息，已落盘并完成接收', LogLevels.INFO);
     this.appendLog('下载', `文本已落盘：路径=${textPath} 任务=${request.taskId}`, LogLevels.DEBUG);
     // 上抛真实保存路径（供统一会话回填逐文件路径）：不影响协议报文与对端可见内容
     if (textSavedNotifier !== undefined) {
@@ -1242,16 +1289,21 @@ export class MtaReceiveService {
   /**
    * 下载体收完（仍在解压/落盘）时提前回送成功状态。
    * 发送方（如小米）在发完文件后等待回执的窗口很短，等到解压落盘结束再回送会赶不上；
-   * 仅在写入成功时置"已回送"标记，失败保持未置，由收尾路径兜底再回送一次。
+   * 发送前先同步置"已回送"标记，拦截同一网络完成事件的连续回调；发送失败时复位，
+   * 由收尾路径或后续回调兜底重送。
    */
   private sendSuccessStatusEarly(): Promise<void> {
     let taskId = this.statusTaskId;
+    // 同步占位：networkDone 可能连续触发多次回调，避免在同一 status 上重复回送；
+    // 发送失败时复位，交由收尾路径或后续回调兜底重送
+    this.successStatusSent = true;
     this.appendLog('WS', '下载体收完，提前回送成功状态', LogLevels.DEBUG);
     return this.transfer.sendStatus(MtaConstants.STATUS_TYPE_OK, MtaConstants.STATUS_REASON_OK, taskId)
       .then((): void => {
         this.successStatusSent = true;
       })
       .catch((e: Object): void => {
+        this.successStatusSent = false;
         this.appendLog('WS', '提前回送成功状态失败：' + String(e), LogLevels.WARN);
       });
   }

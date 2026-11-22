@@ -35,6 +35,7 @@ import SendDeviceGroupingTest from './model/SendDeviceGroupingTest.test'
 import SendTextPreparationTest from './model/SendTextPreparationTest.test'
 import MtaProtocolModelsTest from './model/MtaProtocolModelsTest.test'
 import MtaDiscoveryGuardTest from './model/MtaDiscoveryGuardTest.test'
+import MtaAutoAcceptTest from './model/MtaAutoAcceptTest.test'
 import SessionArchiveRulesTest from './model/SessionArchiveRulesTest.test'
 import ReceivedPathTest from './model/ReceivedPathTest.test'
 import SendFolderPathTest from './model/SendFolderPathTest.test'
@@ -155,6 +156,7 @@ export default function testsuite() {
   SendTextPreparationTest()
   MtaProtocolModelsTest()
   MtaDiscoveryGuardTest()
+  MtaAutoAcceptTest()
   SessionArchiveRulesTest()
   ReceivedPathTest()
   SendFolderPathTest()

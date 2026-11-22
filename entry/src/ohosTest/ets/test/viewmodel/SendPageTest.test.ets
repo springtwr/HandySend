@@ -409,7 +409,7 @@ export default function SendPageTest() {
       expect(noMta.local.length).assertEqual(2)
       expect(noMta.mta.length).assertEqual(0)
 
-      // 收藏（均为局域网来源设备）：LocalSend 关闭时全部隐藏，开启时原样保留
+      // 收藏：按来源与协议开关过滤；LocalSend 关闭时仅隐藏局域网收藏
       let favorites: Array<FavoriteDevice> = [{
         id: 'fav1',
         fingerprint: 'fp-1',
@@ -425,8 +425,22 @@ export default function SendPageTest() {
         alias: 'F2',
         customAlias: true
       }]
-      expect(filterFavoritesByProtocolToggles(favorites, true).length).assertEqual(2)
-      expect(filterFavoritesByProtocolToggles(favorites, false).length).assertEqual(0)
+      expect(filterFavoritesByProtocolToggles(favorites, true, true).length).assertEqual(2)
+      expect(filterFavoritesByProtocolToggles(favorites, false, true).length).assertEqual(0)
+      // 互传收藏：仅随 MTA 开关过滤
+      let mtaFavorites: Array<FavoriteDevice> = [{
+        id: 'mta-1',
+        fingerprint: 'mta:aabbccdd',
+        ip: '',
+        port: 0,
+        alias: 'M1',
+        customAlias: false,
+        protocol: 'mta',
+        mtaSenderIdHex: 'aabbccdd'
+      }]
+      expect(filterFavoritesByProtocolToggles(mtaFavorites, true, true).length).assertEqual(1)
+      expect(filterFavoritesByProtocolToggles(mtaFavorites, true, false).length).assertEqual(0)
+      expect(filterFavoritesByProtocolToggles(mtaFavorites, false, true).length).assertEqual(1)
     })
 
     it('partialProtocolDisabledHint_shownOnlyWhenSomeOff', 0, () => {

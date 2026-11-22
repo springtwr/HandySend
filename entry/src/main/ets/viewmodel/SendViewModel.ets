@@ -91,6 +91,7 @@ import {
   unsubscribeFavorites
 } from '../service/repository/FavoritesService';
 import { buildMtaSendRequest, combineTextContents, MtaSendRequest } from '../model/mta/MtaMainModels';
+import { canFavoriteDevice, favoriteKeyOf, isMtaFavorite } from '../model/DeviceIdentity';
 import { MtaBluetoothStatus } from '../model/mta/MtaDiscoveryModels';
 import { partitionDevicesByType, DeviceTypePartition } from '../model/SendDeviceGrouping';
 import { getMimeForExt as mimeGetMimeForExt, isImageExtension } from '../utils/MimeUtils';
@@ -307,11 +308,19 @@ export function filterDevicesByProtocolToggles(partition: DeviceTypePartition,
 
 /**
  * 协议总开关收藏过滤（纯函数，可独立测试）：
- * LocalSend 总开关关闭时全部收藏隐藏（收藏均为局域网来源设备，MTA 设备不可收藏）。
+ * 按收藏来源与对应协议总开关过滤，关闭某个协议时其收藏隐藏。
  */
 export function filterFavoritesByProtocolToggles(favorites: Array<FavoriteDevice>,
-  localSendEnabled: boolean): Array<FavoriteDevice> {
-  return localSendEnabled ? favorites : [];
+  localSendEnabled: boolean, mtaEnabled: boolean): Array<FavoriteDevice> {
+  let result: Array<FavoriteDevice> = [];
+  for (let i = 0; i < favorites.length; i++) {
+    let favorite: FavoriteDevice = favorites[i];
+    let mtaSource: boolean = isMtaFavorite(favorite);
+    if (mtaSource ? mtaEnabled : localSendEnabled) {
+      result.push(favorite);
+    }
+  }
+  return result;
 }
 
 /**
@@ -369,6 +378,9 @@ export class SendViewModel {
   // 暂存区变化后同步已挂载网页分享的防抖定时器（-1 表示无待处理同步）
   private shareSyncTimer: number = -1
   @Trace public discoveredDevices: Array<DiscoveredDevice> = []
+  // 互传发现快照（由 MtaRepository 独立持有，discoveredDevices 不含）：
+  // 供收藏面板在线判定与从收藏面板发起互传发送使用
+  @Trace public mtaDiscoveredDevices: Array<DiscoveredDevice> = []
   // 按设备类型拆分的展示数据源：局域网（LocalSend）与互传联盟（MTA）各占一组，供设备类型标签分别渲染。
   @Trace public localDeviceItemViewModels: Array<DeviceItemViewModel> = []
   @Trace public mtaDeviceItemViewModels: Array<DeviceItemViewModel> = []
@@ -384,7 +396,7 @@ export class SendViewModel {
   @Trace public mtaWifiOn: boolean = true
   // 显示互传提醒开关：关闭时不显示互传相关的连接警告横幅
   @Trace public mtaConnectionWarnings: boolean = true
-  // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（LocalSend 关=收藏全部隐藏，收藏均为局域网设备）
+  // 协议总开关镜像：关闭时隐藏对应来源设备/收藏并 gate 连接警告（收藏按来源分别跟随本地开关）
   @Trace public localSendEnabled: boolean = true
   @Trace public mtaEnabled: boolean = true
   @Trace public cachedTotalSizeText: string = ''
@@ -438,9 +450,9 @@ export class SendViewModel {
   // 订阅收藏设备变化（由持有该视图模型的页面宿主在生命周期内调用）。
   subscribeFavorites(): void {
     this.favoritesCallback = () => {
-      // LocalSend 总开关关闭时收藏保持隐藏（收藏均为局域网来源设备）
+      // 按协议总开关隐藏对应来源的收藏
       this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
-        this.localSendEnabled);
+        this.localSendEnabled, this.mtaEnabled);
       // 收藏变更（新增/重命名/删除）即时回填附近列表别名，保证两处口径一致
       this.applyFavoriteAliases();
     };
@@ -580,6 +592,7 @@ export class SendViewModel {
     if (this.mtaBluetoothOn && this.mtaEnabled) {
       mtaDiscovered = getMtaDiscoveredDevices();
     }
+    this.mtaDiscoveredDevices = mtaDiscovered.slice();
     let allDevices: Array<DiscoveredDevice> = [];
     for (let i = 0; i < this.discoveredDevices.length; i++) {
       allDevices.push(this.discoveredDevices[i]);
@@ -630,9 +643,9 @@ export class SendViewModel {
       !hasSharedFiles() && this.stagedFiles.length > 0) {
       this.scheduleShareSync();
     }
-    // LocalSend 总开关关闭时隐藏全部收藏（收藏均为局域网来源设备）
+    // 按协议总开关隐藏对应来源的收藏
     this.favoriteDevices = filterFavoritesByProtocolToggles(getFavoritesService().slice(),
-      this.localSendEnabled);
+      this.localSendEnabled, this.mtaEnabled);
     // 收藏自定义别名回填附近列表（与面板口径一致）
     this.applyFavoriteAliases();
     // 统一刷新状态：MTA 手动刷新窗口随仓储变更通知同步，两个来源都结束后恢复按钮
@@ -646,7 +659,7 @@ export class SendViewModel {
     for (let i = 0; i < devices.length; i++) {
       let d = devices[i];
       // protocol 参与签名：对端切换协议后若签名不变，条目对象不会重建，发送会继续用旧协议
-      parts.push(`${d.fingerprint}|${d.alias}|${this.favoriteAliasFor(d.fingerprint)}|${d.ip}` +
+      parts.push(`${d.fingerprint}|${d.alias}|${this.favoriteAliasFor(favoriteKeyOf(d))}|${d.ip}` +
         `|${d.port}|${d.protocol}|${d.deviceModel}|${d.deviceType}|${d.version}`);
     }
     return parts.join('\n');
@@ -662,7 +675,8 @@ export class SendViewModel {
       let brandId = d.mtaBrandId !== undefined ? d.mtaBrandId : -1;
       let brandName = d.mtaBrandName !== undefined ? d.mtaBrandName : '';
       let is5Ghz = d.mtaIs5Ghz !== undefined && d.mtaIs5Ghz;
-      parts.push(`${senderId}|${bleAddress}|${d.alias}|${brandId}|${brandName}|${is5Ghz}|${d.protocol}`);
+      parts.push(`${senderId}|${bleAddress}|${d.alias}|${brandId}|${brandName}|${is5Ghz}|${d.protocol}` +
+        `|${this.favoriteAliasFor(favoriteKeyOf(d))}`);
     }
     return parts.join('\n');
   }
@@ -674,15 +688,19 @@ export class SendViewModel {
   private applyFavoriteAliases(): void {
     for (let i = 0; i < this.localDeviceItemViewModels.length; i++) {
       let item: DeviceItemViewModel = this.localDeviceItemViewModels[i];
-      item.aliasOverride = this.favoriteAliasFor(item.fingerprint);
+      item.aliasOverride = this.favoriteAliasFor(favoriteKeyOf(item.item));
+    }
+    for (let i = 0; i < this.mtaDeviceItemViewModels.length; i++) {
+      let item: DeviceItemViewModel = this.mtaDeviceItemViewModels[i];
+      item.aliasOverride = this.favoriteAliasFor(favoriteKeyOf(item.item));
     }
   }
 
   /** 该设备收藏的自定义别名（未收藏或未设置自定义别名时返回空串）。 */
-  private favoriteAliasFor(fingerprint: string): string {
+  private favoriteAliasFor(favoriteKey: string): string {
     for (let i = 0; i < this.favoriteDevices.length; i++) {
       let favorite: FavoriteDevice = this.favoriteDevices[i];
-      if (favorite.fingerprint === fingerprint) {
+      if (favorite.fingerprint === favoriteKey) {
         // 仅自定义别名参与覆盖，避免收藏记录中的广播别名滞后于实时发现
         return favorite.customAlias ? favorite.alias : '';
       }
@@ -1679,8 +1697,25 @@ export class SendViewModel {
   }
 
   /**
-   * 收藏设备发送编排：在线（发现快照命中）直接发送；离线按已保存地址与端口定向探测，
+   * 从当前统一发现快照中查找收藏的 MTA 设备（按收藏键匹配；离线返回 undefined）。
+   * MTA 收藏无法像 LocalSend 一样按保存地址定向探测，只能依赖当前 BLE 发现结果。
+   */
+  findOnlineMtaDeviceForFavorite(favorite: FavoriteDevice): DiscoveredDevice | undefined {
+    if (!isMtaFavorite(favorite)) {
+      return undefined;
+    }
+    for (let i = 0; i < this.mtaDiscoveredDevices.length; i++) {
+      if (favoriteKeyOf(this.mtaDiscoveredDevices[i]) === favorite.fingerprint) {
+        return this.mtaDiscoveredDevices[i];
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * LocalSend 收藏设备发送编排：在线（发现快照命中）直接发送；离线按已保存地址与端口定向探测，
    * 探测成功后再发送。返回结果枚举供视图层给出提示。
+   * 互传收藏由发送页按当前 BLE 发现结果分流（见 SendContent.mtaFavoriteSend），不经本方法。
    */
   async sendToFavorite(favorite: FavoriteDevice,
     onSessionCreated?: (sessionId: string) => void): Promise<FavoriteSendResult> {
@@ -1822,17 +1857,14 @@ export class SendViewModel {
     return false;
   }
 
-  toggleFavorite(fingerprint: string): void {
-    let device: DiscoveredDevice | null = null;
-    for (let i = 0; i < this.discoveredDevices.length; i++) {
-      if (this.discoveredDevices[i].fingerprint === fingerprint) {
-        device = this.discoveredDevices[i];
-        break;
-      }
+  toggleFavorite(device: DiscoveredDevice): void {
+    if (!canFavoriteDevice(device)) {
+      return;
     }
-    if (isFavorite(fingerprint)) {
-      removeFavorite(fingerprint);
-    } else if (device !== null) {
+    let key: string = favoriteKeyOf(device);
+    if (isFavorite(key)) {
+      removeFavorite(key);
+    } else {
       addFavoriteFromDiscovered(device);
     }
   }

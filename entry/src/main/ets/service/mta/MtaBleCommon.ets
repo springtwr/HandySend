@@ -274,9 +274,9 @@ function bytesToLowerHex(bytes: Uint8Array): string {
 /**
  * 取本机 MTA 设备 ID 十六进制（32 字符）；首次调用生成 16 字节随机并持久化，之后各会话复用。
  *
- * 对齐厂商行为：真机实测小米（Redmi）的设备 ID 跨会话稳定，第三方 EasyShare 则不稳定——稳定性是
- * 厂商实现选择。本机选择持久化（与小米一致），使对端把我们在各会话间视为同一台设备；该 ID 同时用于
- * 接收广播与发送侧标识，保证对外身份一致。
+ * 对齐厂商行为：真实设备中早先验证小米（Redmi）跨会话稳定；第三方 EasyShare/CatShare 则每次重启更换。
+ * 稳定性是厂商/实现选择。本机选择持久化（与稳定的厂商实现一致），使对端把我们在各会话间视为同一台设备；
+ * 该 ID 同时用于接收广播与发送侧标识，保证对外身份一致。
  */
 export function loadOrCreateMtaDeviceIdHex(): string {
   let existing = preferencesRepo.getString(KEY_MTA_DEVICE_ID, '');
@@ -289,5 +289,7 @@ export function loadOrCreateMtaDeviceIdHex(): string {
   }
   let hex = bytesToLowerHex(bytes);
   preferencesRepo.setString(KEY_MTA_DEVICE_ID, hex);
+  // 首次生成后立即刷盘：避免生成后马上被杀/断电，下次启动又生成新 ID
+  preferencesRepo.flushNow();
   return hex;
 }

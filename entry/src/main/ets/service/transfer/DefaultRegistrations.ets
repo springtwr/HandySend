@@ -156,8 +156,8 @@ export function registerDefaultMethods(): void {
     icon: $r('app.media.ic_tab_send'),
     group: TransferMethodGroup.other,
     order: 40,
-    // 收藏设备均为 LocalSend 来源，随 LocalSend 总开关置灰
-    available: (): boolean => getLocalSendEnabled(),
+    // 收藏可包含 LocalSend 与互传设备：任一来源开启即可打开面板（面板内按开关过滤）
+    available: (): boolean => getLocalSendEnabled() || getMtaEnabled(),
     action: (): void => {
       dispatch('favorites');
     }

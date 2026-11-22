@@ -2,6 +2,7 @@ import { DesignTokens } from '../common/DesignTokens';
 import { SendViewModel } from '../viewmodel/SendViewModel';
 import { DeviceItemViewModel } from '../viewmodel/DeviceItemViewModel';
 import { getDeviceIconResource } from '../utils/DeviceIconUtil';
+import { canFavoriteDevice, favoriteKeyOf } from '../model/DeviceIdentity';
 
 // 徽标统一样式（IP 短码 / 型号 / MTA 来源 / 品牌四个徽标共用，保证样式与 DesignToken 完全一致）。
 // 必须是子组件而非组件内 @Builder：@Builder 按值传参时其内部 UI 不随参数变化刷新，
@@ -48,13 +49,18 @@ export struct DeviceListItem {
   @Event onInfo: (device: DeviceItemViewModel) => void = (_device: DeviceItemViewModel) => {
   }
 
-  private isDeviceFavorite(fingerprint: string): boolean {
+  private isDeviceFavorite(): boolean {
+    let key: string = favoriteKeyOf(this.device.item);
     for (let i = 0; i < this.viewModel.favoriteDevices.length; i++) {
-      if (this.viewModel.favoriteDevices[i].fingerprint === fingerprint) {
+      if (this.viewModel.favoriteDevices[i].fingerprint === key) {
         return true;
       }
     }
     return false;
+  }
+
+  private canFavorite(): boolean {
+    return canFavoriteDevice(this.device.item);
   }
 
   build() {
@@ -93,12 +99,12 @@ export struct DeviceListItem {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
-        // 心形图标（MTA 设备不参与 LocalSend 收藏体系，隐藏收藏交互）
-        if (!this.device.isMta) {
+        // 心形图标：LocalSend 与具备稳定身份（发送者 ID）的 MTA 设备均可收藏
+        if (this.canFavorite()) {
           SymbolGlyph(
-            this.isDeviceFavorite(this.device.fingerprint) ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
+            this.isDeviceFavorite() ? $r('sys.symbol.heart_fill') : $r('sys.symbol.heart'))
             .fontSize(DesignTokens.size.iconSm)
-            .fontColor([this.isDeviceFavorite(this.device.fingerprint) ? $r('app.color.danger_red') :
+            .fontColor([this.isDeviceFavorite() ? $r('app.color.danger_red') :
               $r('app.color.text_secondary')])
             .responseRegion({
               x: -13,
@@ -107,26 +113,26 @@ export struct DeviceListItem {
               height: 48
             })
             .onClick(() => {
-              this.viewModel.toggleFavorite(this.device.fingerprint);
+              this.viewModel.toggleFavorite(this.device.item);
             })
             .id('send_device_favorite')
-
-          // 信息按钮响应区域→48vp
-          SymbolGlyph($r('sys.symbol.info_circle'))
-            .fontSize(DesignTokens.size.iconSm)
-            .fontColor([$r('app.color.text_secondary')])
-            .margin({ left: DesignTokens.space.xxs })
-            .responseRegion({
-              x: -8,
-              y: -8,
-              width: 48,
-              height: 48
-            })
-            .onClick(() => {
-              this.onInfo(this.device);
-            })
-            .id('send_device_info')
         }
+
+        // 信息按钮响应区域→48vp（MTA 设备同样可查看详情）
+        SymbolGlyph($r('sys.symbol.info_circle'))
+          .fontSize(DesignTokens.size.iconSm)
+          .fontColor([$r('app.color.text_secondary')])
+          .margin({ left: DesignTokens.space.xxs })
+          .responseRegion({
+            x: -8,
+            y: -8,
+            width: 48,
+            height: 48
+          })
+          .onClick(() => {
+            this.onInfo(this.device);
+          })
+          .id('send_device_info')
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)

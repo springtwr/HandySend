@@ -2,6 +2,15 @@ import { common } from '@kit.AbilityKit';
 import { getLogger } from '../../utils/Logger';
 import { LogDomains } from '../../common/LogDomains';
 import { FavoriteDevice, DiscoveredDevice } from '../../model/Types';
+import { isMtaDevice } from '../../model/mta/MtaMainModels';
+import {
+  canFavoriteDevice,
+  favoriteKeyOf,
+  isMtaFavorite,
+  mtaFavoriteSenderId,
+  mtaSenderIdsMatch,
+  normalizeSenderId
+} from '../../model/DeviceIdentity';
 import { nativeDiscoveryGetDevice } from '../NativeBridge';
 import { preferencesUtil } from '../../utils/PreferencesUtil';
 import { EventBus } from '../../utils/EventBus';
@@ -61,6 +70,23 @@ function migrateFromOldFormat(oldList: Array<string>): Array<FavoriteDevice> {
 
 export function getFavorites(): Array<FavoriteDevice> {
   return favorites;
+}
+
+/**
+ * 按发送者 ID 查找收藏的互传设备（兼容部分对端短 ID 前缀）。
+ * 用于接收会话/历史记录在协议载荷缺品牌时回填已知品牌，无副作用。
+ */
+export function findMtaFavoriteBySenderId(senderId: string): FavoriteDevice | undefined {
+  for (let i = 0; i < favorites.length; i++) {
+    let favorite: FavoriteDevice = favorites[i];
+    if (!isMtaFavorite(favorite)) {
+      continue;
+    }
+    if (mtaSenderIdsMatch(senderId, mtaFavoriteSenderId(favorite))) {
+      return favorite;
+    }
+  }
+  return undefined;
 }
 
 export function addFavorite(device: FavoriteDevice): void {
@@ -229,6 +255,73 @@ export function syncFavoriteFromDiscovery(fingerprint: string, newAlias: string,
   }
 }
 
+/**
+ * 已收藏的 MTA 设备上线时同步实时属性：广播别名（受自定义别名保护）、最近 BLE 地址、
+ * 品牌标识/名称与发送者 ID。MTA 扫描按广播高频回调，故仅在字段实际变化时落盘并通知。
+ */
+export function syncMtaFavoriteFromDiscovery(device: DiscoveredDevice): void {
+  if (!isMtaDevice(device)) {
+    return;
+  }
+  let senderId: string = normalizeSenderId(device.mtaSenderIdHex ?? '');
+  if (senderId.length === 0) {
+    // 广播分段未齐时无法确认身份，等待后续完整回调
+    return;
+  }
+  let key: string = favoriteKeyOf(device);
+  for (let i = 0; i < favorites.length; i++) {
+    let favorite: FavoriteDevice = favorites[i];
+    if (favorite.fingerprint !== key) {
+      continue;
+    }
+    let changed: boolean = false;
+    let bleAddress: string = device.mtaBleAddress ?? device.fingerprint;
+    // 名称为空时 DiscoveredDevice.alias 会回退 BLE 地址；不能用地址覆盖已保存的广播名
+    let hasRealName: boolean = device.alias.length > 0 && device.alias !== bleAddress;
+    if (hasRealName) {
+      if (!favorite.customAlias && favorite.alias !== device.alias) {
+        favorite.alias = device.alias;
+        changed = true;
+      }
+      if (favorite.broadcastAlias !== device.alias) {
+        favorite.broadcastAlias = device.alias;
+        changed = true;
+      }
+    }
+    if (favorite.mtaBleAddress !== bleAddress) {
+      favorite.mtaBleAddress = bleAddress;
+      changed = true;
+    }
+    // 品牌解析失败（-1/未知）时保留已保存的品牌，避免一次缺段广播把图标降级
+    let brandId: number = device.mtaBrandId ?? -1;
+    let brandName: string = device.mtaBrandName ?? '';
+    if (brandId >= 0) {
+      if (favorite.mtaBrandId !== brandId) {
+        favorite.mtaBrandId = brandId;
+        changed = true;
+      }
+      if (brandName.length > 0 && !brandName.startsWith('未知') &&
+        favorite.mtaBrandName !== brandName) {
+        favorite.mtaBrandName = brandName;
+        changed = true;
+      }
+    }
+    if (favorite.mtaSenderIdHex !== senderId) {
+      favorite.mtaSenderIdHex = senderId;
+      changed = true;
+    }
+    if (favorite.protocol !== 'mta') {
+      favorite.protocol = 'mta';
+      changed = true;
+    }
+    if (changed) {
+      saveFavorites();
+      notifyChange();
+    }
+    return;
+  }
+}
+
 // 从原生发现缓存查询实时设备快照；任何失败（如原生层未就绪）都返回 undefined，
 // 保证收藏同步流程不被阻塞。
 function queryDiscoverySnapshotSafely(fingerprint: string): DiscoveredDevice | undefined {
@@ -240,6 +333,12 @@ function queryDiscoverySnapshotSafely(fingerprint: string): DiscoveredDevice | u
 }
 
 export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?: string): void {
+  // MTA 设备以发送者 ID 为收藏身份；缺少稳定身份时不写入收藏（BLE 地址会轮换）
+  if (!canFavoriteDevice(device)) {
+    logger.warn('忽略收藏：MTA 设备缺少发送者 ID');
+    return;
+  }
+  let isMta: boolean = isMtaDevice(device);
   let aliasToUse: string = device.alias;
   let hasCustomAlias: boolean = false;
   if (customAlias !== undefined && customAlias.length > 0 && customAlias !== device.alias) {
@@ -248,9 +347,10 @@ export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?
   }
   let fav: FavoriteDevice = {
     id: Date.now().toString() + '_' + Math.floor(Math.random() * 10000),
-    fingerprint: device.fingerprint,
-    ip: device.ip,
-    port: device.port,
+    // MTA 收藏键为 `mta:<senderId>`；LocalSend 沿用设备指纹
+    fingerprint: favoriteKeyOf(device),
+    ip: isMta ? '' : device.ip,
+    port: isMta ? 0 : device.port,
     alias: aliasToUse,
     customAlias: hasCustomAlias,
     // 收藏时刻的广播别名即设备当前广播名，作为「恢复默认别名」的还原目标
@@ -259,7 +359,12 @@ export function addFavoriteFromDiscovered(device: DiscoveredDevice, customAlias?
     // 供设备离线后渲染型号徽标/类型图标及详情页版本号
     deviceModel: device.deviceModel,
     deviceType: device.deviceType,
-    version: device.version
+    version: device.version,
+    protocol: isMta ? 'mta' : 'localsend',
+    mtaSenderIdHex: isMta ? normalizeSenderId(device.mtaSenderIdHex ?? '') : undefined,
+    mtaBleAddress: isMta ? (device.mtaBleAddress ?? device.fingerprint) : undefined,
+    mtaBrandId: isMta ? (device.mtaBrandId ?? -1) : undefined,
+    mtaBrandName: isMta ? (device.mtaBrandName ?? '') : undefined
   };
   addFavorite(fav);
 }

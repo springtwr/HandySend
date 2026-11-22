@@ -692,7 +692,7 @@ export default function AdaptersTest() {
       resetRegistry()
 
       // MTA 接收：对端身份优先接收请求携带的发送端 ID（跨会话稳定，与发送侧同一口径）；
-      // 品牌恒为未知（-1）
+      // 未注入品牌补齐时品牌保持未知（-1）
       let state = new ReceiverState()
       state.stage = ReceiverStage.REQUEST_RECEIVED
       state.connectedPeerId = '11:22:33:44:55:66'
@@ -712,6 +712,30 @@ export default function AdaptersTest() {
       let recvAdapter = getAdapter(MTA_RECEIVE_KEY)
       if (recvAdapter !== undefined && recv !== undefined) {
         expect(recvAdapter.getDisplayDescriptor(recv.id).mtaBrandId).assertEqual(-1)
+      }
+      resetRegistry()
+
+      // MTA 接收：仓储补齐品牌后驱动设备卡品牌图标与徽标，并随会话保存
+      let brandState = new ReceiverState()
+      brandState.stage = ReceiverStage.REQUEST_RECEIVED
+      brandState.peerBrandId = 30
+      brandState.peerBrandName = 'Xiaomi'
+      let brandRequest = new ReceiveRequest()
+      brandRequest.senderName = 'MtaBranded'
+      brandRequest.senderId = 'sender-brand'
+      brandRequest.fileName = 'd.bin'
+      brandRequest.totalSize = 10
+      brandState.receiveRequest = brandRequest
+      handleMtaReceiveState(brandState)
+      let brandSession = findByProtocol(MTA_RECEIVE_KEY, 'mta-receive-session')
+      expect(brandSession !== undefined).assertTrue()
+      if (brandSession !== undefined) {
+        expect(brandSession.peer.mtaBrandId).assertEqual(30)
+        expect(brandSession.peer.badges.length).assertEqual(1)
+      }
+      let brandAdapter = getAdapter(MTA_RECEIVE_KEY)
+      if (brandAdapter !== undefined && brandSession !== undefined) {
+        expect(brandAdapter.getDisplayDescriptor(brandSession.id).mtaBrandId).assertEqual(30)
       }
       resetRegistry()
 

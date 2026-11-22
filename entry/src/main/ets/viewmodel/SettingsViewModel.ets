@@ -78,6 +78,8 @@ import {
   restartWebService,
   getMtaReceiveEnabled,
   setMtaReceiveEnabled,
+  getMtaAutoConfirmMode,
+  setMtaAutoConfirmMode,
   applyMtaEnabled,
   applyMtaReceiveEnabled,
   stopMtaReceive,
@@ -147,6 +149,7 @@ import {
   DEFAULT_WEB_HTTPS_ENABLED,
   DEFAULT_WEB_PORT,
   DEFAULT_MTA_RECEIVE_ENABLED,
+  DEFAULT_MTA_AUTO_CONFIRM_MODE,
   DEFAULT_MTA_SIMULATED_BRAND,
   DEFAULT_MTA_CONNECTION_WARNINGS,
   DEFAULT_CUSTOM_ALIAS
@@ -208,6 +211,7 @@ export class SettingsViewModel {
   @Trace public webActualPort: number = 0
   @Trace public webPortFallback: boolean = false
   @Trace public mtaReceiveEnabled: boolean = DEFAULT_MTA_RECEIVE_ENABLED
+  @Trace public mtaAutoConfirmMode: string = DEFAULT_MTA_AUTO_CONFIRM_MODE.toString()
   @Trace public mtaSimulatedBrandId: number = DEFAULT_MTA_SIMULATED_BRAND
   @Trace public mtaConnectionWarnings: boolean = DEFAULT_MTA_CONNECTION_WARNINGS
   @Trace public destination: string = DEFAULT_DESTINATION
@@ -272,6 +276,7 @@ export class SettingsViewModel {
     this.webActualPort = getWebActualPort();
     this.webPortFallback = isWebPortFallback();
     this.mtaReceiveEnabled = getMtaReceiveEnabled();
+    this.mtaAutoConfirmMode = getMtaAutoConfirmMode().toString();
     this.mtaSimulatedBrandId = getMtaSimulatedBrand();
     this.mtaConnectionWarnings = isMtaConnectionWarnings();
     this.destination = getDestination();
@@ -655,6 +660,18 @@ export class SettingsViewModel {
     }
   }
 
+  // MTA 自动确认模式：写入持久化设置；接收链路在下一次请求到达时读取最新值
+  setMtaAutoConfirmModeValue(mode: string): void {
+    this.mtaAutoConfirmMode = mode;
+    if (mode === 'off') {
+      setMtaAutoConfirmMode(AutoConfirmMode.off);
+    } else if (mode === 'paired') {
+      setMtaAutoConfirmMode(AutoConfirmMode.paired);
+    } else {
+      setMtaAutoConfirmMode(AutoConfirmMode.on);
+    }
+  }
+
   // 模拟品牌：持久化后刷新接收广播身份（接收未运行时为空操作）
   setMtaSimulatedBrandValue(id: number): void {
     this.mtaSimulatedBrandId = id;
@@ -856,6 +873,8 @@ export class SettingsViewModel {
     this.mtaReceiveEnabled = DEFAULT_MTA_RECEIVE_ENABLED;
     setMtaReceiveEnabled(DEFAULT_MTA_RECEIVE_ENABLED);
     applyMtaReceiveEnabled();
+    this.mtaAutoConfirmMode = DEFAULT_MTA_AUTO_CONFIRM_MODE.toString();
+    setMtaAutoConfirmMode(DEFAULT_MTA_AUTO_CONFIRM_MODE);
     this.mtaSimulatedBrandId = DEFAULT_MTA_SIMULATED_BRAND;
     setMtaSimulatedBrand(DEFAULT_MTA_SIMULATED_BRAND);
     applyMtaSimulatedBrand();

@@ -1301,6 +1301,42 @@
       "value": "蓝牙或 WLAN 未开启时，在发送页显示警告横幅"
     },
     {
+      "name": "mta_auto_confirm_off_desc",
+      "value": "收到附近互传设备的请求时先询问是否接收"
+    },
+    {
+      "name": "mta_auto_confirm_favorites_desc",
+      "value": "仅自动接收已收藏互传设备的请求；收到的纯文本消息自动复制到剪贴板；其他设备仍需手动确认"
+    },
+    {
+      "name": "mta_auto_confirm_on_desc",
+      "value": "自动接收所有互传请求，无需确认；收到的纯文本消息自动复制到剪贴板"
+    },
+    {
+      "name": "mta_auto_confirm_paired_warning",
+      "value": "自动接收收藏夹中互传设备的文件请求。请注意，这并非绝对安全；无法确认对方是收藏设备时仍会要求手动确认。部分设备重启后会更换身份标识，可能需要重新收藏。"
+    },
+    {
+      "name": "mta_auto_confirm_on_warning",
+      "value": "将自动接收所有互传请求。附近任何人都可以在不确认的情况下向你发送文件。"
+    },
+    {
+      "name": "device_source_label",
+      "value": "来源"
+    },
+    {
+      "name": "mta_brand_label",
+      "value": "品牌"
+    },
+    {
+      "name": "mta_peer_device_id_label",
+      "value": "互传设备 ID"
+    },
+    {
+      "name": "favorites_mta_offline",
+      "value": "附近未发现该互传设备，请确认对方已开启互传并处于附近"
+    },
+    {
       "name": "mta_brand_picker_title",
       "value": "选择模拟品牌"
     },

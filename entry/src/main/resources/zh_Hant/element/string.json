@@ -1301,6 +1301,42 @@
       "value": "藍牙或 WLAN 未開啟時，在傳送頁顯示警告橫幅"
     },
     {
+      "name": "mta_auto_confirm_off_desc",
+      "value": "收到附近互傳裝置的請求時先詢問是否接收"
+    },
+    {
+      "name": "mta_auto_confirm_favorites_desc",
+      "value": "僅自動接收已收藏互傳裝置的請求；收到的純文字訊息會自動複製到剪貼簿；其他裝置仍需手動確認"
+    },
+    {
+      "name": "mta_auto_confirm_on_desc",
+      "value": "自動接收所有互傳請求，無需確認；收到的純文字訊息會自動複製到剪貼簿"
+    },
+    {
+      "name": "mta_auto_confirm_paired_warning",
+      "value": "自動接收收藏夾中互傳裝置的檔案請求。請注意，這並非絕對安全；無法確認對方是收藏裝置時仍會要求手動確認。部分裝置重新啟動後會更換身分識別，可能需要重新收藏。"
+    },
+    {
+      "name": "mta_auto_confirm_on_warning",
+      "value": "將自動接收所有互傳請求。附近任何人都可以在不確認的情況下向你傳送檔案。"
+    },
+    {
+      "name": "device_source_label",
+      "value": "來源"
+    },
+    {
+      "name": "mta_brand_label",
+      "value": "品牌"
+    },
+    {
+      "name": "mta_peer_device_id_label",
+      "value": "互傳裝置 ID"
+    },
+    {
+      "name": "favorites_mta_offline",
+      "value": "附近未發現該互傳裝置，請確認對方已開啟互傳並處於附近"
+    },
+    {
       "name": "mta_brand_picker_title",
       "value": "選擇模擬品牌"
     },

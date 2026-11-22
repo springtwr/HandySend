@@ -34,7 +34,10 @@ import {
 import { SessionAdapter, emptyDisplayDescriptor, registerAdapter } from './SessionAdapter';
 import { MediaFileInfo } from '../../../model/Types';
 import { MtaConstants } from '../../mta/MtaConstants';
+import { mtaBrandBadgeText } from '../../../model/mta/MtaMainModels';
 import { getMimeForFileName } from '../../../utils/MimeUtils';
+import { copyText } from '../../../utils/ClipboardUtil';
+import { DialogService } from '../../DialogService';
 
 export const MTA_RECEIVE_KEY: string = 'mta-receive';
 
@@ -185,16 +188,19 @@ function capabilities(): SessionCapabilities {
  * 构建对端标识。
  * MTA 协议载荷（BLE 广播、GATT DeviceInfo、sendRequest 的 ReceiveRequest）均不携带
  * 对端设备类型或型号，故此处不设置 deviceType；展示层据此恒回退手机图标，不伪造数据。
+ * 品牌由仓储按发送者 ID 从发现/收藏快照补齐（见 MtaRepository.enrichMtaReceiverPeerBrand）。
  */
 function buildPeer(state: ReceiverState): SessionPeer {
   let request = state.receiveRequest;
   let name: string = request !== undefined ? request.senderName : '';
   let peer: SessionPeer = {
     displayName: name,
-    badges: [],
-    // 接收协议不携带品牌：标记为 MTA 来源的未知品牌（-1），
-    // 与展示描述符口径一致，并随历史归档保证设备卡品牌图标在结束后不变
-    mtaBrandId: -1
+    // 品牌名作为徽标与发送侧同口径展示；仅品牌已知时添加，避免空徽标或未知占位
+    badges: state.peerBrandName.length > 0 && state.peerBrandId >= 0 ?
+      [mtaBrandBadgeText(state.peerBrandName)] : [],
+    // 接收载荷不携带品牌：使用仓储补齐的品牌标识（-1 表示未知），
+    // 并随历史归档保证设备卡品牌图标在结束后不变
+    mtaBrandId: state.peerBrandId
   };
   // 对端身份复用 fingerprint 字段：优先接收请求携带的发送端 ID（跨会话稳定，且与发送侧
   // 「同设备」判定同一口径），为空时回退已连接 GATT 的对端标识（会轮换的 BLE 地址）；
@@ -300,7 +306,8 @@ export function handleMtaReceiveState(state: ReceiverState): void {
       peer: buildPeer(state),
       files: descriptors,
       capabilities: capabilities(),
-      stage: SessionStage.awaitingConfirmation,
+      // 自动确认命中的会话从创建起即为进行中；服务侧随后直接进入接受/下载流程
+      stage: state.autoAccepted ? SessionStage.active : SessionStage.awaitingConfirmation,
       textMessage: textContent.length > 0,
       // 下载前只有占位条目：实时文件数用请求声明值，真实清单回填后由注册表清零
       declaredFileCount: fileCount
@@ -308,9 +315,22 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     activeUnifiedId = session.id;
     if (textContent.length > 0) {
       textContentByUnifiedId.set(session.id, textContent);
+      // 与 LocalSend 自动接收口径一致：免确认收到纯文本时立即复制到剪贴板并提示，
+      // 避免自动接收的消息只落在任务历史中、用户没有感知
+      if (state.autoAccepted) {
+        if (copyText(textContent)) {
+          DialogService.showCenterToast($r('app.string.received_text_copied_toast'));
+        }
+        // 自动接收文本没有用户确认动作，由适配器直接等待落盘通知；
+        // 与手动接受共用落盘兜底，避免通知不达时会话永久停在进行中
+        scheduleTextSaveTimeout(session.id);
+      }
     }
-    // 待确认阶段具备接收侧超时：用户始终不处理且对端不关闭连接时自行收尾
-    schedulePendingTimeout(session.id);
+    // 待确认阶段具备接收侧超时：用户始终不处理且对端不关闭连接时自行收尾；
+    // 自动接收不需要待确认超时
+    if (!state.autoAccepted) {
+      schedulePendingTimeout(session.id);
+    }
     return;
   }
 
@@ -318,13 +338,18 @@ export function handleMtaReceiveState(state: ReceiverState): void {
     return;
   }
 
-  // 服务已复位/停止：该请求已不可能被接受，待确认会话按已取消收口。
-  // 服务决策超时（30s）早于适配器兜底（60s），不能等兜底定时器；否则期间确认会落在无请求的服务上。
+  // 服务已复位/停止：该请求已不可能被接受，待确认会话按已取消收口；
+  // 自动接收或已进入接收的会话若仍处于进行中，说明链路已中断，按失败收口
   if (stage === ReceiverStage.SERVICE_RUNNING || stage === ReceiverStage.IDLE) {
     let session = getSession(activeUnifiedId);
-    if (session !== undefined && session.stage === SessionStage.awaitingConfirmation) {
+    if (session !== undefined && (session.stage === SessionStage.awaitingConfirmation ||
+      session.stage === SessionStage.active)) {
       cancelPendingTimeout();
-      finish(activeUnifiedId, SessionStage.cancelled, '接收请求已失效', 'request_lost');
+      if (session.stage === SessionStage.awaitingConfirmation) {
+        finish(activeUnifiedId, SessionStage.cancelled, '接收请求已失效', 'request_lost');
+      } else {
+        finish(activeUnifiedId, SessionStage.failed, '接收请求已失效', 'request_lost');
+      }
       activeUnifiedId = undefined;
     }
     return;
@@ -384,8 +409,8 @@ const adapter: SessionAdapter = {
       badges: session.peer.badges,
       // 协议不携带设备类型：恒回退手机图标（见 buildPeer 说明）
       deviceType: session.peer.deviceType ?? 'mobile',
-      // 接收协议不携带品牌：恒为未知品牌（-1），设备卡回退默认 MTA 品牌图标
-      mtaBrandId: -1,
+      // 品牌由仓储补齐并随会话保存；未知时回退默认 MTA 品牌图标
+      mtaBrandId: session.peer.mtaBrandId !== undefined ? session.peer.mtaBrandId : -1,
       directionLabel: $r('app.string.session_direction_receive'),
       supportsTextPreview: text.length > 0,
       textPreview: text

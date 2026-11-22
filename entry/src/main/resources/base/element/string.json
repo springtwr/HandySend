@@ -1301,6 +1301,42 @@
       "value": "Show a warning banner on the Send page when Bluetooth or WLAN is off"
     },
     {
+      "name": "mta_auto_confirm_off_desc",
+      "value": "Ask for confirmation before receiving files from nearby MTA devices."
+    },
+    {
+      "name": "mta_auto_confirm_favorites_desc",
+      "value": "Automatically receive requests only from favorite MTA devices; text-only messages are copied to the clipboard; other devices still require confirmation."
+    },
+    {
+      "name": "mta_auto_confirm_on_desc",
+      "value": "Automatically receive all MTA requests without confirmation; text-only messages are copied to the clipboard."
+    },
+    {
+      "name": "mta_auto_confirm_paired_warning",
+      "value": "Auto-accepting file requests from favorite MTA devices. This is not absolutely secure. If the sender cannot be confirmed as a favorite, you will still need to confirm manually; some devices change their identity after a restart and may need to be favorited again."
+    },
+    {
+      "name": "mta_auto_confirm_on_warning",
+      "value": "Auto-accepting all MTA requests. Anyone nearby can send you files without confirmation."
+    },
+    {
+      "name": "device_source_label",
+      "value": "Source"
+    },
+    {
+      "name": "mta_brand_label",
+      "value": "Brand"
+    },
+    {
+      "name": "mta_peer_device_id_label",
+      "value": "MTA Device ID"
+    },
+    {
+      "name": "favorites_mta_offline",
+      "value": "This MTA device is not nearby. Make sure it is nearby with MTA enabled."
+    },
+    {
       "name": "mta_brand_picker_title",
       "value": "Select Simulated Brand"
     },

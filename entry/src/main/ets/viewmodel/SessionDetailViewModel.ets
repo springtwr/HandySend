@@ -30,6 +30,9 @@ import {
   SessionHistoryFailure,
   SessionHistoryFileEntry
 } from '../model/transfer/SessionHistory';
+import { mtaBrandBadgeText } from '../model/mta/MtaMainModels';
+import { resolveMtaBrandName } from '../model/mta/MtaBrandRegistry';
+import { findMtaFavoriteBySenderId } from '../service/repository/FavoritesService';
 import {
   cancel as registryCancel,
   confirmSession,
@@ -773,11 +776,26 @@ export class SessionDetailViewModel {
     display.peerSubtitle = '';
     // 设备类型取归档值（不再硬编码 'mobile'）：保证历史态设备图标与进行中一致
     display.deviceType = entry.peerDeviceType;
-    // 设备型号徽标与实时态同源（实时取 session.peer.badges，归档取 peerDeviceModel）：
-    // 保证会话结束后设备卡型号徽标不丢失；空串时不加空徽标
-    display.badges = entry.peerDeviceModel.length > 0 ? [entry.peerDeviceModel] : [];
-    // 透传归档的 MTA 品牌标识（缺省 undefined 按非 MTA 降级），保证 MTA 设备图标结束后不变
-    display.mtaBrandId = entry.peerMtaBrandId;
+    let archivedBrandId: number = entry.peerMtaBrandId !== undefined ? entry.peerMtaBrandId : -1;
+    let archivedBrandName: string = '';
+    if (entry.protocolKey.startsWith('mta-')) {
+      // 旧归档记录缺品牌（-1/undefined）时按收藏记录回填，避免历史任务详情一直显示第三方图标；
+      // 收藏记录含完整/短发送者 ID 匹配能力，找不到则保持未知
+      if (archivedBrandId < 0) {
+        let favorite = findMtaFavoriteBySenderId(entry.peerFingerprint);
+        if (favorite !== undefined && favorite.mtaBrandId !== undefined && favorite.mtaBrandId >= 0) {
+          archivedBrandId = favorite.mtaBrandId;
+        }
+      }
+      if (archivedBrandId >= 0) {
+        archivedBrandName = mtaBrandBadgeText(resolveMtaBrandName(archivedBrandId));
+      }
+    }
+    // 设备型号/品牌徽标与实时态同源：MTA 用品牌名，LocalSend 用型号；空串时不加空徽标
+    display.badges = entry.peerDeviceModel.length > 0 ? [entry.peerDeviceModel] :
+      (archivedBrandName.length > 0 ? [archivedBrandName] : []);
+    // 透传归档的 MTA 品牌标识（旧记录由收藏回填），保证 MTA 设备图标结束后不变
+    display.mtaBrandId = archivedBrandId >= 0 ? archivedBrandId : entry.peerMtaBrandId;
     display.directionLabel = directionLabelFor(entry.dataFlow);
     display.supportsTextPreview = false;
     this.display = display;

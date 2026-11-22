@@ -36,7 +36,11 @@ import {
   shouldTriggerScanRecovery,
   scanRecoveryDelayMs
 } from '../../model/mta/MtaDiscoveryModels';
-import { MtaReceiveService, setMtaReceiveTextSavedNotifier } from '../mta/MtaReceiveService';
+import {
+  MtaReceiveService,
+  setMtaReceiveAutoAcceptDecider,
+  setMtaReceiveTextSavedNotifier
+} from '../mta/MtaReceiveService';
 import {
   MtaReceiveEventHandlers,
   ReceiveServiceWarmState,
@@ -47,9 +51,17 @@ import {
   isReceiveServiceReusable
 } from '../../model/mta/MtaProtocolModels';
 import { mtaDeviceToDiscoveredDevice } from '../../model/mta/MtaMainModels';
+import { computeMtaShouldAutoAccept } from '../../model/mta/MtaAutoAcceptModels';
+import {
+  isMtaFavorite,
+  mtaFavoriteSenderId,
+  mtaSenderIdsMatch,
+  normalizeSenderId
+} from '../../model/DeviceIdentity';
 import { notifyChange } from './AppCore';
-import { getMtaEnabled, getMtaReceiveEnabled, getMtaSimulatedBrand } from './SettingsRepository';
+import { getMtaAutoConfirmMode, getMtaEnabled, getMtaReceiveEnabled, getMtaSimulatedBrand } from './SettingsRepository';
 import { getDeviceAlias } from './DeviceRepository';
+import { getFavorites, syncMtaFavoriteFromDiscovery } from './FavoritesService';
 import {
   handleMtaReceiveState,
   notifyMtaTextSaved,
@@ -254,6 +266,8 @@ function mergeScannedDevice(device: MtaDiscoveredDevice): void {
     updated.push(device);
   }
   scannedDevices = updated;
+  // 已收藏的互传设备上线时同步实时名称/品牌/最近地址（内部仅在字段变化时落盘）
+  syncMtaFavoriteFromDiscovery(mtaDeviceToDiscoveredDevice(device, device.lastSeen));
   notifyChange();
 }
 
@@ -848,6 +862,66 @@ export function getMtaDiscoveredDevices(): Array<DiscoveredDevice> {
 
 // ── 接收服务 ──
 
+/**
+ * 接收协议载荷不携带品牌：按发送者 ID（兼容部分对端短 ID 前缀）先查当前发现快照，
+ * 再查收藏记录；仍未命中时按 GATT 地址回退。只补齐传入的状态快照，不改服务内部状态。
+ * 未命中时保持 -1/空串，展示层回退默认品牌图标。
+ */
+function enrichMtaReceiverPeerBrand(state: ReceiverState): void {
+  // 品牌只在待确认会话创建前需要补齐；后续进度快照不再重复遍历发现/收藏列表
+  if (state.stage !== ReceiverStage.REQUEST_RECEIVED) {
+    return;
+  }
+  let request = state.receiveRequest;
+  if (request === undefined) {
+    return;
+  }
+  let senderId: string = normalizeSenderId(request.senderId);
+  if (senderId.length > 0) {
+    for (let i = 0; i < scannedDevices.length; i++) {
+      let device = scannedDevices[i];
+      if (mtaSenderIdsMatch(senderId, device.senderIdHex)) {
+        // 广播缺品牌时继续用收藏记录兜底，避免把已保存的已知品牌降级为未知
+        if (device.brandId >= 0) {
+          state.peerBrandId = device.brandId;
+          state.peerBrandName = device.brandName;
+          return;
+        }
+        break;
+      }
+    }
+    // 扫描未运行或列表已清空时，收藏记录仍可提供已知品牌
+    let favorites = getFavorites();
+    for (let i = 0; i < favorites.length; i++) {
+      if (!isMtaFavorite(favorites[i])) {
+        continue;
+      }
+      if (mtaSenderIdsMatch(senderId, mtaFavoriteSenderId(favorites[i]))) {
+        let favoriteBrandId: number | undefined = favorites[i].mtaBrandId;
+        let favoriteBrandName: string | undefined = favorites[i].mtaBrandName;
+        if (favoriteBrandId !== undefined && favoriteBrandId >= 0) {
+          state.peerBrandId = favoriteBrandId;
+          state.peerBrandName = favoriteBrandName !== undefined && !favoriteBrandName.startsWith('未知') ?
+            favoriteBrandName : '';
+          return;
+        }
+      }
+    }
+  }
+  // 发送者 ID 缺失或品牌未知时按 GATT 对端地址回退（地址可能轮换，仅作兜底）
+  let peerId: string = normalizeSenderId(state.connectedPeerId);
+  if (peerId.length > 0) {
+    for (let i = 0; i < scannedDevices.length; i++) {
+      if (normalizeSenderId(scannedDevices[i].bleAddress) === peerId &&
+        scannedDevices[i].brandId >= 0) {
+        state.peerBrandId = scannedDevices[i].brandId;
+        state.peerBrandName = scannedDevices[i].brandName;
+        return;
+      }
+    }
+  }
+}
+
 /** 惰性创建接收服务并绑定事件 */
 function ensureReceiveService(): MtaReceiveService {
   if (receiveService !== undefined) {
@@ -856,6 +930,8 @@ function ensureReceiveService(): MtaReceiveService {
   let service = new MtaReceiveService();
   let handlers = new MtaReceiveEventHandlers();
   handlers.onStateChange = (state: ReceiverState): void => {
+    // 接收载荷无品牌：进入适配器前用发现/收藏快照补齐对端品牌
+    enrichMtaReceiverPeerBrand(state);
     receiveState = state;
     receiveRunning = state.serviceRunning;
     lastReceiveStage = state.stage;
@@ -1141,6 +1217,12 @@ export function getMtaReceiveSnapshot(): ReceiverState {
 export function isMtaReceivingActive(): boolean {
   return isMtaReceivingStage(receiveState.stage);
 }
+
+// 自动确认判定：按最新设置与收藏快照匹配接收请求的发送者 ID；
+// 收藏变更无需重启接收服务，下一次请求到达时即时生效
+setMtaReceiveAutoAcceptDecider((senderId: string): boolean => {
+  return computeMtaShouldAutoAccept(getMtaAutoConfirmMode(), getFavorites(), senderId);
+});
 
 // 注册 MTA 接收确认/拒绝/取消/接受文本入口与媒体提供器：
 // 统一会话命令经适配器回调本仓库门面（含文本消息的接受文本收尾与相册保存媒体来源）

@@ -16,6 +16,7 @@ import {
   nativeFlushRustLogs
 } from '../NativeBridge';
 import { getFavorites, syncFavoriteFromDiscovery } from './FavoritesService';
+import { isMtaFavorite } from '../../model/DeviceIdentity';
 import { notifyChange, getServerFingerprint } from './AppCore';
 import { getHttpsEnabled, getPort, getDiscoveryTimeout } from './SettingsRepository';
 import { getLocalDeviceInfo } from './DeviceRepository';
@@ -294,16 +295,27 @@ function runStagedDiscover(force: boolean): void {
   // 记录本次扫描发起时刻，作为离线判定基准（handleDeviceFound 必然更新 lastSeen ≥ scanStartTime）
   let startedAt: number = Date.now();
   scanStartTime = startedAt;
-  logger.debug('开始 scanStartTime=' + startedAt + ' generation=' + generation +
-    ' force=' + force + ' 已知设备=' + discoveredDevices.length + ' 收藏=' + getFavorites().length);
-
   let favDevices = getFavorites();
+  // 互传收藏没有局域网 IP/端口，不参与 LocalSend 探测；仅统计局域网收藏
+  let localFavoriteCount: number = 0;
+  for (let i = 0; i < favDevices.length; i++) {
+    if (!isMtaFavorite(favDevices[i])) {
+      localFavoriteCount++;
+    }
+  }
+  logger.debug('开始 scanStartTime=' + startedAt + ' generation=' + generation +
+    ' force=' + force + ' 已知设备=' + discoveredDevices.length + ' 收藏=' + localFavoriteCount);
+
   let channels: Array<NativeDeviceChannel> = [];
   let protocol = getHttpsEnabled() ? 'https' : 'http';
   let altProtocol = getHttpsEnabled() ? 'http' : 'https';
   // 按 host:port:protocol 去重（收藏设备与已知设备快照可能重叠）
   let seenKeys: Set<string> = new Set<string>();
   for (let i = 0; i < favDevices.length; i++) {
+    // 互传收藏没有 IP/端口，跳过（不生成空 host 探测通道）
+    if (isMtaFavorite(favDevices[i])) {
+      continue;
+    }
     // 收藏设备探测：若 lastProtocol 存在则仅推送该协议 channel，否则双协议
     if (favDevices[i].lastProtocol !== undefined && favDevices[i].lastProtocol !== null &&
       favDevices[i].lastProtocol!.length > 0) {

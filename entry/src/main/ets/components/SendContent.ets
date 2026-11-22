@@ -15,6 +15,7 @@ import {
   getHttpsEnabled, resolveSendProtocol, isAutoOpenSessionDetailAfterSend
 } from '../service/AppService';
 import { DiscoveredDevice, StagedFile, FavoriteDevice } from '../model/Types';
+import { isMtaFavorite } from '../model/DeviceIdentity';
 import { SendContentZone } from './send/SendContentZone';
 import { SendTargetZone } from './send/SendTargetZone';
 import { setTransferMethodDispatcher } from '../service/transfer/DefaultRegistrations';
@@ -142,6 +143,12 @@ export struct SendContent {
     this.favoritesPanelViewModel.refreshOnlineStatus();
   }
 
+  // 互传发现快照刷新时同样更新面板在线状态（MTA 设备独立于 LocalSend 发现列表）
+  @Monitor('viewModel.mtaDiscoveredDevices')
+  onMtaDiscoveredDevicesChange(): void {
+    this.favoritesPanelViewModel.refreshOnlineStatus();
+  }
+
   // 批量上限/文件夹扫描提示：ViewModel 只置一次类型，视图取本地化文案后清除。
   @Monitor('viewModel.batchNotice')
   onLimitNoticeChange(): void {
@@ -225,7 +232,13 @@ export struct SendContent {
       'version': device.version,
       'deviceModel': device.deviceModel,
       'deviceType': device.deviceType,
-      'protocol': device.protocol
+      'protocol': device.protocol,
+      // 来源与 MTA 字段：详情页据此切换展示字段与可用操作
+      'source': isMtaDevice(device) ? 'mta' : 'localsend',
+      'mtaSenderIdHex': device.mtaSenderIdHex !== undefined ? device.mtaSenderIdHex : '',
+      'mtaBleAddress': device.mtaBleAddress !== undefined ? device.mtaBleAddress : '',
+      'mtaBrandId': device.mtaBrandId !== undefined ? device.mtaBrandId : -1,
+      'mtaBrandName': device.mtaBrandName !== undefined ? device.mtaBrandName : ''
     };
   }
 
@@ -1190,9 +1203,9 @@ export struct SendContent {
   // 点击「收藏列表」菜单项：刷新面板条目后直接打开半模态面板，不以是否已暂存内容为门禁；
   // 未选择内容时不阻止打开，仅在实际点击设备发起发送阶段拦截并提示。
   onOpenFavorites(): void {
-    // LocalSend 总开关关闭时不允许打开收藏面板（入口已置灰，此处为防御纵深）
-    if (!this.viewModel.localSendEnabled) {
-      logger.debug('LocalSend 已禁用，忽略收藏入口');
+    // LocalSend 与互传均关闭时没有可展示的收藏来源，入口已置灰，此处为防御纵深
+    if (!this.viewModel.localSendEnabled && !this.viewModel.mtaEnabled) {
+      logger.debug('LocalSend 与 MTA 均已禁用，忽略收藏入口');
       return;
     }
     this.favoritesPanelViewModel.refresh();
@@ -1206,9 +1219,37 @@ export struct SendContent {
     this.onNavigateTo('DeviceDetailsPage', this.favoritesPanelViewModel.buildDetailsParams(favorite));
   }
 
-  // 点击收藏条目请求发送：在线直发；离线先按保存地址定向探测（探测中给出行级反馈）。
-  // 发送编排下沉到 SendViewModel，返回结果枚举由本视图给出提示。
+  /**
+   * MTA 收藏发送（返回 true 表示已由本分支处理）：
+   * 仅当该收藏设备当前出现在 BLE 发现快照中时可发送；离线无法定向探测，给出明确提示。
+   * 确认发送后关闭收藏面板，复用附近列表的 MTA 发送反馈（开始提示与失败浮卡）。
+   */
+  private mtaFavoriteSend(favorite: FavoriteDevice): boolean {
+    if (!isMtaFavorite(favorite)) {
+      return false;
+    }
+    let device: DiscoveredDevice | undefined = this.viewModel.findOnlineMtaDeviceForFavorite(favorite);
+    if (device === undefined) {
+      this.getUIContext()
+        .getPromptAction()
+        .showToast({ message: $r('app.string.favorites_mta_offline'), duration: 3000, alignment: Alignment.Center });
+      return true;
+    }
+    let target: DiscoveredDevice = device;
+    this.runAfterLargeFileConfirm(() => {
+      this.isShowFavoritesSheet = false;
+      this.sendToMtaDevice(target);
+    });
+    return true;
+  }
+
+  // 点击收藏条目请求发送：MTA 收藏依赖当前 BLE 发现（无法按地址定向探测）；
+  // LocalSend 在线直发、离线先按保存地址定向探测（探测中给出行级反馈）。
+  // 发送编排下沉到 ViewModel，返回结果枚举由本视图给出提示。
   private onFavoriteSendRequest(favorite: FavoriteDevice): void {
+    if (this.mtaFavoriteSend(favorite)) {
+      return;
+    }
     // 已有定向探测进行中：忽略重复点击，避免重复发起
     if (this.favoritesPanelViewModel.probingFingerprint.length > 0) {
       return;

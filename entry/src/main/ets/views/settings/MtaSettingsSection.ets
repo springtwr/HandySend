@@ -7,10 +7,40 @@ import {
   resolveMtaBrandIcon
 } from '../../model/mta/MtaBrandRegistry';
 import { getSheetWidth, isWideWidth } from '../../common/Breakpoints';
-import { uiObserver } from '@kit.ArkUI';
+import {
+  AdvancedDialogV2Button,
+  AlertDialogV2,
+  promptAction,
+  uiObserver
+} from '@kit.ArkUI';
 import { subscribeOverlayClose, unsubscribeOverlayClose } from '../../utils/OverlayCloseBus';
 
-// 互传联盟（MTA）设置分组：总开关 + 允许接收 + 显示互传提醒 + 模拟品牌选择。
+interface MtaAutoConfirmOption {
+  value: string
+  label: Resource
+  desc: Resource
+}
+
+// MTA 自动确认模式选项：顺序即弹窗列表顺序（标签复用 LocalSend 同名项，描述为互传专属）
+const MTA_AUTO_CONFIRM_OPTIONS: Array<MtaAutoConfirmOption> = [
+  {
+    value: 'off',
+    label: $r('app.string.auto_confirm_off'),
+    desc: $r('app.string.mta_auto_confirm_off_desc')
+  },
+  {
+    value: 'paired',
+    label: $r('app.string.auto_confirm_favorites'),
+    desc: $r('app.string.mta_auto_confirm_favorites_desc')
+  },
+  {
+    value: 'on',
+    label: $r('app.string.auto_confirm_on'),
+    desc: $r('app.string.mta_auto_confirm_on_desc')
+  }
+];
+
+// 互传联盟（MTA）设置分组：总开关 + 允许接收 + 自动确认请求 + 显示互传提醒 + 模拟品牌选择。
 // 数据经 @Param 绑定父组件 VM，命令直调 VM（View → ViewModel）。
 @ComponentV2
 export struct MtaSettingsSection {
@@ -19,9 +49,17 @@ export struct MtaSettingsSection {
   @Require @Param viewModel: SettingsViewModel
   // 是否展示模拟品牌半屏弹窗
   @Local isShowBrandSheet: boolean = false
-  // 新传输直达详情前的弹层收起：本组件只处理品牌半模态
+  // 是否展示自动确认模式半屏弹窗
+  @Local isShowAutoConfirmSheet: boolean = false
+  // 待确认的自动确认模式（paired/on），确认后落地
+  @Local pendingMtaAutoConfirmMode: string = ''
+  // 当前打开的确认弹窗 id（关闭时使用）
+  private activeDialogId: number = -1
+  // 新传输直达详情前的弹层收起：本组件只处理自己打开的弹层
   private overlayCloseCallback: () => void = (): void => {
     this.isShowBrandSheet = false;
+    this.isShowAutoConfirmSheet = false;
+    this.closeActiveDialog();
   }
 
   aboutToAppear(): void {
@@ -33,6 +71,131 @@ export struct MtaSettingsSection {
   }
   // 可模拟品牌清单（构造时取一次，保证顺序稳定且避免重复计算）
   private brandOptions: Array<MtaSelectableBrand> = mtaSelectableBrands()
+
+  // ── 自动确认请求（半屏三选一 + 高风险确认弹窗） ──
+
+  private getMtaAutoConfirmLabel(): ResourceStr {
+    for (let i = 0; i < MTA_AUTO_CONFIRM_OPTIONS.length; i++) {
+      if (MTA_AUTO_CONFIRM_OPTIONS[i].value === this.viewModel.mtaAutoConfirmMode) {
+        return MTA_AUTO_CONFIRM_OPTIONS[i].label;
+      }
+    }
+    return MTA_AUTO_CONFIRM_OPTIONS[0].label;
+  }
+
+  // 切换自动确认模式：off 直接生效；paired/on 需先弹确认
+  private applyMtaAutoConfirm(next: string): void {
+    if (next === this.viewModel.mtaAutoConfirmMode) {
+      return;
+    }
+    if (next === 'off') {
+      this.viewModel.setMtaAutoConfirmModeValue('off');
+      return;
+    }
+    this.pendingMtaAutoConfirmMode = next;
+    this.openMtaAutoConfirmDialog();
+  }
+
+  private openMtaAutoConfirmDialog(): void {
+    let dialogOptions: promptAction.CustomDialogOptions = {
+      builder: () => {
+        this.mtaAutoConfirmWarningDialog();
+      }
+    };
+    this.getUIContext()
+      .getPromptAction()
+      .openCustomDialog(dialogOptions)
+      .then((id: number) => {
+        this.activeDialogId = id;
+      })
+      .catch(() => {
+      });
+  }
+
+  private closeActiveDialog(): void {
+    if (this.activeDialogId >= 0) {
+      this.getUIContext().getPromptAction().closeCustomDialog(this.activeDialogId);
+      this.activeDialogId = -1;
+    }
+  }
+
+  @Builder
+  mtaAutoConfirmWarningDialog() {
+    AlertDialogV2({
+      primaryTitle: $r('app.string.auto_confirm_title'),
+      content: this.pendingMtaAutoConfirmMode === 'paired' ?
+        $r('app.string.mta_auto_confirm_paired_warning') : $r('app.string.mta_auto_confirm_on_warning'),
+      primaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_cancel'),
+        action: () => {
+          this.closeActiveDialog();
+        }
+      }),
+      secondaryButton: new AdvancedDialogV2Button({
+        content: $r('app.string.dialog_confirm'),
+        action: () => {
+          this.viewModel.setMtaAutoConfirmModeValue(this.pendingMtaAutoConfirmMode);
+          this.closeActiveDialog();
+        }
+      })
+    })
+  }
+
+  // 自动确认模式半屏弹窗：系统标题 + 卡片列表，选中项仅文字高亮
+  @Builder
+  autoConfirmSheetBuilder(): void {
+    Column() {
+      Column() {
+        List({ space: 0 }) {
+          ForEach(MTA_AUTO_CONFIRM_OPTIONS, (item: MtaAutoConfirmOption, index: number) => {
+            ListItem() {
+              Column() {
+                Column({ space: DesignTokens.space.tiny }) {
+                  Text(item.label)
+                    .fontSize(DesignTokens.font.bodyM)
+                    .fontColor(this.viewModel.mtaAutoConfirmMode === item.value ?
+                      $r('app.color.accent_blue') : $r('app.color.text_primary'))
+                    .fontWeight(this.viewModel.mtaAutoConfirmMode === item.value ?
+                      FontWeight.Bold : FontWeight.Normal)
+
+                  Text(item.desc)
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .width('100%')
+                .alignItems(HorizontalAlign.Start)
+                .padding({
+                  left: DesignTokens.space.lg,
+                  right: DesignTokens.space.lg,
+                  top: DesignTokens.space.md,
+                  bottom: DesignTokens.space.md
+                })
+                .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+                .onClick(() => {
+                  // 先收起弹窗：高风险的 paired/on 随后弹出确认框，取消时保持原值
+                  this.isShowAutoConfirmSheet = false;
+                  this.applyMtaAutoConfirm(item.value);
+                })
+                .id('settings_mta_auto_confirm_option')
+
+                if (index < MTA_AUTO_CONFIRM_OPTIONS.length - 1) {
+                  Divider().color($r('app.color.border_light'))
+                }
+              }
+              .width('100%')
+            }
+          }, (item: MtaAutoConfirmOption) => item.value)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .backgroundColor($r('app.color.card_background'))
+      .borderRadius(DesignTokens.radius.lg)
+      .border({ width: DesignTokens.component.borderSlim, color: $r('app.color.border_light') })
+    }
+    .width('100%')
+    .padding({ left: DesignTokens.space.md, right: DesignTokens.space.md, bottom: DesignTokens.space.lg })
+  }
 
   // 模拟品牌半屏弹窗：列表项 = 品牌图标 + 本地化显示名，点选即写入并关闭
   @Builder
@@ -146,6 +309,52 @@ export struct MtaSettingsSection {
           .fontColor($r('app.color.text_secondary'))
           .alignSelf(ItemAlign.Start)
           .margin({ bottom: DesignTokens.space.tiny })
+
+        // 自动确认请求（三选一）：与 LocalSend 同口径；总开关关闭时置灰
+        Row() {
+          Text($r('app.string.auto_confirm_title'))
+            .fontSize(DesignTokens.font.bodyM)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+
+          Row() {
+            Text(this.getMtaAutoConfirmLabel())
+              .fontSize(DesignTokens.font.bodyM)
+              .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .textAlign(TextAlign.End)
+              .layoutWeight(1)
+              .margin({ right: DesignTokens.space.xxs })
+            SymbolGlyph($r('sys.symbol.chevron_forward'))
+              .fontSize(DesignTokens.font.subtitleL)
+              .fontColor([$r('app.color.text_secondary')])
+          }
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.End)
+        }
+        .width('100%')
+        .padding({ top: DesignTokens.space.sm, bottom: DesignTokens.space.tiny })
+        .constraintSize({ minHeight: DesignTokens.size.thumbSm })
+        .alignItems(VerticalAlign.Center)
+        .enabled(this.viewModel.mtaEnabled)
+        .opacity(this.viewModel.mtaEnabled ? 1 : 0.4)
+        .onClick(() => {
+          this.isShowAutoConfirmSheet = true;
+        })
+        .id('settings_mta_auto_confirm_entry')
+        .bindSheet($$this.isShowAutoConfirmSheet, this.autoConfirmSheetBuilder(), {
+          height: SheetSize.MEDIUM,
+          width: getSheetWidth(this.breakpointInfo.widthBreakpoint),
+          // 宽屏（lg/xl）以居中弹窗呈现，窄屏保持底部弹窗（与手机行为一致）
+          preferType: isWideWidth(this.breakpointInfo.widthBreakpoint) ? SheetType.CENTER : SheetType.BOTTOM,
+          blurStyle: BlurStyle.Regular,
+          title: {
+            title: $r('app.string.auto_confirm_title'),
+            subtitle: ''
+          },
+          showClose: true
+        })
 
         // 显示互传提醒（默认开启）：关闭后发送页不再显示互传相关的蓝牙/WLAN 警告横幅
         Row() {

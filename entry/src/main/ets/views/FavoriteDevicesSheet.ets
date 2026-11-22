@@ -317,10 +317,17 @@ export struct FavoriteDevicesSheet {
           .hitTestBehavior(HitTestMode.None)
       }
 
-      Image(getDeviceIconResource(item.deviceType))
-        .width(DesignTokens.size.iconLg)
-        .height(DesignTokens.size.iconLg)
-        .fillColor($r('app.color.text_primary'))
+      if (item.isMta) {
+        // MTA 收藏：对端手机品牌彩色图标（与附近列表一致）
+        Image(item.mtaBrandIcon)
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+      } else {
+        Image(getDeviceIconResource(item.deviceType))
+          .width(DesignTokens.size.iconLg)
+          .height(DesignTokens.size.iconLg)
+          .fillColor($r('app.color.text_primary'))
+      }
 
       Column() {
         Text(item.alias)
@@ -335,7 +342,12 @@ export struct FavoriteDevicesSheet {
           this.badge(item.isOnline ? $r('app.string.favorites_online') : $r('app.string.favorites_offline'),
             item.isOnline ? $r('app.color.success_green') : $r('app.color.text_secondary'),
             item.isOnline ? $r('app.color.success_bg') : $r('app.color.disabled_bg'))
-          if (item.deviceModel.length > 0) {
+          if (item.isMta) {
+            // 与附近列表同口径：来源徽标 + 品牌徽标（品牌未知回退固定文案）
+            this.badge($r('app.string.mta_source_badge'), $r('app.color.ip_blue_text'),
+              $r('app.color.accent_blue_bg'))
+            this.badge(item.mtaBrandBadge, $r('app.color.ip_blue_text'), $r('app.color.accent_blue_bg'))
+          } else if (item.deviceModel.length > 0) {
             this.badge(item.deviceModel, $r('app.color.ip_blue_text'), $r('app.color.accent_blue_bg'))
           }
         }

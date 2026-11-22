@@ -219,8 +219,9 @@ MTA 是「一端广播待接入、另一端发现后主动建链」的 C/S 结�
 - 第三方旁证 [已取证]：CatShare `services/GattServerService.kt` 与 OPPOShareReceiver
   `ble/BleServerManager.kt` 主广播 serviceData UUID 均取固定 `000001ff-…`、值 6 字节（前 2 字节随机、
   其余补 0）。
-- **本项目发送**（交叉校验）：设备 ID 为 16 字节，**首次生成后持久化（跨会话稳定），对齐厂商**
-  （真机实测小米设备 ID 稳定、第三方 EasyShare 不稳定，稳定性属厂商实现选择）；主广播值 6 字节 =
+- **本项目发送**（交叉校验）：设备 ID 为 16 字节，**首次生成后持久化（跨会话稳定）**。对端稳定性属厂商实现选择，
+  对端实测记录见 [MTA_PLATFORM_VERIFICATION.md](MTA_PLATFORM_VERIFICATION.md#61-设备-id-跨重启稳定性)。第三方实现
+  可模拟厂商品牌，广播中的品牌标识不能作为厂商判断依据。主广播值 6 字节 =
   设备 ID 前 6 字节，扫描响应值 `[0..10)` = 设备 ID 尾段（对齐本节与 §2.2 的厂商拼接还原口径），
   细粒度实现见 [../architecture/mta.md](../architecture/mta.md)。
 

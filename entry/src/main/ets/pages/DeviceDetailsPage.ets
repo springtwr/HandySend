@@ -31,7 +31,12 @@ export struct DeviceDetailsPage {
       const deviceModel: string = params['deviceModel'] as string;
       const deviceType: string = params['deviceType'] as string;
       const protocol: string = params['protocol'] as string;
-      this.viewModel.loadDevice(alias, ip, port, fingerprint, version, deviceModel, deviceType, protocol);
+      this.viewModel.loadDevice(alias, ip, port, fingerprint, version, deviceModel, deviceType, protocol,
+        readStringParam(params, 'source', 'localsend'),
+        readStringParam(params, 'mtaSenderIdHex', ''),
+        readStringParam(params, 'mtaBleAddress', ''),
+        readNumberParam(params, 'mtaBrandId', -1),
+        readStringParam(params, 'mtaBrandName', ''));
     }
   }
 
@@ -48,37 +53,84 @@ export struct DeviceDetailsPage {
           Column() {
             // 设备信息卡片
             Column() {
-              Text(this.viewModel.deviceAlias)
-                .fontSize(DesignTokens.font.titleM)
-                .fontWeight(FontWeight.Bold)
-                .fontColor($r('app.color.text_primary'))
+              if (this.viewModel.isMtaDevice) {
+                // MTA：品牌图标、别名与来源/品牌徽标整体居中，与 LocalSend 头部布局一致
+                Column({ space: DesignTokens.space.tiny }) {
+                  Image(this.viewModel.mtaBrandIcon)
+                    .width(DesignTokens.size.iconLg)
+                    .height(DesignTokens.size.iconLg)
 
-              Row({ space: DesignTokens.space.tiny }) {
-                Text(ipShortCode(this.viewModel.deviceIp))
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.ip_blue_text'))
-                  .backgroundColor($r('app.color.accent_blue_bg'))
-                  .padding({
-                    left: DesignTokens.space.tiny,
-                    right: DesignTokens.space.tiny,
-                    top: DesignTokens.space.mini,
-                    bottom: DesignTokens.space.mini
-                  })
-                  .borderRadius(DesignTokens.radius.sm)
+                  Text(this.viewModel.deviceAlias)
+                    .fontSize(DesignTokens.font.titleM)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor($r('app.color.text_primary'))
+                    .width('100%')
+                    .textAlign(TextAlign.Center)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                Text(this.viewModel.deviceModel)
-                  .fontSize(DesignTokens.font.bodyS)
-                  .fontColor($r('app.color.ip_blue_text'))
-                  .backgroundColor($r('app.color.accent_blue_bg'))
-                  .padding({
-                    left: DesignTokens.space.tiny,
-                    right: DesignTokens.space.tiny,
-                    top: DesignTokens.space.mini,
-                    bottom: DesignTokens.space.mini
-                  })
-                  .borderRadius(DesignTokens.radius.sm)
+                  Row({ space: DesignTokens.space.tiny }) {
+                    Text($r('app.string.mta_source_badge'))
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.ip_blue_text'))
+                      .backgroundColor($r('app.color.accent_blue_bg'))
+                      .padding({
+                        left: DesignTokens.space.tiny,
+                        right: DesignTokens.space.tiny,
+                        top: DesignTokens.space.mini,
+                        bottom: DesignTokens.space.mini
+                      })
+                      .borderRadius(DesignTokens.radius.sm)
+
+                    Text(this.viewModel.mtaBrandBadge)
+                      .fontSize(DesignTokens.font.bodyS)
+                      .fontColor($r('app.color.ip_blue_text'))
+                      .backgroundColor($r('app.color.accent_blue_bg'))
+                      .padding({
+                        left: DesignTokens.space.tiny,
+                        right: DesignTokens.space.tiny,
+                        top: DesignTokens.space.mini,
+                        bottom: DesignTokens.space.mini
+                      })
+                      .borderRadius(DesignTokens.radius.sm)
+                  }
+                  .width('100%')
+                  .justifyContent(FlexAlign.Center)
+                }
+                .width('100%')
+              } else {
+                Text(this.viewModel.deviceAlias)
+                  .fontSize(DesignTokens.font.titleM)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor($r('app.color.text_primary'))
+
+                Row({ space: DesignTokens.space.tiny }) {
+                  Text(ipShortCode(this.viewModel.deviceIp))
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.ip_blue_text'))
+                    .backgroundColor($r('app.color.accent_blue_bg'))
+                    .padding({
+                      left: DesignTokens.space.tiny,
+                      right: DesignTokens.space.tiny,
+                      top: DesignTokens.space.mini,
+                      bottom: DesignTokens.space.mini
+                    })
+                    .borderRadius(DesignTokens.radius.sm)
+
+                  Text(this.viewModel.deviceModel)
+                    .fontSize(DesignTokens.font.bodyS)
+                    .fontColor($r('app.color.ip_blue_text'))
+                    .backgroundColor($r('app.color.accent_blue_bg'))
+                    .padding({
+                      left: DesignTokens.space.tiny,
+                      right: DesignTokens.space.tiny,
+                      top: DesignTokens.space.mini,
+                      bottom: DesignTokens.space.mini
+                    })
+                    .borderRadius(DesignTokens.radius.sm)
+                }
+                .margin({ top: DesignTokens.space.tiny })
               }
-              .margin({ top: DesignTokens.space.tiny })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Center)
@@ -87,12 +139,18 @@ export struct DeviceDetailsPage {
             // 信息详情
             Column() {
               this.infoRow($r('app.string.device_alias_label'), this.viewModel.deviceAlias)
-              this.infoRow($r('app.string.device_ip_label'), this.viewModel.deviceIp)
-              this.infoRow($r('app.string.device_port_label'), this.viewModel.devicePort.toString())
-              this.infoRow($r('app.string.device_version_label'), this.viewModel.deviceVersion)
-              this.infoRow($r('app.string.device_protocol_label'), this.viewModel.deviceProtocol)
-              this.infoRow($r('app.string.device_fingerprint_label'),
-                this.viewModel.deviceFingerprint)
+              if (this.viewModel.isMtaDevice) {
+                this.infoRow($r('app.string.device_source_label'), $r('app.string.mta_source_badge'))
+                this.infoRow($r('app.string.mta_brand_label'), this.viewModel.mtaBrandBadge)
+                this.infoRow($r('app.string.mta_peer_device_id_label'), this.viewModel.mtaSenderIdHex)
+              } else {
+                this.infoRow($r('app.string.device_ip_label'), this.viewModel.deviceIp)
+                this.infoRow($r('app.string.device_port_label'), this.viewModel.devicePort.toString())
+                this.infoRow($r('app.string.device_version_label'), this.viewModel.deviceVersion)
+                this.infoRow($r('app.string.device_protocol_label'), this.viewModel.deviceProtocol)
+                this.infoRow($r('app.string.device_fingerprint_label'),
+                  this.viewModel.deviceFingerprint)
+              }
             }
             .width('100%')
             .padding(DesignTokens.space.md)
@@ -103,26 +161,30 @@ export struct DeviceDetailsPage {
 
             // 操作按钮
             Column({ space: DesignTokens.space.sm }) {
-              // 验证按钮
-              Button($r('app.string.verify_device_button'))
-                .width('100%')
-                .height(DesignTokens.size.thumbSm)
-                .backgroundColor($r('app.color.accent_blue'))
-                .fontColor($r('app.color.text_on_color'))
-                .borderRadius(DesignTokens.radius.md)
-                .onClick(() => {
-                  let verifyParams: VerifyPageParams = {
-                    localFingerprint: this.viewModel.localFingerprint,
-                    remoteFingerprint: this.viewModel.deviceFingerprint
-                  };
-                  this.pathStack.pushPathByName('VerifyPage', verifyParams);
-                })
+              // 验证按钮：仅 LocalSend 设备支持指纹验证，MTA 无该能力
+              if (!this.viewModel.isMtaDevice) {
+                Button($r('app.string.verify_device_button'))
+                  .width('100%')
+                  .height(DesignTokens.size.thumbSm)
+                  .backgroundColor($r('app.color.accent_blue'))
+                  .fontColor($r('app.color.text_on_color'))
+                  .borderRadius(DesignTokens.radius.md)
+                  .onClick(() => {
+                    let verifyParams: VerifyPageParams = {
+                      localFingerprint: this.viewModel.localFingerprint,
+                      remoteFingerprint: this.viewModel.deviceFingerprint
+                    };
+                    this.pathStack.pushPathByName('VerifyPage', verifyParams);
+                  })
+              }
 
               // 收藏切换按钮
               Button(this.viewModel.isFavoriteDevice ? $r('app.string.remove_favorite_button') :
                 $r('app.string.add_favorite_button'))
                 .width('100%')
                 .height(DesignTokens.size.thumbSm)
+                .enabled(this.viewModel.canFavoriteDevice)
+                .opacity(this.viewModel.canFavoriteDevice ? 1 : 0.4)
                 .backgroundColor(
                   this.viewModel.isFavoriteDevice ? $r('app.color.danger_red') : $r('app.color.page_background'))
                 .fontColor(
@@ -178,7 +240,7 @@ export struct DeviceDetailsPage {
   }
 
   @Builder
-  infoRow(label: ResourceStr, value: string): void {
+  infoRow(label: ResourceStr, value: ResourceStr): void {
     Row() {
       Text(label)
         .fontSize(DesignTokens.font.bodyM)
@@ -203,4 +265,18 @@ export struct DeviceDetailsPage {
 @Builder
 export function DeviceDetailsPageBuilder(name: string, param: Object) {
   DeviceDetailsPage({ pageParam: param })
+}
+
+/** 读取字符串路由参数（类型不符/缺省时返回回退值；避免新增类型断言） */
+function readStringParam(params: Record<string, string | number | boolean>, key: string,
+  fallback: string): string {
+  let value: string | number | boolean = params[key];
+  return typeof value === 'string' ? value : fallback;
+}
+
+/** 读取数字路由参数（类型不符/缺省时返回回退值） */
+function readNumberParam(params: Record<string, string | number | boolean>, key: string,
+  fallback: number): number {
+  let value: string | number | boolean = params[key];
+  return typeof value === 'number' ? value : fallback;
 }

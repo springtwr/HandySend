@@ -232,6 +232,14 @@ export interface FavoriteDevice {
   deviceModel?: string // 设备型号——离线渲染条目型号徽标与详情页型号的来源
   deviceType?: string // 设备类型——离线渲染设备类型图标的映射来源
   version?: string // LocalSend 协议版本——详情页协议版本号的来源
+  // 收藏来源：'mta' 表示互传联盟；缺省按 LocalSend（局域网）处理，兼容历史记录。
+  // MTA 收藏的 fingerprint 为 `mta:<发送者 ID>`（见 model/DeviceIdentity.ets）。
+  protocol?: string
+  // ── 以下字段仅 MTA 收藏使用（来源快照），用于离线展示与自动确认匹配 ──
+  mtaSenderIdHex?: string // 对端发送者 ID（跨会话身份，自动确认配对的匹配依据）
+  mtaBleAddress?: string // 最近一次发现的 BLE 地址（仅展示/诊断；地址会轮换，不作身份）
+  mtaBrandId?: number // 对端品牌标识（-1 表示未知）
+  mtaBrandName?: string // 对端品牌名（离线徽标展示）
 }
 
 export interface ReceiveHistoryEntry {

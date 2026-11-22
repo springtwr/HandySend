@@ -28,10 +28,10 @@ VM/View 统一从门面导入，门面通过 re-export 暴露 Repository 函数�
 | `ReceiveRepository.ets` | 接收链路的**协议 I/O 与事件来源**、接收目标管理、自动接收决策纯函数，经 `LocalSendReceiveAdapter` 登记注册表（详见注 3） |
 | `ReceiveDirectory.ets` | 接收目录唯一来源：默认 `Download/<包名>/`（DOWNLOAD 模式）、<br>自定义目录（FOLDER Picker + 读写持久授权）、启动激活与失效回退 |
 | `ReceiveTargets.ets` | 接收目标登记：相对路径解析、最终目录/临时文件、路径目标与新建目录登记表，<br>供取消/失败清理与相册保存读取；接收目录由 `ReceiveDirectory.ets` 统一提供 |
-| `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
+| `MtaRepository.ets` | 应用级 MTA 运行时：发现扫描、接收服务启停、收发互斥、接收命令门面、自动确认判定注入与对外身份刷新（细节见注 4）；接收/扫描/发送后恢复各入口受 MTA 总开关守卫（关闭时空操作） |
 | `WebShareRepository.ets` | 分享链接、Web 上传/下载事件与会话登记；下载任务经 `WebDownloadAdapter` 建模为统一会话（见注 5）；启停与 LocalSend 解耦；按网页独立配置起服，提供地址列表与端口回退 |
 | `ChecksumRepository.ets` | 发送文件校验和计算（sha256，fd-direct 流式哈希） |
-| `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例） |
+| `FavoritesService.ets` | 收藏设备持久化与订阅（经 AppCore 事件总线同构的 EventBus 实例）；收藏键按来源区分（LocalSend 指纹 / MTA `mta:<发送者 ID>`），互传收藏记录带来源快照 |
 | `ReceiveHistoryService.ets` | 接收历史持久化与查询（独立存储文件 `handysend_receive_history`） |
 | `PreferencesRepo.ets` | 设置域偏好读写的唯一数据访问层（基础 get/set + 类型化方法，委托设置存储 `PreferencesUtil` 实例）；各独立存储文件见注 6 |
 

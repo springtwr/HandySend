@@ -6,6 +6,9 @@
  */
 
 import { FavoriteDevice, DiscoveredDevice } from '../model/Types';
+import { favoriteKeyOf, isMtaFavorite } from '../model/DeviceIdentity';
+import { mtaBrandBadgeText } from '../model/mta/MtaMainModels';
+import { resolveMtaPhoneBrandIcon } from '../model/mta/MtaBrandRegistry';
 import {
   getFavorites,
   removeFavorites,
@@ -17,11 +20,14 @@ import {
 } from '../service/repository/FavoritesService';
 import { SendViewModel } from './SendViewModel';
 
-/** 在线指纹集合（纯函数）：从发现快照产出，供面板在线判定与单测复用。 */
-export function collectOnlineFingerprints(devices: Array<DiscoveredDevice>): Set<string> {
+/**
+ * 在线收藏键集合（纯函数）：从发现快照按收藏键口径产出（MTA 为 `mta:<senderId>`，
+ * LocalSend 为设备指纹），供面板在线判定与单测复用。
+ */
+export function collectOnlineFavoriteKeys(devices: Array<DiscoveredDevice>): Set<string> {
   let result: Set<string> = new Set<string>();
   for (let i = 0; i < devices.length; i++) {
-    result.add(devices[i].fingerprint);
+    result.add(favoriteKeyOf(devices[i]));
   }
   return result;
 }
@@ -47,16 +53,33 @@ export class FavoriteDeviceItemViewModel {
   @Trace public deviceModel: string = ''
   @Trace public isOnline: boolean = false
   @Trace public selected: boolean = false
+  // MTA 收藏的展示字段（品牌徽标/图标）
+  @Trace public isMta: boolean = false
+  @Trace public mtaBrandName: string = ''
+  @Trace public mtaBrandId: number = -1
 
   constructor(favorite: FavoriteDevice) {
     this.item = favorite;
     this.alias = favorite.alias;
     this.deviceType = favorite.deviceType ?? '';
     this.deviceModel = favorite.deviceModel ?? '';
+    this.isMta = isMtaFavorite(favorite);
+    this.mtaBrandName = favorite.mtaBrandName ?? '';
+    this.mtaBrandId = favorite.mtaBrandId ?? -1;
   }
 
   get fingerprint(): string {
     return this.item.fingerprint;
+  }
+
+  /** MTA 品牌徽标文案（品牌未知时回退固定文案；非 MTA 收藏不使用） */
+  get mtaBrandBadge(): string {
+    return mtaBrandBadgeText(this.mtaBrandName);
+  }
+
+  /** MTA 对端品牌图标（非 MTA 收藏不使用） */
+  get mtaBrandIcon(): Resource {
+    return resolveMtaPhoneBrandIcon(this.mtaBrandId);
   }
 
   /** 用最新收藏记录刷新展示字段（重命名 / 在线同步后），保留勾选状态。 */
@@ -65,6 +88,9 @@ export class FavoriteDeviceItemViewModel {
     this.alias = favorite.alias;
     this.deviceType = favorite.deviceType ?? '';
     this.deviceModel = favorite.deviceModel ?? '';
+    this.isMta = isMtaFavorite(favorite);
+    this.mtaBrandName = favorite.mtaBrandName ?? '';
+    this.mtaBrandId = favorite.mtaBrandId ?? -1;
   }
 }
 
@@ -114,19 +140,24 @@ export class FavoriteDevicesViewModel {
 
   /** 全量刷新：按最新收藏记录重建条目，保留既有条目的勾选与在线状态。 */
   refresh(): void {
-    let online: Set<string> = this.currentOnlineFingerprints();
+    let localOnline: Set<string> = this.currentLocalOnlineKeys();
+    let mtaOnline: Set<string> = this.currentMtaOnlineKeys();
     let favorites: Array<FavoriteDevice> = getFavorites();
     let rebuilt: Array<FavoriteDeviceItemViewModel> = [];
     for (let i = 0; i < favorites.length; i++) {
       let favorite: FavoriteDevice = favorites[i];
+      if (!this.isFavoriteVisible(favorite)) {
+        continue;
+      }
+      let online: boolean = localOnline.has(favorite.fingerprint) || mtaOnline.has(favorite.fingerprint);
       let existing: FavoriteDeviceItemViewModel | undefined = this.findItem(favorite.fingerprint);
       if (existing !== undefined) {
         existing.syncFromFavorite(favorite);
-        existing.isOnline = online.has(favorite.fingerprint);
+        existing.isOnline = online;
         rebuilt.push(existing);
       } else {
         let item: FavoriteDeviceItemViewModel = new FavoriteDeviceItemViewModel(favorite);
-        item.isOnline = online.has(favorite.fingerprint);
+        item.isOnline = online;
         rebuilt.push(item);
       }
     }
@@ -137,22 +168,39 @@ export class FavoriteDevicesViewModel {
     }
   }
 
+  /** 收藏是否应按当前协议总开关展示（MTA 收藏跟随 MTA 开关，其余跟随 LocalSend） */
+  private isFavoriteVisible(favorite: FavoriteDevice): boolean {
+    if (this.sendViewModel === undefined) {
+      return true;
+    }
+    return isMtaFavorite(favorite) ? this.sendViewModel.mtaEnabled : this.sendViewModel.localSendEnabled;
+  }
+
   /** 发现刷新时仅更新在线状态（不重建条目，保留勾选与滚动状态）。 */
   refreshOnlineStatus(): void {
     if (this.sendViewModel === undefined) {
       return;
     }
-    let online: Set<string> = collectOnlineFingerprints(this.sendViewModel.discoveredDevices);
+    let localOnline: Set<string> = collectOnlineFavoriteKeys(this.sendViewModel.discoveredDevices);
+    let mtaOnline: Set<string> = collectOnlineFavoriteKeys(this.sendViewModel.mtaDiscoveredDevices);
     for (let i = 0; i < this.items.length; i++) {
-      this.items[i].isOnline = online.has(this.items[i].fingerprint);
+      let key: string = this.items[i].fingerprint;
+      this.items[i].isOnline = localOnline.has(key) || mtaOnline.has(key);
     }
   }
 
-  private currentOnlineFingerprints(): Set<string> {
+  private currentLocalOnlineKeys(): Set<string> {
     if (this.sendViewModel === undefined) {
       return new Set<string>();
     }
-    return collectOnlineFingerprints(this.sendViewModel.discoveredDevices);
+    return collectOnlineFavoriteKeys(this.sendViewModel.discoveredDevices);
+  }
+
+  private currentMtaOnlineKeys(): Set<string> {
+    if (this.sendViewModel === undefined) {
+      return new Set<string>();
+    }
+    return collectOnlineFavoriteKeys(this.sendViewModel.mtaDiscoveredDevices);
   }
 
   private findItem(fingerprint: string): FavoriteDeviceItemViewModel | undefined {
@@ -232,6 +280,7 @@ export class FavoriteDevicesViewModel {
    * 因此离线收藏同样可查看已保存信息。
    */
   buildDetailsParams(favorite: FavoriteDevice): Record<string, string | number> {
+    let isMta: boolean = isMtaFavorite(favorite);
     return {
       'alias': favorite.alias,
       'ip': favorite.ip,
@@ -240,7 +289,14 @@ export class FavoriteDevicesViewModel {
       'version': favorite.version ?? '',
       'deviceModel': favorite.deviceModel ?? '',
       'deviceType': favorite.deviceType ?? '',
-      'protocol': favorite.lastProtocol ?? ''
+      // LocalSend 传输协议（http/https）；MTA 收藏不使用
+      'protocol': favorite.lastProtocol ?? '',
+      // 设备来源：详情页按来源切换展示字段与可用操作
+      'source': isMta ? 'mta' : 'localsend',
+      'mtaSenderIdHex': favorite.mtaSenderIdHex ?? '',
+      'mtaBleAddress': favorite.mtaBleAddress ?? '',
+      'mtaBrandId': favorite.mtaBrandId ?? -1,
+      'mtaBrandName': favorite.mtaBrandName ?? ''
     };
   }
 

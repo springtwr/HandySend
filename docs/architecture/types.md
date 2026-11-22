@@ -13,7 +13,7 @@
 | `PendingRequest` | 待处理请求（sessionId, senderAlias, senderFingerprint, senderProtocol, senderIp, senderDeviceType, senderDeviceModel, files[]；来源见注 1） |
 | `TransferProgress` | 传输进度（sessionId, fileId, bytesSent, totalBytes） |
 | `SendFileItem` | 待发送文件（fileId, filePath, fileName, size） |
-| `FavoriteDevice` | 收藏设备（id, fingerprint, ip, port, alias, customAlias, lastProtocol；快照与覆盖规则见注 2） |
+| `FavoriteDevice` | 收藏设备（id, fingerprint, ip, port, alias, customAlias, lastProtocol, protocol, mta*；快照与覆盖规则见注 2） |
 | `ReceiveHistoryEntry` | 接收历史条目：**只承载路径与元数据**（fileName / fileType / path / savedToGallery / isMessage / fileSize / senderAlias / timestamp；其余语义见注 3） |
 | `MediaFileInfo` | 媒体文件信息（filePath, fileName, fileType, isImage），供相册保存弹窗使用 |
 | `GallerySaveResult` | 相册保存结果（successCount, failCount, errors） |
@@ -27,7 +27,10 @@
 >
 > **注 2**：`FavoriteDevice` 的 ip/port 与 deviceModel/deviceType/version 来自收藏时的
 > 发现快照，持久化保存并随设备在线被发现同步刷新——别名受自定义保护，其余字段在
-> 快照有效时才覆盖。
+> 快照有效时才覆盖。`protocol = 'mta'` 表示互传收藏：`fingerprint` 存收藏键
+> `mta:<发送者 ID>`，另存 `mtaSenderIdHex`、`mtaBleAddress`、`mtaBrandId`、`mtaBrandName`；
+> 旧记录缺省 `protocol` 时按 LocalSend 处理。互传收藏的在线判定与自动确认配对均以发送者 ID
+> 为准（自动确认兼容部分对端只上报短设备 ID 的前缀匹配），BLE 地址仅作最近位置快照（地址会轮换，不作身份）。
 >
 > **注 3**：`ReceiveHistoryEntry` 的 `textContent` 字段仅用于兼容旧数据，当前写入链路不产生该字段，
 > 读取时忽略（正文只存在于 `path` 指向的文件中）。`path` 是该条目可用性的唯一依据

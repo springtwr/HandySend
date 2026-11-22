@@ -258,10 +258,11 @@ MTA 收发链路的诊断级（debug）观测点，用于跨品牌兼容排障�
 | 发送端 P2P 地址 | MtaP2pGroup、MtaSendService | 逐接口 Native 读本机硬件地址（`p2p0` 等），即 `P2pInfo.mac` 的取值来源；<br>对外发送前统一归一为小写（中兴用大小写敏感比对、小米不敏感，小写同时满足）；<br>读取失败回退 `ownerInfo.deviceAddress` 时以 warn 记录回退值 |
 | 发送伴随外设 | MtaSendService、MtaBleReceiver | 发送期间保持的最小 BLE 外设（广播 + GATT Server，隔离于发送会话）：<br>启动/停止与广播预览；对端连接/断开、读请求（客户端/offset）、写请求摘要（目标特征/offset/累计长度/prepared）、<br>写入 P2pInfo（仅记录不接入接收会话）；停止时汇总对端行为（连接/断开/读/写/是否收到 P2pInfo） |
 | 接收端 WS 回执 | MtaTransferClient、MtaReceiveService | 回送 status 完整报文（帧号/字段）、提前回送与失败兜底重送、确认超时自动拒绝、取消回送 user refuse；未处理报文原文 |
+| 接收自动确认 | MtaReceiveService、MtaAutoAcceptModels | 每次请求的判定（发送者 ID/结果/任务）；命中时跳过缩略图预取并直接接受，<br>接受日志区分自动与手动；兼容部分对端短设备 ID 前缀匹配；文本自动接收落盘与剪贴板提示 |
 | 接收端缩略图 | MtaReceiveService、bridge/mta/receive.rs | 拉取开始 / 未取到 / 已就绪（含落盘路径）；Rust 侧保存结果（识别格式、字节数、路径） |
 | 发送端缩略图 | MtaSendService、bridge/mta、server.rs | 生成结论（已生成尺寸与耗时 / 非媒体不提供 / 失败不提供）；Rust 侧提供结论与 `/thumbnail` 命中、未提供、taskId 不匹配 |
 | 建链阶段耗时（发送侧） | MtaSendService、MtaSendAdapter | 以用户点击为起点，逐阶段记录相对耗时<br>（伴随外设就绪/GATT 连接/对端信息读取/组网就绪/本地服务就绪/写回凭据/对端接入/版本协商/对端开始下载）<br>与「点击→写回凭据」「点击→对端接入」总耗时 |
-| 建链阶段耗时（接收侧） | MtaReceiveService | 以收到对端凭据为起点，逐阶段记录相对耗时（凭据解密/入组完成/WS 建连/版本协商/本机弹窗）与「收凭据→本机弹窗」总耗时 |
+| 建链阶段耗时（接收侧） | MtaReceiveService | 以收到对端凭据为起点，逐阶段记录相对耗时（凭据解密/入组完成/WS 建连/版本协商/请求就绪或本机弹窗）与总耗时；自动接收时终点为「请求就绪」 |
 | 接收对外服务复用 | MtaReceiveService、MtaRepository | 会话收尾复用判定（可复用即复用既有广播/GATT 与密钥，失败回退完整重建）；应用退后台/开关关闭时抑制复用 |
 
 > **注 2**：serviceDataMap 缺失、扫描响应字节长度不足、UUID 不匹配、品牌或设备名字段
