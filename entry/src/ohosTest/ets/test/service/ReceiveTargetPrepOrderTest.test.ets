@@ -1,15 +1,17 @@
 // 接收目标准备顺序测试：最终/临时路径必须在创建临时文件之前确定并回调，
 // 保证强杀发生在文件创建与草稿写入之间时仍能按草稿清理临时区。
-import { describe, it, beforeAll, expect } from '@ohos/hypium'
+import { describe, it, beforeAll, afterEach, expect } from '@ohos/hypium'
+import { common } from '@kit.AbilityKit'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { getTestAppContext } from '../helper/TestContext'
 import { setAppContext } from '../../../../main/ets/service/repository/AppCore'
 import { initAllPreferences } from '../../../../main/ets/utils/PreferencesUtil'
+import { setReceiveDirectoryUri } from '../../../../main/ets/service/repository/SettingsRepository'
+import { ensureReceiveDirectory } from '../../../../main/ets/service/repository/ReceiveDirectory'
 import {
   ReceivedFileEntry,
   RecvPrepareError,
   RecvPrepareOutcome,
-  ensureRecvTextDir,
   prepareRecvTargets,
   removeDirectoryIfEmpty,
   removeRecvTargetFiles
@@ -24,6 +26,33 @@ import {
   tempPathForFinal
 } from '../../../../main/ets/model/transfer/TransferTempPaths'
 
+// 临时生效的接收目录（测试沙箱内），用例结束后恢复默认设置并清理
+let testRecvDir: string = ''
+
+// 把接收目录临时指向测试沙箱子目录：两个文本条目属于混合批次，按普通文件落接收目录，
+// 便于在下载目录分支验证同名根目录整体改名。返回实际生效目录，失败返回空串。
+async function useSandboxReceiveDir(ctx: common.UIAbilityContext, name: string): Promise<string> {
+  let dir: string = ctx.filesDir + '/recv-download/' + name
+  try {
+    fs.mkdirSync(dir, true)
+    setReceiveDirectoryUri('file://' + dir)
+    return await ensureReceiveDirectory()
+  } catch (_e) {
+    return ''
+  }
+}
+
+function clearTestRecvDir(): void {
+  setReceiveDirectoryUri('')
+  if (testRecvDir.length > 0) {
+    try {
+      fs.rmdirSync(testRecvDir)
+    } catch (_e) {
+    }
+    testRecvDir = ''
+  }
+}
+
 export default function ReceiveTargetPrepOrderTest() {
   describe('ReceiveTargetPrepOrderTest', () => {
     beforeAll(() => {
@@ -33,6 +62,10 @@ export default function ReceiveTargetPrepOrderTest() {
         initAllPreferences(ctx)
       }
       nativeInit('prep-order-test', 'phone')
+    })
+
+    afterEach(() => {
+      clearTestRecvDir()
     })
 
     it('paths_ready_before_temp_file_created', 0, async (done: Function) => {
@@ -131,11 +164,17 @@ export default function ReceiveTargetPrepOrderTest() {
       }
       let stamp = Date.now().toString()
       let rootName = 'root-conflict-' + stamp
-      let textDir = ensureRecvTextDir()
-      expect(textDir.length > 0).assertTrue()
+      // 两个文本条目属于混合批次，按普通文件落接收目录；在测试沙箱目录验证下载目录分支
+      testRecvDir = await useSandboxReceiveDir(ctx, rootName)
+      expect(testRecvDir.length > 0).assertTrue()
+      if (testRecvDir.length === 0) {
+        done()
+        return
+      }
+      let downloadDir: string = testRecvDir
       // 目标中已有同名文件夹（模拟此前接收的文件夹）
-      fs.mkdirSync(textDir + '/' + rootName, true)
-      let existingFile = fs.openSync(textDir + '/' + rootName + '/keep.txt',
+      fs.mkdirSync(downloadDir + '/' + rootName, true)
+      let existingFile = fs.openSync(downloadDir + '/' + rootName + '/keep.txt',
         fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE)
       fs.closeSync(existingFile)
 
@@ -164,19 +203,18 @@ export default function ReceiveTargetPrepOrderTest() {
       expect(first.fileName).assertEqual(rootName + ' (1)/a.txt')
       expect(second.fileName).assertEqual(rootName + ' (1)/sub/b.txt')
       if (outcome.paths !== undefined) {
-        expect(outcome.paths['root-1']).assertEqual(textDir + '/' + rootName + ' (1)/a.txt')
-        expect(outcome.paths['root-2']).assertEqual(textDir + '/' + rootName + ' (1)/sub/b.txt')
+        expect(outcome.paths['root-1']).assertEqual(downloadDir + '/' + rootName + ' (1)/a.txt')
+        expect(outcome.paths['root-2']).assertEqual(downloadDir + '/' + rootName + ' (1)/sub/b.txt')
       }
       // 已有文件夹内容保持原样，新内容不会混入其中
-      expect(fs.accessSync(textDir + '/' + rootName + '/keep.txt')).assertTrue()
-      expect(fs.accessSync(textDir + '/' + rootName + '/a.txt')).assertFalse()
+      expect(fs.accessSync(downloadDir + '/' + rootName + '/keep.txt')).assertTrue()
+      expect(fs.accessSync(downloadDir + '/' + rootName + '/a.txt')).assertFalse()
 
       nativeDiscardRecvFileFds(sessionId)
       removeRecvTargetFiles(sessionId)
       // 本次新建的改名目录随清理移除；预先存在的文件夹保留（内容非空）
-      expect(fs.accessSync(textDir + '/' + rootName + ' (1)')).assertFalse()
-      expect(fs.accessSync(textDir + '/' + rootName + '/keep.txt')).assertTrue()
-      fs.rmdirSync(textDir + '/' + rootName)
+      expect(fs.accessSync(downloadDir + '/' + rootName + ' (1)')).assertFalse()
+      expect(fs.accessSync(downloadDir + '/' + rootName + '/keep.txt')).assertTrue()
       done()
     })
 
@@ -190,9 +228,14 @@ export default function ReceiveTargetPrepOrderTest() {
       let stamp = Date.now().toString()
       let sessionId = 'root-loose-session-' + stamp
       let rootName = 'root-loose-' + stamp
-      let textDir = ensureRecvTextDir()
-      expect(textDir.length > 0).assertTrue()
-      fs.mkdirSync(textDir + '/' + rootName, true)
+      // 两个文本条目属于混合批次，按普通文件落接收目录；在测试沙箱目录验证下载目录分支
+      testRecvDir = await useSandboxReceiveDir(ctx, rootName)
+      expect(testRecvDir.length > 0).assertTrue()
+      if (testRecvDir.length === 0) {
+        done()
+        return
+      }
+      fs.mkdirSync(testRecvDir + '/' + rootName, true)
       let folderEntry: ReceivedFileEntry = {
         sessionId: sessionId,
         fileId: 'loose-folder',
@@ -222,7 +265,6 @@ export default function ReceiveTargetPrepOrderTest() {
       }
       nativeDiscardRecvFileFds(sessionId)
       removeRecvTargetFiles(sessionId)
-      fs.rmdirSync(textDir + '/' + rootName)
       done()
     })
 
