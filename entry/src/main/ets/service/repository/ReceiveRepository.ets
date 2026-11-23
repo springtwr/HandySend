@@ -347,9 +347,11 @@ function ingestIncomingRequest(
       sessionFileSizes[sessionId + ':' + f.fileId] = f.size;
       sessionFilePaths[sessionId + ':' + f.fileId] = '';
     }
-    // 文本消息判断：仅手动输入文本带 preview，文件选择器选取的 txt 文件不带 preview
+    // 与 LocalSend 接收端一致：文本消息必须是整批恰好一个文本条目且携带 preview；
+    // 混合批次即使携带 preview 也按普通文件处理，不展示文本预览。
     let filePreview: string | undefined = f.preview;
-    if (f.fileType === 'text/plain' && filePreview !== undefined && filePreview.length > 0) {
+    if (files.length === 1 && f.fileType === 'text/plain' && filePreview !== undefined &&
+      filePreview.length > 0) {
       hasMessage = true;
       if (messageText.length === 0) {
         messageText = filePreview;
@@ -1400,8 +1402,9 @@ function fileSizeOf(path: string): number {
   }
 }
 
+// textMessageBatch：调用方按原始批次给出的文本消息判定；缺省按 files 判定。
 function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>, senderAlias: string,
-  pathMap?: Record<string, string>): void {
+  pathMap?: Record<string, string>, textMessageBatch?: boolean): void {
   // 文件夹会话只记一条摘要：接收历史是文件级列表，2000 个文件会挤占大量条目。
   let names: Array<string> = [];
   let sizes: Array<number> = [];
@@ -1431,6 +1434,10 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
     logger.debug('已添加文件夹接收历史 count=' + folderEntry.fileCount +
       ' root=' + folderEntry.fileName);
   }
+  // 文本消息判定按整批（调用方可传入原始批次判定，覆盖部分成功的子集）；
+  // 未传入时按本次传入条目判定。
+  let isTextMessageBatch: boolean = textMessageBatch !== undefined ? textMessageBatch :
+    isLocalTextMessage(files);
   for (let i = 0; i < files.length; i++) {
     let f = files[i];
     if (folderEntry !== undefined && f.fileName.indexOf('/') >= 0) {
@@ -1468,8 +1475,9 @@ function recordReceiveHistory(sessionId: string, files: Array<ReceivedFileEntry>
         // 回退：保持 0
       }
     }
-    // isMessage 判断：text/plain + preview 有内容（LocalSend 协议中手动输入文本的 preview 包含文本内容）
-    let isMsg: boolean = f.fileType === 'text/plain' &&
+    // isMessage 判断：与文本消息口径一致，仅整批恰好一条带 preview 的文本条目；
+    // 混合批次中的文本条目按普通文本文件记录。
+    let isMsg: boolean = isTextMessageBatch && f.fileType === 'text/plain' &&
       f.preview !== undefined && f.preview.length > 0;
     let entry: ReceiveHistoryEntry = {
       id: sessionId + '_' + i,
@@ -1532,7 +1540,8 @@ function recordPartialReceiveHistory(sessionId: string,
       pathMap[entry.fileId] = entry.filePath;
     }
   }
-  recordReceiveHistory(sessionId, completedEntries, senderAlias, pathMap);
+  recordReceiveHistory(sessionId, completedEntries, senderAlias, pathMap,
+    isLocalTextMessage(sessionFileMap[sessionId]));
 }
 
 // 清理接收会话残留文件（传输被取消或失败时调用）。

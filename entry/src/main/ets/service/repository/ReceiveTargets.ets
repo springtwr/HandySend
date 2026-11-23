@@ -53,11 +53,17 @@ export function recvTextDir(): string {
   return appContext.filesDir + '/text_recv/';
 }
 
-// 文本消息条目判定（与 ReceiveRepository 的摄入判据同源）：text/plain + 携带文本内容信息。
+// 文本消息条目判定：text/plain + 携带文本内容信息（preview）。
 // 文件选择器选取的 .txt 文件不带 preview，不在此列。
 function isRecvTextEntry(entry: ReceivedFileEntry): boolean {
   return entry.fileType === 'text/plain' &&
     entry.preview !== undefined && entry.preview.length > 0;
+}
+
+// 整批文本消息判定（与 LocalSend 接收端一致）：恰好一个条目且为文本消息条目。
+// 混合批次即使携带 preview 也按普通文件处理，全部落接收目录。
+function isRecvTextMessageBatch(entries: Array<ReceivedFileEntry>): boolean {
+  return entries.length === 1 && isRecvTextEntry(entries[0]);
 }
 
 // 与最终路径对应的临时路径：sessionId → (fileId → 临时路径)。
@@ -204,26 +210,14 @@ function findEntryIndex(entries: Array<ReceivedFileEntry>, fileId: string): numb
   return -1;
 }
 
-/** 本次待接收集合中是否含普通文件条目（需接收目录）。 */
-function needsDownloadDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>): boolean {
-  for (let i = 0; i < fileIds.length; i++) {
-    let idx: number = findEntryIndex(entries, fileIds[i]);
-    if (idx >= 0 && !isRecvTextEntry(entries[idx])) {
-      return true;
-    }
-  }
-  return false;
+/** 本次待接收集合是否需要接收目录（非整批单条文本消息时都需要）。 */
+function needsDownloadDir(fileIds: Array<string>, textMessageBatch: boolean): boolean {
+  return fileIds.length > 0 && !textMessageBatch;
 }
 
-/** 本次待接收集合中是否含文本消息条目（需接收文本目录）。 */
-function needsTextDir(entries: Array<ReceivedFileEntry>, fileIds: Array<string>): boolean {
-  for (let i = 0; i < fileIds.length; i++) {
-    let idx: number = findEntryIndex(entries, fileIds[i]);
-    if (idx >= 0 && isRecvTextEntry(entries[idx])) {
-      return true;
-    }
-  }
-  return false;
+/** 本次待接收集合是否需要接收文本目录（仅整批单条文本消息）。 */
+function needsTextDir(fileIds: Array<string>, textMessageBatch: boolean): boolean {
+  return fileIds.length > 0 && textMessageBatch;
 }
 
 // 同一批内同名文件（来自不同目录）各自落盘：在 uniquePath 的基础上再避开本批
@@ -335,8 +329,10 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
   }
   // 按条目是否文本消息决定目标目录：文本目录为应用沙箱（mkdir 直建），
   // 普通文件目录由 ReceiveDirectory 统一解析；任一所需目录不可得即整体拒绝
-  let needDownload: boolean = needsDownloadDir(entries, fileIds);
-  let needText: boolean = needsTextDir(entries, fileIds);
+  // 文本消息仅当整批恰好一个文本条目；混合批次全部按普通文件落接收目录
+  let textMessageBatch: boolean = isRecvTextMessageBatch(entries);
+  let needDownload: boolean = needsDownloadDir(fileIds, textMessageBatch);
+  let needText: boolean = needsTextDir(fileIds, textMessageBatch);
   let downloadDir: string = needDownload ? await ensureReceiveDirectory() : '';
   let textDir: string = needText ? ensureRecvTextDir() : '';
   if (needDownload && downloadDir.length === 0) {
@@ -374,7 +370,7 @@ export async function prepareRecvTargets(sessionId: string, fileIds: Array<strin
       return new RecvPrepareOutcome(undefined, mapReceivedPathError(sanitized.error));
     }
     let relative: ParsedRelativePath = sanitized.path;
-    let baseDir: string = isRecvTextEntry(entry) ? textDir : downloadDir;
+    let baseDir: string = textMessageBatch ? textDir : downloadDir;
     // 根目录整体消歧：目标中已有同名文件/目录时整体改名，避免两个文件夹的内容混在一起。
     let dirs: Array<string> = relative.dirs.slice();
     if (dirs.length > 0) {

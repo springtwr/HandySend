@@ -302,6 +302,7 @@ pub async fn send_files(
         Ok(v) => v,
         Err(e) => {
             cleanup_send_cancel_keys(state, &cancel_key, "");
+            // 解析失败以 Err 返回：fd 仍由调用方（ArkTS catch）关闭，此处不可重复关闭
             return Err(BridgeError::InvalidArgument(format!(
                 "prepare 结果解析失败: {e}"
             )));
@@ -309,6 +310,40 @@ pub async fn send_files(
     };
 
     let session_id = prepare_data["sessionId"].as_str().unwrap_or("").to_string();
+
+    // prepare 未返回会话标识：204 表示接收方未选择任何文件；单条文本消息走「仅预览送达」，
+    // 混合批次则表示没有任何文件被接收。服务端不创建会话，因此没有 sessionId 与文件 token。
+    // 必须在此直接收口，不能进入上传循环：上传循环会把「缺少 token」计为文件失败并返回
+    // partialFailure，使发送结局与接收方实际选择不一致。
+    if session_id.is_empty() {
+        cleanup_send_cancel_keys(state, &cancel_key, "");
+        close_remaining_fds(&mut remaining_fds);
+        let status = prepare_data["statusCode"].as_u64().unwrap_or(0);
+        let error_json = if status == 204 {
+            json!({
+                "kind": "statusCode",
+                "status": 204,
+                "message": "接收方未接收文件",
+            })
+        } else {
+            json!({
+                "kind": "other",
+                "message": format!("prepare-upload 未返回会话标识（HTTP {status}）"),
+            })
+        };
+        log::debug!(
+            "prepare 未返回会话标识（HTTP {status}），跳过上传：文件数={}",
+            files.len()
+        );
+        return Ok(json!({
+            "sessionId": "",
+            "success": false,
+            "failedFiles": [],
+            "error": error_json,
+        })
+        .to_string());
+    }
+
     let file_tokens = &prepare_data["files"];
 
     {

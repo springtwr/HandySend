@@ -365,10 +365,13 @@ async function probeDeviceReachable(device: DiscoveredDevice, protocol: string):
 /**
  * 从本次失败的条目中挑出可回退句柄重试的路径模式文件。
  * 返回副本（pathSource=false，保留暂存句柄供 dup）；未命中项不返回。
+ * 整批仅一条文本消息时不参与：其正文已随 prepare-upload 的 preview 送达，
+ * 重发会让接收方收到重复消息。混合批次不展示预览，文本条目按普通文件处理，
+ * 仍参与回退。
  */
 export function buildPathFallbackItems(files: Array<SendFileItem>,
   failedFiles: Array<string>): Array<SendFileItem> {
-  if (failedFiles.length === 0) {
+  if (failedFiles.length === 0 || isSingleTextMessageSend(files)) {
     return [];
   }
   let failedSet: Set<string> = new Set<string>();
@@ -686,8 +689,10 @@ export async function sendToDevice(
         break;
       }
       let err = result.error;
-      // 路径模式在原生侧打不开时，该文件计入 failedFiles，其余文件仍会正常上传；
+      // 路径模式条目在原生侧上传失败时，该文件计入 failedFiles，其余文件仍会正常上传；
       // 这里只把失败路径条目改为句柄模式重发一次，避免一个文件失败拖垮整批
+      // （整批仅一条文本消息时由 buildPathFallbackItems 排除，避免重发 preview；
+      // 混合批次中的文本条目按普通文件参与回退）
       if (err !== undefined && err.kind === 'partialFailure' && !pathFallbackApplied &&
         result.failedFiles.length > 0) {
         let retryItems: Array<SendFileItem> = buildPathFallbackItems(attemptFiles, result.failedFiles);
@@ -902,7 +907,8 @@ function extractFileName(uri: string): string {
  * 构造待发送条目（全部 LocalSend 发送入口唯一的条目构造点）。
  * @param uris 待准备条目的源定位列表
  * @param manualTextUris 可选的「手动文本来源」源定位列表：命中该列表的条目
- *   读取文本内容填入 preview，供接收端识别为文本消息；未传入时不补设任何 preview
+ *   读取文本内容作为 preview 候选；仅当选择批次为单条文本消息且准备结果仍为文本条目时保留，
+ *   混合批次按普通文本文件发送；未传入时不补设任何 preview
  * @param knownMeta 可选的「已读到的源文件元数据」：命中者直接复用，不再为同一文件 open/stat
  * @param knownFds 可选的「已打开的源文件句柄」：命中者随条目下传，
  *   发送以 dup 复用并由 Rust 以 pread 从文件头读取；校验和 dup 后归位偏移；网页分享直接借用
@@ -914,8 +920,8 @@ export async function prepareSendFiles(
   knownMeta?: Map<string, SourceFileMeta>,
   knownFds?: Map<string, number>
 ): Promise<Array<SendFileItem>> {
-  // 手动文本来源集合：命中者补设 preview（承载文本消息内容）。
-  // 未传入该列表时集合为空，所有条目按普通文件发送。
+  // 手动文本来源集合：命中者读取 preview 候选（承载文本消息内容）。
+  // 最终是否保留由整批条目数决定（仅单条文本消息保留）；未传入该列表时集合为空。
   let manualTextSourceUris: Set<string> = new Set();
   if (manualTextUris !== undefined) {
     for (let m = 0; m < manualTextUris.length; m++) {
@@ -949,13 +955,28 @@ export async function prepareSendFiles(
       }
     }
   }
+  // 与 LocalSend 发送端一致：仅整批恰好一条文本消息时保留 preview；
+  // 混合批次按普通文本文件发送，避免接收端把整个批次识别为文本消息。
+  // 以入参 uris 长度判定整批，部分文件准备失败时仍按用户选择的批次语义处理。
+  if (!(uris.length === 1 && isSingleTextMessageSend(items))) {
+    let removedPreviewCount: number = 0;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].preview !== undefined) {
+        items[i].preview = undefined;
+        removedPreviewCount++;
+      }
+    }
+    if (removedPreviewCount > 0) {
+      logger.debug('混合批次已移除文本预览 条目=' + removedPreviewCount);
+    }
+  }
   logger.debug('准备条目带句柄=' + withFdCount + ' 文件数=' + items.length);
   return items;
 }
 
 /**
  * 构造单个发送文件条目：解析并净化文件名，取真实大小/修改时间，
- * 手动文本条目另补设 preview（供接收端识别文本消息内容）。
+ * 手动文本条目读取 preview 候选；是否保留由 prepareSendFiles 按整批判定。
  * knownMeta 命中时直接复用已读到的元数据，跳过为同一文件再次 open/stat。
  */
 async function buildSendFileItem(uri: string, index: number,
@@ -1010,10 +1031,9 @@ async function buildSendFileItem(uri: string, index: number,
       fs.closeSync(file);
     }
   }
-  // preview 承载文本消息内容：仅对手动输入文本条目补设，
-  // 文件选择器选取的 txt 文件不带 preview，否则接收端会误判为文本消息、
-  // 网页分享也会错误显示文本预览。
-  // 文本临时文件缺失/不可读时 preview 留空，不影响条目有效性（按文本文件发送）。
+  // preview 候选：仅对手动输入文本条目读取，最终是否保留由 prepareSendFiles
+  // 按整批判定（仅整批单条文本消息保留，混合批次按普通文本文件发送）。
+  // 文件选择器选取的 txt 文件不读取；文本临时文件缺失/不可读时 preview 留空。
   let preview: string | undefined = undefined;
   if (manualTextSourceUris.has(uri)) {
     try {

@@ -142,6 +142,25 @@ export default function SendRepositoryTest() {
       done()
     })
 
+    // ── prepareSendFiles：仅整批单条文本消息保留 preview，混合批次按普通文件发送 ──
+
+    it('prepareSendFiles_singleTextMessage_keepsPreview', 0, async (done: Function) => {
+      let path: string = writeTestFileToSandbox('single_text_' + Date.now() + '.txt', 'hello')
+      let items: Array<SendFileItem> = await prepareSendFiles([path], [path])
+      expect(items.length).assertEqual(1)
+      expect(items[0].preview === 'hello').assertTrue()
+      done()
+    })
+
+    it('prepareSendFiles_mixedBatch_dropsPreview', 0, async (done: Function) => {
+      let textPath: string = writeTestFileToSandbox('mixed_text_' + Date.now() + '.txt', 'hello')
+      let filePath: string = writeTestFileToSandbox('mixed_file_' + Date.now() + '.txt', 'world')
+      let items: Array<SendFileItem> = await prepareSendFiles([textPath, filePath], [textPath])
+      expect(items.length).assertEqual(2)
+      expect(items[0].preview === undefined).assertTrue()
+      done()
+    })
+
     // ── 发送启动前的终态守卫 ──
     // 会话已取消时，即使尚未打开文件也不得再启动后端发送。
 

@@ -285,7 +285,7 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
   同一分享才按 token 恢复上传状态：待确认期间保持发送入口禁用，应用已接受但刷新后无法续传时
   结束会话并提示重新发送；分享已更换则丢弃旧 token。
 - 终结/过期只清理未完成的临时文件，不删除已改名为最终交付物的文件
-- 上传建会话的文件 DTO 携带 `preview`（仅手动文本），接收端据此识别单条文本消息；
+- 上传建会话的文件 DTO 携带 `preview`（仅整批单条手动文本），接收端据此识别文本消息；
   文件与文本混合时文本按普通文本文件处理
 - ArkTS 侧按 token 归属统一会话（`WebUploadAdapter`），终态后写接收历史；开启免确认时建会话后直接预置落盘目标并放行；任务声明 `canCancel`，
   结束任务时移除服务端上传会话，正在写入的请求体在下个读块停止并清理临时区
@@ -304,7 +304,12 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
 发送与接收均以文件描述符直读/直写，避免全量拷贝进沙箱再上传/导出的两段式 IO：
 
 - **发送**：`prepareSendFiles` 不拷贝文件，`SendFileItem.filePath` 承载源定位（picker URI 或沙箱路径）；`sendToDevice` 每次 `nativeSendFiles` 前优先 `dup` 暂存句柄，句柄失效时按路径打开，并携带 `fd`。
-  fd 所有权契约：调用返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭），ArkTS 侧重试前重新打开
+  fd 所有权契约：调用正常返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，
+  prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭）；调用抛错时 fd 仍由
+  ArkTS 发送循环的 catch 关闭，Rust 不可重复关闭
+- **无会话收口**：`prepare-upload` 返回 204（如单条文本消息仅预览送达、未建会话）时，
+  `send_files` 直接以 `error.kind=statusCode`、`status=204` 返回，不进入上传循环；
+  否则缺 token 会被误判为 `partialFailure`，发送结局与接收方实际选择不一致
 - **接收**：确认接收时（`respondToRequest`/auto-accept 内部 `acceptWithTargets`）先经
   `ReceiveDirectory.ensureReceiveDirectory` 获取接收目录（默认经 `DocumentViewPicker.save`
   DOWNLOAD 模式取 Download/`<包名>/`；自定义目录经 FOLDER Picker 选择并持久化读写授权）→

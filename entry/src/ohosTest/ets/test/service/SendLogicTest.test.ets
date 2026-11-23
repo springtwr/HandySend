@@ -65,6 +65,33 @@ export default function SendLogicTest() {
       }
     })
 
+    it('pathFallback_singleTextMessage_returnsEmpty', 0, () => {
+      // 整批仅一条文本消息：正文已随 prepare-upload 的 preview 送达，
+      // 回退重发会让接收方收到重复消息
+      let files: Array<SendFileItem> = [{
+        fileId: 't1', filePath: '/data/clipboard_1.txt', fileName: 'clipboard_1.txt',
+        fileType: 'text/plain', size: 4, preview: 'hello', pathSource: true, sourceFd: 9
+      }]
+      expect(buildPathFallbackItems(files, ['t1']).length).assertEqual(0)
+    })
+
+    it('pathFallback_mixedBatch_keepsTextItem', 0, () => {
+      // 混合批次不展示文本预览，文本条目按普通文本文件参与回退
+      let files: Array<SendFileItem> = [{
+        fileId: 't1', filePath: '/data/clipboard_1.txt', fileName: 'clipboard_1.txt',
+        fileType: 'text/plain', size: 4, preview: 'hello', pathSource: true, sourceFd: 9
+      }, {
+        fileId: 'p1', filePath: '/data/a.txt', fileName: 'a.txt',
+        fileType: 'text/plain', size: 10, pathSource: true
+      }]
+      let items: Array<SendFileItem> = buildPathFallbackItems(files, ['t1', 'p1'])
+      expect(items.length).assertEqual(2)
+      if (items.length === 2) {
+        expect(items[0].fileId).assertEqual('t1')
+        expect(items[1].fileId).assertEqual('p1')
+      }
+    })
+
     it('pathFallback_noCandidate_returnsEmpty', 0, () => {
       let files: Array<SendFileItem> = [{
         fileId: 'f1', filePath: '/data/c.txt', fileName: 'c.txt',

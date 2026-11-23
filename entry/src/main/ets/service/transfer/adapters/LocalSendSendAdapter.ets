@@ -215,7 +215,7 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return emptyDisplayDescriptor();
     }
-    // 手输文本消息在发送期也携带内容预览；文件选择器选取的 .txt 不带 preview。
+    // 仅整批单条手输文本消息在发送期携带内容预览；文件选择器选取的 .txt 不带 preview。
     let ctx: SendContext | undefined = contexts.get(sessionId);
     let text: string = '';
     if (ctx !== undefined && isSingleTextMessageSend(ctx.files)) {

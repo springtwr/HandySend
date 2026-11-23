@@ -722,6 +722,69 @@ async fn test_bridge_send_files_to_multi_receivers() {
     }
 }
 
+// ── 文本消息仅预览送达：接收方不接收文件时返回 204，发送方不得进入上传循环 ──
+
+#[tokio::test]
+async fn test_bridge_send_text_message_no_content_reports_204() {
+    // 接收方对 prepare-upload 接受空集合（文本消息只取预览）时，服务端返回 204
+    // 且不建会话。发送方必须原样返回 statusCode=204：若继续走上传循环，缺少
+    // token 会被计为文件失败并返回 partialFailure，ArkTS 侧随后按路径模式回退，
+    // 把同一条文本预览再发一次，接收方收到重复消息。
+    let (recv, mut rx) = new_state_with_event_tx();
+    init_identity(&recv, "text-no-content");
+    let port = server::start_server(recv.clone(), 0, false, true, None, None)
+        .await
+        .unwrap();
+
+    let sender = new_state_with_event_tx().0;
+    init_identity(&sender, "text-sender");
+    let send_file = format!(
+        "{}/handysend-bridge-text.txt",
+        std::env::temp_dir().display()
+    );
+    let content = b"hi".to_vec();
+    std::fs::write(&send_file, &content).unwrap();
+    let files_json = json!([{
+        "fileId": "txt-1",
+        "fileName": "text.txt",
+        "size": content.len(),
+        "fileType": "text/plain",
+        "filePath": send_file,
+        "preview": "hi",
+        "sha256": null,
+    }])
+    .to_string();
+    let target = json!({
+        "ip": "127.0.0.1", "port": port, "protocol": "http",
+        "fingerprint": "", "pin": null, "publicKey": null,
+    })
+    .to_string();
+
+    let send_task = tokio::spawn({
+        let sender = sender.clone();
+        async move {
+            client::send_files(&sender, &target, "HandySend", &files_json, "send_text_204").await
+        }
+    });
+    let prepare = wait_for_event(&mut rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let session_id = match &prepare {
+        BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
+        _ => unreachable!(),
+    };
+    // 空接受集合 → 服务端 204，不创建会话
+    server::accept_transfer(&recv, &session_id, &[]).unwrap();
+
+    let res = send_task.await.unwrap().unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(val["success"], false, "204 不是上传成功: {res}");
+    assert_eq!(val["sessionId"], "", "204 不创建会话: {res}");
+    assert_eq!(val["error"]["kind"], "statusCode", "应原样上报 204: {res}");
+    assert_eq!(val["error"]["status"], 204, "应原样上报 204: {res}");
+
+    server::stop_server(&recv);
+    let _ = std::fs::remove_file(&send_file);
+}
+
 // ── 多文件传输：一次发送多个文件，全部落盘且内容一致 ──────────────
 
 #[tokio::test]

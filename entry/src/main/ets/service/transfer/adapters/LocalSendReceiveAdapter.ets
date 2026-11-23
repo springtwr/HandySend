@@ -241,7 +241,7 @@ const adapter: SessionAdapter = {
     if (session === undefined) {
       return emptyDisplayDescriptor();
     }
-    // 文本消息内容由摄入请求时写入（仅手动输入的文本消息带内容）
+    // 文本消息内容由摄入请求时写入（仅整批单条手动输入文本带内容）
     let text: string = textPreviewByProtocol.get(session.protocolSessionId) ?? '';
     let peerIp: string = session.peer.ip ?? '';
     // 标题已是 IP 的会话（网页来源）副标题置空，避免重复展示同一 IP

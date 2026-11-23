@@ -13,6 +13,8 @@ import {
   getPendingRequests
 } from '../../../../main/ets/service/repository/ReceiveRepository'
 import { setAutoConfirmMode } from '../../../../main/ets/service/repository/SettingsRepository'
+import { findByProtocol } from '../../../../main/ets/service/transfer/TransferSessionRegistry'
+import { LOCAL_RECEIVE_KEY } from '../../../../main/ets/service/transfer/adapters/LocalSendReceiveAdapter'
 import {
   NativePrepareUploadEvent, NativeTransferFileInfo
 } from '../../../../main/ets/model/NativeTypes'
@@ -122,6 +124,54 @@ export default function ReceiveBehaviorTest() {
       if (pending !== undefined) {
         expect(pending.files.length === 1).assertTrue()
         expect(pending.files[0].preview === 'hello world').assertTrue()
+      }
+    })
+
+    it('single_text_message_is_text_session', 0, () => {
+      setAutoConfirmMode(AutoConfirmMode.off)
+      let event = makePrepareUpload('behavior_single_text_1', [{
+        fileId: 'st1',
+        fileName: 'message.txt',
+        size: 5,
+        fileType: 'text/plain',
+        preview: 'hello',
+        sha256: undefined
+      }])
+      handlePrepareUploadEventTyped(event)
+
+      let session = findByProtocol(LOCAL_RECEIVE_KEY, 'behavior_single_text_1')
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.textMessage).assertTrue()
+      }
+    })
+
+    it('mixed_batch_with_preview_is_not_text_session', 0, () => {
+      setAutoConfirmMode(AutoConfirmMode.off)
+      // 混合批次即使携带 preview，也按普通文件处理，不展示文本预览
+      let event = makePrepareUpload('behavior_mixed_1', [{
+        fileId: 'mx1',
+        fileName: 'message.txt',
+        size: 5,
+        fileType: 'text/plain',
+        preview: 'hello',
+        sha256: undefined
+      }, {
+        fileId: 'mx2',
+        fileName: 'photo.jpg',
+        size: 100,
+        fileType: 'image/jpeg',
+        preview: undefined,
+        sha256: undefined
+      }])
+      handlePrepareUploadEventTyped(event)
+
+      let pending = findPending('behavior_mixed_1')
+      expect(pending !== undefined).assertTrue()
+      let session = findByProtocol(LOCAL_RECEIVE_KEY, 'behavior_mixed_1')
+      expect(session !== undefined).assertTrue()
+      if (session !== undefined) {
+        expect(session.textMessage).assertFalse()
       }
     })
 

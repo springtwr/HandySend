@@ -58,8 +58,8 @@ export function isAllManualText(stagedFiles: Array<StagedFile>): boolean {
  * 接收端以「整批恰好一个条目且承载文本内容信息」识别文本消息，故三者同时成立才为真：
  * 1) 整批恰好一个条目；2) 内容类型为文本；3) preview 非空（承载文本内容）。
  * 用户主动选择的 .txt 文件满足前两项但不承载 preview，据此与文本消息区分。
- * 空集合与其余情形返回假。发送仓库为唯一调用方，用于决定接收端「拒绝 / 仅预览送达 /
- * 部分失败」等结局是否按已送达处理。
+ * 空集合与其余情形返回假。发送仓库是唯一调用方：发送前结合选择批次条目数据此决定是否保留 preview，
+ * 发送后据此判断接收端「拒绝 / 仅预览送达 / 部分失败」是否按已送达处理。
  */
 export function isSingleTextMessageSend(files: Array<SendFileItem>): boolean {
   if (files.length !== 1) {
