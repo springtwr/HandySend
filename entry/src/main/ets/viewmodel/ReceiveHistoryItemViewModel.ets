@@ -1,7 +1,7 @@
 import { ReceiveHistoryEntry } from '../model/Types';
 import { formatTime, formatSizeDetailed } from '../utils/FormatUtil';
 import { isTextFile } from '../utils/MimeUtils';
-import { readTextOfLocation } from '../utils/FileTextUtil';
+import { readTextOfLocation, readTextOfLocationAsync } from '../utils/FileTextUtil';
 import {
   TextPreviewVerdict,
   TEXT_PREVIEW_READ_MAX_BYTES,
@@ -11,11 +11,24 @@ import {
 import { sendTextDir } from '../service/repository/SendRepository';
 import { recvTextDir } from '../service/repository/ReceiveTargets';
 
+/**
+ * 列表行缩略预览的读取上限（字节）：行内只展示两行，无需读取完整的 128KB 预览；
+ * 按 UTF-8 单字符最多 4 字节估算，留足 512 个字符的余量。
+ */
+export const RECEIVE_HISTORY_PREVIEW_READ_MAX_BYTES: number = 4 * 1024;
+
+/**
+ * 列表行缩略预览参与文本排版的字符上限：超出部分行内不会显示，但长字符串仍会参与
+ * 文本测量与排版；按宽屏两行可容纳的字符数截断，避免多个大文本文件滚动时卡顿。
+ */
+export const RECEIVE_HISTORY_PREVIEW_MAX_CHARS: number = 512;
+
 // 包装单个接收历史条目的条目级 ViewModel。
 // 条目可变（可删除），因此对每个条目单独包装，
 // 不把原始 DTO 直接暴露给视图。
-// 文本预览策略（可预览性判定、读取上限）与会话详情页共用同一套公共能力，
-// 两页口径不分叉；类型图标与媒体缩略由公共组件 FileEntryThumb 承载。
+// 文本预览策略（可预览性判定、全文读取上限）与会话详情页共用同一套公共能力，
+// 两页口径不分叉；列表行缩略预览另行按两行展示需要裁剪读取量与排版字符数。
+// 类型图标与媒体缩略由公共组件 FileEntryThumb 承载。
 @ObservedV2
 export class ReceiveHistoryItemViewModel {
   @Trace public id: string = ''
@@ -33,11 +46,11 @@ export class ReceiveHistoryItemViewModel {
   @Trace public failedCount: number = 0
   // 多选模式下的勾选状态：长按条目进入多选时勾选，逐条点击切换
   @Trace public selected: boolean = false
-  // 文本缩略预览内容：文本类条目按需读取文件本身，超阈值时为前 128KB 截断内容；
+  // 文本缩略预览片段：文本类条目按需异步读取文件头部并截取到行内展示所需长度；
   // 未加载/路径为空/文件缺失/非文本类/读取失败时为空串
   @Trace public previewText: string = ''
-  // 缩略预览是否为截断内容（超阈值时读取前 128KB；行内缩略本就只取头部展示，无需额外标记；
-  // 该标记供全文弹窗挂截断说明）
+  // 预览加载时记录文件是否超文本预览阈值（超阈值时全文预览按前 128KB 截断）；
+  // 行内缩略预览固定只取文件头部片段，不使用该标记
   @Trace public previewTruncated: boolean = false
   // 防重复加载标记
   private textPreviewRequested: boolean = false
@@ -114,8 +127,9 @@ export class ReceiveHistoryItemViewModel {
   }
 
   // 文本类条目（含文本消息条目）按需读取内容缩略预览。
-  // 列表行出现时调用（fire-and-forget，不阻塞滚动）；超阈值时读取前 128KB 截断预览并置位截断标记，
-  // 读取失败或文件缺失时保持空串静默降级。
+  // 列表行出现时调用（fire-and-forget，异步读取不阻塞滚动）；行内只展示两行，
+  // 故读取量与参与排版的字符数都按展示需要裁剪，避免多个超大文本文件在滚动时反复付出
+  // 大文件读取与长文本排版开销。读取失败或文件缺失时保持空串静默降级。
   async loadTextPreview(): Promise<void> {
     if (this.textPreviewRequested || this.previewText.length > 0) {
       return;
@@ -124,9 +138,10 @@ export class ReceiveHistoryItemViewModel {
       return;
     }
     this.textPreviewRequested = true;
-    let content = readTextOfLocation(this.path, TEXT_PREVIEW_READ_MAX_BYTES);
+    let content = await readTextOfLocationAsync(this.path, RECEIVE_HISTORY_PREVIEW_READ_MAX_BYTES);
     if (content !== undefined) {
-      this.previewText = content;
+      this.previewText = content.length > RECEIVE_HISTORY_PREVIEW_MAX_CHARS ?
+        content.substring(0, RECEIVE_HISTORY_PREVIEW_MAX_CHARS) : content;
       this.previewTruncated = this.isPreviewOverLimit;
     }
   }

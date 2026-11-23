@@ -2,8 +2,9 @@
  * FileTextUtil.ets — 文本内容读取共用工具
  *
  * 详情页与接收历史页共用同一读取能力：按沙箱路径或文件选择器 URI 读取文本内容。
- * 失败（文件不存在/权限不足/编码异常等）一律返回 undefined 表示「不可用」，
- * 不向界面抛异常，由调用方给出明确提示。
+ * 同步接口供用户主动操作（查看全文 / 复制），异步接口供列表滚动中的按需预览，
+ * 避免在主线程上读盘。失败（文件不存在/权限不足/编码异常等）一律返回 undefined
+ * 表示「不可用」，不向界面抛异常，由调用方给出明确提示。
  */
 
 import { fileIo as fs } from '@kit.CoreFileKit';
@@ -46,6 +47,42 @@ function readTextByPath(path: string, limit: number): string | undefined {
   } catch (e) {
     logger.warn('按路径读取文本失败 path=' + path + ' 原因=' + String(e));
     return undefined;
+  }
+}
+
+/**
+ * 按「文件位置」异步读取文本内容：读取语义与 readTextOfLocation 一致，
+ * 供列表滚动等不能阻塞 UI 线程的按需读取场景使用。失败返回 undefined 表示不可用。
+ *
+ * @param maxBytes 可选读取上限（字节）；缺省或非正值时沿用缺省上限
+ */
+export async function readTextOfLocationAsync(location: string,
+  maxBytes?: number): Promise<string | undefined> {
+  if (location.length === 0) {
+    return undefined;
+  }
+  let limit: number = effectiveLimit(maxBytes);
+  let file: fs.File | undefined = undefined;
+  try {
+    // 显式按上限开缓冲区读取：读取量由固定大小缓冲区封顶，
+    // 超大文本文件也只读取头部固定字节数
+    file = await fs.open(location, fs.OpenMode.READ_ONLY);
+    let buf: ArrayBuffer = new ArrayBuffer(limit);
+    let n: number = await fs.read(file.fd, buf);
+    if (n <= 0) {
+      return '';
+    }
+    return new util.TextDecoder().decodeToString(new Uint8Array(buf, 0, n));
+  } catch (e) {
+    logger.warn('异步读取文本失败 location=' + location + ' 原因=' + String(e));
+    return undefined;
+  } finally {
+    if (file !== undefined) {
+      try {
+        await fs.close(file.fd);
+      } catch (_e) {
+      }
+    }
   }
 }
 

@@ -1,10 +1,13 @@
 // ReceiveHistoryItemTest：接收历史条目的展示判定用例
-// 覆盖文本类条目的缩略预览读取与不可用降级、文本类条目的「打开所在目录」判定，
-// 以及预览阈值（超阈值不读取内容、不提供预览）与阈值边界行为。
+// 覆盖文本类条目的缩略预览读取、长文本片段裁剪与不可用降级、文本类条目的
+// 「打开所在目录」判定，以及预览阈值（超阈值时全文不可预览、行内仍提供截断片段）与阈值边界行为。
 import { describe, it, expect } from '@ohos/hypium'
 import { fileIo as fs } from '@kit.CoreFileKit'
 import { ReceiveHistoryEntry } from '../../../../main/ets/model/Types'
-import { ReceiveHistoryItemViewModel } from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
+import {
+  RECEIVE_HISTORY_PREVIEW_MAX_CHARS,
+  ReceiveHistoryItemViewModel
+} from '../../../../main/ets/viewmodel/ReceiveHistoryItemViewModel'
 import { TEXT_PREVIEW_MAX_BYTES } from '../../../../main/ets/utils/FilePreviewPolicy'
 import { getTestCacheDir, writeTestFileToSandbox } from '../helper/TestHelper'
 
@@ -104,7 +107,7 @@ export default function ReceiveHistoryItemTest() {
     })
 
     it('textPreview_overLimit_readsTruncatedWithFlag', 0, async (done: Function) => {
-      // 超过预览阈值的文本类条目：读取前 128KB 截断预览并置位截断标记（文件本身可读）
+      // 超过预览阈值的文本类条目：置位截断标记（全文预览按前 128KB 截断；行内缩略预览另按展示片段裁剪）
       let path = writeTestFileToSandbox('recv_hist_over_limit.txt', TEXT_CONTENT)
       let item = new ReceiveHistoryItemViewModel(
         entryOf('recv_hist_over_limit.txt', 'text/plain', path, false, TEXT_PREVIEW_MAX_BYTES + 1))
@@ -118,6 +121,21 @@ export default function ReceiveHistoryItemTest() {
       expect(item.readFullText()).assertEqual(TEXT_CONTENT)
       // 复制为用户显式动作，不因超阈值被禁用（保留接收历史页专有项）
       expect(item.canCopyText).assertTrue()
+      done()
+    })
+
+    it('textPreview_longText_rendersBoundedSnippet', 0, async (done: Function) => {
+      // 长文本条目：行内预览只读取并保留两行展示所需的片段，避免大字符串参与排版拖慢滚动
+      let longContent: string = 'x'.repeat(RECEIVE_HISTORY_PREVIEW_MAX_CHARS + 2000)
+      let path = writeTestFileToSandbox('recv_hist_long_preview.txt', longContent)
+      let item = new ReceiveHistoryItemViewModel(
+        entryOf('recv_hist_long_preview.txt', 'text/plain', path, false, longContent.length))
+      await item.loadTextPreview()
+      expect(item.previewText.length).assertEqual(RECEIVE_HISTORY_PREVIEW_MAX_CHARS)
+      expect(item.previewText).assertEqual(
+        longContent.substring(0, RECEIVE_HISTORY_PREVIEW_MAX_CHARS))
+      // 查看全文与复制仍按既有上限读取，不受行内预览片段影响
+      expect(item.readFullText()).assertEqual(longContent)
       done()
     })
 
