@@ -364,6 +364,7 @@ export async function nativeSendFiles(target: NativeTargetDevice, senderAlias: s
     sessionId: result.sessionId,
     success: result.success,
     failedFiles: result.failedFiles,
+    sourceFailedFiles: result.sourceFailedFiles,
     error: httpError
   };
   return nativeResult;

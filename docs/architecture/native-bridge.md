@@ -307,6 +307,9 @@ MTA 待发送条目可携带可选 `lastModifiedMs`，`zip_stream.rs` 据其写�
   fd 所有权契约：调用正常返回后 Rust 对所有传入 fd 负全责（被上传消费的经 `from_raw_fd` 关闭，
   prepare 失败/取消/未轮到上传的由 `close_remaining_fds` 统一关闭）；调用抛错时 fd 仍由
   ArkTS 发送循环的 catch 关闭，Rust 不可重复关闭
+- **失败回退**：`send_files` 的结果除 `failedFiles` 外另有 `sourceFailedFiles`，只列出因本地
+  源文件打不开/读取失败而失败的条目；`sendToDevice` 仅对同时命中两者的路径模式条目改用句柄
+  重发一次。接收端 HTTP 错误（如保存目录无权限/不存在的 500）不在其中，避免对端重复收到请求
 - **无会话收口**：`prepare-upload` 返回 204（如单条文本消息仅预览送达、未建会话）时，
   `send_files` 直接以 `error.kind=statusCode`、`status=204` 返回，不进入上传循环；
   否则缺 token 会被误判为 `partialFailure`，发送结局与接收方实际选择不一致

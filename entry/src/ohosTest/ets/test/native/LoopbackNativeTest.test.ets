@@ -101,8 +101,9 @@ export default function LoopbackNativeTest() {
         // 本用例对 prepareUpload 一律拒绝，success 必须为 false——
         // 拒绝被误报为成功（或反之）在此处失败
         expect(result.success).assertFalse()
-        // 验证 failedFiles 是数组
+        // 验证 failedFiles / sourceFailedFiles 是数组
         expect(Array.isArray(result.failedFiles)).assertTrue()
+        expect(Array.isArray(result.sourceFailedFiles)).assertTrue()
       }
       done()
     })

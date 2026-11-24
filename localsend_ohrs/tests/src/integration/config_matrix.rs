@@ -785,6 +785,157 @@ async fn test_bridge_send_text_message_no_content_reports_204() {
     let _ = std::fs::remove_file(&send_file);
 }
 
+// ── 接收方保存失败（如目录不存在/无权限）属于对端错误，不得标记为可回退 ──
+
+#[tokio::test]
+async fn test_bridge_send_receiver_save_failure_not_retryable() {
+    let (recv, mut rx) = new_state_with_event_tx();
+    init_identity(&recv, "save-fail");
+    // 保存目录不存在：接收端创建文件失败，对上传返回 500
+    let missing_dir = format!(
+        "{}/handysend-bridge-missing-{}/",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
+    let _ = std::fs::remove_dir_all(&missing_dir);
+    recv.lock().unwrap().save_dir = missing_dir;
+    let port = server::start_server(recv.clone(), 0, false, true, None, None)
+        .await
+        .unwrap();
+
+    let sender = new_state_with_event_tx().0;
+    init_identity(&sender, "save-fail-sender");
+    let send_file = format!(
+        "{}/handysend-bridge-save-fail.txt",
+        std::env::temp_dir().display()
+    );
+    let content = b"receiver save failure".to_vec();
+    std::fs::write(&send_file, &content).unwrap();
+    let files_json = json!([{
+        "fileId": "sf-1",
+        "fileName": "bridge_save_fail.txt",
+        "size": content.len(),
+        "fileType": "text/plain",
+        "filePath": send_file,
+        "preview": null,
+        "sha256": null,
+    }])
+    .to_string();
+    let target = json!({
+        "ip": "127.0.0.1", "port": port, "protocol": "http",
+        "fingerprint": "", "pin": null, "publicKey": null,
+    })
+    .to_string();
+
+    let send_task = tokio::spawn({
+        let sender = sender.clone();
+        let files_json = files_json.clone();
+        async move {
+            client::send_files(&sender, &target, "HandySend", &files_json, "send_save_fail").await
+        }
+    });
+    let prepare = wait_for_event(&mut rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let session_id = match &prepare {
+        BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
+        _ => unreachable!(),
+    };
+    server::accept_transfer(&recv, &session_id, &["sf-1".to_string()]).unwrap();
+
+    let res = send_task.await.unwrap().unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(val["success"], false, "接收方保存失败应报失败: {res}");
+    assert_eq!(val["failedFiles"], json!(["sf-1"]));
+    // 失败来自接收端写盘（HTTP 500），不是本地源文件读取：sourceFailedFiles 必须为空，
+    // ArkTS 据此不触发句柄回退，避免接收方重复收到同一批文件
+    assert_eq!(
+        val["sourceFailedFiles"],
+        json!([]),
+        "对端保存失败不得标记为可回退: {res}"
+    );
+
+    server::stop_server(&recv);
+    let _ = std::fs::remove_file(&send_file);
+}
+
+// ── 本地源文件打不开：路径模式失败标记为可回退（ArkTS 改用句柄重试）──
+
+#[tokio::test]
+async fn test_bridge_send_missing_source_marks_retryable() {
+    let (recv, mut rx) = new_state_with_event_tx();
+    init_identity(&recv, "source-missing");
+    let save_dir = format!(
+        "{}/handysend-source-missing-{}/",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
+    let _ = std::fs::remove_dir_all(&save_dir);
+    std::fs::create_dir_all(&save_dir).unwrap();
+    recv.lock().unwrap().save_dir = save_dir.clone();
+    let port = server::start_server(recv.clone(), 0, false, true, None, None)
+        .await
+        .unwrap();
+
+    let sender = new_state_with_event_tx().0;
+    init_identity(&sender, "source-missing-sender");
+    // 不存在的本地源文件：prepare 不受影响，上传阶段按路径打开失败
+    let missing_path = format!(
+        "{}/handysend-bridge-missing-source-{}.txt",
+        std::env::temp_dir().display(),
+        std::process::id()
+    );
+    let _ = std::fs::remove_file(&missing_path);
+    let files_json = json!([{
+        "fileId": "ms-1",
+        "fileName": "bridge_missing_source.txt",
+        "size": 5,
+        "fileType": "text/plain",
+        "filePath": missing_path,
+        "preview": null,
+        "sha256": null,
+    }])
+    .to_string();
+    let target = json!({
+        "ip": "127.0.0.1", "port": port, "protocol": "http",
+        "fingerprint": "", "pin": null, "publicKey": null,
+    })
+    .to_string();
+
+    let send_task = tokio::spawn({
+        let sender = sender.clone();
+        let files_json = files_json.clone();
+        async move {
+            client::send_files(
+                &sender,
+                &target,
+                "HandySend",
+                &files_json,
+                "send_source_missing",
+            )
+            .await
+        }
+    });
+    let prepare = wait_for_event(&mut rx, |e| matches!(e, BridgeEvent::PrepareUpload { .. })).await;
+    let session_id = match &prepare {
+        BridgeEvent::PrepareUpload { session_id, .. } => session_id.clone(),
+        _ => unreachable!(),
+    };
+    server::accept_transfer(&recv, &session_id, &["ms-1".to_string()]).unwrap();
+
+    let res = send_task.await.unwrap().unwrap();
+    let val: serde_json::Value = serde_json::from_str(&res).unwrap();
+    assert_eq!(val["success"], false, "源文件不可读应报失败: {res}");
+    assert_eq!(val["failedFiles"], json!(["ms-1"]));
+    // 本地源文件读取失败是路径模式唯一可回退的情形
+    assert_eq!(
+        val["sourceFailedFiles"],
+        json!(["ms-1"]),
+        "本地源文件失败应标记为可回退: {res}"
+    );
+
+    server::stop_server(&recv);
+    let _ = std::fs::remove_dir_all(&save_dir);
+}
+
 // ── 多文件传输：一次发送多个文件，全部落盘且内容一致 ──────────────
 
 #[tokio::test]

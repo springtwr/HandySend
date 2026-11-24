@@ -87,6 +87,10 @@ pub struct SendResult {
     pub session_id: String,
     pub success: bool,
     pub failed_files: Vec<String>,
+    /// 因本地源文件打不开/读取失败而失败的文件（路径模式可改句柄回退重试）；
+    /// 缺省字段按空处理，避免跨层结构演进时因缺字段解析失败
+    #[serde(default)]
+    pub source_failed_files: Vec<String>,
     pub error: Option<HttpError>,
 }
 

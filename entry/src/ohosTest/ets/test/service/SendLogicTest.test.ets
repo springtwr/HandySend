@@ -53,7 +53,7 @@ export default function SendLogicTest() {
         fileId: 'f1', filePath: '/data/c.txt', fileName: 'c.txt',
         fileType: 'text/plain', size: 30
       }]
-      let items: Array<SendFileItem> = buildPathFallbackItems(files, ['p1', 'f1'])
+      let items: Array<SendFileItem> = buildPathFallbackItems(files, ['p1', 'f1'], ['p1', 'f1'])
       // 只回退失败的路径条目；普通 fd 条目不在回退范围
       expect(items.length).assertEqual(1)
       if (items.length === 1) {
@@ -72,7 +72,7 @@ export default function SendLogicTest() {
         fileId: 't1', filePath: '/data/clipboard_1.txt', fileName: 'clipboard_1.txt',
         fileType: 'text/plain', size: 4, preview: 'hello', pathSource: true, sourceFd: 9
       }]
-      expect(buildPathFallbackItems(files, ['t1']).length).assertEqual(0)
+      expect(buildPathFallbackItems(files, ['t1'], ['t1']).length).assertEqual(0)
     })
 
     it('pathFallback_mixedBatch_keepsTextItem', 0, () => {
@@ -84,7 +84,7 @@ export default function SendLogicTest() {
         fileId: 'p1', filePath: '/data/a.txt', fileName: 'a.txt',
         fileType: 'text/plain', size: 10, pathSource: true
       }]
-      let items: Array<SendFileItem> = buildPathFallbackItems(files, ['t1', 'p1'])
+      let items: Array<SendFileItem> = buildPathFallbackItems(files, ['t1', 'p1'], ['t1', 'p1'])
       expect(items.length).assertEqual(2)
       if (items.length === 2) {
         expect(items[0].fileId).assertEqual('t1')
@@ -97,8 +97,18 @@ export default function SendLogicTest() {
         fileId: 'f1', filePath: '/data/c.txt', fileName: 'c.txt',
         fileType: 'text/plain', size: 30
       }]
-      expect(buildPathFallbackItems(files, ['f1']).length).assertEqual(0)
-      expect(buildPathFallbackItems(files, []).length).assertEqual(0)
+      expect(buildPathFallbackItems(files, ['f1'], ['f1']).length).assertEqual(0)
+      expect(buildPathFallbackItems(files, [], []).length).assertEqual(0)
+    })
+
+    it('pathFallback_receiverFailure_returnsEmpty', 0, () => {
+      // 对端 HTTP 错误（如保存目录无权限/不存在的 500）不是本地源文件读取失败：
+      // 不得回退句柄重发，否则对端会重复收到发送请求
+      let files: Array<SendFileItem> = [{
+        fileId: 'p1', filePath: '/data/a.txt', fileName: 'a.txt',
+        fileType: 'text/plain', size: 10, pathSource: true, sourceFd: 12
+      }]
+      expect(buildPathFallbackItems(files, ['p1'], []).length).assertEqual(0)
     })
   })
 }

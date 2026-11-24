@@ -293,6 +293,7 @@ pub async fn send_files(
                 "sessionId": "",
                 "success": false,
                 "failedFiles": [],
+                "sourceFailedFiles": [],
                 "error": error_json,
             })
             .to_string());
@@ -339,6 +340,7 @@ pub async fn send_files(
             "sessionId": "",
             "success": false,
             "failedFiles": [],
+            "sourceFailedFiles": [],
             "error": error_json,
         })
         .to_string());
@@ -363,6 +365,9 @@ pub async fn send_files(
 
     let mut cancelled = false;
     let mut failed_files: Vec<String> = Vec::new();
+    // 因本地源文件打不开/读取失败而失败的文件：ArkTS 只对这些路径模式条目
+    // 改用句柄回退重试，对端 HTTP 错误不得触发回退（否则对端重复收到请求）
+    let mut source_failed_files: Vec<String> = Vec::new();
     let total_files = files.len();
 
     // 会话级 HTTP 客户端：进入逐文件循环前构造一次，会话内全部文件共用
@@ -429,22 +434,29 @@ pub async fn send_files(
             }
             // 会话客户端构造失败：全部文件计入 failed_files，与原每文件
             // 构造失败的表现一致（维持既有失败语义，不重试）
-            Err(e) => Err(adapt_client_error(e)),
+            Err(e) => Err(UploadFailure {
+                error: adapt_client_error(e),
+                source_read_failed: false,
+            }),
         };
         match upload_result {
             Ok(()) => {}
-            Err(e) => {
+            Err(failure) => {
                 if session_cancel.is_cancelled() {
                     cancelled = true;
                     failed_files.push(file_id.to_string());
                     break;
                 }
                 log::warn!(
-                    "发送文件：文件 {}/{} 上传失败 ({}): {e}",
+                    "发送文件：文件 {}/{} 上传失败 ({}): {}",
                     idx + 1,
                     total_files,
-                    file_id
+                    file_id,
+                    failure.error
                 );
+                if failure.source_read_failed {
+                    source_failed_files.push(file_id.to_string());
+                }
                 failed_files.push(file_id.to_string());
             }
         }
@@ -475,6 +487,7 @@ pub async fn send_files(
         "sessionId": session_id,
         "success": success,
         "failedFiles": failed_files,
+        "sourceFailedFiles": source_failed_files,
         "error": error_json,
     })
     .to_string())
@@ -488,7 +501,7 @@ pub async fn send_files(
 ///
 /// 读取失败通过 `read_error_tx` 上报，上传侧据此中止请求，避免把截断内容
 /// 当作完整文件发送。
-#[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+#[cfg(unix)]
 fn fd_pread_content(
     fd: i32,
     file_label: &str,
@@ -506,10 +519,36 @@ fn fd_pread_content(
     FileContent::Stream(rx)
 }
 
+/// 以文件路径构造发送内容流（路径模式）。
+///
+/// 与核心库的 `FileContent::Path` 一样从路径读取，差别在于本地打开/读取失败经
+/// `read_error_tx` 上报：该失败源自发送方自己的源文件，路径模式可改用句柄回退重试；
+/// 对端返回 HTTP 错误（如保存目录无权限时的 500）则不能回退，否则对端会重复收到
+/// 发送请求。
+#[cfg(unix)]
+fn path_stream_content(
+    file_path: &str,
+    read_error_tx: tokio::sync::oneshot::Sender<std::io::Error>,
+) -> FileContent {
+    const CHANNEL_CAPACITY: usize = 4;
+    let (tx, rx) = tokio::sync::mpsc::channel::<bytes::Bytes>(CHANNEL_CAPACITY);
+    let label = file_path.to_string();
+    drop(tokio::task::spawn_blocking(move || {
+        let opened = std::fs::File::open(&label);
+        match opened {
+            Ok(file) => read_file_into_channel(file, label, tx, read_error_tx),
+            Err(e) => {
+                log::error!("发送文件：按路径打开失败 file={label}: {e}");
+                let _ = read_error_tx.send(e);
+            }
+        }
+    }));
+    FileContent::Stream(rx)
+}
+
 /// 从 fd 顺序读取并投递到通道；读失败时通过 `read_error_tx` 上报。
 ///
-/// 与平台判定解耦，便于在开发机上覆盖错误路径；生产调用仅在 Android / 鸿蒙。
-#[allow(dead_code)]
+/// 生产环境仅在 Android / 鸿蒙使用（开发机上由路径分支复用同一读取实现）。
 #[cfg(unix)]
 fn read_fd_into_channel(
     fd: i32,
@@ -517,12 +556,23 @@ fn read_fd_into_channel(
     tx: tokio::sync::mpsc::Sender<bytes::Bytes>,
     read_error_tx: tokio::sync::oneshot::Sender<std::io::Error>,
 ) {
-    use std::os::unix::fs::FileExt;
-
-    const READ_CHUNK: usize = 512 * 1024;
     // SAFETY: fd 所有权由本任务接管；调用方已把该 fd 从剩余表移除，
     // 任务结束时 File drop 关闭，不会重复关闭。
     let file = unsafe { std::fs::File::from_raw_fd(fd) };
+    read_file_into_channel(file, label, tx, read_error_tx);
+}
+
+/// 从已打开的文件以显式偏移读取并投递到通道；读失败时通过 `read_error_tx` 上报。
+#[cfg(unix)]
+fn read_file_into_channel(
+    file: std::fs::File,
+    label: String,
+    tx: tokio::sync::mpsc::Sender<bytes::Bytes>,
+    read_error_tx: tokio::sync::oneshot::Sender<std::io::Error>,
+) {
+    use std::os::unix::fs::FileExt;
+
+    const READ_CHUNK: usize = 512 * 1024;
     let mut offset: u64 = 0;
     let mut buffer = bytes::BytesMut::with_capacity(READ_CHUNK);
     loop {
@@ -547,6 +597,15 @@ fn read_fd_into_channel(
     log::debug!("发送文件：pread 读取结束 file={label} 字节={offset}");
 }
 
+/// 单个文件上传的失败信息。
+struct UploadFailure {
+    /// 失败原因（向外传递的错误文本与事件日志使用）
+    error: BridgeError,
+    /// 是否源于本地源文件打开/读取失败。路径模式下该文件可改用句柄回退重试；
+    /// 对端 HTTP 错误、网络中断等重试无意义，只会让对端重复收到发送请求。
+    source_read_failed: bool,
+}
+
 /// 上传单个文件（使用会话级取消令牌与会话级 HTTP 客户端）。
 ///
 /// `client` 由 `send_files` 会话级构造并传入，会话内复用同一连接池。
@@ -566,7 +625,7 @@ async fn upload_file_with_cancel(
     public_key: Option<String>,
     session_cancel: &tokio_util::sync::CancellationToken,
     remaining_fds: &mut HashMap<String, i32>,
-) -> Result<(), BridgeError> {
+) -> Result<(), UploadFailure> {
     {
         let s = lock(state);
         let mut sid = lock(&s.current_send_session_id);
@@ -583,29 +642,38 @@ async fn upload_file_with_cancel(
 
     // fd ≥ 0：所有权在此移交读取任务，先从剩余表移除；取消/提前返回时由读取任务收尾，
     // 避免收尾路径重复关闭
-    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    #[cfg(unix)]
     if fd >= 0 {
         remaining_fds.remove(file_id);
     }
 
     // fd ≥ 0：pread 从文件头读取（不依赖共享偏移，多个会话可并发复用同一暂存句柄）；
-    // fd < 0：内容源为沙箱路径（协议兼容回退）
-    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
+    // fd < 0：按路径读取。两条分支的本地读取失败都经 read_error_rx 上报，
+    // 供上层区分「路径模式源文件不可读」与对端 HTTP 错误。
+    #[cfg(unix)]
     let (content, read_error_rx) = if fd >= 0 {
         let (read_error_tx, read_error_rx) = tokio::sync::oneshot::channel();
         (
             fd_pread_content(fd, file_path, read_error_tx),
-            Some(read_error_rx),
+            read_error_rx,
         )
     } else {
-        (FileContent::Path(std::path::PathBuf::from(file_path)), None)
+        let (read_error_tx, read_error_rx) = tokio::sync::oneshot::channel();
+        (path_stream_content(file_path, read_error_tx), read_error_rx)
     };
-    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    #[cfg(not(unix))]
     let content = FileContent::Path(std::path::PathBuf::from(file_path));
+    #[cfg(unix)]
+    let mut source_read_failed = false;
+    #[cfg(not(unix))]
+    let source_read_failed = false;
     let cancel = session_cancel.clone();
 
     if cancel.is_cancelled() {
-        return Err(BridgeError::Upstream(anyhow::anyhow!("传输已在上传前取消")));
+        return Err(UploadFailure {
+            error: BridgeError::Upstream(anyhow::anyhow!("传输已在上传前取消")),
+            source_read_failed: false,
+        });
     }
 
     let event_tx = lock(state).event_tx.clone();
@@ -642,7 +710,7 @@ async fn upload_file_with_cancel(
     };
 
     // 非句柄平台未消费该表，显式标记已考虑，避免未使用告警
-    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    #[cfg(not(unix))]
     let _ = remaining_fds;
 
     let upload = client.upload(
@@ -658,21 +726,23 @@ async fn upload_file_with_cancel(
         cancel,
     );
 
-    #[cfg(any(target_os = "android", all(target_os = "linux", target_env = "ohos")))]
-    let result = match read_error_rx {
-        Some(read_error_rx) => {
-            tokio::select! {
-                res = upload => res,
-                // 读取失败：丢弃上传 future，连接随之中止，避免接收方
-                // 把截断内容当作完整文件。
-                Ok(read_error) = read_error_rx => Err(ClientError::Other(
-                    anyhow::anyhow!("读取文件失败: {read_error}"),
-                )),
-            }
+    #[cfg(unix)]
+    let result = tokio::select! {
+        // 本地读取失败优先：两者同时就绪时不得按对端错误收口，
+        // 否则路径模式可能漏判源文件不可读而失去句柄回退
+        biased;
+        // 读取失败：丢弃上传 future，连接随之中止，避免接收方
+        // 把截断内容当作完整文件。该失败来自本地源文件，
+        // 路径模式下可改用句柄回退重试。
+        Ok(read_error) = read_error_rx => {
+            source_read_failed = true;
+            Err(ClientError::Other(
+                anyhow::anyhow!("读取文件失败: {read_error}"),
+            ))
         }
-        None => upload.await,
+        res = upload => res,
     };
-    #[cfg(not(any(target_os = "android", all(target_os = "linux", target_env = "ohos"))))]
+    #[cfg(not(unix))]
     let result = upload.await;
 
     // 上传成功：推送 100% 进度 + 完成（关键事件用 send）
@@ -701,7 +771,10 @@ async fn upload_file_with_cancel(
                 },
             )
             .await;
-            Err(BridgeError::Upstream(anyhow::anyhow!("{msg}")))
+            Err(UploadFailure {
+                error: BridgeError::Upstream(anyhow::anyhow!("{msg}")),
+                source_read_failed,
+            })
         }
     }
 }

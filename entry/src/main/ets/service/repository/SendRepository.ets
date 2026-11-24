@@ -364,24 +364,32 @@ async function probeDeviceReachable(device: DiscoveredDevice, protocol: string):
 
 /**
  * 从本次失败的条目中挑出可回退句柄重试的路径模式文件。
+ * 只回退同时命中 failedFiles 与 sourceFailedFiles 的条目：后者表示失败源于本地源文件
+ * 打不开/读取失败；对端 HTTP 错误（如保存目录无权限时的 500）重试只会让对端重复
+ * 收到发送请求，不参与回退。
  * 返回副本（pathSource=false，保留暂存句柄供 dup）；未命中项不返回。
  * 整批仅一条文本消息时不参与：其正文已随 prepare-upload 的 preview 送达，
  * 重发会让接收方收到重复消息。混合批次不展示预览，文本条目按普通文件处理，
  * 仍参与回退。
  */
 export function buildPathFallbackItems(files: Array<SendFileItem>,
-  failedFiles: Array<string>): Array<SendFileItem> {
-  if (failedFiles.length === 0 || isSingleTextMessageSend(files)) {
+  failedFiles: Array<string>,
+  sourceFailedFiles: Array<string>): Array<SendFileItem> {
+  if (failedFiles.length === 0 || sourceFailedFiles.length === 0 || isSingleTextMessageSend(files)) {
     return [];
   }
   let failedSet: Set<string> = new Set<string>();
   for (let i = 0; i < failedFiles.length; i++) {
     failedSet.add(failedFiles[i]);
   }
+  let sourceFailedSet: Set<string> = new Set<string>();
+  for (let i = 0; i < sourceFailedFiles.length; i++) {
+    sourceFailedSet.add(sourceFailedFiles[i]);
+  }
   let items: Array<SendFileItem> = [];
   for (let i = 0; i < files.length; i++) {
     let f: SendFileItem = files[i];
-    if (f.pathSource === true && failedSet.has(f.fileId)) {
+    if (f.pathSource === true && failedSet.has(f.fileId) && sourceFailedSet.has(f.fileId)) {
       items.push({
         fileId: f.fileId,
         filePath: f.filePath,
@@ -628,6 +636,7 @@ export async function sendToDevice(
             sessionId: '',
             success: false,
             failedFiles: attemptFailedIds,
+            sourceFailedFiles: [],
             error: { kind: 'other', message: '源文件句柄打开失败' }
           };
           break;
@@ -681,6 +690,7 @@ export async function sendToDevice(
           sessionId: result.sessionId,
           success: false,
           failedFiles: failedElsewhere.slice(),
+          sourceFailedFiles: [],
           error: {
             kind: 'partialFailure',
             message: failedElsewhere.length + ' of ' + files.length + ' files failed'
@@ -689,13 +699,16 @@ export async function sendToDevice(
         break;
       }
       let err = result.error;
-      // 路径模式条目在原生侧上传失败时，该文件计入 failedFiles，其余文件仍会正常上传；
-      // 这里只把失败路径条目改为句柄模式重发一次，避免一个文件失败拖垮整批
+      // 路径模式条目在原生侧因本地源文件不可读失败时，该文件计入 failedFiles 与
+      // sourceFailedFiles，其余文件仍会正常上传；这里只把这类失败条目改为句柄模式
+      // 重发一次，避免一个文件失败拖垮整批。对端 HTTP 错误（如保存目录无权限/不存在
+      // 的 500）不在 sourceFailedFiles 中，不回退——否则对端会重复收到发送请求。
       // （整批仅一条文本消息时由 buildPathFallbackItems 排除，避免重发 preview；
       // 混合批次中的文本条目按普通文件参与回退）
       if (err !== undefined && err.kind === 'partialFailure' && !pathFallbackApplied &&
-        result.failedFiles.length > 0) {
-        let retryItems: Array<SendFileItem> = buildPathFallbackItems(attemptFiles, result.failedFiles);
+        result.failedFiles.length > 0 && result.sourceFailedFiles.length > 0) {
+        let retryItems: Array<SendFileItem> = buildPathFallbackItems(attemptFiles, result.failedFiles,
+          result.sourceFailedFiles);
         if (retryItems.length > 0) {
           // 未参与回退的失败文件保留到最终结果
           let retriedSet: Set<string> = new Set<string>();

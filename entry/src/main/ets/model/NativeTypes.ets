@@ -30,6 +30,8 @@ export interface NativeSendResult {
   sessionId: string
   success: boolean
   failedFiles: Array<string>
+  // 因本地源文件打不开/读取失败而失败的文件；只有这些路径模式条目可用句柄回退重试
+  sourceFailedFiles: Array<string>
   error?: NativeHttpError
 }
 

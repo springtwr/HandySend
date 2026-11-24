@@ -311,25 +311,8 @@ export default function LoopbackTransferTest() {
         if (e.type !== 'prepareUpload') {
           return
         }
-        let pe = e as NativePrepareUploadEvent
-        let ids: Array<string> = []
-        for (let i = 0; i < pe.files.length; i++) {
-          if (pe.files[i].fileId !== okId) {
-            continue
-          }
-          let destPath: string = getRecvDir() + pe.files[i].fileName
-          let finalDir: string = destPath.substring(0, destPath.lastIndexOf('/'))
-          ensureDir(finalDir)
-          let tempPath: string = tempPathForFinal(destPath, TEMP_SUBDIR_LOCAL_SEND)
-          let tempDir: string = tempPath.substring(0, tempPath.lastIndexOf('/'))
-          ensureDir(tempDir)
-          let file = fs.openSync(tempPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE |
-            fs.OpenMode.TRUNC)
-          fs.closeSync(file)
-          nativeRegisterRecvFileFd(pe.sessionId, pe.files[i].fileId, -1, destPath)
-          ids.push(pe.files[i].fileId)
-        }
-        nativeRespondTransfer(pe.sessionId, true, ids)
+        // 两个文件都接受：不可读的那个会在上传阶段因本地源文件打不开而失败
+        acceptWithRecvTargets(e, getRecvDir())
       }
       onBridgeEvent('prepareUpload', prepareHandler)
       try {
@@ -366,6 +349,11 @@ export default function LoopbackTransferTest() {
         expect(result.failedFiles.length).assertEqual(1)
         if (result.failedFiles.length === 1) {
           expect(result.failedFiles[0]).assertEqual(missingId)
+        }
+        // 失败来自本地源文件不可读：只有该文件进入句柄回退候选
+        expect(result.sourceFailedFiles.length).assertEqual(1)
+        if (result.sourceFailedFiles.length === 1) {
+          expect(result.sourceFailedFiles[0]).assertEqual(missingId)
         }
         let recvPath: string = getRecvDir() + fileName
         let saved: boolean = false
