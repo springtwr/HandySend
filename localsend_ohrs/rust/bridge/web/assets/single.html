@@ -3903,6 +3903,13 @@ html[data-auth="open"] #gate {
       });
   }
 
+  // 单文件上传是否值得原地重试：只有拿不到响应（网络中断）或请求体不完整（400）
+  // 时重发才有意义；接收端已明确返回 4xx/5xx（如保存目录不可用）时结果不会改变，
+  // 重试只会让接收端重复收到同一文件的上传请求。
+  function isUploadRetryable(status) {
+    return status === 0 || status === 400;
+  }
+
   function uploadNext(index, ids, files, token, attempt) {
     if (index >= ids.length) {
       completeUpload(token);
@@ -3915,6 +3922,9 @@ html[data-auth="open"] #gate {
       return;
     }
     var xhr = new XMLHttpRequest();
+    // 同一请求的 readystatechange 与 error 都会到达：只处理首个终态，
+    // 避免网络中断时各安排一次重试、把同一文件并发上传两次。
+    var settled = false;
     xhr.open('POST', BASE + '/web/upload?token=' + encodeURIComponent(token) +
       '&fileId=' + encodeURIComponent(fileId));
     xhr.upload.onprogress = function (e) {
@@ -3924,7 +3934,8 @@ html[data-auth="open"] #gate {
       }
     };
     xhr.onreadystatechange = function () {
-      if (xhr.readyState !== 4) { return; }
+      if (xhr.readyState !== 4 || settled) { return; }
+      settled = true;
       if (xhr.status === 200) {
         var bar = document.getElementById('up-bar-' + index);
         if (bar) { bar.style.width = '100%'; }
@@ -3945,8 +3956,8 @@ html[data-auth="open"] #gate {
         failUpload();
         return;
       }
-      // 单文件失败允许原地重试一次，避免整批重新建会话
-      if (attempt < 1) {
+      // 单文件失败仅在可恢复时原地重试一次，避免整批重新建会话
+      if (attempt < 1 && isUploadRetryable(xhr.status)) {
         setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
         setTimeout(function () {
           uploadNext(index, ids, files, token, attempt + 1);
@@ -3957,6 +3968,8 @@ html[data-auth="open"] #gate {
       failUpload();
     };
     xhr.onerror = function () {
+      if (settled) { return; }
+      settled = true;
       if (attempt < 1) {
         setSegmentStatus('upload', t('uploadInterrupted'), 'warning');
         setTimeout(function () {

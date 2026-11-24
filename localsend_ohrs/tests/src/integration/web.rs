@@ -472,6 +472,10 @@ async fn test_single_page_and_unknown_path() {
         "单页应在建会话后轮询等待对方确认"
     );
     assert!(
+        body.contains("isUploadRetryable") && body.contains("var settled = false"),
+        "单文件上传只应在可恢复失败时重试，且同一次请求只处理一个终态"
+    );
+    assert!(
         body.contains("handysend_dl_token"),
         "下载 token 应存于会话存储，刷新后可复用会话"
     );
